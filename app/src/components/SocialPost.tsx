@@ -15,6 +15,8 @@ import {
 } from '@shared/social';
 import { CompareSlider } from './CompareSlider';
 import { isAnnouncement } from '@shared/posts';
+import { conditionWords } from '@shared/enums';
+import { MentionSuggest } from './MentionSuggest';
 import { formatMoney, timeAgo } from '../format';
 import { ManagerMark } from './ManagerBadge';
 import { Avatar, Modal, PersonLink, Thumb, useConfirm } from './ui';
@@ -119,7 +121,7 @@ export function DropCard({ listing, drop }: { listing: NonNullable<PostCard['lis
         )}
         <span className="dropcard__body">
           <span className="dropcard__name">{listing.title}</span>
-          <span className="dropcard__cond">{listing.condition} · members only</span>
+          <span className="dropcard__cond" title={conditionWords(listing.condition)?.meaning}>{conditionWords(listing.condition)?.words} · members only</span>
           <span className="dropcard__prices">
             <b>{formatMoney(drop.memberPriceMinor, listing.currency)}</b>
             {rises && <s>{formatMoney(drop.publicPriceMinor, listing.currency)}</s>}
@@ -187,7 +189,7 @@ function BoostBadge({ kind }: { kind: PostBoost }) {
     <span className="boost" ref={wrap}>
       <button type="button" className={`boost__icon boost__icon--${kind}`} aria-label={meta.title}
         aria-expanded={open} onClick={() => setOpen(!open)}>
-        <Icon name={meta.icon} size={12} />
+        <Icon name={meta.icon} size={12} /> <span>{meta.title}</span>
       </button>
       {open && (
         <span className={`boost__tip boost__tip--${kind}`} role="status">
@@ -207,12 +209,12 @@ function BoostBadge({ kind }: { kind: PostBoost }) {
  * it is, a short-stock item how many are left - the two things that make
  * somebody act now rather than later.
  */
-function SaleItem({ listing, post, nested, offerTo }: {
+function SaleItem({ listing, post, nested, tagged }: {
   listing: NonNullable<PostCard['listing']>;
   post: PostCard['post'];
   nested: boolean;
-  /** The shop's handle, when this viewer may message it about the item. */
-  offerTo: string | null;
+  /** The card above already carries the For sale tag. */
+  tagged: boolean;
 }) {
   const href = `/listing/${listing.id}?post=${encodeURIComponent(`${post.channelId}:${post.id}`)}`;
   const fill = listing.fill ?? null;
@@ -228,11 +230,12 @@ function SaleItem({ listing, post, nested, offerTo }: {
           <Thumb seed={listing.id} label={listing.title} className="spost__itemphoto" />
         )}
         <span className="spost__itembody">
-          <span className="spost__itemtag">{gone ? 'Sold out' : fill ? 'Group pre-order' : 'For sale'}</span>
+          {/* Where the card already says "For sale", only a state that differs is said again here. */}
+          {(gone || fill || !tagged) && <span className="spost__itemtag">{gone ? 'Sold out' : fill ? 'Group pre-order' : 'For sale'}</span>}
           <span className="spost__itemname">{listing.title}</span>
           <span className="spost__itemmeta">
             <span className="spost__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
-            <span className="faint">{listing.condition}</span>
+            <span className="faint" title={conditionWords(listing.condition)?.meaning}>{conditionWords(listing.condition)?.words}</span>
             {!gone && listing.left != null && listing.left > 0 && (
               <span className="spost__left">{listing.left === 1 ? 'Last one' : `${listing.left} left`}</span>
             )}
@@ -248,15 +251,9 @@ function SaleItem({ listing, post, nested, offerTo }: {
           {gone ? 'View' : fill ? 'Join' : 'Buy'} <Icon name="right" size={12} />
         </span>
       </Link>
-      {!nested && (sold > 0 || offerTo) && (
+      {!nested && sold > 0 && (
         <span className="spost__saleline">
-          {sold > 0 && <span><Icon name="tag" size={12} /> {sold} bought from this post</span>}
-          {offerTo && (
-            <Link className="spost__offer"
-              to={`/messages/${encodeURIComponent(offerTo)}?about=${encodeURIComponent(listing.id)}`}>
-              💬 Message about this
-            </Link>
-          )}
+          <span><Icon name="tag" size={12} /> {sold} bought from this post</span>
         </span>
       )}
     </div>
@@ -279,7 +276,7 @@ const CONTENT_TYPES: Record<ContentType, string> = {
   sale: 'For sale',
   debate: 'Debate poll',
   flex: 'Collection flex',
-  iso: 'ISO request',
+  iso: 'Wanted',
   thread: 'Hot debate',
 };
 
@@ -356,6 +353,8 @@ export function SocialPostCard({
   }, [openComments, user, nested, initial.post]);
 
   const { post, listing, author, social } = card;
+  /** The shop's handle, when this viewer may message it about the item on the post. */
+  const offerTo = !nested && listing && card.shop && !social.mine && !voice.storeId ? author.handle : null;
   const photos = post.photoUrls?.length ? post.photoUrls : post.photoUrl ? [post.photoUrl] : [];
   // A Figmark link is drawn as its card, unless the post brought its own pictures.
   const linked = !post.vibe && photos.length === 0 ? figmarkLink(post.body) : null;
@@ -490,7 +489,7 @@ export function SocialPostCard({
       {post.answersWant && (
         <Link className="spost__kind spost__kind--poll"
           to={`/social?view=wanted&want=${encodeURIComponent(post.answersWant.id)}&buyer=${encodeURIComponent(post.answersWant.buyerId)}`}>
-          <Icon name="target" size={11} /> Answers an ISO
+          <Icon name="target" size={11} /> Answers a want
         </Link>
       )}
       {hot && <span className="spost__kind spost__kind--hot">🔥 Hot</span>}
@@ -506,7 +505,6 @@ export function SocialPostCard({
 
   return (
     <article ref={shell} data-post-id={nested ? undefined : post.id} className={`spost spost--${categoryOf(card)}${nested ? ' spost--nested' : ''}${rank ? ' spost--ranked' : ''}`}>
-      {!nested && <span className="spost__glow" aria-hidden="true" />}
       {dialog}
       {type && <ContentBadge type={type} />}
       {!nested && card.followedActed && !following && (
@@ -526,7 +524,7 @@ export function SocialPostCard({
         <Avatar name={post.authorName} size={nested ? 32 : 42} />
         <div className="spost__who">
           <span className="spost__byline">
-            <PersonLink party={author} className="spost__name">{post.authorName}</PersonLink>
+            <PersonLink party={author} className="spost__name" levelFrom={3}>{post.authorName}</PersonLink>
             {card.forum && !inForum && (
               <>
                 <Icon name="right" size={12} className="spost__in" />
@@ -598,6 +596,12 @@ export function SocialPostCard({
                   }}>
                     <Icon name="compose" size={15} /> Edit post
                   </button>
+                )}
+                {offerTo && listing && (
+                  <Link role="menuitem" onClick={() => setMenu(false)}
+                    to={`/messages/${encodeURIComponent(offerTo)}?about=${encodeURIComponent(listing.id)}`}>
+                    <Icon name="mail" size={15} /> Message {post.authorName} about this
+                  </Link>
                 )}
                 {user && (
                   <button type="button" role="menuitem" onClick={() => void toggleSave()}>
@@ -759,8 +763,7 @@ export function SocialPostCard({
       {listing && post.drop && <DropCard listing={listing} drop={post.drop} />}
 
       {listing && !post.drop && (
-        <SaleItem listing={listing} post={post} nested={nested}
-          offerTo={!nested && card.shop && !social.mine && !voice.storeId ? author.handle : null} />
+        <SaleItem listing={listing} post={post} nested={nested} tagged={type === 'sale'} />
       )}
 
       {post.repostOf && (
@@ -1494,6 +1497,7 @@ function Comments({ card, onCount, onPost }: {
           </button>
         </div>
         )}
+        {user && <MentionSuggest field={input} value={text} onChange={setText} />}
       </div>
     </section>
   );
@@ -1611,7 +1615,7 @@ function Comment({ comment, fresh, card, onReply, onChanged, small = false }: {
       <Avatar name={comment.authorName} size={small ? 26 : 32} />
       <div className="cmt__main">
         <div className="cmt__bubble">
-          <PersonLink party={comment.author} className="cmt__name">{comment.authorName}</PersonLink>
+          <PersonLink party={comment.author} className="cmt__name" levelFrom={3}>{comment.authorName}</PersonLink>
           {debate && comment.side && <TeamChip poll={card.social.poll} side={comment.side} />}
           {best && <span className="teamchip teamchip--best">🎤 Best argument</span>}
           {comment.accepted && <span className="teamchip teamchip--answer">✅ Best answer</span>}
@@ -1632,12 +1636,16 @@ function Comment({ comment, fresh, card, onReply, onChanged, small = false }: {
               {comment.accepted ? 'Unmark answer' : '✅ Mark as answer'}
             </button>
           )}
-          {comment.canDelete && <button type="button" onClick={() => void remove()}>Delete</button>}
+          {/* Delete lives in the ⋮ menu where there is one; without it, here.
+              Your own validated (or awaiting-validation) words get no menu. */}
+          {comment.canDelete && !(comment.moderation && !(comment.mine && (comment.moderation.validated || comment.moderation.reportedByMe)))
+            && <button type="button" onClick={() => void remove()}>Delete</button>}
           {likes > 0 && <span className="cmt__likes">❤️ {likes}</span>}
           {/* Only in the full thread, where the comment carries its moderation state. */}
           {comment.moderation && (
             <ReportButton targetType="post_comment" targetId={comment.id} parentId={`${channelId}:${id}`}
-              mine={Boolean(comment.mine)} moderation={comment.moderation} />
+              mine={Boolean(comment.mine)} moderation={comment.moderation}
+              onDelete={comment.canDelete ? () => void remove() : undefined} />
           )}
         </div>
       </div>

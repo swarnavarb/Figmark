@@ -6,6 +6,7 @@ import { Thumb } from './ui';
 import { Icon } from './Icon';
 import { Confetti } from './Confetti';
 import { VoiceAvatar, VoicePicker, useVoice } from './SocialVoice';
+import { MentionSuggest } from './MentionSuggest';
 import { shrink } from './PhotoManager';
 import { POST_MAX_PHOTOS, VIBES, VIBE_MAX_CHARS, type Vibe } from '@shared/social';
 import { formatMoney } from '../format';
@@ -298,6 +299,7 @@ export function Composer({ onPosted, forum = null }: {
                 : forum
                   ? `Say something to ${forum.name}…`
                   : `What's new, ${first}?`} />
+        <MentionSuggest field={text} value={body} onChange={setBody} />
       </div>
 
       {vibe && (

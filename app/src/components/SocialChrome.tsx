@@ -48,8 +48,10 @@ function usePulse(): Pulse {
       const seen = seenMap();
       setPulse({
         messages: inbox.status === 'fulfilled' ? inbox.value.threads.reduce((sum, row) => sum + row.unread, 0) : 0,
+        // How many channels have news, not how many messages: twenty drops from
+        // one busy shop is one place to look, and the tab should say one.
         channels: channels.status === 'fulfilled'
-          ? channels.value.channels.filter((row) => !row.mine).reduce((sum, row) => sum + unreadOf(row, seen), 0)
+          ? channels.value.channels.filter((row) => !row.mine && unreadOf(row, seen) > 0).length
           : 0,
         // Joined forums with a post since you last looked in.
         forums: forums.status === 'fulfilled'

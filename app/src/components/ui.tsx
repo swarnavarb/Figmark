@@ -381,12 +381,18 @@ export function useConfirm() {
  */
 type Tag = { level: number; title: string; shop?: boolean };
 
-export function PersonLink({ party, className, children, bare }: {
+export function PersonLink({ party, className, children, bare, levelFrom = 0 }: {
   party: { name: string; handle: string | null; level?: Tag; id?: string | null; href?: string } | null | undefined;
   className?: string;
   children?: ReactNode;
   /** Leave the level tagline off, where the name sits inside something that already shows it. */
   bare?: boolean;
+  /**
+   * The lowest level worth a tagline here. Below it a person shows no level,
+   * and a shop only its Shop mark - in a busy feed "Lv 1 Newcomer" on every
+   * other post is noise, not news.
+   */
+  levelFrom?: number;
 }) {
   if (!party) return null;
   const label = children ?? party.name;
@@ -399,6 +405,11 @@ export function PersonLink({ party, className, children, bare }: {
   // name, never their shop's: a shop is not a community manager.
   const mark = party.level?.shop ? null : <ManagerMark id={party.id} handle={party.handle} />;
   if (bare || !party.level) return <>{name}{mark}</>;
+  if (party.level.level < levelFrom) {
+    return party.level.shop
+      ? <span className="pname"><span className="pname__line">{name}</span><span className="lvtag"><span className="lvtag__shop">Shop</span></span></span>
+      : <span className="pname__line">{name}{mark}</span>;
+  }
   // The level reads as a tagline under the name.
   return <span className="pname"><span className="pname__line">{name}{mark}</span><LevelChip tag={party.level} /></span>;
 }
