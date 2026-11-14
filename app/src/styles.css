@@ -10041,3 +10041,18 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .ptag__opt:hover, .ptag__opt.is-active { background: var(--surface-hover); }
 .ptag__name { font-weight: var(--w-semi); color: var(--text); }
 .ptag__handle { font-size: var(--t-xs); color: var(--text-faint); }
+
+/* How long a step usually takes, as the system measured it. Teal for a shop's
+   own history; amber, with its label, for the market's. */
+.dayschip {
+  display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px;
+  padding: 2px 8px; border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--aqua) 14%, transparent);
+  color: var(--aqua); font-size: var(--t-2xs); font-weight: var(--w-semi);
+  line-height: 1.5; max-width: 100%;
+}
+.dayschip--market { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); }
+.dayschip__src {
+  padding-left: 6px; border-left: 1px solid currentColor;
+  font-weight: var(--w-medium); letter-spacing: 0.02em; opacity: 0.9;
+}

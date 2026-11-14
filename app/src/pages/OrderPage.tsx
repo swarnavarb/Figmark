@@ -31,6 +31,8 @@ import { ErrorNotice, Icon, Modal, PersonLink, PageError } from '../components/u
 import { ShipmentChip, StatusBanner, buyerStatus, factsFromOrder, sellerStatus } from '../components/OrderStatus';
 import { ShareTracking } from '../components/ShareTracking';
 import { DirectTrack, TrackHero, endedOf, stepEmoji, withLastMile } from '../components/OrderTrack';
+import { DaysChip, useShopDays } from '../components/StepDays';
+import { daysLeftRange } from '@shared/step-days';
 import { useStepActs } from '../components/StepActs';
 import { ItemCard, PriceChangeNote, Svg, Urgency } from '../components/ListingBlocks';
 import type { Listing } from '@shared/models';
@@ -109,6 +111,9 @@ export function OrderPage() {
   /* The lot's countries fill {origin} and {destination} in the steps and on the buttons. */
   const places = data?.route ? { origin: data.route.originCountry, destination: data.route.destinationCountry } : undefined;
   const acts = useStepActs(state, load, arrived?.act ?? null, places);
+  /* How long each step usually takes, measured by the system - the same
+     ranges for the buyer and the seller. */
+  const shopDays = useShopDays(data?.order.sellerId ?? state?.order.sellerId ?? null);
 
   // The listing itself, only while this is still a checkout: its clock and
   // its stock are what say "decide now", and they are the listing's facts.
@@ -265,6 +270,12 @@ export function OrderPage() {
                   {data.route.lotPhase && !leftLot && (
                     <span style={{ display: 'block', marginTop: 6 }}><LotPhaseBadge phase={data.route.lotPhase} /></span>
                   )}
+                  {!endedOf(order) && order.status !== 'delivered' && (() => {
+                    const left = daysLeftRange(lotTrack!.steps, Math.max(0, lotAt), shopDays?.steps);
+                    return left && left.high > 0
+                      ? <span style={{ display: 'block', marginTop: 6 }}><DaysChip range={{ ...left, low: Math.max(1, left.low) }} lead="About" /> to go</span>
+                      : null;
+                  })()}
                 </>}
                 done={lotAt + 1} total={lotTrack!.steps.length}>
                 {order.shipment && <ShipmentChip shipment={order.shipment} />}
@@ -274,7 +285,7 @@ export function OrderPage() {
                     after the parcel reached the warehouse reads under the
                     warehouse tick, not above it. */}
                 <Ladder brief vars={places} steps={lotTrack!.steps} current={lotAt}
-                  history={data.order.stageHistory}
+                  history={data.order.stageHistory} days={shopDays?.steps}
                   ended={endedOf(order)}
                   /* Only the seller is told who moves the tracking from here:
                      for the buyer it is one journey, whoever is pushing it. */
@@ -315,7 +326,7 @@ export function OrderPage() {
                 done={data.preLot.currentStep + 1} total={preTrack.steps.length + 1}>
                 <div className="trk__ladder">
                   <Ladder brief vars={places} steps={preTrack.steps} current={data.preLot.currentStep}
-                    history={data.order.stageHistory}
+                    history={data.order.stageHistory} days={shopDays?.steps}
                     ended={endedOf(order)}
                     /* Only its own steps have buttons before a lot: the last mile
                        is drawn, locked, and waits for one. */

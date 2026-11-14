@@ -7,7 +7,7 @@ import { assignButtons, checkButtons, stepChoices, type ButtonChange, type StepK
 import { setButtonLibrary, stepKinds } from '@shared/route-buttons';
 import {
   DEFAULT_WAIT_MESSAGES, NO_WAIT_MESSAGE, WAIT_MESSAGE_PRESETS, joinIndexOf, leaveIndexOf,
-  cleanTypicalDays, stepNameKey, TYPICAL_DAYS_MAX, renderStepText, sideOf, stepButtonLabel, stepId, stepTickKey, tagStepPlaces, waitMessageFor,
+  renderStepText, sideOf, stepButtonLabel, stepId, stepTickKey, tagStepPlaces, waitMessageFor,
   routeParts, routePartsLine,
   type RouteStep, type StepAssignee, type StepTrigger, type TrackingRoute,
 } from '@shared/routes';
@@ -25,6 +25,8 @@ import { Select } from '../components/Select';
 import { PersonTag } from '../components/PersonTag';
 import { COUNTRIES } from '@shared/countries';
 import type { Lot } from '@shared/models';
+import { useSession } from '../session';
+import { useShopDays } from '../components/StepDays';
 
 /**
  * The two countries a route's {origin} and {dest} read in while it is being
@@ -141,6 +143,10 @@ export function RouteStudio({ editing, onSaved, onCancel, onLotOpened, intro, ca
   cancelLabel?: string;
 }) {
   const [library, setLibrary] = useState<RoutesResponse | null>(null);
+  /* How long each step usually takes is the system's to say, from this shop's
+     lots or the market's - shown in the preview, never typed here. */
+  const { user } = useSession();
+  const shopDays = useShopDays(user?.id ?? null);
   const [name, setName] = useState('');
   const [steps, setSteps] = useState<RouteStep[]>([]);
   /** Index of the first step that happens to the whole lot, not one item alone. */
@@ -418,7 +424,6 @@ export function RouteStudio({ editing, onSaved, onCancel, onLotOpened, intro, ca
             button: step.button,
             custom: step.custom,
             assignee: step.assignee,
-            typicalDays: step.typicalDays,
           })),
       });
       setSavedAs(snapshot(name, steps, joinAt, leaveAt));
@@ -649,7 +654,7 @@ export function RouteStudio({ editing, onSaved, onCancel, onLotOpened, intro, ca
       {mode === 'preview' ? (
         /* Its own buttons ask in dialogs with forms of their own; none of them saves the route. */
         <div onSubmit={(event) => event.stopPropagation()}>
-          <RoutePreview steps={named} joinAt={namedJoin} leaveAt={namedLeave} vars={vars} />
+          <RoutePreview steps={named} joinAt={namedJoin} leaveAt={namedLeave} vars={vars} days={shopDays?.steps} />
         </div>
       ) : (
       <div className="rslanes">
@@ -710,22 +715,6 @@ export function RouteStudio({ editing, onSaved, onCancel, onLotOpened, intro, ca
             </section>
           </>
         )}
-        {(() => {
-          /* Steps this shop has run before, whose usual time is blank or not
-             what its own lots say: filled in one tap, each still editable. */
-          const pastDays = library?.learnedDays ?? {};
-          const fillable = steps.filter((step) => step.trigger !== 'delivered' && pastDays[stepNameKey(step.name)]
-            && pastDays[stepNameKey(step.name)]!.days !== step.typicalDays);
-          return fillable.length > 0 ? (
-            <div className="rslearn" role="group" aria-label="Usual days from your lots">
-              <span>Your past lots know how long <b>{fillable.length === 1 ? '1 step' : `${fillable.length} steps`}</b> take.</span>
-              <button type="button" className="linkbtn" onClick={() => setSteps((current) => current.map((step) => {
-                const seen = step.trigger === 'delivered' ? undefined : pastDays[stepNameKey(step.name)];
-                return seen ? { ...step, typicalDays: seen.days } : step;
-              }))}>Fill in the days</button>
-            </div>
-          ) : null;
-        })()}
         {/* The journey in its three parts: a label, then its steps as one
             list. A row is a step's name and what it comes with; tapping it
             opens everything else about it. */}
@@ -762,7 +751,6 @@ export function RouteStudio({ editing, onSaved, onCancel, onLotOpened, intro, ca
                       canUp={!(lane.zone === 'pre' && index <= first)}
                       canDown={lane.zone === 'post' ? !isFixed(given[index + 1]) && index < given.length - 1 : !(index === 0 && joinAt === 1)}
                       hasNext={index < given.length - 1}
-                      pastDays={library?.learnedDays?.[stepNameKey(step.name)]}
                       onChange={(patch) => setAt(index, patch)}
                       onRemove={() => removeAt(index)}
                       onShift={(by) => shiftAt(index, by)}
@@ -945,7 +933,7 @@ function WaitMessageEditor({ step, onChange }: {
  * everything else about it - the line buyers read, how long it takes, its
  * button, who presses it, what shows while buyers wait, and where it sits.
  */
-function StepNode({ step, index, zone, open, onToggle, problems, canUp, canDown, hasNext, pastDays, onChange, onRemove, onShift, onAddAfter }: {
+function StepNode({ step, index, zone, open, onToggle, problems, canUp, canDown, hasNext, onChange, onRemove, onShift, onAddAfter }: {
   step: RouteStep;
   index: number;
   /** Which part of the journey it is in: inside the lot there are no buttons. */
@@ -959,7 +947,6 @@ function StepNode({ step, index, zone, open, onToggle, problems, canUp, canDown,
   /** A step follows it, so there is a wait after it to put words to. */
   hasNext: boolean;
   /** How long this step has really taken on the shop's own lots, when it has run before. */
-  pastDays?: { days: number; lots: number };
   onChange: (patch: Partial<RouteStep>) => void;
   onRemove: () => void;
   onShift: (by: -1 | 1) => void;
@@ -1004,7 +991,6 @@ function StepNode({ step, index, zone, open, onToggle, problems, canUp, canDown,
           {step.name.trim() ? renderStepText(step.name, vars) : 'New step'}
         </span>
         {problems.length > 0 && <span className="rsstep__pill rsstep__pill--wrong">Fix</span>}
-        {step.typicalDays ? <span className="rsstep__pill rsstep__pill--days">{step.typicalDays}d</span> : null}
         {asksCourier && <span className="rsstep__pill rsstep__pill--courier">Courier</span>}
         {hasButton && <span className="rsstep__pill rsstep__pill--button">Button</span>}
         <Icon name={open ? 'up' : 'down'} size={14} />
@@ -1027,24 +1013,6 @@ function StepNode({ step, index, zone, open, onToggle, problems, canUp, canDown,
               aria-label={`Step ${index + 1} description`}
               onChange={(event) => onChange({ description: event.target.value })} />
           </label>
-
-          {/* How long it usually takes, for the late flag on the board and the
-              buyer's rough arrival. Not on Delivered, which is the end. */}
-          {!isDelivered && (
-            <label className="rsnode__days">
-              <span>Usually takes</span>
-              <input type="number" inputMode="numeric" min={1} max={TYPICAL_DAYS_MAX} placeholder="–"
-                value={step.typicalDays ?? ''} aria-label={`Days step ${index + 1} usually takes`}
-                onChange={(event) => onChange({ typicalDays: cleanTypicalDays(event.target.value) })} />
-              <span>days</span>
-              {pastDays && pastDays.days !== step.typicalDays && (
-                <button type="button" className="linkbtn rsnode__learned" onClick={() => onChange({ typicalDays: pastDays.days })}
-                  title={`The middle of ${pastDays.lots} ${pastDays.lots === 1 ? 'time' : 'times'} on your lots`}>
-                  Use {pastDays.days}, from your lots
-                </button>
-              )}
-            </label>
-          )}
 
           {/* The button: handed out from where the step sits and what it says,
               or one of the seller's own. Never inside a lot. */}

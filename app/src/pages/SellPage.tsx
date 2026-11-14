@@ -22,6 +22,7 @@ import { ApiRequestError, api, type LotSummary, type PhotoDraft } from '../api';
 import { ErrorNotice, Icon, Modal, Thumb, leadPhoto } from '../components/ui';
 import { formatDate, formatMoney } from '../format';
 import { useSession } from '../session';
+import { useShopDays } from '../components/StepDays';
 import { AdvanceStrip, DealClock, EtaFields, TermsFields, etaOf, termsBody, termsDraft, termsFromTemplate, termsProblem } from '../components/Buy';
 import { DEAL_DEFAULT_HOURS } from '@shared/deals';
 import {
@@ -413,6 +414,9 @@ function SellForm({ serverDraft, draftMissing }: {
   /** The tags this shop is known for, offered while listing. */
   const [shopTags, setShopTags] = useState<string[]>([]);
   const shopId = storeId ?? user?.id;
+  /* How long this shop's orders really take to arrive - or the market's,
+     where it has no record yet - offered as the delivery time to give. */
+  const shopDays = useShopDays(shopId ?? null);
   useEffect(() => {
     if (!shopId) return;
     void api.shopTags(shopId).then((result) => setShopTags(result.tags)).catch(() => setShopTags([]));
@@ -968,7 +972,7 @@ function SellForm({ serverDraft, draftMissing }: {
           </LBox>
 
           {/* Asked of every item, never folded away: it is what buyers ask first. */}
-          <div id="sell-eta"><EtaFields value={terms} onChange={setTerms} /></div>
+          <div id="sell-eta"><EtaFields value={terms} onChange={setTerms} suggest={shopDays?.delivery[effectiveSourcing] ?? null} /></div>
 
           {deal && <DealClock hours={dealHours} onChange={setDealHours} />}
 

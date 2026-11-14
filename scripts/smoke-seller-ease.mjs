@@ -25,6 +25,7 @@ const track = await import(new URL('public-track-routes.js', fns));
 const { getRepository } = await import(new URL('api/src/data/index.js', dist));
 const routes = await import(new URL('shared/routes.js', dist));
 const costs = await import(new URL('shared/lot-costs.js', dist));
+const stepDays = await import(new URL('shared/step-days.js', dist));
 const money = await import(new URL('shared/payouts.js', dist));
 const wa = await import(new URL('api/src/whatsapp-updates.js', dist));
 
@@ -67,6 +68,64 @@ await check('a note, or a move still inside its undo window, is not history', ()
     { step: 'Shipped', enteredAt: at(2), kind: 'step', undoUntil: new Date(Date.now() + 60_000).toISOString() },
   ] }]);
   assert.deepEqual(learned, {});
+});
+
+console.log('step times the system works out');
+
+await check('a step reads as a range, never one number, and a stuck lot is left out', () => {
+  const lot = (steps) => ({ stageHistory: steps.map(([step, day]) => ({ step, enteredAt: at(day), kind: 'step' })) });
+  const spans = stepDays.stepSpans([
+    lot([['Customs', 0], ['Landed', 3]]).stageHistory,
+    lot([['Customs', 0], ['Landed', 4]]).stageHistory,
+    lot([['Customs', 0], ['Landed', 5]]).stageHistory,
+    lot([['customs', 0], ['Landed', 4]]).stageHistory,
+    lot([['Customs', 0], ['Landed', 40]]).stageHistory,
+  ]);
+  const range = stepDays.rangeOf(spans.get('customs'), 'yours');
+  assert.equal(range.samples, 4, 'the forty-day lot is a delay, not what customs takes');
+  assert.ok(range.high <= 5 && range.low >= 3 && range.low < range.high, JSON.stringify(range));
+  assert.equal(stepDays.dayRangeLabel({ low: 3, high: 5 }), '3–5 days');
+  assert.deepEqual(stepDays.rangeOf([2.2], 'yours'), { low: 2, high: 3, source: 'yours', samples: 1 }, 'one time still reads as two numbers');
+});
+
+await check('the shop\'s own times win; with too few of its own, the market\'s are used and say so', () => {
+  assert.equal(stepDays.pickRange([3, 4, 5], [10, 11]).source, 'yours');
+  assert.equal(stepDays.pickRange([3], [10, 11, 12]).source, 'market');
+  assert.equal(stepDays.pickRange([], [10, 11]).source, 'market');
+  assert.equal(stepDays.pickRange(undefined, undefined), null);
+});
+
+await check('the days left add up every step still to come, or say nothing', () => {
+  const ranges = { a: { low: 2, high: 3, source: 'yours' }, b: { low: 5, high: 8, source: 'market' } };
+  const steps = [{ name: 'A' }, { name: 'B' }, { name: 'Delivered' }];
+  assert.deepEqual(stepDays.daysLeftRange(steps, 0, ranges), { low: 7, high: 11, source: 'market' });
+  assert.equal(stepDays.daysLeftRange([{ name: 'A' }, { name: 'C' }, { name: 'D' }], 0, ranges), null, 'an unmeasured step leaves no total');
+});
+
+await check('a whole delivery is counted from order to the buyer\'s hands, in-hand and import apart', () => {
+  const spans = stepDays.deliverySpans([
+    { lotId: 'direct', createdAt: at(0), placedAt: at(0), status: 'delivered', checkpoints: { delivered: at(4) } },
+    { lotId: 'lot_1', createdAt: at(0), placedAt: at(0), status: 'delivered', checkpoints: { delivered: at(40) } },
+    { lotId: 'lot_1', createdAt: at(0), placedAt: at(0), status: 'in_fulfilment', checkpoints: {} },
+  ]);
+  assert.deepEqual(spans.in_hand, [4]);
+  assert.deepEqual(spans.import, [40]);
+});
+
+console.log('button words');
+
+await check('a long step name becomes a short button in its own words', () => {
+  const vars = { origin: 'China', destination: 'India' };
+  const label = (name) => routes.stepButtonLabel({ name, custom: true }, vars);
+  assert.equal(label('Seller Purchases & Ships to Freight Forwarder'), 'Ships to forwarder');
+  assert.equal(label('Out for delivery: Handed to the courier in {dest}'), 'Out for delivery');
+  assert.equal(label('Freight Forwarder Consolidates'), 'Forwarder Consolidates');
+  assert.equal(label('Dispatched to Freight Forwarder'), 'Dispatched to forwarder');
+  for (const name of ['Supplier Accumulates Orders', 'A very long step name that nobody would ever fit on a button']) {
+    assert.ok(label(name).length <= routes.BUTTON_TEXT_MAX, label(name));
+    assert.ok(!/…$|\s(to|the|at)$/i.test(label(name)), label(name));
+  }
+  assert.equal(label('Packed'), 'Packed', 'a short name is left alone');
 });
 
 console.log('lot costs');

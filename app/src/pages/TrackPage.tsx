@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ApiRequestError, api, type PublicTracking } from '../api';
 import { formatDate } from '../format';
+import { DaysChip } from '../components/StepDays';
 import '../styles/TrackPage.css';
 
 /**
@@ -54,8 +55,10 @@ export function TrackPage() {
             <span className="trackpage__label">Step {Math.min(data.at + 1, total)} of {total}</span>
           )}
           <b>{data.status === 'cancelled' ? 'This order was cancelled.' : now}</b>
-          {data.status === 'moving' && data.etaDays !== null && (
-            <span>{data.etaDays === 0 ? 'Due any day now' : `About ${data.etaDays} ${data.etaDays === 1 ? 'day' : 'days'} to go`}</span>
+          {data.status === 'moving' && data.eta && (
+            data.eta.high <= 1
+              ? <span>Due any day now</span>
+              : <DaysChip range={{ ...data.eta, low: Math.max(1, data.eta.low) }} lead="About" className="trackpage__eta" />
           )}
         </section>
 
@@ -71,7 +74,12 @@ export function TrackPage() {
                   className={index < data.at ? 'is-done' : index === data.at ? `is-now${data.status === 'delivered' ? ' is-end' : ''}` : ''}
                   aria-current={index === data.at ? 'step' : undefined}>
                   <span className="trackpage__dot" aria-hidden="true">{index <= data.at ? '✓' : ''}</span>
-                  {step}
+                  <span className="trackpage__step">
+                    {step}
+                    {data.status === 'moving' && index >= data.at && data.stepDays?.[index] && (
+                      <DaysChip range={data.stepDays[index]!} lead={index === data.at ? 'Usually' : undefined} />
+                    )}
+                  </span>
                 </li>
               ))}
             </ol>

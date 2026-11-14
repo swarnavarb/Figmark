@@ -40,3 +40,5 @@
 .trackpage__log li { display: flex; justify-content: space-between; gap: var(--s3); }
 .trackpage__log time { flex: none; color: var(--accent-text); white-space: nowrap; }
 .trackpage__foot { margin: 0; font-size: var(--t-xs); }
+.trackpage__step { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+.trackpage__eta { font-size: var(--t-xs); }

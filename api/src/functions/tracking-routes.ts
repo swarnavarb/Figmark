@@ -24,6 +24,7 @@ import { ownedLot } from './fulfilment-routes.js';
 import { UNDO_EXPIRED, canUndo, undoTag, withdrawNotices, withoutUndo } from './undo.js';
 import { checkButtons, holdsLotBack, withButtons } from '../../../shared/buttons.js';
 import { commonSteps, readButtonLibrary, routeSamples } from '../route-library.js';
+import { shopDays } from '../step-days.js';
 
 /**
  * Routes, the items that ride them, and moving a lot one step.
@@ -1254,7 +1255,25 @@ export const myItemsRoute = handler(myItems);
 
 export { stepId, type TrackingRoute };
 
+/**
+ * GET /api/step-days?seller=<id> - how long each of a shop's steps usually
+ * takes, and a whole delivery, as ranges the system worked out: the shop's
+ * own history, or the market's where it has none. Only totals, never whose
+ * lot or order they came from, so anyone reading a tracking screen may ask.
+ */
+async function stepDays(request: HttpRequest, _context: InvocationContext) {
+  const repository = await getRepository();
+  let sellerId = request.query.get('seller')?.trim() || null;
+  if (!sellerId) {
+    const user = await (await getAuthService()).requireAuth(request);
+    sellerId = user.id;
+  }
+  return json(200, await shopDays(repository, sellerId));
+}
+const stepDaysRoute = handler(stepDays);
+
 const anon = { authLevel: 'anonymous' } as const;
+app.http('step-days', { ...anon, methods: ['GET'], route: 'step-days', handler: stepDaysRoute });
 
 app.http('routes-list', { ...anon, methods: ['GET'], route: 'routes', handler: listRoutesRoute });
 app.http('routes-save', { ...anon, methods: ['POST'], route: 'routes/new', handler: saveRouteRoute });

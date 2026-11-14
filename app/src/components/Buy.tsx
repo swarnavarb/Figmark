@@ -21,6 +21,7 @@ import type { TemplateTerms } from '@shared/templates';
 import { InfoTip } from './InfoTip';
 import { useToast } from './Feedback';
 import '../styles/Buy.css';
+import type { DayRange } from '@shared/step-days';
 
 /**
  * The small, loud pieces the Buy, Sell and Purchases screens share: stock and
@@ -455,13 +456,19 @@ export function TermsFields({ value, onChange, preOrder = false, publicLater = f
  * it is the first thing a buyer asks, and the shop's on-time rate is
  * measured against it.
  */
-export function EtaFields({ value, onChange, optional = false }: {
+export function EtaFields({ value, onChange, optional = false, suggest = null }: {
   value: TermsDraft;
   onChange: (next: TermsDraft) => void;
   /** A quick fill may leave it for each item to say. */
   optional?: boolean;
+  /**
+   * What the system would say, from how long this shop's orders really took
+   * to arrive (leaving out the odd delay) - or the market's where it has none.
+   */
+  suggest?: Pick<DayRange, 'low' | 'high' | 'source'> | null;
 }) {
   const set = (patch: Partial<TermsDraft>) => onChange({ ...value, ...patch });
+  const suggested = suggest && !(Number(value.etaMin) === suggest.low && Number(value.etaMax) === suggest.high) ? suggest : null;
   const etaIssue = value.etaMin || value.etaMax ? etaProblem(etaOf(value)) : null;
   return (
     <LBox icon="🚚" title="Delivery time" hint={etaOf(value) && !etaIssue
@@ -483,6 +490,16 @@ export function EtaFields({ value, onChange, optional = false }: {
             onChange={(e) => set({ etaMax: e.target.value })} />
         </label>
       </div>
+      {suggested && (
+        <span className={`etasuggest${suggested.source === 'market' ? ' etasuggest--market' : ''}`}>
+          <span className="etasuggest__text">
+            <span aria-hidden="true">💡</span> Suggested: <b>{suggested.low}–{suggested.high} days</b>
+            <span className="etasuggest__src">{suggested.source === 'market' ? 'Market trend' : 'From your past orders'}</span>
+          </span>
+          <button type="button" className="btn btn--sm btn--ghost"
+            onClick={() => set({ etaMin: String(suggested.low), etaMax: String(suggested.high) })}>Use</button>
+        </span>
+      )}
       {etaIssue && <span className="notice notice--error">{etaIssue}</span>}
       <span className="field__hint">
         Orders that reach the buyer after the longest day count as late on your shop's on-time rate.

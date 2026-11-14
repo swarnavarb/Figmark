@@ -7,7 +7,7 @@ import { BackBar } from '../components/ScrollManager';
 import {
   WAITING_FOR_LOT, itemLeaveIndex, lotEndIndex, renderStepText, routeJoinsLot, routeParts, sameSteps,
   type RouteStep, type TrackingRoute, lotNo,
-  atSellerYet, daysLeftOn,
+  atSellerYet,
 } from '@shared/routes';
 import { lotIsDone, lotPhase } from '@shared/fulfilment';
 import type { Lot, Order } from '@shared/models';
@@ -37,6 +37,8 @@ import { formatDate, formatMoney, formatWeight } from '../format';
 import { ConditionTag } from '../components/ConditionTag';
 import { PageSkeleton, SkelCards, SkelInline, SkelRows } from '../components/PageSkeletons';
 import { Select } from '../components/Select';
+import { DaysChip, useShopDays } from '../components/StepDays';
+import { daysLeftRange, rangeForStep } from '@shared/step-days';
 
 /**
  * Who moves this lot, and how to reach them.
@@ -1115,6 +1117,8 @@ export function LotDetail({ lotId, onBack, customers }: {
   }, [section, people, lotId, customers]);
 
   // A <div>, not a <main>: this is drawn inside the Sell tab's own <main>.
+  /* How long each step usually takes - measured, never typed: the late flag and the time to go. */
+  const shopDays = useShopDays(data?.lot.sellerId ?? null);
   if (error && !data) return <div className="stack"><ErrorNotice message={error} /></div>;
   if (!data) return <PageSkeleton shape="lotDetail" />;
 
@@ -1145,9 +1149,10 @@ export function LotDetail({ lotId, onBack, customers }: {
      that step usually takes: the late flag, and roughly how long is left. */
   const onStepSince = [...data.history].reverse().find((event) => event.movedLot)?.enteredAt ?? null;
   const daysOnStep = onStepSince ? Math.max(0, Math.floor((Date.now() - Date.parse(onStepSince)) / 86_400_000)) : null;
-  const usualDays = lotStep >= 0 ? route.steps[route.currentStep]?.typicalDays ?? null : null;
-  const late = !lotIsDone(lot) && usualDays !== null && daysOnStep !== null && daysOnStep > usualDays;
-  const daysLeft = lotStep >= 0 && !lotIsDone(lot) ? daysLeftOn(route, route.currentStep, daysOnStep ?? 0) : null;
+  const usualDays = lotStep >= 0 ? rangeForStep(shopDays?.steps, route.steps[route.currentStep]?.name ?? '') : null;
+  // Late only past the top of the usual range: the bottom of it is not a promise.
+  const late = !lotIsDone(lot) && usualDays !== null && daysOnStep !== null && daysOnStep > usualDays.high;
+  const daysLeft = lotStep >= 0 && !lotIsDone(lot) ? daysLeftRange(route.steps, route.currentStep, shopDays?.steps, daysOnStep ?? 0) : null;
   /* Who to ring about the step the lot is on: the forwarder while it is in
      their hands (a step handed to them, or any step before it lands), the
      handler once it is with them at the destination. */
@@ -1326,9 +1331,9 @@ export function LotDetail({ lotId, onBack, customers }: {
         )}
         {(usualDays !== null || daysLeft !== null) && daysOnStep !== null && !lotIsDone(lot) && (
           <p className={`lothero__pace${late ? ' is-late' : ''}`} role={late ? 'status' : undefined}>
-            {usualDays !== null && <>Day {daysOnStep + 1} on this step · usually {usualDays} {usualDays === 1 ? 'day' : 'days'}{late ? ' - running late' : ''}</>}
-            {usualDays !== null && daysLeft !== null && ' · '}
-            {daysLeft !== null && <>about {daysLeft} {daysLeft === 1 ? 'day' : 'days'} to go</>}
+            Day {daysOnStep + 1} on this step{late ? ' - running late' : ''}
+            {usualDays !== null && <> <DaysChip range={usualDays} lead="Usually" /></>}
+            {daysLeft !== null && daysLeft.high > 0 && <> <DaysChip range={{ ...daysLeft, low: Math.max(1, daysLeft.low) }} lead="About" /> to go</>}
           </p>
         )}
         <div className="lothero__bar" aria-hidden="true">
@@ -1431,6 +1436,7 @@ export function LotDetail({ lotId, onBack, customers }: {
               /* A lot further back than filling still moves onto its own first step next. */
               current={Math.max(lotStep, -1)}
               history={data.history}
+              days={shopDays?.steps}
               /* Where the crate is unpacked: from the rung after it, each item
                  is dispatched and delivered on its own, from its own order. */
               leaveAt={itemLeaveIndex(route) - route.offset}

@@ -297,7 +297,46 @@ export function stepButtonLabel(
   /* On a button the country is its flag and long words take their short
      forms; with no lot to say which country, the word "origin" stands in. */
   const said = renderButtonText(name, vars);
-  return said.length > 44 ? `${said.slice(0, 43).replace(/\s+\S*$/, '')}…` : said;
+  return shortButtonText(said);
+}
+
+/** The most a button made from a step's name says: a pill on a phone, not a sentence. */
+export const BUTTON_TEXT_MAX = 24;
+
+/** Who did it, said at the start of a step's name - the button needs only what happened. */
+const BUTTON_ACTOR = /^(?:the\s+)?(?:seller|supplier|shop|buyer|courier|(?:freight\s+)?forwarder|(?:domestic\s+)?handler)\s+(?=\S)/i;
+/** A word a button should not end on. */
+const BUTTON_TAIL = /\s+(?:to|at|from|in|on|for|with|by|of|and|&|the|a|an|into|onto)$/i;
+
+/**
+ * A step's name cut down to button size, in its own words rather than with an
+ * ellipsis: the last part of a two-part name ("Purchases & ships to
+ * forwarder" → "Ships to forwarder"), then without the actor ("Forwarder
+ * consolidates" → "Consolidates"), then as many whole words as fit, never
+ * ending on "to" or "the".
+ */
+export function shortButtonText(text: string, max = BUTTON_TEXT_MAX): string {
+  const capital = (words: string) => words.charAt(0).toUpperCase() + words.slice(1);
+  let out = text.replace(/\s+/g, ' ').trim();
+  if (out.length <= max) return capital(out);
+  // "Out for delivery: handed to the courier" - the title is the button.
+  if (/^[^:]{3,}:\s/.test(out)) out = out.slice(0, out.indexOf(':')).trim();
+  // With no country set yet, the stand-in word is the long one.
+  if (out.length > max) out = out.replace(/\bdestination\b/gi, 'dest.');
+  const parts = out.split(/\s*(?:&|\+|,|;|\band\b|\bthen\b)\s*/i).map((part) => part.trim()).filter(Boolean);
+  if (parts.length > 1) out = parts[parts.length - 1]!;
+  if (out.length > max) out = out.replace(BUTTON_ACTOR, '');
+  if (out.length > max) {
+    let fitted = '';
+    for (const word of out.split(' ')) {
+      const next = fitted ? `${fitted} ${word}` : word;
+      if (next.length > max) break;
+      fitted = next;
+    }
+    while (BUTTON_TAIL.test(fitted)) fitted = fitted.replace(BUTTON_TAIL, '');
+    out = fitted || `${out.slice(0, max - 1)}…`;
+  }
+  return capital(out);
 }
 
 /**

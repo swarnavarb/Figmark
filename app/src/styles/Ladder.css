@@ -124,3 +124,4 @@
   font-size: var(--t-xs); font-weight: var(--w-bold);
 }
 .ladder__row--ended .ladder__name { color: var(--danger, var(--danger)); }
+.ladder__days { justify-self: start; }

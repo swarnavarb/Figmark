@@ -78,7 +78,7 @@ export function CrewLotPage() {
   }, [load]);
 
   /** The orders waiting on a courier and AWB before they are marked dispatched. */
-  const [shipping, setShipping] = useState<{ ids: string[] } | null>(null);
+  const [shipping, setShipping] = useState<{ ids: string[]; key: string } | null>(null);
 
   /**
    * Press (or take back) one button on some items. Dispatched asks first for
@@ -86,8 +86,10 @@ export function CrewLotPage() {
    * gets their tracking with the news.
    */
   async function press(ids: string[], key: string, on: boolean) {
-    if (key === 'dispatched' && on) {
-      setShipping({ ids });
+    /* Dispatched, and any step the route marked as a hand-over, ask for the
+       courier and AWB first - the customer reads them on that step. */
+    if (on && (key === 'dispatched' || view?.buttons.some((button) => button.key === key && button.courier))) {
+      setShipping({ ids, key });
       return;
     }
     await save(ids, key, on);
@@ -358,8 +360,9 @@ export function CrewLotPage() {
       )}
 
       {shipping && (
-        <CrewShipDialog view={view} ids={shipping.ids} onClose={() => setShipping(null)}
-          onSave={(shipment) => { const { ids } = shipping; setShipping(null); void save(ids, 'dispatched', true, shipment); }} />
+        <CrewShipDialog view={view} ids={shipping.ids} button={view.buttons.find((button) => button.key === shipping.key) ?? null}
+          onClose={() => setShipping(null)}
+          onSave={(shipment) => { const { ids, key } = shipping; setShipping(null); void save(ids, key, true, shipment); }} />
       )}
     </main>
   );
@@ -370,9 +373,11 @@ export function CrewLotPage() {
  * one AWB; several customers at once share a courier at most, since each box
  * has its own tracking number.
  */
-function CrewShipDialog({ view, ids, onClose, onSave }: {
+function CrewShipDialog({ view, ids, button, onClose, onSave }: {
   view: CrewLotView;
   ids: string[];
+  /** The button being pressed, when it is a hand-over other than Dispatched. */
+  button: CrewButtonRef | null;
   onClose: () => void;
   onSave: (shipment: Shipment) => void;
 }) {
@@ -381,7 +386,10 @@ function CrewShipDialog({ view, ids, onClose, onSave }: {
   const one = people.length === 1;
   const who = items[0]?.buyer?.name ?? 'the customer';
   return (
-    <ShipDialog awb={one} hint="No AWB yet? Dispatch now; the shop can add it later." onClose={onClose} onSave={onSave}
+    <ShipDialog awb={one} onClose={onClose} onSave={onSave}
+      {...(button && button.key !== 'dispatched'
+        ? { title: '🚚 Courier & AWB', submit: `✓ ${button.label}`, hint: 'Both are optional. The customer sees what you fill in.' }
+        : { hint: 'No AWB yet? Dispatch now; the shop can add it later.' })}
       intro={one
         ? <>{items.length === 1 ? <b>{items[0]!.itemName}</b> : <b>{items.length} orders</b>} for <b>{who}</b>. Add the courier and AWB so they can track their parcel.</>
         : <>{items.length} orders for {people.length} customers. Each box has its own AWB, so add those one customer at a time; a courier name here goes on all of them.</>} />

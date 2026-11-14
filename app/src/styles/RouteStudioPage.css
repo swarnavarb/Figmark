@@ -73,6 +73,7 @@
   background: var(--surface-2); color: var(--text-dim); font: inherit; font-size: var(--t-2xs); cursor: pointer;
 }
 .rsprev__said { font-size: var(--t-xs); color: var(--ok); }
+.rsprev__eta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--t-xs); color: var(--text-dim); }
 .rsprev__order {
   display: grid; gap: 10px; padding: var(--s3); border-radius: var(--r-md);
   background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border);
@@ -154,7 +155,6 @@
   flex: none; padding: 3px var(--s2); border-radius: var(--r-pill); font-size: var(--t-2xs); font-weight: var(--w-semi); white-space: nowrap;
 }
 .rsstep__pill--button { background: var(--accent-soft); color: var(--accent-text); }
-.rsstep__pill--days { background: var(--warn-soft); color: var(--warn); }
 .rsstep__pill--courier { background: var(--aqua-soft); color: var(--aqua); }
 .rsstep__pill--wrong { background: var(--danger-soft); color: var(--danger-text); }
 .rsstep { min-width: 0; }
@@ -183,13 +183,6 @@
 }
 .rsfield input:focus, .rsbtn__words:focus { outline: none; border-color: var(--accent); }
 .rsfield input:disabled { color: var(--text-dim); -webkit-text-fill-color: var(--text-dim); }
-.rsnode__days { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); font-size: var(--t-sm); color: var(--text-dim); }
-.rsnode__days input {
-  width: 4.5em; height: 36px; padding: 0 var(--s2); border: 1px solid var(--border); border-radius: var(--r-sm);
-  background: var(--surface-2); color: var(--text); font: inherit; font-variant-numeric: tabular-nums; text-align: center;
-}
-.rsnode__days input:focus { outline: none; border-color: var(--accent); }
-.rsnode__learned { margin-left: auto; font-size: var(--t-xs); }
 
 /* The button a step comes with: what it says, and who presses it. */
 .rsbtn { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s2); min-width: 0; }
@@ -224,12 +217,6 @@
 }
 .rstags__hint { font-size: var(--t-2xs); color: var(--text-faint); }
 
-.rslearn {
-  display: flex; align-items: center; justify-content: space-between; gap: var(--s2) var(--s3); flex-wrap: wrap;
-  padding: var(--s2) var(--s3); border-radius: var(--r-md); background: var(--warn-soft);
-  font-size: var(--t-xs); color: var(--text-dim);
-}
-.rslearn b { color: var(--text); font-weight: var(--w-semi); }
 
 /* Always in reach: leave, or save. */
 .rsbar {

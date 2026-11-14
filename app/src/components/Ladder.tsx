@@ -1,5 +1,7 @@
 import { Fragment, useState, type ReactNode } from 'react';
 import { isLotEvent, kindOf, settledHistory } from '@shared/fulfilment';
+import { rangeForStep, type StepDayRanges } from '@shared/step-days';
+import { DaysChip } from './StepDays';
 import type { LotStage } from '@shared/enums';
 import type { StageEvent } from '@shared/models';
 import {
@@ -29,7 +31,7 @@ import '../styles/Ladder.css';
  */
 export function Ladder({
   steps, current, history, onMove, onNote, busy, whose, waitingFor, lotAction, vars, forwardExample,
-  leaveAt, leaveNote, actFor, lockFrom, zones, moveFrom = 0, moveUpTo, backTo, ended, brief = false,
+  leaveAt, leaveNote, actFor, lockFrom, zones, moveFrom = 0, moveUpTo, backTo, ended, brief = false, days,
 }: {
   steps: RouteStep[];
   current: number;
@@ -108,6 +110,12 @@ export function Ladder({
   ended?: { label: string; at?: string | null; note?: string | null } | null;
   /** Each step's description behind an ⓘ by its name, so the timeline reads as a list of steps. */
   brief?: boolean;
+  /**
+   * How long each step usually takes, as the system measured it. Drawn on the
+   * step it is on and the ones still to come; a step behind it already took
+   * what it took.
+   */
+  days?: StepDayRanges | null;
 }) {
   /** Which rung has its note box open. One at a time: this is a list, not a form. */
   const [noting, setNoting] = useState<number | null>(null);
@@ -205,6 +213,10 @@ export function Ladder({
                 )}
               </span>
               {!brief && step.description && <span className="faint">{renderStepText(step.description, vars ?? {})}</span>}
+              {!ended && index >= Math.max(0, current) && index < steps.length - 1 && (() => {
+                const range = rangeForStep(days, step.name);
+                return range ? <DaysChip range={range} lead={index === current ? 'Usually' : undefined} className="ladder__days" /> : null;
+              })()}
               {actFor?.(step, index, steps)}
               {/* Moving goes one rung at a time: the next rung's Move here
                   opens once the one before it is reached, and only the rung

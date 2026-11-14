@@ -1,4 +1,6 @@
-import { daysLeftOn, lotNo } from '@shared/routes';
+import { lotNo } from '@shared/routes';
+import { daysLeftRange } from '@shared/step-days';
+import { DaysChip, useShopDays } from './StepDays';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { countryFlag } from '@shared/countries';
@@ -165,6 +167,7 @@ export function LotPeek({ group, onClose, onPayMore }: {
 }) {
   const lot = group.lot!;
   const owing = group.items.some((item) => item.canPayMore);
+  const shopDays = useShopDays(group.sellerId);
   return (
     <Modal title={`📦 ${lot.name}`} onClose={onClose}>
       <div className="stack peek">
@@ -175,12 +178,12 @@ export function LotPeek({ group, onClose, onPayMore }: {
         <PhaseTrack phase={lot.phase} />
         <p className="peek__hint">{LOT_PHASE_HINTS[lot.phase]}</p>
         {(() => {
-          /* The shop's own guide to how long each step takes, added up from
-             where the lot is: a rough arrival, said as the shop's estimate. */
+          /* How long each step usually takes, measured by the system, added
+             up from where the lot is: a rough arrival, never a promise. */
           if (lot.phase === 'filling') return null;
-          const left = daysLeftOn({ steps: lot.steps }, lot.lotStep);
-          return left !== null && left > 0
-            ? <p className="peek__eta">Usually about {left} {left === 1 ? 'day' : 'days'} more, going by the shop&apos;s own timings.</p>
+          const left = daysLeftRange(lot.steps, lot.lotStep, shopDays?.steps);
+          return left !== null && left.high > 0
+            ? <p className="peek__eta"><DaysChip range={{ ...left, low: Math.max(1, left.low) }} lead="About" /> more</p>
             : null;
         })()}
 

@@ -15,6 +15,7 @@ import { formatDate } from '../format';
 import { PayMore } from './PurchasesPage';
 import { PageLoading } from '../components/Feedback';
 import '../styles/BuyerLotPage.css';
+import { useShopDays } from '../components/StepDays';
 
 /**
  * One lot, from inside: everything a buyer in it could want to know, and
@@ -44,6 +45,7 @@ export function BuyerLotPage() {
   }, [lotId]);
   useEffect(() => { void load(); }, [load]);
 
+  const shopDays = useShopDays(group?.sellerId ?? null);
   if (error) return <PageError message={error} />;
   if (missing) {
     return (
@@ -97,7 +99,7 @@ export function BuyerLotPage() {
           <span className="faint">{lot.routeName}</span>
         </div>
         {now && <p className="blot__now">Now: <b>{renderStepText(now.name, vars)}</b></p>}
-        <Ladder steps={lot.steps} current={lot.lotStep} vars={vars} />
+        <Ladder steps={lot.steps} current={lot.lotStep} vars={vars} days={shopDays?.steps} />
       </section>
 
       <section className="stack">
@@ -135,6 +137,7 @@ function InsideItem({ item, steps, vars }: {
 }) {
   const [open, setOpen] = useState(false);
   const [track, setTrack] = useState<OrderTracking | null>(null);
+  const shopDays = useShopDays(track?.order.sellerId ?? null);
   const [error, setError] = useState<string | null>(null);
   const line = buyerStatus(factsOf(item));
   const at = item.stepAt ?? 0;
@@ -177,7 +180,7 @@ function InsideItem({ item, steps, vars }: {
           {!track && !error && <SkelRows n={4} />}
           {track?.route && (
             <Ladder steps={track.route.steps} current={track.route.currentStep}
-              history={track.order.stageHistory} vars={vars} />
+              history={track.order.stageHistory} vars={vars} days={shopDays?.steps} />
           )}
         </div>
       )}

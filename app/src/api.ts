@@ -1,4 +1,5 @@
 import type { PayoutSummary } from '@shared/payouts';
+import type { DayRange, DaySource, ShopDays } from '@shared/step-days';
 import type { LotCostKey, LotSplit } from '@shared/lot-costs';
 import type { CancelFlag, CancelSettings, CancelStats, FeeSettlement, FeeStatement, GiftMethod, GiverKind, PlatformFees, Pricing, ProFeatureId, ProGrant, ProPlan, StoreGift } from '@shared/billing';
 import type { CardProgress, IssuedReward, LoyaltyApplied, LoyaltyCard, LoyaltyReward, LoyaltySettings } from '@shared/loyalty';
@@ -632,7 +633,10 @@ export interface PublicTracking {
   status: 'moving' | 'delivered' | 'cancelled';
   steps: string[];
   at: number;
-  etaDays: number | null;
+  /** How long each step usually takes, worked out by the system; null where nothing was measured. */
+  stepDays: (DayRange | null)[];
+  /** Days left, as a range, once every step still to come has been measured. */
+  eta: { low: number; high: number; source: DaySource } | null;
   updates: { at: string; text: string }[];
 }
 
@@ -2616,7 +2620,7 @@ export interface CrewLotView {
   forwarder: { ownerId: string; name: string } | null;
   lot: CrewLotRef & { laneLabel: string | null; trackingReference: string | null; city: string | null };
   steps: { index: number; name: string; assignee: StepAssignee | null; key: string | null }[];
-  buttons: { key: string; label: string; step: string; index: number; assigned: boolean }[];
+  buttons: { key: string; label: string; step: string; index: number; assigned: boolean; courier?: boolean }[];
   moves: { index: number; name: string; forward: boolean }[];
   items: {
     id: string; itemName: string; condition: string; quantity: number; weightGrams: number;
@@ -3254,6 +3258,7 @@ export const api = {
     post<{ photos: OrderPhoto[] }>(`/orders/${encodeURIComponent(orderId)}/photos/${encodeURIComponent(photoId)}`, { remove: true }),
 
   routes: () => request<RoutesResponse>('/routes'),
+  stepDays: (sellerId: string) => request<ShopDays>(`/step-days?seller=${encodeURIComponent(sellerId)}`),
   saveRoute: (body: {
     id?: string;
     name: string;

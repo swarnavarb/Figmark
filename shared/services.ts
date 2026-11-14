@@ -203,6 +203,8 @@ export interface CrewButton {
   index: number;
   /** Handed over by the seller, rather than the role's stock buttons. */
   assigned: boolean;
+  /** Pressing it asks for the courier name and AWB: Dispatched, or a step the route marked as a hand-over. */
+  courier?: boolean;
 }
 
 type CrewLot = Pick<Lot, 'route' | 'originCountry' | 'destinationCountry' | 'crew'>;
@@ -260,7 +262,7 @@ export function crewSlots(lot: CrewLot, role: TaggedRole): Omit<CrewButton, 'ass
     const onSide = role === 'supplier' ? index < join : join < route.steps.length && index >= leave;
     if (!onSide) return [];
     if (role === 'handler' && key === 'ready_to_dispatch' && readyGated(lot)) return [];
-    return [{ key, label: stepButtonLabel(step, places), step: renderStepText(step.name, places), index }];
+    return [{ key, label: stepButtonLabel(step, places), step: renderStepText(step.name, places), index, courier: key === 'dispatched' || Boolean(step.forward) }];
   });
 }
 
@@ -284,7 +286,7 @@ export function crewButtons(lot: CrewLot, role: CrewRole): CrewButton[] {
     if (role === 'handler' && key === 'ready_to_dispatch' && readyGated(lot)) return [];
     const mine = step.assignee === role || (step.trigger && CREW_CHECKPOINTS[role].includes(step.trigger));
     return mine
-      ? [{ key, label: stepButtonLabel(step, places), step: renderStepText(step.name, places), index, assigned: step.assignee === role }]
+      ? [{ key, label: stepButtonLabel(step, places), step: renderStepText(step.name, places), index, assigned: step.assignee === role, courier: key === 'dispatched' || Boolean(step.forward) }]
       : [];
   });
 }
