@@ -53,14 +53,6 @@
 }
 .picker-panel .search { max-width: none; }
 
-.pickset__sub {
-  margin-top: var(--s1);
-  font-size: var(--t-xs);
-  font-weight: var(--w-semi);
-  color: var(--text-dim);
-  text-transform: uppercase;
-  letter-spacing: .04em;
-}
 .pick__steps {
   font-size: var(--t-2xs);
   color: var(--text-dim);

@@ -557,21 +557,15 @@ export function NewLotForm({ onDone, onCancel, bare = false }: {
       </section>
 
       {/* The route: added from the shop's own, or written on the Studio page. */}
-      <fieldset className="pickset">
-        <legend>Route *</legend>
-        <span className="field__hint">
-          Every order in the lot follows these steps, and customers read them as their tracking.
-        </span>
+      <section className="rsgroup rsgroup--route" aria-labelledby="nl-group-route">
+        <h3 id="nl-group-route" className="rsgroup__title"><span aria-hidden="true">🧭</span> Route</h3>
 
         {!library && <SkelRows n={1} />}
 
         {library && picked && !picking && (
           <div className="pick is-on" style={{ gridTemplateColumns: 'minmax(0, 1fr) auto', alignItems: 'center' }}>
             <span className="pick__body">
-              <span className="pick__name">
-                {picked.name}
-                {routeId === lastRouteId && <span className="badge badge--quiet" style={{ marginLeft: 6 }}>Used on your last lot</span>}
-              </span>
+              <span className="pick__name">{picked.name}</span>
               <span className="pick__steps">{summarise(picked.steps, vars)}</span>
             </span>
             <button type="button" className="btn btn--sm btn--quiet" onClick={() => setPicking(true)}>Change</button>
@@ -586,25 +580,15 @@ export function NewLotForm({ onDone, onCancel, bare = false }: {
 
         {library && picking && (
           <>
-            {routes.length > 0 && <span className="pickset__sub">Your routes</span>}
             {routes.map((route) => pickRow(route.id, route, true))}
-
-            {routes.length === 0 && (
-              <p className="field__hint" style={{ margin: 0 }}>
-                You have no routes yet. Create a new one, or pick a sample below - it is saved as
-                your route and you can edit it any time.
-              </p>
-            )}
-            {readyMade.length > 0 && <span className="pickset__sub">Samples</span>}
+            {readyMade.length > 0 && <span className="rsgroup__hint">Samples</span>}
             {readyMade.map((route) => pickRow(`${READY}${route.id}`, route, false))}
-
-            <button type="button" className="silkcta" onClick={createRoute}>
-              <span className="silkcta__label">+ Create a new route</span>
-              <span className="silkcta__note">Opens the route builder - this lot is kept and waits for you</span>
+            <button type="button" className="btn btn--quiet" style={{ justifySelf: 'start' }} onClick={createRoute}>
+              <Icon name="plus" size={14} /> Create a new route
             </button>
           </>
         )}
-      </fieldset>
+      </section>
 
       {error && <ErrorNotice message={error} />}
       <div className="row">
