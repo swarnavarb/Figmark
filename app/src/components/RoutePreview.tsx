@@ -4,7 +4,7 @@ import type { StageEvent } from '@shared/models';
 import { itemStepOn, renderStepText, stepButtonLabel, stepTickKey, type RouteStep } from '@shared/routes';
 import { ShipmentChip } from './OrderStatus';
 import { Ladder } from './Ladder';
-import { TrackHero, boxesFor, stepEmoji } from './OrderTrack';
+import { TrackHero, stepEmoji } from './OrderTrack';
 import { SerialButtons } from './SerialButtons';
 import { StepButton, buttonStateAt, timelineButtons } from './StepActs';
 import type { Shipment } from './ShipDialog';
@@ -123,15 +123,15 @@ export function RoutePreview({ steps, joinAt, leaveAt, vars }: {
           A sample order on this route{vars.origin && vars.destination ? `, on a ${vars.origin} → ${vars.destination} lot` : ''}.
           Press its buttons the way you would on a real order. Nothing is saved.
         </p>
-        <button type="button" className="btn btn--sm" onClick={startTour}>▶ Walk me through it</button>
+        <button type="button" className="btn btn--sm btn--ghost" onClick={startTour}>Walk me through it</button>
       </div>
 
       {/* The order as it sits under Sell → Orders, with its real buttons. */}
       <section className="rsprev__side">
         <div className="rsprev__title">
-          <b>🧾 The order</b>
+          <b>The order</b>
           <span className="faint">Sell → Orders</span>
-          <button type="button" className="rsprev__reset" onClick={reset}>↺ Start over</button>
+          <button type="button" className="rsprev__reset" onClick={reset}>Start over</button>
         </div>
         <div className="rsprev__order">
           <div className="rsprev__head">
@@ -155,16 +155,15 @@ export function RoutePreview({ steps, joinAt, leaveAt, vars }: {
       <section className="rsprev__side">
         <div className="seg rsprev__views" role="tablist" aria-label="Whose tracking">
           <button type="button" role="tab" aria-selected={view === 'seller'} className={view === 'seller' ? 'is-on' : ''}
-            onClick={() => setView('seller')}>🧑‍💼 What you see</button>
+            onClick={() => setView('seller')}>You see</button>
           <button type="button" role="tab" aria-selected={view === 'customer'} className={view === 'customer' ? 'is-on' : ''}
-            onClick={() => setView('customer')}>🛍️ What your customer sees</button>
+            onClick={() => setView('customer')}>Your customer sees</button>
         </div>
         <TrackHero icon={here ? stepEmoji(here, current) : '🧾'}
           now={here ? renderStepText(here.name, vars) : 'Order placed'}
           sub={lotAt >= 0
             ? <>📦 {SAMPLE_LOT.name} <span className="lotname__no">LOT W4-F889</span></>
-            : steps[current + 1] ? `Next: ${renderStepText(steps[current + 1]!.name, vars)}` : 'Delivered 🎉'}
-          boxes={boxesFor(steps, current, vars)}
+            : steps[current + 1] ? `Next: ${renderStepText(steps[current + 1]!.name, vars)}` : 'Delivered'}
           done={current + 1} total={steps.length}>
           {shipment && (shipment.courier || shipment.awb) && ticks.dispatched && (
             <ShipmentChip shipment={{ courier: shipment.courier ?? '', awb: shipment.awb ?? '', at: '' }} linked={false} />
@@ -173,7 +172,7 @@ export function RoutePreview({ steps, joinAt, leaveAt, vars }: {
             {view === 'seller' ? (
               <Ladder brief steps={steps} current={current} vars={vars} history={history}
                 leaveAt={leaveAt < steps.length ? leaveAt : undefined}
-                leaveNote={<span className="faint">Press its buttons below as it goes</span>}
+                leaveNote={<span className="faint">From here, each item moves with its own buttons</span>}
                 lockFrom={leaveAt}
                 /* The lot's steps move by Move here, one at a time - as on the lot's own Tracking. */
                 onMove={hasLot ? (to, details) => act({ kind: 'lot', to, ...details }) : undefined}

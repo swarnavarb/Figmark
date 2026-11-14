@@ -66,9 +66,9 @@ export function Ladder({
   forwardExample?: boolean;
   /**
    * Where the item stops riding its lot and is worked one at a time again -
-   * the index of the first rung past the crate's end. A thin line is drawn
-   * above it, and `leaveNote` (the seller's way to where that happens) hangs
-   * on it. Absent, or past the last rung, draws nothing.
+   * the index of the first rung past the crate's end. With a `leaveNote`
+   * (said to the seller only: who moves the tracking from here) one quiet
+   * line is drawn above it; without one, nothing.
    */
   leaveAt?: number;
   leaveNote?: ReactNode;
@@ -181,14 +181,11 @@ export function Ladder({
           )}
           {/* Where the crate is unpacked and this piece goes on alone. Quiet on
               purpose: it is a change of who moves the tracking, not a step. */}
-          {leaveAt === index && leaveAt > 0 && (
+          {leaveNote && leaveAt === index && leaveAt > 0 && (
             <li className={`ladder__leave${index <= current ? ' is-past' : ''}`}>
               <span className="ladder__leave-line" aria-hidden="true" />
               <span className="ladder__leave-body">
-                <span className="ladder__leave-text">
-                  <Icon name="box" size={11} /> Leaves the lot · tracked per item from here
-                </span>
-                {leaveNote}
+                <span className="ladder__leave-text">{leaveNote}</span>
               </span>
             </li>
           )}
@@ -231,16 +228,6 @@ export function Ladder({
                           title="Moved here. Tap to take the lot back one step."
                           onClick={() => void onMove(current - 1)}>
                           <span aria-hidden="true">✓</span> Moved here <span className="stepact__undo">undo</span>
-                        </button>
-                      </span>
-                    );
-                  }
-                  if (index > current + 1) {
-                    return (
-                      <span className="stepact">
-                        <button type="button" className="stepact__btn is-later" disabled
-                          title="Opens once the step before it is done">
-                          <span aria-hidden="true">🔒</span> Move here
                         </button>
                       </span>
                     );

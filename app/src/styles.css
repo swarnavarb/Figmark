@@ -2559,7 +2559,7 @@ a.ins__name:hover, a.ins__who:hover { color: var(--accent-text); }
 .ladder__row {
   position: relative;
   display: grid; grid-template-columns: 20px 1fr; align-items: baseline; gap: 10px;
-  padding: 7px 0;
+  padding: var(--s2) 0;
   font-size: var(--t-sm); color: var(--text-faint);
 }
 .ladder__row.is-done { color: var(--text-dim); }
@@ -2570,11 +2570,7 @@ a.ins__name:hover, a.ins__who:hover { color: var(--accent-text); }
 /* The controls here are always on: they are the point of the box, not a
    hover-revealed extra on a rung. */
 .ladder__lot-acts .ladder__act { text-decoration: none; color: var(--text-dim); }
-.ladder__leave-line {
-  position: relative; z-index: 1; justify-self: center;
-  width: 9px; height: 9px; border-radius: 2px; transform: rotate(45deg);
-  border: 1px dashed var(--text-faint); background: var(--surface);
-}
+.ladder__leave-line { width: 9px; }
 .ladder__leave-go {
   display: inline-flex; align-items: center; gap: var(--s1);
   padding: 3px 10px; border: 1px solid var(--accent-line); border-radius: var(--r-pill);
@@ -4064,15 +4060,6 @@ a.psheet__row:hover { background: var(--surface-hover); }
 @media (max-width: 480px) {
   .writer__foot .writer__tool span { display: none; }
 }
-.rsmap__seg b { color: var(--zone); font-size: var(--t-sm); }
-.rsgap__wait span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rsgap__wait .waveloader { width: 12px; height: 12px; color: var(--warn); }
-.rsgap__editor select, .rsgap__editor input, .rsgap__editor .fmselect {
-  padding: 7px 9px; border-radius: var(--r-sm); border: 1px solid var(--border); background: var(--surface);
-  font-size: var(--t-xs);
-}
-.rszone__text b { font-size: var(--t-sm); color: var(--zone); }
-.rszone__text span { font-size: var(--t-2xs); color: var(--text-dim); }
 .rspick__body b { font-size: var(--t-sm); }
 .rspick__body span { font-size: var(--t-2xs); color: var(--text-dim); }
 
@@ -6411,20 +6398,10 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
   50% { box-shadow: inset 0 0 0 1px var(--coral-line), 0 0 0 6px rgba(255, 90, 95, 0); }
 }
 .trk__bar span {
-  display: block; height: 100%; border-radius: inherit; background: var(--grad-play);
-  box-shadow: 0 0 14px rgba(163, 230, 53, 0.5); transition: width 700ms var(--ease);
+  display: block; height: 100%; border-radius: inherit; background: var(--ok);
+  transition: width 500ms var(--ease);
 }
 .trk__ladder { padding-top: var(--s1); }
-@keyframes trk-next { 50% { box-shadow: inset 0 0 0 2px var(--aqua), 0 0 4px rgba(6, 214, 231, 0.1); } }
-.trkbox__item {
-  position: relative; flex: 0 0 88px; display: grid; justify-items: center; align-content: start; gap: 5px;
-  padding: 0 var(--s1); text-align: center; scroll-snap-align: start;
-}
-@keyframes trkbox-here {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-2px); }
-}
-
 /* A rung the journey has not got near yet, on the last mile. */
 .ladder__row.is-locked { color: var(--text-faint); opacity: 0.7; }
 
@@ -6441,16 +6418,13 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
 /* The one to press: big enough to hit first time, and the only one that looks like this. */
 .stepact__btn.is-next {
   height: 40px; padding: 0 var(--s4); font-size: var(--t-sm); font-weight: var(--w-bold);
-  border-color: var(--accent); background: var(--accent); color: #fff;
-  box-shadow: 0 6px 18px -8px rgba(124, 58, 237, 0.7);
+  border-color: var(--accent); background: var(--accent); color: #fff; border-radius: var(--r-pill);
 }
 /* Pressed: a small tick that undoes, not a second call to action. */
 .stepact__btn.is-done {
-  height: 26px; padding: 0 9px;
-  border-color: rgba(52, 211, 153, 0.35); background: var(--ok-soft); color: var(--ok);
+  height: 26px; padding: 0 9px; border-radius: var(--r-pill);
+  border-color: transparent; background: var(--ok-soft); color: var(--ok);
 }
-/* Further on: drawn so the seller sees what comes next, but it opens only once the one before it is pressed. */
-.stepact__btn.is-later { border-style: dashed; background: none; color: var(--text-faint); }
 .stepact__btn.is-done:disabled { opacity: 1; }
 /* The lot's Move here, scrolled to from the order card's Lot stop. */
 .ladder__move { scroll-margin: 120px; }
@@ -6477,7 +6451,6 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
 .rsprev__title .faint { font-size: var(--t-2xs); }
 .rsprev__who b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rsprev__who .faint { font-size: var(--t-2xs); }
-.rsbtn__ship input { min-width: 0; padding: 6px 9px; font-size: var(--t-2xs); }
 .rcvd__text span { font-size: var(--t-2xs); color: var(--text-dim); }
 .rcvd__own input { min-width: 0; padding: 9px 10px; font-size: var(--t-sm); }
 
@@ -8893,7 +8866,7 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .notice--line { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .order-cancel { justify-self: end; }
 /* An ⓘ beside a heading or a step's name sits just after the words. */
-.ladder__name .qinfo, .rszone__text .qinfo { margin-left: 6px; vertical-align: middle; }
+.ladder__name .qinfo { margin-left: 6px; vertical-align: middle; }
 @media (max-width: 720px) {
   .ops .card--pad { padding: 14px; }
 }

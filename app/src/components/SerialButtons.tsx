@@ -68,12 +68,15 @@ export function SerialButtons({ buttons, busy, who, onItem, onLot, orderLink, st
       });
     }
   }
-  const doneOf = (entry: Entry) => (entry.kind === 'lot' ? entry.done : entry.button.done);
-  const nextAt = entries.findIndex((entry) => !doneOf(entry));
-  const doneCount = entries.filter(doneOf).length;
+  const pressed = (entry: Entry) => (entry.kind === 'lot' ? entry.done : entry.button.done);
   /* One at a time, both ways: only the next one presses, and only the last
      one pressed takes back. */
-  const lastDone = entries.reduce((last, entry, index) => (doneOf(entry) ? index : last), -1);
+  const lastDone = entries.reduce((last, entry, index) => (pressed(entry) ? index : last), -1);
+  /* A stop behind the furthest one reached has been passed, pressed or not:
+     an order already delivered is never asked for its warehouse tick. */
+  const doneOf = (entry: Entry) => pressed(entry) || entries.indexOf(entry) < lastDone;
+  const nextAt = entries.findIndex((entry) => !doneOf(entry));
+  const doneCount = entries.filter(doneOf).length;
 
   function confirm() {
     if (!asking) return;

@@ -1,88 +1,4 @@
-/* Moved from styles.css: rules only this chunk's code can match. */
-.rsstudio { display: grid; gap: 14px; padding-bottom: var(--s2); }
-.rshead { position: relative; display: grid; gap: 10px; }
-.rshead__name {
-  width: 100%; min-width: 0; padding: 2px 0; border: 0; border-bottom: 1px solid transparent;
-  background: transparent; color: var(--text); font: inherit; font-size: var(--t-lg); font-weight: var(--w-bold);
-}
-.rshead__name::placeholder { color: var(--text-faint); font-weight: var(--w-semi); }
-.rshead__hint, .rshead__stats { font-size: var(--t-2xs); color: var(--text-dim); }
-.rsmap { display: flex; gap: var(--s1); min-height: 34px; }
-.rsmap__seg {
-  flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center; gap: var(--s1); padding: 0 var(--s2);
-  border-radius: var(--r-sm); text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  font-size: var(--t-2xs); color: var(--text); background: var(--zone-soft); box-shadow: inset 0 0 0 1px var(--zone-line);
-}
-.rslanes { display: grid; gap: 18px; }
-.rslane {
-  scroll-margin-top: 80px; display: grid; gap: 2px; padding: 10px;
-  border-radius: var(--r-lg); background: var(--zone-soft);
-}
-.rslane__empty { margin: var(--s1) 6px var(--s2); font-size: var(--t-xs); color: var(--text-dim); }
-.rschain { position: relative; display: grid; }
-.rsnode { position: relative; display: grid; }
-.rsnode__card {
-  position: relative; display: grid; gap: 6px; padding: 10px var(--s3);
-  border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface);
-  transition: border-color var(--dur-1) ease;
-}
-.rsnode__icon { flex: 0 0 auto; font-size: var(--t-md); line-height: 1; }
-.rsnode__no { font-size: var(--t-2xs); font-weight: var(--w-semi); letter-spacing: 0.05em; text-transform: uppercase; color: var(--zone, var(--text-faint)); }
-.rsbar {
-  position: sticky; bottom: calc(var(--tabbar-h) + 10px); z-index: 6;
-  display: flex; align-items: center; gap: var(--s2); padding: var(--s2); border-radius: var(--r-pill);
-  background: color-mix(in srgb, var(--surface) 88%, transparent); backdrop-filter: blur(14px);
-  box-shadow: inset 0 0 0 1px var(--border-strong), 0 12px 30px rgba(0, 0, 0, 0.35);
-}
-.rsbar__preview {
-  flex: 1 1 auto; min-width: 0; height: 46px; padding: 0 var(--s4); border: 0; border-radius: var(--r-pill); cursor: pointer;
-  display: inline-flex; align-items: center; justify-content: center; gap: var(--s2); white-space: nowrap;
-  font: inherit; font-size: var(--t-sm); font-weight: var(--w-bold); color: #fff; background: var(--grad-cool);
-  box-shadow: 0 8px 20px -10px rgba(34, 211, 238, 0.8);
-}
-.rsbar__save { height: 46px; border-radius: var(--r-pill); padding: 0 18px; }
-.rszone__add {
-  display: inline-flex; align-items: center; gap: var(--s1); height: 28px; padding: 0 10px; border-radius: var(--r-pill); cursor: pointer;
-  border: 1px solid var(--zone-line); background: var(--surface); color: var(--zone); font: inherit; font-size: var(--t-2xs); font-weight: var(--w-semi);
-}
-.rsnode__top { display: flex; align-items: center; gap: var(--s2); }
-.rsnode__name {
-  flex: 1 1 auto; min-width: 0; border: none; background: transparent;
-  font-size: var(--t-sm); font-weight: var(--w-bold); padding: 2px 0; color: var(--text);
-}
-.rsnode__name--static { padding: var(--s1) 0; color: var(--text-dim); }
-.rsnode__desc {
-  border: none; background: transparent;
-  font-size: var(--t-xs); color: var(--text-dim); padding: 0;
-}
-.rsnode__desc--static { font-size: var(--t-xs); color: var(--text-faint); padding: 0; }
-.rsgap { position: relative; display: flex; align-items: center; gap: var(--s2); min-height: 26px; padding-left: var(--s3); }
-.rsgap__arrow { flex: 0 0 auto; width: 16px; text-align: center; font-size: var(--t-base); line-height: 1; color: var(--zone, var(--text-faint)); opacity: 0.8; }
-.rsgap__wait {
-  flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 7px;
-  padding: var(--s1) 10px; border-radius: var(--r-pill); border: 1px solid transparent;
-  background: var(--surface-2); color: var(--text-dim); font-size: var(--t-xs);
-  cursor: pointer; text-align: left;
-}
-.rsgap__insert {
-  flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50%; position: relative; z-index: 1;
-  display: grid; place-items: center;
-  border: 1px solid var(--border); background: var(--surface); color: var(--text-dim);
-  opacity: 0.7; transition: opacity var(--dur-1) ease;
-}
-.rsgap__editor {
-  flex: 1 1 auto; display: grid; gap: 6px; padding: 10px var(--s3);
-  border: 1px solid var(--warn); border-radius: var(--r-md); background: var(--warn-soft);
-}
-.rsgap__editor .btn { justify-self: start; }
-.rsjoin__acts { display: flex; gap: var(--s1); flex: 0 0 auto; }
-.rszone {
-  --zone: var(--aqua); --zone-soft: var(--aqua-soft); --zone-line: var(--aqua-line);
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  margin: 10px 0 6px; padding: 0 2px;
-}
-.rszone__text { display: grid; gap: 1px; min-width: 0; }
-.rspick__zone { margin: 0; padding: 9px var(--s3); border-radius: var(--r-md); font-size: var(--t-xs); background: var(--zone-soft); box-shadow: inset 4px 0 0 var(--zone); }
+
 .rspick__group { display: grid; gap: 6px; }
 .rspick__title { font-size: var(--t-2xs); font-weight: var(--w-semi); color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; }
 .rspick__row {
@@ -126,22 +42,12 @@
   position: absolute; top: 6px; right: 8px; width: 24px; height: 24px; border: 0; border-radius: 50%;
   background: transparent; color: var(--text-faint); font-size: calc(18px * var(--text-scale)); line-height: 1; cursor: pointer;
 }
-.pipcall {
-  justify-self: start; padding: 7px var(--s3); border: 1px dashed var(--border-strong); border-radius: var(--r-pill);
-  background: transparent; color: var(--text-dim); font: inherit; font-size: var(--t-xs); cursor: pointer;
-}
 .pip { display: block; overflow: visible; }
 .pip__body, .pip__antenna { animation: pip-float 3.2s ease-in-out infinite; transform-origin: 32px 52px; }
 .pip__eyes { animation: pip-blink 4.6s infinite; transform-origin: 32px 34px; }
 .pip__bulb { animation: pip-glow 1.8s ease-in-out infinite; }
 .pip--cheer .pip__body, .pip--cheer .pip__antenna { animation: pip-cheer 0.9s var(--ease) infinite; }
 .pip--think .pip__antenna { animation: pip-tilt 2.4s ease-in-out infinite; transform-origin: 32px 14px; }
-.rstags { display: none; align-items: center; gap: 6px; flex-wrap: wrap; grid-column: 1 / -1; }
-.rstags__tag {
-  padding: 3px 9px; border: 1px solid var(--zone-line, var(--border)); border-radius: var(--r-pill);
-  background: var(--surface-2); color: var(--text); font: inherit; font-size: var(--t-2xs); cursor: pointer;
-}
-.rstags__hint { font-size: var(--t-2xs); color: var(--text-dim); }
 .rsprev { display: grid; gap: var(--s4); }
 .rsprev__lead { display: grid; gap: 10px; justify-items: start; }
 .rsprev__views { display: flex; }
@@ -177,20 +83,6 @@
   background: var(--surface); box-shadow: inset 0 0 0 1px var(--border);
 }
 .rsprev__who { display: grid; gap: 2px; min-width: 0; font-size: var(--t-sm); }
-.rsbtn {
-  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px var(--s2); align-items: center;
-  margin-top: 2px; border-radius: var(--r-sm);
-}
-.rsbtn__chip {
-  display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: var(--r-pill);
-  background: var(--accent); color: #fff; font-size: var(--t-xs); font-weight: var(--w-bold); white-space: nowrap;
-  max-width: 100%; overflow: hidden; text-overflow: ellipsis;
-}
-.rsbtn__words { min-width: 0; padding: 6px 9px; font-size: var(--t-xs); }
-.rsbtn__note, .rsbtn__wrong { grid-column: 1 / -1; font-size: var(--t-2xs); line-height: 1.4; }
-.rsbtn__none { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 6px; font-size: var(--t-2xs); color: var(--text-faint); }
-.rsbtn__ship { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.rsbtn__who { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .rsproblems {
   display: grid; gap: var(--s1); padding: 10px var(--s3); border-radius: var(--r-md);
   background: var(--danger-soft); box-shadow: inset 0 0 0 1px var(--danger); font-size: var(--t-xs);
@@ -198,41 +90,6 @@
 @media (prefers-reduced-motion: reduce) {
   .pipdock__pip, .pip__body, .pip__antenna, .pip__eyes, .pip__bulb { animation: none; }
   .pipdock__choice, .pipdock__choices.is-ready .pipdock__choice { animation: none; opacity: 1; transform: none; }
-}
-
-.rsnew__alt .faint { font-size: var(--t-2xs); }
-
-/*
- * Styles only components/RouteMascot.tsx and what it brings in can draw, loaded with that
- * chunk rather than in front of every page. Split out of styles.css by
- * where each class is used; see the note at the top of styles.css.
- */
-.rshead__name:focus { outline: none; border-bottom-color: var(--accent); }
-.rsmap__seg--pre, .rslane--pre { --zone: var(--aqua); --zone-soft: var(--aqua-soft); --zone-line: var(--aqua-line); }
-.rsmap__seg--lot, .rslane--lot { --zone: var(--coral); --zone-soft: var(--coral-soft); --zone-line: var(--coral-line); }
-.rsmap__seg--post, .rslane--post { --zone: var(--lime); --zone-soft: var(--lime-soft); --zone-line: var(--lime-line); }
-.rslane .rszone { margin: 0 0 var(--s1); }
-.rsnode__card:focus-within { border-color: var(--zone, var(--accent-line)); }
-.rsnode__card--locked { background: var(--surface-2); }
-.rsnode__card--delivered { border-color: rgba(52, 211, 153, 0.45); }
-.rsbar__preview:disabled { opacity: 0.5; cursor: default; }
-.rsnode__name:focus { outline: none; }
-.rsnode__name:disabled { color: var(--text-dim); -webkit-text-fill-color: var(--text-dim); cursor: default; }
-.rsnode__desc:focus { outline: none; color: var(--text); }
-.rsgap__wait:hover { border-color: var(--warn); color: var(--warn); }
-/* A message set makes the pill read the same amber the real ladder uses for
-   this exact wait, so the gap looks here the way it will look for a buyer. */
-.rsgap__wait:has(.waveloader) { border-style: solid; border-color: var(--warn); color: var(--warn); background: var(--warn-soft); }
-.rschain:hover .rsgap__insert, .rsgap:focus-within .rsgap__insert { opacity: 1; }
-.rsgap__insert:hover { border-style: solid; border-color: var(--accent); color: var(--accent-text); }
-.rszone--pre { --zone: var(--aqua); --zone-soft: var(--aqua-soft); --zone-line: var(--aqua-line); }
-.rszone--lot { --zone: var(--coral); --zone-soft: var(--coral-soft); --zone-line: var(--coral-line); }
-.rszone--post { --zone: var(--lime); --zone-soft: var(--lime-soft); --zone-line: var(--lime-line); }
-.rsnode--pre { --zone: var(--aqua); }
-.rsnode--lot { --zone: var(--coral); }
-.rsnode--post { --zone: var(--lime); }
-.rsnode--pre .rsnode__card, .rsnode--lot .rsnode__card, .rsnode--post .rsnode__card {
-  box-shadow: inset 3px 0 0 var(--zone);
 }
 .rspick__row:hover:not(:disabled) { border-color: var(--accent); }
 .rspick__row.is-locked { opacity: 0.55; cursor: not-allowed; border-style: dashed; }
@@ -243,85 +100,145 @@
 .pipdock__choice:hover { border-color: var(--accent); }
 .pipdock__choice.is-primary { border-color: var(--accent); background: var(--accent); color: #fff; }
 .pipdock__hide:hover { color: var(--text); background: var(--surface-2); }
-.pipcall:hover { color: var(--text); border-color: var(--accent); }
-/* Under the field being typed in: the name's under the name, the button's under the button. */
-.rsnode__top:focus-within + .rstags, .rsbtn__words:focus + .rstags { display: flex; }
 .rstour__title { font-size: var(--t-md); }
 .rstour__gap { flex: 1; }
-.rsbtn.is-wrong { padding: var(--s2); background: var(--danger-soft); box-shadow: inset 0 0 0 1px var(--danger); }
-.rsbtn__note { color: var(--text-dim); }
-.rsbtn__wrong { color: var(--danger); }
-.rsbtn__add {
-  height: 26px; padding: 0 10px; border: 1px dashed var(--accent-line); border-radius: var(--r-pill);
-  background: transparent; color: var(--accent-text); font: inherit; font-size: var(--t-2xs); font-weight: var(--w-semi); cursor: pointer;
-}
-.rsbtn__whochip {
-  height: 26px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--r-pill);
-  background: var(--surface); color: var(--text-dim); font: inherit; font-size: var(--t-2xs); cursor: pointer;
-}
-.rsbtn__whochip.is-on { border-color: var(--accent); background: var(--accent); color: #fff; font-weight: var(--w-semi); }
-.rsbtn__whochip.is-fixed { display: inline-flex; align-items: center; cursor: default; opacity: 0.85; }
-.rsnode__handover { font-size: var(--t-2xs); line-height: 1.4; color: var(--text-dim); }
 
-.rshead__modes { display: flex; align-items: center; gap: var(--s2); }
-.rshead__mode { flex: 1 1 auto; }
-.rshead__mode button { white-space: nowrap; padding: 7px var(--s3); }
-/* The route name's note and the ⋯ beside it. */
-.rshead__hint { display: inline-flex; align-items: center; gap: var(--s2); }
-/* New route: one clean list of samples, each with its three parts as a bar and its first steps. */
-.rsnew__head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
-.rsnew__label { font-size: var(--t-2xs); font-weight: var(--w-semi); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-faint); }
-.rsnew__list { display: grid; gap: var(--s2); }
-.rsnew__item {
-  display: flex; align-items: center; gap: var(--s3); width: 100%; padding: var(--s3) 14px; text-align: left;
-  border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); color: inherit; font: inherit; cursor: pointer;
-  transition: border-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
-}
-.rsnew__item:hover { border-color: var(--accent-line); }
-.rsnew__item:active { transform: scale(0.99); }
-.rsnew__item > svg { flex: none; color: var(--text-faint); }
-.rsnew__icon { flex: none; display: grid; place-items: center; width: 38px; height: 38px; border-radius: var(--r-md); background: var(--accent-soft); color: var(--accent-text); }
-.rsnew__body { display: grid; gap: 5px; flex: 1; min-width: 0; }
-.rsnew__name { font-weight: var(--w-semi); }
-.rsnew__blurb { font-size: var(--t-xs); color: var(--text-dim); }
-.rsnew__bar { display: flex; gap: 3px; height: 5px; }
-.rsnew__seg { flex: 1 1 0; border-radius: 3px; min-width: 6px; }
-.rsnew__seg--pre { background: var(--aqua); }
-.rsnew__seg--lot { background: var(--coral); }
-.rsnew__seg--post { background: var(--lime); }
-.rsnew__trail { font-size: var(--t-2xs); color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rsnew__other { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s2); }
-.rsnew__alt {
-  display: grid; gap: 2px; justify-items: start; padding: var(--s3) 14px; text-align: left;
-  border: 1px dashed var(--border-strong, var(--border)); border-radius: var(--r-md); background: transparent; color: inherit; font: inherit; cursor: pointer;
-}
-.rsnew__alt:hover { border-color: var(--accent-line); }
-.rsnew__alt > span:first-child { font-size: var(--t-lg); }
-/* The Studio in Steps view: the words, and nothing moving behind them. */
+/* ── The route maker ───────────────────────────────────────────────────────
+   One quiet column: the route's name, Edit or Preview, then its steps as a
+   list in three labelled parts. A row is a step; tapping it opens the rest. */
+.rsstudio { display: grid; gap: var(--s4); padding-bottom: var(--s2); }
+.rshead { display: grid; gap: var(--s3); }
 .rshead__top { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
-.rshead__top .rshead__name { flex: 1; min-width: 0; }
-
-/* How long a step usually takes: a small inline field under its description. */
-.rsnode__days {
-  display: inline-flex; align-items: center; gap: var(--s2);
-  font-size: var(--t-xs); color: var(--text-faint);
+.rshead__name {
+  flex: 1; min-width: 0; padding: var(--s1) 0; border: 0; border-bottom: 1px solid var(--border); border-radius: 0;
+  background: transparent; color: var(--text); font: inherit; font-family: var(--display);
+  font-size: var(--t-lg); font-weight: var(--w-bold); letter-spacing: -0.01em;
 }
+.rshead__name::placeholder { color: var(--text-faint); font-weight: var(--w-semi); }
+.rshead__name:focus { outline: none; border-bottom-color: var(--accent); }
+.rshead__mode button { white-space: nowrap; padding: 7px var(--s3); }
+
+.rslanes { display: grid; gap: var(--s5); }
+.rslane { display: grid; gap: var(--s2); scroll-margin-top: 80px; }
+.rslane--pre { --zone: var(--aqua); }
+.rslane--lot { --zone: var(--coral); }
+.rslane--post { --zone: var(--lime); }
+.rslane__empty { margin: 0; padding: var(--s3) var(--s4); border-radius: var(--r-lg); border: 1px dashed var(--border); font-size: var(--t-xs); color: var(--text-faint); }
+.rszone { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); min-height: 28px; padding: 0 var(--s1); }
+.rszone__text { display: inline-flex; align-items: center; gap: var(--s2); min-width: 0; font-size: var(--t-xs); letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); }
+.rszone__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--zone); }
+.rszone__add {
+  display: inline-flex; align-items: center; gap: var(--s1); height: 28px; padding: 0 var(--s2); border: 0; border-radius: var(--r-pill);
+  background: none; color: var(--accent-text); font: inherit; font-size: var(--t-xs); font-weight: var(--w-semi); cursor: pointer;
+}
+.rszone__add:hover { background: var(--accent-soft); }
+
+/* The steps of one part: a single card, a hairline between rows. */
+.rschain { display: grid; border-radius: var(--r-lg); background: var(--surface); box-shadow: inset 0 0 0 1px var(--border); overflow: hidden; }
+.rsstep + .rsstep { border-top: 1px solid var(--border); }
+.rsstep__row {
+  display: flex; align-items: center; gap: var(--s3); width: 100%; min-height: 52px; padding: var(--s2) var(--s4);
+  border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer;
+}
+.rsstep--fixed .rsstep__row { cursor: default; }
+.rsstep__row > svg { flex: none; color: var(--text-faint); }
+.rsstep__icon { flex: none; width: 22px; text-align: center; font-size: var(--t-md); line-height: 1; }
+.rsstep__name { flex: 1; min-width: 0; font-size: var(--t-base); font-weight: var(--w-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rsstep__name.is-blank { color: var(--text-faint); }
+.rsstep__meta { flex: none; font-size: var(--t-xs); color: var(--text-faint); white-space: nowrap; }
+.rsstep.is-wrong .rsstep__meta { color: var(--danger); }
+.rsstep.is-open .rsstep__row { min-height: 48px; }
+.rsstep.is-open .rsstep__name { font-weight: var(--w-semi); }
+.rsstep__edit { display: grid; gap: var(--s4); padding: var(--s1) var(--s4) var(--s4); }
+.rsstep__acts { display: flex; align-items: center; gap: var(--s2); padding-top: var(--s3); border-top: 1px solid var(--border); }
+.rsstep__gap { flex: 1; }
+.rsstep__act {
+  display: inline-flex; align-items: center; gap: var(--s1); height: 32px; padding: 0 var(--s2); border: 0; border-radius: var(--r-sm);
+  background: none; color: var(--text-dim); font: inherit; font-size: var(--t-xs); font-weight: var(--w-semi); cursor: pointer;
+}
+.rsstep__act:hover { color: var(--text); background: var(--surface-2); }
+.rsstep__act--danger { color: var(--danger); }
+.rsstep__act--danger:hover { color: var(--danger); background: var(--danger-soft); }
+
+/* A labelled field inside an open step. */
+.rsfield { display: grid; gap: 6px; min-width: 0; }
+.rsfield > span, .rsbtn__label, .rsbtn__wholabel { font-size: var(--t-xs); color: var(--text-dim); }
+.rsfield input, .rsbtn__words {
+  width: 100%; min-width: 0; height: 40px; padding: 0 var(--s3); border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--surface-2); color: var(--text); font: inherit; font-size: var(--t-sm);
+}
+.rsfield input:focus, .rsbtn__words:focus { outline: none; border-color: var(--accent); }
+.rsfield input:disabled { color: var(--text-dim); -webkit-text-fill-color: var(--text-dim); }
+.rsnode__days { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); font-size: var(--t-sm); color: var(--text-dim); }
 .rsnode__days input {
-  width: 4.5em; padding: 4px 8px;
-  border: 1px solid var(--border); border-radius: var(--r-sm);
-  background: var(--surface-2); color: var(--text);
-  font: inherit; font-variant-numeric: tabular-nums; text-align: center;
+  width: 4.5em; height: 36px; padding: 0 var(--s2); border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--surface-2); color: var(--text); font: inherit; font-variant-numeric: tabular-nums; text-align: center;
 }
+.rsnode__days input:focus { outline: none; border-color: var(--accent); }
+.rsnode__learned { margin-left: auto; font-size: var(--t-xs); }
+.rscheck { display: flex; align-items: flex-start; gap: var(--s2); font-size: var(--t-sm); color: var(--text-dim); cursor: pointer; }
+.rscheck input { flex: none; margin-top: 2px; accent-color: var(--accent); }
 
-/* Usual days, from the shop's own lots. */
-.rsnode__days { flex-wrap: wrap; }
-.rsnode__learned {
-  padding: 3px 8px; border-radius: 999px; border: 1px solid var(--aqua-line);
-  background: var(--aqua-soft); color: var(--text); font: inherit; font-size: var(--t-xs); cursor: pointer;
+/* The button a step comes with: what it says, and who presses it. */
+.rsbtn { display: grid; gap: var(--s2); min-width: 0; }
+.rsbtn__row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--s2); align-items: center; }
+.rsbtn__chip {
+  display: inline-flex; align-items: center; height: 32px; max-width: 46vw; padding: 0 var(--s3); border-radius: var(--r-pill);
+  background: var(--accent); color: #fff; font-size: var(--t-xs); font-weight: var(--w-semi); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
 }
+.rsbtn__note { font-size: var(--t-xs); line-height: 1.45; color: var(--text-faint); }
+.rsbtn__wrong { font-size: var(--t-xs); line-height: 1.45; color: var(--danger); }
+.rsbtn__add { justify-self: start; font-size: var(--t-xs); }
+.rsbtn__who { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.rsbtn__wholabel { margin-right: 2px; }
+.rsbtn__whochip {
+  height: 28px; padding: 0 var(--s3); border: 1px solid var(--border); border-radius: var(--r-pill);
+  background: none; color: var(--text-dim); font: inherit; font-size: var(--t-xs); cursor: pointer;
+}
+.rsbtn__whochip.is-on { border-color: transparent; background: var(--surface-2); color: var(--text); font-weight: var(--w-semi); }
+.rsbtn__whochip.is-fixed { display: inline-flex; align-items: center; cursor: default; }
+
+/* The two place tags, under the field being typed in. */
+.rstags { display: none; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: calc(var(--s2) * -1); }
+.rsfield:focus-within + .rstags, .rsbtn__row:focus-within + .rstags { display: flex; }
+.rstags__tag {
+  padding: 3px 9px; border: 1px solid var(--border); border-radius: var(--r-pill);
+  background: none; color: var(--text-dim); font: inherit; font-size: var(--t-2xs); cursor: pointer;
+}
+.rstags__hint { font-size: var(--t-2xs); color: var(--text-faint); }
+
 .rslearn {
-  display: flex; align-items: center; justify-content: space-between; gap: var(--s2); flex-wrap: wrap;
-  padding: 10px 12px; margin-bottom: var(--s3); border-radius: var(--r-md, 12px);
-  border: 1px solid var(--aqua-line); background: var(--aqua-soft); font-size: var(--t-sm); color: var(--text-dim);
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s2) var(--s3); flex-wrap: wrap;
+  font-size: var(--t-xs); color: var(--text-dim);
 }
-.rslearn b { color: var(--text); }
+.rslearn b { color: var(--text); font-weight: var(--w-semi); }
+
+/* Always in reach: leave, or save. */
+.rsbar {
+  position: sticky; bottom: calc(var(--tabbar-h) + 10px); z-index: 6;
+  display: flex; align-items: center; gap: var(--s2); padding: var(--s2); border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(14px);
+  box-shadow: inset 0 0 0 1px var(--border-strong), 0 10px 24px rgba(0, 0, 0, 0.3);
+}
+.rsbar__cancel { height: 44px; border-radius: var(--r-pill); padding: 0 var(--s4); }
+.rsbar__save { flex: 1; height: 44px; border-radius: var(--r-pill); }
+.rspick__zone { margin: 0; font-size: var(--t-xs); line-height: 1.5; color: var(--text-dim); }
+
+/* New route: the samples as one list, then the two ways to build your own. */
+.rsnew { display: grid; gap: var(--s3); }
+.rsnew__head { display: flex; align-items: center; gap: 10px; margin-bottom: var(--s2); }
+.rsnew__label { margin-top: var(--s2); padding: 0 var(--s1); font-size: var(--t-xs); letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); }
+.rsnew__list { display: grid; border-radius: var(--r-lg); background: var(--surface); box-shadow: inset 0 0 0 1px var(--border); overflow: hidden; }
+.rsnew__item {
+  display: flex; align-items: center; gap: var(--s3); width: 100%; min-height: 60px; padding: var(--s3) var(--s4); text-align: left;
+  border: 0; background: none; color: inherit; font: inherit; cursor: pointer;
+  transition: background var(--dur-1) var(--ease);
+}
+.rsnew__item + .rsnew__item { border-top: 1px solid var(--border); }
+.rsnew__item:hover { background: var(--surface-2); }
+.rsnew__item > svg { flex: none; color: var(--text-faint); }
+.rsnew__body { display: grid; gap: 2px; flex: 1; min-width: 0; }
+.rsnew__name { font-size: var(--t-base); font-weight: var(--w-semi); }
+.rsnew__blurb { font-size: var(--t-xs); line-height: 1.45; color: var(--text-dim); }
+.rsnew__count { flex: none; font-size: var(--t-xs); color: var(--text-faint); white-space: nowrap; }

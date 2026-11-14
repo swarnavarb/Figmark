@@ -655,7 +655,8 @@ export function serialButtons(
  *
  * A lot carries every order in it together, so it cannot move past a step an
  * order has not reached - its buyer would read that the parcel was somewhere
- * it never got to. That order is progressed, or cancelled, first.
+ * it never got to. That order is progressed, or cancelled, first. An order
+ * already past the step holds nothing back.
  */
 export function holdsLotBack(
   steps: readonly RouteStep[],
@@ -663,6 +664,14 @@ export function holdsLotBack(
   ticks: Ticks,
   vars?: { origin?: string | null; destination?: string | null },
 ): { key: string; label: string; step: string } | null {
+  /* An order with a button pressed at or past the step - one sent on to its
+     buyer ahead of the lot - is already further along than the lot is going:
+     the lot leaves nothing of it behind, whatever it never had pressed. */
+  const ahead = steps.some((step, index) => {
+    const key = index >= target ? stepTickKey(step) : null;
+    return Boolean(key && ticks?.[key]);
+  });
+  if (ahead) return null;
   for (let index = 0; index < target && index < steps.length; index += 1) {
     const step = steps[index]!;
     const key = stepTickKey(step);

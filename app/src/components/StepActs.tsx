@@ -59,7 +59,8 @@ export function buttonStateAt(
  * The seller's button on one rung of a timeline: the tick that reaches this
  * step, in the words the route gave it. The same button on a real order and
  * in the Route Studio's preview, so what a seller tries there is what they
- * press here. The next one is big; a pressed one is a small tick that undoes.
+ * press here. Only two are ever drawn: the one to press next, and a pressed
+ * one as a small tick that undoes.
  */
 export function StepButton({ step, state, undoable = state === 'done', busy = false, vars, onPress, children }: {
   step: Pick<RouteStep, 'trigger' | 'button' | 'name' | 'custom' | 'assignee'>;
@@ -72,16 +73,18 @@ export function StepButton({ step, state, undoable = state === 'done', busy = fa
   /** Anything else that belongs on this rung for the seller: courier details, a badge. */
   children?: ReactNode;
 }) {
+  /* A button further on is not drawn: it appears when it is the one to press. */
+  if (state === 'later') return null;
   const label = stepButtonLabel(step, vars);
-  const shut = state === 'later' || (state === 'done' && !undoable);
+  const shut = state === 'done' && !undoable;
   return (
     <span className="stepact">
       <button type="button" className={`stepact__btn is-${state}`} disabled={busy || shut} aria-pressed={state === 'done'}
         title={state === 'done'
           ? (undoable ? `${label} - pressed. Tap to undo.` : `${label} - pressed. Undo the steps after it first.`)
-          : state === 'later' ? 'Opens once the button before it is pressed' : `Press when this has happened: ${step.name}`}
+          : `Press when this has happened: ${step.name}`}
         onClick={onPress}>
-        <span aria-hidden="true">{state === 'done' ? '✓' : state === 'later' ? '🔒' : '⚡'}</span>
+        {state === 'done' && <span aria-hidden="true">✓</span>}
         {label}
         {state === 'done' && undoable && <span className="stepact__undo">undo</span>}
       </button>

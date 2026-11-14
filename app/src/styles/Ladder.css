@@ -1,10 +1,11 @@
 /* Moved from styles.css: rules only this chunk's code can match. */
 .ladder__stage {
   display: flex; align-items: center; gap: 6px;
-  margin: 10px 0 2px 30px; padding: 0;
+  margin: var(--s3) 0 2px 30px; padding: 0;
   font-size: var(--t-2xs); font-weight: var(--w-semi);
-  letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-dim);
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-faint);
 }
+.ladder__stage svg { display: none; }
 .ladder__row::before {
   content: ''; position: absolute; left: 9px; top: 0; bottom: 0;
   width: 1px; background: var(--border);
@@ -22,17 +23,15 @@
 .ladder__body { display: grid; gap: 3px; min-width: 0; }
 .ladder__note {
   display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
-  margin-top: var(--s1); padding: 7px 9px;
-  border-left: 2px solid var(--accent-line); border-radius: 0 var(--r-sm) var(--r-sm) 0;
-  background: var(--surface-2);
-  font-size: var(--t-xs); color: var(--text-dim);
+  margin-top: 2px;
+  font-size: var(--t-xs); font-weight: var(--w-normal); color: var(--text-dim);
 }
 .ladder__note-body { display: grid; gap: 2px; min-width: 0; flex: 1 1 auto; }
 .ladder__note-text { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .ladder__note-when {
   flex: 0 0 auto; margin-left: auto;
-  font-family: var(--mono); font-size: var(--t-2xs); font-weight: var(--w-medium);
-  color: var(--accent-text); white-space: nowrap;
+  font-size: var(--t-2xs); font-weight: var(--w-normal);
+  color: var(--text-faint); white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 .ladder__track-link {
@@ -49,12 +48,11 @@
 .ladder__lot {
   display: grid; grid-template-columns: 16px minmax(0, 1fr) auto;
   column-gap: var(--s2); row-gap: var(--s2); align-items: start;
-  margin-top: var(--s1); padding: 7px 9px;
-  border-left: 2px solid var(--aqua); border-radius: 0 var(--r-sm) var(--r-sm) 0;
-  background: var(--aqua-soft);
-  font-size: var(--t-xs); color: var(--text);
+  margin-top: var(--s1); padding: var(--s2) 10px;
+  border-radius: var(--r-sm); background: var(--surface-2);
+  font-size: var(--t-xs); font-weight: var(--w-normal); color: var(--text);
 }
-.ladder__lot-icon { display: grid; place-items: center; height: 1.45em; color: var(--aqua); }
+.ladder__lot-icon { display: grid; place-items: center; height: 1.45em; color: var(--text-dim); }
 .ladder__lot-text { min-width: 0; overflow-wrap: anywhere; line-height: 1.45; }
 .ladder__lot-no {
   display: block; margin-top: 1px;
@@ -69,10 +67,7 @@
 .ladder__leave::before {
   content: ''; position: absolute; left: 9px; top: 0; bottom: 0; width: 1px; background: var(--border);
 }
-.ladder__leave-body {
-  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px;
-  padding-top: 6px; border-top: 1px dashed var(--border-strong);
-}
+.ladder__leave-body { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .ladder__leave-text {
   display: inline-flex; align-items: center; gap: 5px;
   font-size: var(--t-2xs); letter-spacing: 0.02em; color: var(--text-faint);
@@ -96,13 +91,10 @@
  * where each class is used; see the note at the top of styles.css.
  */
 .ladder__stage:first-child { margin-top: 0; }
-.ladder__row.is-done .ladder__dot {
-  border-color: var(--ok); color: var(--ok-ink); background: var(--ok);
-  box-shadow: 0 0 0 3px var(--ok-soft);
-}
+.ladder__row.is-done .ladder__dot { border-color: var(--ok); color: var(--ok-ink); background: var(--ok); }
 .ladder__row.is-current .ladder__dot {
-  border-color: var(--accent); color: var(--accent-text); background: var(--accent-soft);
-  box-shadow: 0 0 0 4px var(--accent-soft);
+  border-color: var(--ok); color: var(--ok); background: var(--surface);
+  box-shadow: 0 0 0 4px var(--ok-soft);
 }
 .ladder__track-link:hover { text-decoration: underline; }
 .ladder__leave.is-past .ladder__leave-text { color: var(--text-dim); }
