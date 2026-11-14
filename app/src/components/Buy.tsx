@@ -22,6 +22,7 @@ import { InfoTip } from './InfoTip';
 import { useToast } from './Feedback';
 import '../styles/Buy.css';
 import type { DayRange } from '@shared/step-days';
+import type { Sourcing } from '@shared/enums';
 
 /**
  * The small, loud pieces the Buy, Sell and Purchases screens share: stock and
@@ -456,7 +457,13 @@ export function TermsFields({ value, onChange, preOrder = false, publicLater = f
  * it is the first thing a buyer asks, and the shop's on-time rate is
  * measured against it.
  */
-export function EtaFields({ value, onChange, optional = false, suggest = null }: {
+/** The example each field shows while empty: a shop's own shelf ships in days, an import in weeks. */
+const ETA_EXAMPLE: Record<Sourcing, { min: string; max: string }> = {
+  in_hand: { min: '3', max: '5' },
+  import: { min: '41', max: '48' },
+};
+
+export function EtaFields({ value, onChange, optional = false, suggest = null, sourcing = 'import' }: {
   value: TermsDraft;
   onChange: (next: TermsDraft) => void;
   /** A quick fill may leave it for each item to say. */
@@ -466,6 +473,8 @@ export function EtaFields({ value, onChange, optional = false, suggest = null }:
    * to arrive (leaving out the odd delay) - or the market's where it has none.
    */
   suggest?: Pick<DayRange, 'low' | 'high' | 'source'> | null;
+  /** How the item is sourced, for the example in the empty fields. */
+  sourcing?: Sourcing;
 }) {
   const set = (patch: Partial<TermsDraft>) => onChange({ ...value, ...patch });
   const suggested = suggest && !(Number(value.etaMin) === suggest.low && Number(value.etaMax) === suggest.high) ? suggest : null;
@@ -478,14 +487,14 @@ export function EtaFields({ value, onChange, optional = false, suggest = null }:
       <div className="etafields">
         <label className="field">
           <span>Quickest (days)</span>
-          <input type="number" inputMode="numeric" min="1" max={ETA_MAX_DAYS} step="1" placeholder="45"
+          <input type="number" inputMode="numeric" min="1" max={ETA_MAX_DAYS} step="1" placeholder={ETA_EXAMPLE[sourcing].min}
             value={value.etaMin} required={!optional} aria-required={!optional}
             onChange={(e) => set({ etaMin: e.target.value, ...(value.etaMax === '' || Number(value.etaMax) < Number(e.target.value) ? { etaMax: e.target.value } : {}) })} />
         </label>
         <span className="etafields__to" aria-hidden="true">to</span>
         <label className="field">
           <span>Longest (days)</span>
-          <input type="number" inputMode="numeric" min={value.etaMin || 1} max={ETA_MAX_DAYS} step="1" placeholder="50"
+          <input type="number" inputMode="numeric" min={value.etaMin || 1} max={ETA_MAX_DAYS} step="1" placeholder={ETA_EXAMPLE[sourcing].max}
             value={value.etaMax} required={!optional} aria-required={!optional}
             onChange={(e) => set({ etaMax: e.target.value })} />
         </label>

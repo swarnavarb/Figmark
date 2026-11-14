@@ -972,7 +972,7 @@ function SellForm({ serverDraft, draftMissing }: {
           </LBox>
 
           {/* Asked of every item, never folded away: it is what buyers ask first. */}
-          <div id="sell-eta"><EtaFields value={terms} onChange={setTerms} suggest={shopDays?.delivery[effectiveSourcing] ?? null} /></div>
+          <div id="sell-eta"><EtaFields value={terms} onChange={setTerms} suggest={shopDays?.delivery[effectiveSourcing] ?? null} sourcing={effectiveSourcing} /></div>
 
           {deal && <DealClock hours={dealHours} onChange={setDealHours} />}
 
