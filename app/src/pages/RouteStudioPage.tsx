@@ -1,14 +1,15 @@
 import { useUndo } from '../components/Undo';
 import { confirmSentence } from '../components/Ask';
 import { createContext, useContext, useState, useEffect, type FormEvent, type ReactNode } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { readLotDraft, writeLotDraft } from '../lotDraft';
 import { BackLink } from '../components/ScrollManager';
 import { assignButtons, checkButtons, stepChoices, type ButtonChange, type StepKind, type StepZone } from '@shared/buttons';
 import { setButtonLibrary, stepKinds } from '@shared/route-buttons';
 import {
   DEFAULT_WAIT_MESSAGES, NO_WAIT_MESSAGE, WAIT_MESSAGE_PRESETS, joinIndexOf, leaveIndexOf,
   renderStepText, sideOf, stepButtonLabel, stepId, stepTickKey, tagStepPlaces, waitMessageFor,
-  routeParts, routePartsLine,
+  routeParts, routePartsLine, routeJoinsLot,
   type RouteStep, type StepAssignee, type StepTrigger, type TrackingRoute,
 } from '@shared/routes';
 import { ApiRequestError, api, type RoutesResponse } from '../api';
@@ -22,9 +23,7 @@ import { InfoTip } from '../components/InfoTip';
 import { MoreMenu } from '../components/MoreMenu';
 import { RoutePreview } from '../components/RoutePreview';
 import { Select } from '../components/Select';
-import { PersonTag } from '../components/PersonTag';
 import { COUNTRIES } from '@shared/countries';
-import type { Lot } from '@shared/models';
 import { useSession } from '../session';
 import { useShopDays } from '../components/StepDays';
 
@@ -95,12 +94,28 @@ export function routeStepsFrom(from: readonly RouteStep[]) {
 export function RouteStudioPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const back = () => navigate('/shop?tab=routes');
+  const [params] = useSearchParams();
+  /* Sent here by a new lot: its half-filled form waits to be gone back to,
+     and the route saved here comes back to it already picked. */
+  const [draft] = useState(() => (params.get('for') === 'lot' ? readLotDraft() : null));
+  const backTo = draft?.returnTo ?? '/shop?tab=routes';
+  const back = () => {
+    // Back through history where it can, so the screen underneath comes back
+    // as it was left rather than as a fresh visit.
+    const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0;
+    if (draft && idx > 0) navigate(-1);
+    else navigate(backTo);
+  };
   return (
     <main className="page">
-      <BackLink to="/shop?tab=routes">{id && id !== 'new' ? 'Edit route' : 'New route'}</BackLink>
-      <RouteStudio editing={id && id !== 'new' ? id : null} onSaved={back} onCancel={back}
-        onLotOpened={(lot) => navigate(`/shop?tab=lots&lot=${encodeURIComponent(lot.id)}`)} />
+      <BackLink to={backTo}>{id && id !== 'new' ? 'Edit route' : draft ? 'Back to the lot' : 'New route'}</BackLink>
+      <RouteStudio editing={id && id !== 'new' ? id : null} onCancel={back}
+        lane={draft ? { origin: draft.originCountry || null, destination: draft.destinationCountry || null } : undefined}
+        cancelLabel={draft ? 'Back to the lot' : 'Cancel'}
+        onSaved={(route) => {
+          if (draft) writeLotDraft({ ...draft, routeId: routeJoinsLot(route) ? route.id : draft.routeId });
+          back();
+        }} />
     </main>
   );
 }
@@ -124,14 +139,9 @@ export interface StudioSample {
   onDelete?: () => void;
 }
 
-export function RouteStudio({ editing, onSaved, onCancel, onLotOpened, intro, cancelLabel = 'Cancel', sample }: {
-  /**
-   * Given, the editor also asks for a lot to open on this route - its name,
-   * where it ships from and to, and who handles it - and hands the lot back
-   * once both are saved. Left out where a lot is already being written
-   * around the Studio (the new-lot form) or there is none to open (a sample).
-   */
-  onLotOpened?: (lot: Lot) => void;
+export function RouteStudio({ editing, onSaved, onCancel, intro, cancelLabel = 'Cancel', sample, lane: startLane }: {
+  /** The countries the preview reads in to begin with - a lot's own, when one sent the seller here. */
+  lane?: PreviewVars;
   editing: string | null;
   /** Editing one of the operators' sample routes rather than a shop's own. */
   sample?: StudioSample;
@@ -175,14 +185,14 @@ export function RouteStudio({ editing, onSaved, onCancel, onLotOpened, intro, ca
   /** The one step whose details are open; the rest read as a plain list. */
   const [openId, setOpenId] = useState<string | null>(null);
 
-  /** The lot to open on this route when it is saved, if it is given a name. */
-  const withLot = Boolean(onLotOpened) && !sample;
-  const [lot, setLot] = useState({ name: '', originCountry: '', destinationCountry: '', forwarderName: '', supplierHandle: '', handlerHandle: '' });
-  /** The route's id once saved, so a second Save after a failed lot edits it rather than saving a twin. */
+  /* A route belongs to no country: lots carry those. The pair picked in the
+     preview only shows how its steps and tracking read on a real lane, and
+     is never saved. */
+  const [lane, setLane] = useState({ origin: startLane?.origin ?? '', destination: startLane?.destination ?? '' });
+  /** The route's id once saved, so a second Save edits it rather than saving a twin. */
   const [savedId, setSavedId] = useState<string | null>(null);
-  /* The steps read in the countries picked for the lot, as soon as there are any. */
-  const vars: PreviewVars = withLot && (lot.originCountry || lot.destinationCountry)
-    ? { origin: lot.originCountry || null, destination: lot.destinationCountry || null }
+  const vars: PreviewVars = lane.origin || lane.destination
+    ? { origin: lane.origin || null, destination: lane.destination || null }
     : NO_LANE;
   /** The chain as last opened or saved: anything else on screen is unsaved work. */
   const [savedAs, setSavedAs] = useState<string | null>(null);
@@ -394,18 +404,6 @@ export function RouteStudio({ editing, onSaved, onCancel, onLotOpened, intro, ca
       }
       return;
     }
-    /* A lot is opened with the route when it has been given a name. */
-    const opening = withLot && lot.name.trim() !== '';
-    if (opening && (!lot.originCountry || !lot.destinationCountry)) {
-      setError(`Pick the country the lot ships ${!lot.originCountry ? 'from' : 'to'}.`);
-      setBusy(false);
-      return;
-    }
-    if (opening && lanes[1]!.indexes.length === 0) {
-      setError('This route has no steps in the lot, so a lot cannot travel it. Add a step in the lot, or clear the lot name.');
-      setBusy(false);
-      return;
-    }
     try {
       const result = await api.saveRoute({
         id: editing ?? savedId ?? undefined,
@@ -428,25 +426,7 @@ export function RouteStudio({ editing, onSaved, onCancel, onLotOpened, intro, ca
       });
       setSavedAs(snapshot(name, steps, joinAt, leaveAt));
       setSavedId(result.route.id);
-      let opened: Lot | null = null;
-      if (opening) {
-        try {
-          opened = (await api.createLot({
-            name: lot.name.trim(),
-            originCountry: lot.originCountry,
-            destinationCountry: lot.destinationCountry,
-            forwarderName: lot.forwarderName.trim() || undefined,
-            supplierHandle: lot.supplierHandle.trim() || undefined,
-            handlerHandle: lot.handlerHandle.trim() || undefined,
-            routeId: result.route.id,
-          })).lot;
-          setLot((now) => ({ ...now, name: '' }));
-        } catch (err) {
-          setError(`The route is saved, but the lot could not be opened: ${err instanceof ApiRequestError ? err.message : 'try again.'}`);
-          return;
-        }
-      }
-      const finish = () => (opened && onLotOpened ? onLotOpened(opened) : onSaved(result.route));
+      const finish = () => onSaved(result.route);
       /* Lots keep their own copy of a route, so an edit reaches none of them
          by itself. Asked here, once, rather than discovered later. */
       if (result.lotsBehind && result.lotsBehind > 0) setBehind({ route: result.route, lots: result.lotsBehind, finish });
@@ -502,8 +482,7 @@ export function RouteStudio({ editing, onSaved, onCancel, onLotOpened, intro, ca
 
   /* Refreshing or closing the tab loses unsaved work as surely as the back
      button does, so the browser is asked to confirm then too. */
-  const unsaved = started && (savedAs !== snapshot(name, steps, joinAt, leaveAt)
-    || (withLot && Boolean(lot.name.trim() || lot.forwarderName.trim() || lot.supplierHandle.trim() || lot.handlerHandle.trim())));
+  const unsaved = started && savedAs !== snapshot(name, steps, joinAt, leaveAt);
   useEffect(() => {
     if (!unsaved) return;
     const hold = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
@@ -654,67 +633,35 @@ export function RouteStudio({ editing, onSaved, onCancel, onLotOpened, intro, ca
       {mode === 'preview' ? (
         /* Its own buttons ask in dialogs with forms of their own; none of them saves the route. */
         <div onSubmit={(event) => event.stopPropagation()}>
+          {/* Only to see the route on a real lane: lots carry their own countries. */}
+          <section className="rsgroup rsgroup--lot rspreviewlane" aria-label="Preview on a lane">
+            <div className="rsgroup__lane">
+              <label className="rsfield">
+                <span>From</span>
+                <Select value={lane.origin} aria-label="Preview from"
+                  onChange={(event) => setLane({ ...lane, origin: event.target.value })}>
+                  <option value="">Country</option>
+                  {COUNTRIES.map((country) => <option key={country} value={country}>{country}</option>)}
+                </Select>
+              </label>
+              <span className="rsgroup__arrow" aria-hidden="true"><Icon name="right" size={14} /></span>
+              <label className="rsfield">
+                <span>To</span>
+                <Select value={lane.destination} aria-label="Preview to"
+                  onChange={(event) => setLane({ ...lane, destination: event.target.value })}>
+                  <option value="">Country</option>
+                  {COUNTRIES.map((country) => <option key={country} value={country}>{country}</option>)}
+                </Select>
+              </label>
+            </div>
+            <span className="rsgroup__hint">
+              Pick two countries to see how the steps and tracking read. Only for this preview - each lot sets its own.
+            </span>
+          </section>
           <RoutePreview steps={named} joinAt={namedJoin} leaveAt={namedLeave} vars={vars} days={shopDays?.steps} />
         </div>
       ) : (
       <div className="rslanes">
-        {withLot && (
-          <>
-            {/* The lot this route carries: opened with it on Save, once named. */}
-            <section className="rsgroup rsgroup--lot" aria-labelledby="rs-group-lot">
-              <h2 id="rs-group-lot" className="rsgroup__title"><span aria-hidden="true">📦</span> Lot</h2>
-              <label className="rsfield">
-                <span>Lot name</span>
-                <input value={lot.name} placeholder="e.g. Diwali air run" aria-label="Lot name"
-                  onChange={(event) => setLot({ ...lot, name: event.target.value })} />
-              </label>
-              <div className="rsgroup__lane">
-                <label className="rsfield">
-                  <span>From</span>
-                  <Select value={lot.originCountry} aria-label="Ships from"
-                    onChange={(event) => setLot({ ...lot, originCountry: event.target.value })}>
-                    <option value="" disabled>Country</option>
-                    {COUNTRIES.map((country) => <option key={country} value={country}>{country}</option>)}
-                  </Select>
-                </label>
-                <span className="rsgroup__arrow" aria-hidden="true"><Icon name="right" size={14} /></span>
-                <label className="rsfield">
-                  <span>To</span>
-                  <Select value={lot.destinationCountry} aria-label="Ships to"
-                    onChange={(event) => setLot({ ...lot, destinationCountry: event.target.value })}>
-                    <option value="" disabled>Country</option>
-                    {COUNTRIES.map((country) => <option key={country} value={country}>{country}</option>)}
-                  </Select>
-                </label>
-              </div>
-              <span className="rsgroup__hint">
-                {lot.name.trim()
-                  ? 'Saving opens this lot on the route. The steps below read in these two countries.'
-                  : 'Name it to open a lot on this route when you save. Leave it empty to save the route alone.'}
-              </span>
-            </section>
-
-            {/* Who works the lot: one for each part of the journey, in that part's colour. */}
-            <section className="rsgroup rsgroup--people" aria-labelledby="rs-group-people">
-              <h2 id="rs-group-people" className="rsgroup__title"><span aria-hidden="true">🤝</span> People <span className="rsgroup__opt">optional</span></h2>
-              <label className="rsfield rsfield--pre">
-                <span><i className="rsgroup__dot" aria-hidden="true" /> Supplier · before the lot</span>
-                <PersonTag value={lot.supplierHandle} onChange={(supplierHandle) => setLot({ ...lot, supplierHandle })}
-                  placeholder="@their_handle" />
-              </label>
-              <label className="rsfield rsfield--lot">
-                <span><i className="rsgroup__dot" aria-hidden="true" /> Forwarder · in the lot</span>
-                <input value={lot.forwarderName} placeholder="Lotus Freight, or your own" aria-label="Forwarder"
-                  onChange={(event) => setLot({ ...lot, forwarderName: event.target.value })} />
-              </label>
-              <label className="rsfield rsfield--post">
-                <span><i className="rsgroup__dot" aria-hidden="true" /> Domestic handler · after the lot</span>
-                <PersonTag value={lot.handlerHandle} onChange={(handlerHandle) => setLot({ ...lot, handlerHandle })}
-                  placeholder="@their_handle, or empty to dispatch it yourself" />
-              </label>
-            </section>
-          </>
-        )}
         {/* The journey in its three parts: a label, then its steps as one
             list. A row is a step's name and what it comes with; tapping it
             opens everything else about it. */}
@@ -789,7 +736,7 @@ export function RouteStudio({ editing, onSaved, onCancel, onLotOpened, intro, ca
         <button type="button" className="btn btn--quiet rsbar__cancel" onClick={leave}>{cancelLabel}</button>
         <button type="submit" className="btn rsbar__save" disabled={busy || named.length < 2 || !name.trim() || blocking.length > 0}
           title={blocking.length > 0 ? 'Fix the button words above first' : !name.trim() ? 'Give the route a name first' : undefined}>
-          {busy ? 'Saving…' : blocking.length > 0 ? `${blocking.length} to fix` : withLot && lot.name.trim() ? 'Save route and open lot' : 'Save route'}
+          {busy ? 'Saving…' : blocking.length > 0 ? `${blocking.length} to fix` : 'Save route'}
         </button>
       </div>
       {!name.trim() && named.length >= 2 && (

@@ -10056,3 +10056,36 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
   padding-left: 6px; border-left: 1px solid currentColor;
   font-weight: var(--w-medium); letter-spacing: 0.02em; opacity: 0.9;
 }
+
+/* A labelled field: in an open route step, and on the new-lot cards. */
+.rsfield { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; min-width: 0; }
+.rsfield > span, .rsbtn__label, .rsbtn__wholabel { font-size: var(--t-xs); color: var(--text-dim); }
+.rsfield input, .rsbtn__words {
+  width: 100%; min-width: 0; height: 40px; padding: 0 var(--s3); border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--surface-2); color: var(--text); font: inherit; font-size: var(--t-sm);
+}
+.rsfield input:focus, .rsbtn__words:focus { outline: none; border-color: var(--accent); }
+.rsfield input:disabled { color: var(--text-dim); -webkit-text-fill-color: var(--text-dim); }
+
+/* A lot and the people who work it, as the new-lot form asks for them: two
+   cards, each in a colour of its own. The route preview's lane uses the first. */
+.rsgroup {
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s3); min-width: 0; padding: var(--s4); border-radius: var(--r-lg);
+  background: linear-gradient(180deg, var(--group-soft), transparent 120px), var(--surface);
+  box-shadow: inset 0 0 0 1px var(--group-line);
+}
+.rsgroup--lot { --group: var(--violet-text); --group-soft: var(--violet-soft); --group-line: var(--violet-line); }
+.rsgroup--people { --group: var(--warn); --group-soft: var(--warn-soft); --group-line: rgba(251, 191, 36, 0.4); }
+.rsgroup__title {
+  display: flex; align-items: center; gap: var(--s2); margin: 0;
+  font-size: var(--t-xs); font-weight: var(--w-bold); letter-spacing: 0.06em; text-transform: uppercase; color: var(--group);
+}
+.rsgroup__opt { margin-left: auto; font-weight: var(--w-normal); letter-spacing: 0; text-transform: none; color: var(--text-faint); }
+.rsgroup__lane { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: var(--s2); align-items: end; }
+.rsgroup__arrow { display: grid; place-items: center; height: 40px; color: var(--group); }
+.rsgroup__hint { font-size: var(--t-xs); line-height: 1.45; color: var(--text-dim); }
+.rsgroup__dot { display: inline-block; width: 8px; height: 8px; margin-right: 4px; border-radius: 50%; background: var(--zone); }
+.rsfield--pre { --zone: var(--aqua); }
+.rsfield--lot { --zone: var(--coral); }
+.rsfield--post { --zone: var(--lime); }
+.rsfield--pre > span, .rsfield--lot > span, .rsfield--post > span { color: var(--zone); font-weight: var(--w-semi); }

@@ -2,7 +2,8 @@ import { LotCostCard } from '../components/LotCosts';
 import { haptic } from '../haptics';
 import { confirmSentence } from '../components/Ask';
 import { Fragment, useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { clearLotDraft, readLotDraft, writeLotDraft } from '../lotDraft';
 import { BackBar } from '../components/ScrollManager';
 import {
   WAITING_FOR_LOT, itemLeaveIndex, lotEndIndex, renderStepText, routeJoinsLot, routeParts, sameSteps,
@@ -344,13 +345,17 @@ const READY = 'ready:';
 /**
  * Open a lot.
  *
- * Everything a lot needs to start travelling, on one screen: where it is
- * coming from and going to, and the route it climbs. The rest - who works it
- * at either end - is folded away and editable later.
+ * Two cards, in the order a shop thinks of a shipment: the lot itself - its
+ * name and the lane it ships on - and the people who work it at each part of
+ * the journey. Then the route it travels, added from the shop's own routes
+ * or written fresh on the Route Studio page.
  *
- * Nothing is asked twice: the countries and route of the shop's last lot are
- * where the next one starts, since most shops run the same lane again. The
- * name is asked for first: it is how the shop finds this lot again.
+ * Writing a route leaves this screen rather than covering it, so everything
+ * typed here is kept as a draft and comes back, with the new route already
+ * picked, when the Studio sends the seller back.
+ *
+ * The countries of the shop's last lot are where the next one starts, since
+ * most shops run the same lane again; its route is marked in the list.
  */
 export function NewLotForm({ onDone, onCancel, bare = false }: {
   /** Handed the lot just opened, for a caller that has something to put in it. */
@@ -359,37 +364,34 @@ export function NewLotForm({ onDone, onCancel, bare = false }: {
   /** Inside a dialog that already says "New lot": no card, no heading of its own. */
   bare?: boolean;
 }) {
-  const [details, setDetails] = useState<LotDetails>(() => ({ ...emptyLotDetails, name: '' }));
-  /** Everything that is not a decision, folded away until asked for. */
-  const [more, setMore] = useState(false);
-  const [forwarderName, setForwarderName] = useState('');
-  const [supplierHandle, setSupplierHandle] = useState('');
-  const [handlerHandle, setHandlerHandle] = useState('');
+  const navigate = useNavigate();
+  const location = useLocation();
+  /* What was typed before leaving for the Studio, read once as the form opens. */
+  const [draft] = useState(readLotDraft);
+  const [details, setDetails] = useState<LotDetails>(() => ({
+    ...emptyLotDetails,
+    name: draft?.name ?? '',
+    originCountry: draft?.originCountry ?? '',
+    destinationCountry: draft?.destinationCountry ?? '',
+  }));
+  const [forwarderName, setForwarderName] = useState(draft?.forwarderName ?? '');
+  const [supplierHandle, setSupplierHandle] = useState(draft?.supplierHandle ?? '');
+  const [handlerHandle, setHandlerHandle] = useState(draft?.handlerHandle ?? '');
 
-  /*
-   * Picking, never designing: routes are written in the Studio, which opens
-   * over this form when a new one is needed and hands it straight back.
-   */
+  /* Picking, never designing: routes are written on the Studio page. */
   const [library, setLibrary] = useState<RoutesResponse | null>(null);
-  const [routeId, setRouteId] = useState('');
+  const [routeId, setRouteId] = useState(draft?.routeId ?? '');
   /** The route the shop's last lot travelled, said beside it so the default is never silent. */
   const [lastRouteId, setLastRouteId] = useState<string | null>(null);
-  const [designing, setDesigning] = useState(false);
+  /** The list of routes, shown once "Add route" is pressed or to change the one picked. */
+  const [picking, setPicking] = useState(false);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadRoutes = useCallback(async (pick?: string) => {
-    try {
-      const result = await api.routes();
-      setLibrary(result);
-      if (pick) setRouteId(pick);
-    } catch {
-      setLibrary(null);
-    }
-  }, []);
-
   useEffect(() => {
+    // Read; the draft has done its job once the form is back on screen.
+    if (draft) clearLotDraft();
     void Promise.all([api.routes(), api.myLots().catch(() => null)]).then(([routes, lots]) => {
       setLibrary(routes);
       const last = lots?.lots[0]?.lot;
@@ -397,9 +399,9 @@ export function NewLotForm({ onDone, onCancel, bare = false }: {
       const lastRoute = last?.route?.routeId && usable.some((row) => row.id === last.route!.routeId)
         ? last.route.routeId : null;
       setLastRouteId(lastRoute);
-      // Last lot's route, or the only one there is. With a choice and no
-      // history, nothing is picked for the seller.
-      setRouteId(lastRoute ?? (usable.length === 1 ? usable[0]!.id : ''));
+      // Only a route the Studio came back with is picked: otherwise the seller
+      // adds one, with last lot's marked in the list.
+      setRouteId((now) => (now && usable.some((row) => row.id === now) ? now : ''));
       if (last?.originCountry || last?.destinationCountry) {
         setDetails((now) => ({
           ...now,
@@ -408,25 +410,55 @@ export function NewLotForm({ onDone, onCancel, bare = false }: {
         }));
       }
     }).catch(() => setLibrary(null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /* A route with nothing in its lot lane is for items shipped one by one; a
      lot put on it would have nothing of its own to move. */
   const routes = (library?.routes ?? []).filter(routeJoinsLot);
   /* A shop with no route of its own yet picks from ready-made ones, saved as
-     its own the moment the lot opens - one tap, rather than a trip through
-     the Studio before the first lot can exist. */
+     its own the moment the lot opens. */
   const readyMade = routes.length > 0 ? [] : [...(library?.routeTemplates ?? []), ...(library?.presets ?? [])]
     .filter(routeJoinsLot);
   const vars = { origin: details.originCountry, destination: details.destinationCountry };
+  const picked = routes.find((route) => route.id === routeId)
+    ?? readyMade.find((route) => `${READY}${route.id}` === routeId) ?? null;
+
+  /** Keep what is typed, and write the route on its own page. */
+  function createRoute() {
+    writeLotDraft({
+      name: details.name,
+      originCountry: details.originCountry ?? '',
+      destinationCountry: details.destinationCountry ?? '',
+      forwarderName,
+      supplierHandle,
+      handlerHandle,
+      routeId: routeId.startsWith(READY) ? '' : routeId,
+      returnTo: `${location.pathname}${location.search}`,
+    });
+    navigate('/routes/studio/new?for=lot');
+  }
+
+  function cancel() {
+    clearLotDraft();
+    onCancel();
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (!details.name.trim()) {
+      setError('Give the lot a name.');
+      return;
+    }
     // Said out loud: the country pickers are drawn by the app, so a browser's
-    // own "fill this in" bubble has nothing to point at and the press used to
-    // do nothing at all.
+    // own "fill this in" bubble has nothing to point at.
     if (!details.originCountry || !details.destinationCountry) {
       setError(`Pick the country it ships ${!details.originCountry ? 'from' : 'to'}.`);
+      return;
+    }
+    if (!routeId) {
+      setError('Add the route this lot travels.');
+      setPicking(true);
       return;
     }
     setBusy(true);
@@ -441,13 +473,12 @@ export function NewLotForm({ onDone, onCancel, bare = false }: {
       const { lot } = await api.createLot({
         ...details,
         name: details.name.trim(),
-        // Either a directory forwarder or one you already work with; the lot
-        // does not care which, and neither does the buyer's tracking.
         forwarderName: forwarderName.trim() || undefined,
         supplierHandle: supplierHandle.trim() || undefined,
         handlerHandle: handlerHandle.trim() || undefined,
         routeId: chosen,
       });
+      clearLotDraft();
       onDone(lot);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not create the lot.');
@@ -456,151 +487,133 @@ export function NewLotForm({ onDone, onCancel, bare = false }: {
     }
   }
 
+  const pickRow = (id: string, route: { name: string; steps: readonly RouteStep[]; blurb?: string }, mine: boolean) => (
+    <label key={id} className={`pick${routeId === id ? ' is-on' : ''}`}>
+      <input type="radio" name="route" checked={routeId === id}
+        onChange={() => { setRouteId(id); setPicking(false); setError(null); }} />
+      <span className="pick__body">
+        <span className="pick__name">
+          {route.name}
+          {mine && id === lastRouteId && <span className="badge badge--quiet" style={{ marginLeft: 6 }}>Used on your last lot</span>}
+        </span>
+        {route.blurb && <span className="pick__note">{route.blurb}</span>}
+        <span className="pick__steps">{summarise(route.steps, vars)}</span>
+      </span>
+    </label>
+  );
+
   return (
-    <>
     <form className={bare ? 'form' : 'card card--pad form'} onSubmit={submit} noValidate style={bare ? undefined : { marginBottom: 22 }}>
       {!bare && <h2>New lot</h2>}
-      <p className="muted" style={{ marginTop: -6 }}>
-        A lot is one shipment. Say where it goes and how it travels, then add orders to it.
-      </p>
 
-      <label className="field">
-        <span>Lot name *</span>
-        <input value={details.name} required onChange={(e) => setDetails({ ...details, name: e.target.value })}
-          placeholder="e.g. Diwali air run" />
-        <span className="field__hint">Shown first on every list; the lot number sits beside it.</span>
-      </label>
-
-      {/* Every step this lot's route names - "Received at {origin} warehouse" -
-          reads these two, so they are asked before the route is. */}
-      <div className="row" style={{ gap: 10 }}>
-        <label className="field" style={{ flex: 1 }}>
-          <span>From</span>
-          <Select value={details.originCountry ?? ''} required
-            onChange={(e) => setDetails({ ...details, originCountry: e.target.value })}>
-            <option value="" disabled>Country</option>
-            {COUNTRIES.map((country) => <option key={country} value={country}>{country}</option>)}
-          </Select>
+      {/* The lot itself: what it is called and the lane it ships on. Every
+          step its route names - "Received at {origin} warehouse" - reads these. */}
+      <section className="rsgroup rsgroup--lot" aria-labelledby="nl-group-lot">
+        <h3 id="nl-group-lot" className="rsgroup__title"><span aria-hidden="true">📦</span> Lot</h3>
+        <label className="rsfield">
+          <span>Lot name</span>
+          <input value={details.name} required placeholder="e.g. Diwali air run"
+            onChange={(e) => setDetails({ ...details, name: e.target.value })} />
         </label>
-        <span style={{ alignSelf: 'center', marginTop: 18 }}><Icon name="right" size={14} /></span>
-        <label className="field" style={{ flex: 1 }}>
-          <span>To</span>
-          <Select value={details.destinationCountry ?? ''} required
-            onChange={(e) => setDetails({ ...details, destinationCountry: e.target.value })}>
-            <option value="" disabled>Country</option>
-            {COUNTRIES.map((country) => <option key={country} value={country}>{country}</option>)}
-          </Select>
-        </label>
-      </div>
+        <div className="rsgroup__lane">
+          <label className="rsfield">
+            <span>From</span>
+            <Select value={details.originCountry ?? ''} required aria-label="Ships from"
+              onChange={(e) => setDetails({ ...details, originCountry: e.target.value })}>
+              <option value="" disabled>Country</option>
+              {COUNTRIES.map((country) => <option key={country} value={country}>{country}</option>)}
+            </Select>
+          </label>
+          <span className="rsgroup__arrow" aria-hidden="true"><Icon name="right" size={14} /></span>
+          <label className="rsfield">
+            <span>To</span>
+            <Select value={details.destinationCountry ?? ''} required aria-label="Ships to"
+              onChange={(e) => setDetails({ ...details, destinationCountry: e.target.value })}>
+              <option value="" disabled>Country</option>
+              {COUNTRIES.map((country) => <option key={country} value={country}>{country}</option>)}
+            </Select>
+          </label>
+        </div>
+        <span className="rsgroup__hint">Shown first on every list; the lot number sits beside it.</span>
+      </section>
 
-      {/* Every lot travels a route: its steps are the buyer's tracking. A shop
-          with routes picks one of its own; a shop without one writes one or
-          starts from a sample. */}
+      {/* Who works the lot: one for each part of the journey, in that part's colour. */}
+      <section className="rsgroup rsgroup--people" aria-labelledby="nl-group-people">
+        <h3 id="nl-group-people" className="rsgroup__title"><span aria-hidden="true">🤝</span> People <span className="rsgroup__opt">optional</span></h3>
+        <label className="rsfield rsfield--pre">
+          <span><i className="rsgroup__dot" aria-hidden="true" /> Supplier · before the lot</span>
+          <PersonTag value={supplierHandle} onChange={setSupplierHandle} placeholder="@their_handle" />
+        </label>
+        <label className="rsfield rsfield--lot">
+          <span><i className="rsgroup__dot" aria-hidden="true" /> Forwarder · in the lot</span>
+          <input value={forwarderName} placeholder="Lotus Freight, or your own" aria-label="Forwarder"
+            onChange={(e) => setForwarderName(e.target.value)} />
+        </label>
+        <label className="rsfield rsfield--post">
+          <span><i className="rsgroup__dot" aria-hidden="true" /> Domestic handler · after the lot</span>
+          <PersonTag value={handlerHandle} onChange={setHandlerHandle}
+            placeholder="@their_handle, or empty to dispatch it yourself" />
+        </label>
+      </section>
+
+      {/* The route: added from the shop's own, or written on the Studio page. */}
       <fieldset className="pickset">
         <legend>Route *</legend>
         <span className="field__hint">
           Every order in the lot follows these steps, and customers read them as their tracking.
         </span>
 
-        {library && routes.length > 0 && (
-          <span className="pickset__sub">Your routes</span>
-        )}
-        {routes.map((route) => (
-          <label key={route.id} className={`pick${routeId === route.id ? ' is-on' : ''}`}>
-            <input type="radio" name="route" checked={routeId === route.id}
-              onChange={() => setRouteId(route.id)} />
+        {!library && <SkelRows n={1} />}
+
+        {library && picked && !picking && (
+          <div className="pick is-on" style={{ gridTemplateColumns: 'minmax(0, 1fr) auto', alignItems: 'center' }}>
             <span className="pick__body">
               <span className="pick__name">
-                {route.name}
-                {route.id === lastRouteId && <span className="badge badge--quiet" style={{ marginLeft: 6 }}>Used on your last lot</span>}
+                {picked.name}
+                {routeId === lastRouteId && <span className="badge badge--quiet" style={{ marginLeft: 6 }}>Used on your last lot</span>}
               </span>
-              <span className="pick__steps">{summarise(route.steps, vars)}</span>
+              <span className="pick__steps">{summarise(picked.steps, vars)}</span>
             </span>
-          </label>
-        ))}
-
-        {library && routes.length === 0 && (
-          <p className="field__hint" style={{ margin: 0 }}>
-            You have no routes yet. Create a new one, or pick a sample below - it is saved as
-            your route and you can edit it any time.
-          </p>
+            <button type="button" className="btn btn--sm btn--quiet" onClick={() => setPicking(true)}>Change</button>
+          </div>
         )}
 
-        <button type="button" className="silkcta" onClick={() => setDesigning(true)}>
-          <span className="silkcta__label">+ Create a new route</span>
-          <span className="silkcta__note">Your own steps, without leaving this lot</span>
-        </button>
+        {library && !picked && !picking && (
+          <button type="button" className="btn btn--quiet" style={{ justifySelf: 'start' }} onClick={() => setPicking(true)}>
+            <Icon name="plus" size={14} /> Add route
+          </button>
+        )}
 
-        {readyMade.length > 0 && <span className="pickset__sub">Or start from a sample</span>}
-        {readyMade.map((route) => (
-          <label key={route.id} className={`pick${routeId === `${READY}${route.id}` ? ' is-on' : ''}`}>
-            <input type="radio" name="route" checked={routeId === `${READY}${route.id}`}
-              onChange={() => setRouteId(`${READY}${route.id}`)} />
-            <span className="pick__body">
-              <span className="pick__name">{route.name}</span>
-              <span className="pick__note">{route.blurb}</span>
-              <span className="pick__steps">{summarise(route.steps, vars)}</span>
-            </span>
-          </label>
-        ))}
+        {library && picking && (
+          <>
+            {routes.length > 0 && <span className="pickset__sub">Your routes</span>}
+            {routes.map((route) => pickRow(route.id, route, true))}
 
-        {!library && <SkelRows n={3} />}
+            {routes.length === 0 && (
+              <p className="field__hint" style={{ margin: 0 }}>
+                You have no routes yet. Create a new one, or pick a sample below - it is saved as
+                your route and you can edit it any time.
+              </p>
+            )}
+            {readyMade.length > 0 && <span className="pickset__sub">Samples</span>}
+            {readyMade.map((route) => pickRow(`${READY}${route.id}`, route, false))}
+
+            <button type="button" className="silkcta" onClick={createRoute}>
+              <span className="silkcta__label">+ Create a new route</span>
+              <span className="silkcta__note">Opens the route builder - this lot is kept and waits for you</span>
+            </button>
+          </>
+        )}
       </fieldset>
-
-      {/* A forwarder, a supplier and a handler are all things a lot may
-          acquire later, and none of them stop it existing. */}
-      <button type="button" className="disclose" aria-expanded={more}
-        onClick={() => setMore(!more)}>
-        <Icon name={more ? 'down' : 'right'} size={14} />
-        Who handles it, and the paperwork
-        <span className="faint">optional, and editable later</span>
-      </button>
-
-      {more && (
-        <div className="stack">
-          <label className="field">
-            <span>Forwarder</span>
-            <input value={forwarderName} onChange={(e) => setForwarderName(e.target.value)}
-              placeholder="Lotus Freight, or your own" />
-            <span className="field__hint">Who moves the lot, as opposed to who you bought it from.</span>
-          </label>
-
-          <label className="field">
-            <span>Supplier</span>
-            <PersonTag value={supplierHandle} onChange={setSupplierHandle} placeholder="@their_handle" />
-            <span className="field__hint">
-              Who checks the orders before the lot leaves. They get a packing list for this lot only.
-            </span>
-          </label>
-
-          <label className="field">
-            <span>Domestic handler</span>
-            <PersonTag value={handlerHandle} onChange={setHandlerHandle}
-              placeholder="@their_handle — or leave empty to dispatch it yourself" />
-            <span className="field__hint">
-              Who takes delivery in {details.destinationCountry || 'the destination country'} and gets the parcels out.
-              The lot appears under their My services.
-            </span>
-          </label>
-        </div>
-      )}
 
       {error && <ErrorNotice message={error} />}
       <div className="row">
-        <button type="submit" className="btn"
-          disabled={busy || !details.name.trim() || !routeId}>
+        <button type="submit" className="btn" disabled={busy}>
           {busy ? 'Opening…' : 'Open the lot'}
         </button>
-        <button type="button" className="btn btn--quiet" onClick={onCancel}>Cancel</button>
-        {!routeId && <span className="field__hint">Pick a route first.</span>}
+        <button type="button" className="btn btn--quiet" onClick={cancel}>Cancel</button>
       </div>
     </form>
-
-    {designing && (
-      <RouteSheet onClose={() => setDesigning(false)}
-        onSaved={(route) => { setDesigning(false); void loadRoutes(routeJoinsLot(route) ? route.id : undefined); }} />
-    )}
-    </>
   );
 }
 

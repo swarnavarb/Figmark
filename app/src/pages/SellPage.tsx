@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { TagInput } from '../components/PageFields';
 import { PageLoading } from '../components/Feedback';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { lotDraftWaitingAt } from '../lotDraft';
 import { tagKey } from '@shared/shop-tags';
 import { SOURCING_LABELS, type Sourcing } from '@shared/enums';
 import { currentStepOf, lotOffset, renderStepText, routeOf } from '@shared/routes';
@@ -361,7 +362,8 @@ function SellForm({ serverDraft, draftMissing }: {
   const [lots, setLots] = useState<LotSummary[]>([]);
   const [lotId, setLotId] = useState(restored?.lotId ?? '');
   /** The new-lot form, open over this one. */
-  const [openingLot, setOpeningLot] = useState(false);
+  /* Open again on the way back from writing that lot's route, as it was left. */
+  const [openingLot, setOpeningLot] = useState(() => lotDraftWaitingAt(`${location.pathname}${location.search}`));
   /** Everything past the basics, folded until asked for. */
   const [more, setMore] = useState(() => Boolean(restored?.preOrderMode || askedPreOrder || prefill?.costSheet || prefill?.quantity));
   /* The listing this form already made, when publishing got that far and the

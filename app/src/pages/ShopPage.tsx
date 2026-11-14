@@ -3,6 +3,7 @@ import { CancelFlagBanner, FeeLockBanner, ProGate, ProOwnerProvider, useProLocke
 import { confirmAsk, confirmSentence } from '../components/Ask';
 import { Suspense, createContext, lazy, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { lotDraftWaitingAt } from '../lotDraft';
 import {
   STORE_PERMISSIONS, STORE_PERMISSION_LABELS,
   type StorePermission,
@@ -5090,7 +5091,9 @@ function Lots({ store, spotlightNew = false }: { store: StoreAccess; spotlightNe
   const openId = params.get('lot');
   /** An order sent here from Orders to be filed into the lot about to be opened. */
   const fileOrder = params.get('file');
-  const [creating, setCreating] = useState(Boolean(fileOrder));
+  /* Back from writing a route for a new lot: the form opens again, as it was left. */
+  const location = useLocation();
+  const [creating, setCreating] = useState(() => Boolean(fileOrder) || lotDraftWaitingAt(`${location.pathname}${location.search}`));
   const [notice, setNotice] = useState<string | null>(null);
 
   /* The lot is open; put the order that asked for it inside, and take the
