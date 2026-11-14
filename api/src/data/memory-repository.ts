@@ -380,6 +380,9 @@ export class MemoryRepository implements Repository {
     if (query.maxPriceMinor !== undefined && query.maxPriceMinor > 0) {
       items = items.filter((l) => l.priceMinor <= query.maxPriceMinor!);
     }
+    if (query.minPriceMinor !== undefined && query.minPriceMinor > 0) {
+      items = items.filter((l) => l.priceMinor >= query.minPriceMinor!);
+    }
     if (query.search) items = items.filter((l) => matchesSearch(l, query.search!));
 
     switch (query.sort) {

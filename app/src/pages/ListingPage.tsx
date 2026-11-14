@@ -1,10 +1,13 @@
 import { CreditChip, ProBadge } from '../components/Billing';
 import { OffersBlock } from '../components/OffersBlock';
 import { viewSourceFor } from '../cameFrom';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ApiRequestError, api, type ListingDetail, type PreOrderRoster } from '../api';
-import { Avatar, Icon, PersonLink, Thumb, useConfirm, PageError } from '../components/ui';
+import { Avatar, Icon, Modal, PersonLink, Thumb, useConfirm, PageError } from '../components/ui';
+import { useToast } from '../components/Feedback';
+import { rememberViewed } from '../recentViews';
 import { PageLoading } from '../components/Feedback';
 import { SuccessMoment, firstTime } from '../components/SuccessMoment';
 import { ServiceNudge } from '../components/ServiceCards';
@@ -97,6 +100,27 @@ export function ListingPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- where they came from is read once, as the item opens
   }, [id, ref]);
 
+  // Remembered on this device for the Shop tab's "Recently viewed" - never somebody else's private deal.
+  useEffect(() => {
+    if (!data || data.isOwn || data.listing.privateFor) return;
+    const { listing } = data;
+    const photo = [...(listing.photos ?? [])].sort((a, b) => Number(Boolean(b.isPrimary)) - Number(Boolean(a.isPrimary)))[0];
+    rememberViewed({ id: listing.id, title: listing.title, priceMinor: listing.priceMinor, currency: listing.currency, photo: photo?.url || null });
+  }, [data?.listing.id]); // eslint-disable-line react-hooks/exhaustive-deps -- once per item opened
+
+  const toast = useToast();
+  const [offering, setOffering] = useState(false);
+  // The buy box out of sight: its price and button follow along at the bottom.
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [boxGone, setBoxGone] = useState(false);
+  useEffect(() => {
+    const box = boxRef.current;
+    if (!box) return;
+    const watch = new IntersectionObserver(([entry]) => setBoxGone(entry ? !entry.isIntersecting : false));
+    watch.observe(box);
+    return () => watch.disconnect();
+  }, [data !== null]); // eslint-disable-line react-hooks/exhaustive-deps -- once the box exists
+
   const onSaved = useCallback((liked: boolean) => setData((prev) => (prev ? { ...prev, liked } : prev)), []);
   const [liked, toggleLike] = useSave(id, data?.liked ?? false, onSaved);
   const shareSheet = useShareSheet();
@@ -145,6 +169,16 @@ export function ListingPage() {
       navigate(`/order/${placed.order.id}`);
     });
 
+  // Into the cart and stay here: the order is made unpaid, exactly as Buy now
+  // makes it, and waits in the cart until it is paid or booked.
+  const addToCart = () =>
+    run('', async () => {
+      haptic();
+      await api.order(listing.id, quantity, via, ref, fromPost);
+      window.dispatchEvent(new Event('figmark:cart'));
+      toast(`${listing.title} is in your cart.`, 'ok');
+    });
+
   const toggleFollow = () =>
     run('', async () => {
       if (!seller) return;
@@ -163,11 +197,14 @@ export function ListingPage() {
   // A link that takes money off is the price this reader pays.
   const linkOff = data.affiliate?.referredBy && !data.isOwn ? data.affiliate.buyerOffMinor ?? 0 : 0;
 
+  const inStock = isMultiple(listing) || listing.quantityAvailable > 0;
+  // What can be bought from here at all: not the shop's own, not taken down or expired.
+  const buyable = !data.isOwn && listing.status !== 'archived' && !isExpired(listing);
   // A pre-order books one place at a time; anything else up to what is left.
   const maxQuantity = listing.preOrder ? 1 : isMultiple(listing) ? 20 : Math.min(20, listing.quantityAvailable);
 
   const buyBox = (
-    <div className="buybox rise" style={{ ['--i' as string]: 1 }}>
+    <div className="buybox rise" style={{ ['--i' as string]: 1 }} ref={boxRef}>
       <div className="buybox__top">
         {linkOff > 0 ? (
           <span className="buybox__price">
@@ -254,8 +291,14 @@ export function ListingPage() {
             </button>
           ) : (
             <button className={`btn btn--lg buybox__buy${lock}`} onClick={gate(() => buy(), 'Sign in to buy this item.')}
-              disabled={busy || (!isMultiple(listing) && listing.quantityAvailable === 0)}>
-              {busy ? <span className="buybox__opening">Opening checkout</span> : <>{lockMark}{listing.preOrder ? 'Buy a place now' : 'Buy now'}</>}
+              disabled={busy || !inStock}>
+              {busy ? <span className="buybox__opening">Working on it</span> : <>{lockMark}{listing.preOrder ? 'Buy a place now' : 'Buy now'}</>}
+            </button>
+          )}
+          {!shut && (
+            <button type="button" className={`btn btn--ghost buybox__cart${lock}`} aria-label="Add to cart" title="Add to cart"
+              onClick={gate(() => addToCart(), 'Sign in to add it to your cart.')} disabled={busy || !inStock}>
+              <Svg name="cart" size={18} />
             </button>
           )}
           <button className={`btn btn--ghost buybox__save${liked ? ' is-on' : ''}${lock}`} aria-label={liked ? 'Saved' : 'Save'}
@@ -281,17 +324,30 @@ export function ListingPage() {
       {/* A question, a bargain, "is it still there" - asked with the item
           attached, so the shop knows exactly which one. */}
       {!data.isOwn && seller?.username && (
-        <Link to={`/messages/${encodeURIComponent(seller.username)}?about=${encodeURIComponent(listing.id)}`}
-          className={`buybox__ask${lock}`} onClick={gate(() => undefined, 'Sign in to message the shop.')}>
-          <Icon name="message" size={15} /> Message about this item
-          <small>Ask a question or make an offer</small>
-        </Link>
+        <div className="lp__talk">
+          <Link to={`/messages/${encodeURIComponent(seller.username)}?about=${encodeURIComponent(listing.id)}`}
+            className={`buybox__ask${lock}`} onClick={gate(() => undefined, 'Sign in to message the shop.')}>
+            <Icon name="message" size={15} /> Ask a question
+          </Link>
+          {buyable && !listing.preOrder && !listing.privateFor && (
+            <button type="button" className={`buybox__ask lp__offer${lock}`}
+              onClick={gate(() => setOffering(true), 'Sign in to make an offer.')}>
+              <Svg name="coin" size={15} /> Make an offer
+            </button>
+          )}
+        </div>
+      )}
+      {offering && seller?.username && (
+        <OfferDialog priceMinor={listing.priceMinor} currency={listing.currency} shop={seller.storefrontName}
+          onClose={() => setOffering(false)}
+          onSend={(offerMinor) => navigate(`/messages/${encodeURIComponent(seller.username!)}?about=${encodeURIComponent(listing.id)}&offer=${offerMinor}`)} />
       )}
       {/* Buyer's words, for a buyer: not on the seller's own item, nor on one
           that can no longer be bought. */}
       {!data.isOwn && !isExpired(listing) && (
         <p className="buybox__fine">
           {!user ? '🔒 Sign in to buy or save. ' : ''}Nothing is charged yet — you choose how to pay on the next screen.
+          {' '}Save it and you are told if the price drops.
         </p>
       )}
       {data.affiliate?.referredBy && !data.isOwn && <ReferredBy party={data.affiliate.referredBy}
@@ -514,6 +570,25 @@ export function ListingPage() {
         </aside>
       </div>
       <SimilarItems listingId={listing.id} />
+      {buyable && !shut && <div className="buybar__room" aria-hidden="true" />}
+      {/* The price and Buy, kept in reach once the buy box has scrolled away. */}
+      {buyable && !shut && boxGone && createPortal(
+        <div className="buybar" role="region" aria-label="Buy this item">
+          <span className="buybar__what">
+            <span className="buybar__title">{listing.title}</span>
+            <b className="buybar__price">{formatMoney(linkOff > 0 ? Math.max(100, listing.priceMinor - linkOff) : listing.priceMinor, listing.currency)}</b>
+          </span>
+          <button type="button" className={`btn btn--ghost buybar__cart${lock}`} aria-label="Add to cart"
+            onClick={gate(() => addToCart(), 'Sign in to add it to your cart.')} disabled={busy || !inStock}>
+            <Svg name="cart" size={17} />
+          </button>
+          <button type="button" className={`btn buybar__buy${lock}`} onClick={gate(() => buy(), 'Sign in to buy this item.')}
+            disabled={busy || !inStock}>
+            {inStock ? (listing.preOrder ? 'Buy a place' : 'Buy now') : 'Sold out'}
+          </button>
+        </div>,
+        document.body,
+      )}
       {editing && (
         <EditListingDialog listing={listing} onClose={() => setEditing(false)}
           onSaved={(saved) => {
@@ -1074,5 +1149,48 @@ function RestockButton({ listingId, initial, lock }: {
       )}
       {error && <small className="notice notice--error">{error}</small>}
     </div>
+  );
+}
+
+/**
+ * "Make an offer": a price, said plainly, before the chat opens.
+ *
+ * The offer goes to the shop as a message about this item, which is where the
+ * shop already answers one - with a private deal at the agreed price, or a no.
+ * Starts a tenth under the asking price, rounded to a tidy figure.
+ */
+function OfferDialog({ priceMinor, currency, shop, onClose, onSend }: {
+  priceMinor: number;
+  currency: string;
+  shop: string;
+  onClose: () => void;
+  onSend: (offerMinor: number) => void;
+}) {
+  const step = priceMinor >= 100_000 ? 10_000 : priceMinor >= 10_000 ? 1_000 : 100;
+  const start = Math.max(step, Math.round((priceMinor * 0.9) / step) * step);
+  const [rupees, setRupees] = useState(String(Math.round(start / 100)));
+  const offerMinor = Math.round(Number(rupees) * 100);
+  const valid = Number.isFinite(offerMinor) && offerMinor > 0 && offerMinor < priceMinor;
+  const off = valid ? Math.round(((priceMinor - offerMinor) / priceMinor) * 100) : 0;
+  return (
+    <Modal title="Make an offer" onClose={onClose}>
+      <form className="stack" style={{ gap: 12 }} onSubmit={(event) => { event.preventDefault(); if (valid) onSend(offerMinor); }}>
+        <p className="faint" style={{ margin: 0 }}>
+          Asking price <b>{formatMoney(priceMinor, currency)}</b>. {shop} can accept with a private deal at your price, or reply.
+        </p>
+        <label className="field">
+          <span>Your offer (₹)</span>
+          <input type="number" inputMode="numeric" min="1" value={rupees} autoFocus
+            onChange={(event) => setRupees(event.target.value)} aria-describedby="offer-note" />
+        </label>
+        <small id="offer-note" className={valid ? 'faint' : 'notice notice--warn'}>
+          {valid ? `${off}% under the asking price.` : 'An offer is a number under the asking price.'}
+        </small>
+        <div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
+          <button type="button" className="btn btn--ghost" onClick={onClose}>Cancel</button>
+          <button type="submit" className="btn" disabled={!valid}>Send offer</button>
+        </div>
+      </form>
+    </Modal>
   );
 }

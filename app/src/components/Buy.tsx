@@ -5,7 +5,7 @@ import { affiliateUnitMinor, linkDiscountMinor } from '@shared/affiliate';
 import { DEAL_DEFAULT_HOURS, DEAL_HOUR_CHOICES, DEAL_MAX_HOURS } from '@shared/deals';
 import { ETA_MAX_DAYS, etaLabel, etaProblem, type DeliveryEta } from '@shared/delivery-eta';
 import {
-  PAYMENT_KIND_LABELS, PAYMENT_METHOD_LABELS, REFUND_ORIGIN_LABELS, availabilityLabel, creditIsLive, creditLeft, expiresSoon, isExpired,
+  PAYMENT_KIND_LABELS, advanceMinor, PAYMENT_METHOD_LABELS, REFUND_ORIGIN_LABELS, availabilityLabel, creditIsLive, creditLeft, expiresSoon, isExpired,
   isMultiple, methodOf, orderMoney, timeLeft,
 } from '@shared/payments';
 import { Link } from 'react-router-dom';
@@ -60,9 +60,18 @@ export function DropTag({ on }: { on: boolean | undefined }) {
 }
 
 /** The highlighted line under a card's picture: this can be booked with part of the price. */
-export function AdvanceStrip({ percent }: { percent: number | null | undefined }) {
+export function AdvanceStrip({ percent, priceMinor, currency = 'INR' }: {
+  percent: number | null | undefined;
+  /** With the price, the strip says what booking costs in money rather than as a share. */
+  priceMinor?: number;
+  currency?: string;
+}) {
   if (!percent) return null;
-  return <span className="advstrip">💸 Booking Amt · {percent}%</span>;
+  return (
+    <span className="advstrip" title={`Pay ${percent}% now, the rest later`}>
+      💸 {priceMinor ? <>Book for {formatMoney(advanceMinor(priceMinor, percent), currency)}</> : <>Book with {percent}% now</>}
+    </span>
+  );
 }
 
 /** Total, paid, balance and credit: the four numbers that must never be ambiguous. */

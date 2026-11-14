@@ -282,6 +282,9 @@ export function ThreadPage() {
         id: listing.id, title: listing.title, photo: photo?.url || null,
         priceMinor: listing.priceMinor, currency: listing.currency, condition: listing.condition,
       });
+      // Arriving from "Make an offer": the offer is written out, ready to send.
+      const offer = Number(params.get('offer'));
+      if (offer > 0) setBody((now) => now || `I'd like to offer ${formatMoney(offer, listing.currency)} for this. Would you take it?`);
     }).catch(() => undefined);
     return () => { cancelled = true; };
   }, [aboutId]);

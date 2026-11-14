@@ -33,6 +33,21 @@ function cartOnly(groups: ItemGroup[]): { item: Item; group: ItemGroup }[] {
     .sort((a, b) => b.item.createdAt.localeCompare(a.item.createdAt));
 }
 
+/** The cart by shop, in the order each shop's newest item was added. */
+function byShop(entries: { item: Item; group: ItemGroup }[]) {
+  const shops = new Map<string, { sellerId: string; sellerName: string; sellerHandle: string | null; currency: string; totalMinor: number; entries: typeof entries }>();
+  for (const entry of entries) {
+    const { group, item } = entry;
+    const shop = shops.get(group.sellerId) ?? {
+      sellerId: group.sellerId, sellerName: group.sellerName, sellerHandle: group.sellerHandle, currency: item.currency, totalMinor: 0, entries: [],
+    };
+    shop.entries.push(entry);
+    if (!item.unavailable) shop.totalMinor += item.totalMinor;
+    shops.set(group.sellerId, shop);
+  }
+  return [...shops.values()];
+}
+
 const arrived = (item: Item) => item.status === 'delivered';
 
 /**
@@ -320,7 +335,7 @@ export function CartPage() {
         <div className="cartbox__text">
           <span className="cartbox__eyebrow">Waiting for you</span>
           <h1 className="cartbox__title">Your cart</h1>
-          <p className="cartbox__lede">Things you pressed Buy on. Nothing is ordered until you pay or book.</p>
+          <p className="cartbox__lede">Things you added or pressed Buy on, by shop. Nothing is ordered until you pay or book.</p>
         </div>
         {items && items.length > 0 && (
           <div className="cartbox__sum">
@@ -335,11 +350,22 @@ export function CartPage() {
         <SkelCards n={2} h={170} />
       ) : items.length === 0 ? (
         <EmptyState icon={<Svg name="cart" size={26} />} title="Your cart is empty">
-          Press Buy on anything you like and it waits here. <Link to="/">Go find something fun →</Link>
+          Add anything you like and it waits here. <Link to="/">Go find something fun →</Link>
         </EmptyState>
       ) : (
         <div className="stack">
-          {items.map(({ item, group }, n) => (
+          {byShop(items).map((shop) => (
+            <section key={shop.sellerId} className="cartshop stack" aria-label={`From ${shop.sellerName}`}>
+              {/* Each shop is its own checkout, so its items and their sum sit together. */}
+              <header className="cartshop__head">
+                {shop.sellerHandle
+                  ? <Link to={`/${encodeURIComponent(shop.sellerHandle)}`} className="cartshop__name">{shop.sellerName}</Link>
+                  : <b className="cartshop__name">{shop.sellerName}</b>}
+                <span className="cartshop__sum">
+                  {shop.entries.length} {shop.entries.length === 1 ? 'item' : 'items'} · <b>{formatMoney(shop.totalMinor, shop.currency)}</b>
+                </span>
+              </header>
+              {shop.entries.map(({ item, group }, n) => (
             <ItemCard key={item.id} i={n + 1}
               to={`/listing/${item.listingId}`}
               photo={item.photo ?? null}
@@ -366,6 +392,8 @@ export function CartPage() {
                   onClick={() => void discard(item, false)}>Remove</button>
               </span>
             </ItemCard>
+              ))}
+            </section>
           ))}
         </div>
       )}

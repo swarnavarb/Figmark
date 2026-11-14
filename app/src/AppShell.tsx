@@ -260,6 +260,14 @@ function CartButton() {
   const { pathname } = useLocation();
   const [count, setCount] = useState(0);
 
+  // Also re-counted when something is added without leaving the page (Add to cart).
+  const [added, setAdded] = useState(0);
+  useEffect(() => {
+    const bump = () => setAdded((n) => n + 1);
+    window.addEventListener('figmark:cart', bump);
+    return () => window.removeEventListener('figmark:cart', bump);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     void api.myItems()
@@ -269,7 +277,7 @@ function CartButton() {
       })
       .catch(() => { /* A count that cannot load is simply not shown. */ });
     return () => { cancelled = true; };
-  }, [pathname]);
+  }, [pathname, added]);
 
   return (
     <NavLink to="/cart" className={({ isActive }) => `navcart${isActive ? ' is-active' : ''}`}

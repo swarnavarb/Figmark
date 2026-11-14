@@ -73,6 +73,40 @@ export async function tellRestocked(repository: Repo, before: Listing, after: Li
 }
 
 /**
+ * Tell the people who saved an item that it just got cheaper.
+ *
+ * A save is the buyer saying "not at this price, not yet"; a lower price is
+ * the answer to that, and the one moment worth a notification. Only on a real
+ * drop, never on a private deal, and never to the shop itself.
+ */
+export async function tellPriceDropped(repository: Repo, before: Listing, after: Listing): Promise<number> {
+  if (after.privateFor || after.priceMinor >= before.priceMinor) return 0;
+  try {
+    const savers = [...new Set((await repository.listLikesForListings([after.id])).map((like) => like.userId))]
+      .filter((id) => id !== after.sellerId);
+    if (savers.length === 0) return 0;
+    const shop = await repository.getUserById(after.sellerId);
+    const shopName = shop?.sellerProfile?.storefrontName ?? 'The shop';
+    const off = Math.round(((before.priceMinor - after.priceMinor) / before.priceMinor) * 100);
+    await notify(repository, savers, {
+      kind: 'price_drop',
+      title: `Price drop: ${after.title}`,
+      body: `${actorName(shopName)} cut it ${off > 0 ? `${off}% ` : ''}to ${rupees(after.priceMinor)}. You saved it.`,
+      link: listingLink(after),
+    }, { pushLater: true });
+    return savers.length;
+  } catch {
+    /* A missed alert is a pity, not a failure of the edit that caused it. */
+    return 0;
+  }
+}
+
+/** Whole rupees, the way a notification line reads them. */
+function rupees(minor: number): string {
+  return `₹${Math.round(minor / 100).toLocaleString('en-IN')}`;
+}
+
+/**
  * POST /api/listings/{id}/restock-alert - `{ on }`: be told when this sold-out
  * item is back, or stop. Not on your own item, and only while it is sold out.
  */
