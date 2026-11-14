@@ -1004,19 +1004,31 @@ label.rdy__line { cursor: pointer; }
    Whose shop, what is waiting, five tabs, then the work. One surface colour,
    hairlines rather than cards, and colour only where something needs doing. */
 .sellpage { display: grid; gap: 0; align-content: start; }
-.shophead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s3); margin-bottom: var(--s3); }
-.shophead__id { display: grid; gap: 4px; min-width: 0; flex: 1 1 160px; }
+.shophead { display: grid; gap: var(--s3); margin-bottom: var(--s3); }
+.shophead__top { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); min-width: 0; }
+.shophead__id { display: grid; gap: 4px; min-width: 0; }
 .shophead__name {
   margin: 0; font-size: var(--t-lg); line-height: 1.15; letter-spacing: -.01em;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.shophead__meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
 .shophead__role { font-size: var(--t-xs); color: var(--text-faint); }
-.shophead__acts { display: flex; align-items: center; gap: var(--s2); flex: none; }
+.shophead__side { display: flex; align-items: center; gap: var(--s2); flex: none; }
 .shophead__gear { width: 38px; height: 38px; border-radius: var(--r-pill); background: transparent; }
 .shophead__gear.is-on { color: var(--accent-text); border-color: var(--accent-line); background: var(--accent-soft); }
-.shophead__list { white-space: nowrap; }
-.shophead__drop .probadge { margin-left: 2px; }
+/* List an item and Live Drop share the row in two equal halves, edge to edge. */
+.shophead__acts { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
+.shophead__btn { justify-content: center; white-space: nowrap; min-width: 0; }
+.shophead__drop {
+  color: #fff; border-color: transparent; font-weight: var(--w-semi);
+  background: linear-gradient(115deg, #ff6a00, #ee0979, #7b2ff7, #ee0979, #ff6a00);
+  background-size: 300% 100%;
+  animation: shophead-drop 5s ease-in-out infinite alternate;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.25);
+}
+.shophead__drop:hover { color: #fff; filter: brightness(1.08); }
+.shophead__drop .probadge { margin-left: 2px; text-shadow: none; }
+@keyframes shophead-drop { from { background-position: 0% 50%; } to { background-position: 100% 50%; } }
+@media (prefers-reduced-motion: reduce) { .shophead__drop { animation: none; } }
 .statuspill {
   display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px 2px 8px; border-radius: var(--r-pill);
   border: 1px solid var(--border); background: transparent; color: var(--text-dim);

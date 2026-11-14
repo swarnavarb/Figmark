@@ -431,34 +431,34 @@ function ShopConsole({ store, onChanged }: { store: StoreAccess; onChanged: () =
       {store.isOwner && <SetupChecklist hasStore />}
 
       <header className="shophead">
-        <div className="shophead__id">
-          <h1 className="shophead__name">{store.name}</h1>
-          <span className="shophead__meta">
-            <ShopStatusPill storeId={store.ownerId} onOpen={isAdmin ? () => setSection('storefront') : undefined} />
+        <div className="shophead__top">
+          <div className="shophead__id">
+            <h1 className="shophead__name">{store.name}</h1>
             {!store.isOwner && <span className="shophead__role">You help run this shop</span>}
-          </span>
+          </div>
+          <div className="shophead__side">
+            {hasSettings && (
+              <button type="button" className={`iconbtn shophead__gear${activeGroup === 'settings' ? ' is-on' : ''}`}
+                aria-label="Shop settings" aria-pressed={activeGroup === 'settings'} title="Shop settings"
+                onClick={() => openGroup('settings')}>
+                <Icon name="settings" size={18} />
+              </button>
+            )}
+            <ShopStatusPill storeId={store.ownerId} onOpen={isAdmin ? () => setSection('storefront') : undefined} />
+          </div>
         </div>
-        <div className="shophead__acts">
-          {hasSettings && (
-            <button type="button" className={`iconbtn shophead__gear${activeGroup === 'settings' ? ' is-on' : ''}`}
-              aria-label="Shop settings" aria-pressed={activeGroup === 'settings'} title="Shop settings"
-              onClick={() => openGroup('settings')}>
-              <Icon name="settings" size={18} />
-            </button>
-          )}
-          {canList && (
-            <Link to={`/sell?store=${encodeURIComponent(store.ownerId)}`} className="btn shophead__list">
+        {canList && (
+          <div className="shophead__acts">
+            <Link to={`/sell?store=${encodeURIComponent(store.ownerId)}`} className="btn shophead__btn">
               <Icon name="plus" size={16} /> List an item
             </Link>
-          )}
-          {canList && (
             <Link to={dropLocked ? '/pro' : `/shop/power-sale?store=${encodeURIComponent(store.ownerId)}`}
-              className="btn btn--ghost shophead__list shophead__drop"
+              className="btn shophead__btn shophead__drop"
               title={dropLocked ? 'Live drops are part of Pro' : 'Start a live drop'}>
               <span aria-hidden="true">⚡️</span> Live Drop <span className="probadge">PRO</span>
             </Link>
-          )}
-        </div>
+          </div>
+        )}
       </header>
 
       <NeedsYou store={store} todo={data?.todo ?? null} section={active} onGo={setSection} />
