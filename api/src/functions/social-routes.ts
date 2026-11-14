@@ -15,7 +15,7 @@ import { isLive as storeIsLive, rightsIn, storeOf } from '../../../shared/servic
 import { parseStoreKey, storeKey, type ChannelMessage } from '../../../shared/service-work.js';
 import { isExpired, isMultiple, rupees } from '../../../shared/payments.js';
 import { personRef, sellerRef, type PartyRef } from '../../../shared/parties.js';
-import { PERSON_FOLLOW, isPersonFollow } from '../../../shared/storefront.js';
+import { PERSON_FOLLOW, isPersonFollow, personFollowId } from '../../../shared/storefront.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { ownPhotos } from '../storage/index.js';
@@ -94,6 +94,12 @@ interface PostCard {
    * follow its author is a dead end.
    */
   following: boolean;
+  /**
+   * Who the Follow beside the name follows: the shop for a post said as a
+   * shop, the service store for a service's post, and otherwise the person
+   * who wrote it. Absent when that is the viewer.
+   */
+  follow?: { key: string; following: boolean; service?: { kind: 'forwarder' | 'artist'; ownerId: string } } | null;
   /** The post this one passes on, when it is a repost. Null when that post has gone. */
   original?: PostCard | null;
   /**
@@ -394,6 +400,17 @@ export async function decorate(
     // the line on a card costs a name or two per post, not a read of every reactor.
     !top ? Promise.resolve(new Set<string>()) : options.watched ? Promise.resolve(options.watched) : watchedBy(viewer.userId, repository),
   ]);
+  // Everything the viewer follows, raw - shops by id, people as `person:<id>`,
+  // services as `kind:ownerId` - for the Follow beside each author's name.
+  const followKeys = new Set<string>();
+  if (top) {
+    const [follows, services] = await Promise.all([
+      repository.listFollowsBy(viewer.userId).catch(() => []),
+      repository.listServiceStoresFollowedBy(viewer.userId).catch(() => [] as string[]),
+    ]);
+    for (const follow of follows) followKeys.add(follow.sellerId);
+    for (const service of services) followKeys.add(service);
+  }
   const actedBy = new Map<string, string[]>();
   if (watched.size > 0) {
     for (const post of posts) {
@@ -484,6 +501,21 @@ export async function decorate(
       following: followedIds.has(post.channelId) || post.channelId === viewer.userId || Boolean(post.service),
       shop: spokenAsShop,
     };
+    if (top && !guest) {
+      if (post.service) {
+        if (post.service.ownerId !== viewer.userId) {
+          card.follow = {
+            key: post.channelId, following: followKeys.has(post.channelId),
+            service: { kind: post.service.kind, ownerId: post.service.ownerId },
+          };
+        }
+      } else if (spokenAsShop) {
+        if (post.channelId !== viewer.userId) card.follow = { key: post.channelId, following: followKeys.has(post.channelId) };
+      } else if (post.authorId !== viewer.userId) {
+        const key = personFollowId(post.authorId);
+        card.follow = { key, following: followKeys.has(key) };
+      }
+    }
     if (savedIds.has(post.id)) card.saved = true;
     const acted = actedBy.get(post.id);
     if (acted) {

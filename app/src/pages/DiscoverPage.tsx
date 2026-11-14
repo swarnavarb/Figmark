@@ -542,7 +542,7 @@ function DiscoverBody() {
             </span>
             <div className="dischero__titles">
               <h1 className="dischero__title">Discover</h1>
-              <span className="dischero__kicker">Shelves · debates · finds</span>
+              <span className="dischero__kicker">Trends · debates · finds</span>
             </div>
           </div>
           <div className="dischero__actions">

@@ -1403,6 +1403,8 @@ export interface PostCard {
   social: PostSocial;
   /** Whether the viewer follows the channel it was posted in. */
   following: boolean;
+  /** Who the Follow beside the name follows, and whether the viewer already does. */
+  follow?: { key: string; following: boolean; service?: { kind: StoreKind; ownerId: string } } | null;
   /** What a repost passes on. Null when the original has been taken down. */
   original?: PostCard | null;
   /** The forum it was said in, when read anywhere but that forum. */
