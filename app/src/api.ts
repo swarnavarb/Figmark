@@ -233,6 +233,17 @@ export function warmReads(starts: (() => Promise<unknown>)[]): void {
   }
 }
 
+/**
+ * A write that only records something about the visit (which device this
+ * is) and changes nothing any screen of the app reads. It leaves the held
+ * reads alone: the device report goes out as the first screen draws, and
+ * emptying the reads then sent the catalogue's six warmed reads, and two the
+ * bootstrap had answered, a second time on every signed-in load.
+ */
+function record<T>(path: string, body: unknown): Promise<T> {
+  return send<T>(path, { method: 'POST', body: JSON.stringify(body) });
+}
+
 function request<T>(path: string, init?: RequestInit): Promise<T> {
   const method = (init?.method ?? 'GET').toUpperCase();
   if (method !== 'GET') {
@@ -3791,7 +3802,7 @@ export const api = {
   pushUnsubscribe: (endpoint: string) => post<{ ok: true }>('/push/unsubscribe', { endpoint }),
   pushTest: () => post<{ sent: number }>('/push/test'),
   reportDevice: (body: { id: string; platform: string; browser: string; installed: boolean; push: string }) =>
-    post<{ ok: true; onHomeScreen?: boolean }>('/me/device', body),
+    record<{ ok: true; onHomeScreen?: boolean }>('/me/device', body),
   closeWant: (id: string, buyerId: string) =>
     post<{ want: WantCard }>(`/wants/${encodeURIComponent(id)}/close?buyer=${encodeURIComponent(buyerId)}`),
   forumMembers: (id: string) => request<ForumMembers>(`/social/forums/${encodeURIComponent(id)}/members`),

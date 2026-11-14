@@ -91,4 +91,28 @@ await check('one bootstrap answers the start of every page: four reads signed ou
   assert.equal(answers['/quest/me'].status, 200);
 });
 
+await check('a large answer is compressed for a browser that accepts it, and only the outer route compresses', async () => {
+  const { brotliDecompressSync, gunzipSync } = await import('node:zlib');
+  const session = await login(req({ body: { identifier: person.email, password: person.password } }), ctx);
+  const auth = { authorization: `Bearer ${session.jsonBody.token}` };
+  const plain = await bootstrap(req({ headers: auth }), ctx);
+  assert.equal(plain.headers.get('content-encoding'), null);
+  const br = await bootstrap(req({ headers: { ...auth, 'accept-encoding': 'gzip, deflate, br' } }), ctx);
+  assert.equal(br.headers.get('content-encoding'), 'br');
+  assert.match(br.headers.get('vary') ?? '', /Accept-Encoding/);
+  assert.equal(br.headers.get('cache-control'), 'no-store');
+  assert.equal(br.jsonBody, undefined);
+  // The inner routes kept their jsonBody: all nine answers came through.
+  const unpacked = JSON.parse(brotliDecompressSync(br.body).toString('utf8'));
+  assert.equal(Object.keys(unpacked.answers).length, 9);
+  assert.equal(unpacked.answers['/auth/me'].body.user.email, person.email);
+  const gz = await bootstrap(req({ headers: { ...auth, 'accept-encoding': 'gzip, br;q=0' } }), ctx);
+  assert.equal(gz.headers.get('content-encoding'), 'gzip');
+  assert.equal(JSON.parse(gunzipSync(gz.body).toString('utf8')).answers['/auth/me'].body.user.email, person.email);
+  // A small answer goes as it is.
+  const small = await clientError(req({ headers: { 'accept-encoding': 'br' }, body: {} }), ctx);
+  assert.equal(small.status, 400);
+  assert.ok(small.jsonBody);
+});
+
 console.log(`\n${passed} account checks passed`);

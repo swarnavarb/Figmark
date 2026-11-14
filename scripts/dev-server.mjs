@@ -692,8 +692,10 @@ const server = createServer((request, response) => {
       // Not every route answers with JSON: a photo comes back as bytes with
       // its own content type, the way the Functions host would send it.
       const binary = result.body instanceof Buffer || result.body instanceof Uint8Array;
+      // A compressed JSON answer is bytes too, with its headers in a Headers
+      // object (http.ts), which spreading would empty.
       const headers = binary
-        ? { ...(result.headers ?? {}) }
+        ? (result.headers instanceof Headers ? Object.fromEntries(result.headers) : { ...(result.headers ?? {}) })
         : { 'Content-Type': 'application/json' };
       const cookies = setCookiesOf(result);
       if (cookies.length > 0) headers['Set-Cookie'] = cookies;

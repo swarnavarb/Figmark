@@ -168,6 +168,7 @@ function deferSpotlit(items: FlowItem[], spotlit: ReadonlySet<string>, gap = SPO
 
 const SEEN_KEY = 'figmark.discover.seen';
 const SEEN_KEEP = 400;
+// pageLoaders.ts (warmDiscoverReads) reads this key too, to tell whether a guest's stream address carries interests.
 const INTERESTS_KEY = 'figmark.discover.interests';
 const INTERESTS_KEEP = 12;
 /**

@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { brotliCompressSync, constants as zlibConstants, gzipSync } from 'node:zlib';
 import type { HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions';
 import type { ApiError } from '../../../shared/contracts.js';
 import { AuthError } from '../auth/errors.js';
@@ -182,11 +184,62 @@ function backstop(request: unknown): HttpResponseInit | null {
   return writeBackstop(request as HttpRequest);
 }
 
+/**
+ * Set while a route is answering, so a route another route calls in-process
+ * (the bootstrap's nine reads, a batch's one item at a time) knows it is not
+ * answering the browser: its caller reads its jsonBody, so it must keep one.
+ */
+const answering = new AsyncLocalStorage<true>();
+
+/** Smaller than this, a JSON answer goes as it is: compressing would barely save a packet. */
+const COMPRESS_MIN_BYTES = 1024;
+
+/** The encodings this request accepts, of the two the API speaks. */
+function acceptedEncoding(request: unknown): 'br' | 'gzip' | null {
+  const headers = (request as { headers?: { get?: (name: string) => string | null } } | undefined)?.headers;
+  if (typeof headers?.get !== 'function') return null;
+  const accepted = new Set(
+    (headers.get('accept-encoding') ?? '')
+      .split(',')
+      .map((part) => part.trim().toLowerCase().split(';'))
+      .filter(([, q]) => !q || !/^q=0(\.0*)?$/.test(q.trim()))
+      .map(([name]) => name),
+  );
+  if (accepted.has('br')) return 'br';
+  if (accepted.has('gzip')) return 'gzip';
+  return null;
+}
+
+/**
+ * A JSON answer compressed, when the browser accepts it and it is worth it.
+ *
+ * The catalogue, Discover's lists and the bootstrap run to tens or hundreds of
+ * kilobytes of JSON, and Static Web Apps compresses the static files but sends
+ * what a Function answers as it is. Brotli at a low quality: most of the
+ * saving, for a few milliseconds of a worker's time.
+ */
+function compressed(request: unknown, response: HttpResponseInit): HttpResponseInit {
+  if (response.jsonBody === undefined || response.body !== undefined) return response;
+  const encoding = acceptedEncoding(request);
+  if (!encoding) return response;
+  const text = JSON.stringify(response.jsonBody);
+  if (text === undefined || Buffer.byteLength(text) < COMPRESS_MIN_BYTES) return response;
+  const body = encoding === 'br'
+    ? brotliCompressSync(text, { params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 4, [zlibConstants.BROTLI_PARAM_SIZE_HINT]: text.length } })
+    : gzipSync(text, { level: 6 });
+  const headers = new Headers(response.headers as ConstructorParameters<typeof Headers>[0]);
+  if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+  headers.set('Content-Encoding', encoding);
+  headers.append('Vary', 'Accept-Encoding');
+  const { jsonBody: _sent, ...rest } = response;
+  return { ...rest, headers, body };
+}
+
 /** Wrap a handler so every route gets uniform error translation. */
 export function handler<Args extends unknown[]>(
   fn: (...args: [...Args, InvocationContext]) => Promise<HttpResponseInit>,
 ): (...args: [...Args, InvocationContext]) => Promise<HttpResponseInit> {
-  return async (...args) => {
+  const answer = async (...args: [...Args, InvocationContext]) => {
     const context = args[args.length - 1] as InvocationContext;
     const refused = oversized(args[0]) ?? crossSiteForm(args[0]) ?? backstop(args[0]);
     if (refused) return refused;
@@ -198,5 +251,11 @@ export function handler<Args extends unknown[]>(
     } catch (err) {
       return toErrorResponse(err, context);
     }
+  };
+  return async (...args) => {
+    // Called from inside another route: answer as before, for that route to read.
+    if (answering.getStore()) return answer(...args);
+    const response = await answering.run(true, () => answer(...args));
+    return compressed(args[0], response);
   };
 }
