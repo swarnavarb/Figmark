@@ -122,7 +122,7 @@ await check('a long step name becomes a short button in its own words', () => {
   assert.equal(label('Freight Forwarder Consolidates'), 'Forwarder Consolidates');
   assert.equal(label('Dispatched to Freight Forwarder'), 'Dispatched to forwarder');
   for (const name of ['Supplier Accumulates Orders', 'A very long step name that nobody would ever fit on a button']) {
-    assert.ok(label(name).length <= routes.BUTTON_TEXT_MAX, label(name));
+    assert.ok(label(name).length <= routes.BUTTON_TEXT_HARD_MAX, label(name));
     assert.ok(!/…$|\s(to|the|at)$/i.test(label(name)), label(name));
   }
   assert.equal(label('Packed'), 'Packed', 'a short name is left alone');

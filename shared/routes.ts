@@ -302,6 +302,8 @@ export function stepButtonLabel(
 
 /** The most a button made from a step's name says: a pill on a phone, not a sentence. */
 export const BUTTON_TEXT_MAX = 24;
+/** Past this it is cut to whole words whatever it loses: the most a seller's own button words may be. */
+export const BUTTON_TEXT_HARD_MAX = 28;
 
 /** Who did it, said at the start of a step's name - the button needs only what happened. */
 const BUTTON_ACTOR = /^(?:the\s+)?(?:seller|supplier|shop|buyer|courier|(?:freight\s+)?forwarder|(?:domestic\s+)?handler)\s+(?=\S)/i;
@@ -335,13 +337,18 @@ export function shortButtonText(text: string, max = BUTTON_TEXT_MAX): string {
     dropped += 1;
     let drop = -1;
     for (let index = 1; index < words.length - 1; index += 1) {
-      if (!small.test(words[index]!) && (drop < 0 || words[index]!.length > words[drop]!.length)) drop = index;
+      // Whose it is ("forwarder's WH") is the point of the step, so it stays.
+      if (!small.test(words[index]!) && !/['’]s$/i.test(words[index]!)
+        && (drop < 0 || words[index]!.length > words[drop]!.length)) drop = index;
     }
     if (drop < 0) break;
     words.splice(drop, 1);
   }
   if (words.length >= 2 && words.join(' ').length <= max) out = words.join(' ');
-  if (out.length > max) {
+  /* A little over is better than losing what the step means: up to the
+     length a seller's own button words may be, it is kept whole. */
+  if (out.length > max && words.join(' ').length <= BUTTON_TEXT_HARD_MAX) out = words.join(' ');
+  if (out.length > BUTTON_TEXT_HARD_MAX) {
     let fitted = '';
     for (const word of out.split(' ')) {
       const next = fitted ? `${fitted} ${word}` : word;
