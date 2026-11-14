@@ -8,7 +8,7 @@
  * would grow with the whole platform.
  */
 import {
-  deliverySpans, mergeStepRanges, pickRange, stepSpans, type ShopDays,
+  deliverySpans, mergeStepRanges, pickRange, startingImportRange, stepSpans, type ShopDays,
 } from '../../shared/step-days.js';
 import type { Sourcing } from '../../shared/enums.js';
 import type { getRepository } from './data/index.js';
@@ -82,5 +82,7 @@ export async function shopDays(repository: Repo, sellerId: string): Promise<Shop
     const range = pickRange(own.delivery[kind], all.delivery[kind]);
     if (range) delivery[kind] = range;
   }
+  // Until real imports have been delivered, the trade's own quote stands in.
+  delivery.import ??= startingImportRange();
   return { steps: mergeStepRanges(own.steps, all.steps), delivery };
 }

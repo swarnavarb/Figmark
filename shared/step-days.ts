@@ -191,3 +191,34 @@ export function daysLeftRange(
   }
   return { low, high: Math.max(high, low), source: market ? 'market' : 'yours' };
 }
+
+/**
+ * The market trend before there is a market: order to the buyer's hands for
+ * an imported item, as the trade quotes it today. Used only while neither the
+ * shop nor the market has enough real deliveries to say; the moment either
+ * does, the measured range replaces it on its own.
+ */
+export const STARTING_IMPORT_DAYS = { low: 45, high: 50 } as const;
+
+export function startingImportRange(): DayRange {
+  return { ...STARTING_IMPORT_DAYS, source: 'market', samples: 0 };
+}
+
+/**
+ * Days left on a whole delivery, counted from when the order was placed:
+ * what is left of its usual range. Null once even the top of the range has
+ * passed - a late parcel is not told "1–2 days" over and over.
+ */
+export function daysLeftOfDelivery(
+  placedAt: string | null | undefined,
+  range: Pick<DayRange, 'low' | 'high' | 'source'> | null | undefined,
+  now = Date.now(),
+): { low: number; high: number; source: DaySource } | null {
+  if (!range || !placedAt) return null;
+  const placed = Date.parse(placedAt);
+  if (!Number.isFinite(placed)) return null;
+  const gone = Math.max(0, Math.floor((now - placed) / DAY_MS));
+  if (gone >= range.high) return null;
+  const low = Math.max(1, range.low - gone);
+  return { low, high: Math.max(low + 1, range.high - gone), source: range.source };
+}

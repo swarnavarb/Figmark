@@ -654,7 +654,7 @@ export function RouteStudio({ editing, onSaved, onCancel, onLotOpened, intro, ca
       {mode === 'preview' ? (
         /* Its own buttons ask in dialogs with forms of their own; none of them saves the route. */
         <div onSubmit={(event) => event.stopPropagation()}>
-          <RoutePreview steps={named} joinAt={namedJoin} leaveAt={namedLeave} vars={vars} days={shopDays?.steps} />
+          <RoutePreview steps={named} joinAt={namedJoin} leaveAt={namedLeave} vars={vars} days={shopDays?.steps} delivery={shopDays?.delivery.import} />
         </div>
       ) : (
       <div className="rslanes">

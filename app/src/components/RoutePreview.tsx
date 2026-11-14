@@ -8,7 +8,7 @@ import { TrackHero, stepEmoji } from './OrderTrack';
 import { SerialButtons } from './SerialButtons';
 import { StepButton, buttonStateAt, timelineButtons } from './StepActs';
 import type { Shipment } from './ShipDialog';
-import { daysLeftRange, rangeForStep, type StepDayRanges } from '@shared/step-days';
+import { daysLeftRange, rangeForStep, startingImportRange, type DayRange, type StepDayRanges } from '@shared/step-days';
 import { DaysChip } from './StepDays';
 
 type Vars = { origin?: string | null; destination?: string | null };
@@ -30,13 +30,15 @@ const DAY = 24 * 60 * 60 * 1000;
  * along the way dated between the steps. A walkthrough presses each button
  * in turn and says what it did. Nothing here is saved.
  */
-export function RoutePreview({ steps, joinAt, leaveAt, vars, days }: {
+export function RoutePreview({ steps, joinAt, leaveAt, vars, days, delivery }: {
   steps: RouteStep[];
   joinAt: number;
   leaveAt: number;
   vars: Vars;
   /** How long each step usually takes, as the system measured it: the shop's own lots, or the market's. */
   days?: StepDayRanges | null;
+  /** The whole delivery's usual range for an import: the shop's, the market's, or the starting quote. */
+  delivery?: DayRange | null;
 }) {
   const [done, setDone] = useState<Action[]>([]);
   const [view, setView] = useState<'seller' | 'customer'>('seller');
@@ -205,7 +207,8 @@ export function RoutePreview({ steps, joinAt, leaveAt, vars, days }: {
           {(() => {
             /* The whole journey, added up from the measured steps - or why
                there is no number yet. Nobody types these; they are learned. */
-            const whole = daysLeftRange(steps, 0, days);
+            // Until the steps are measured, a route through a lot reads the trade's usual import time.
+            const whole = daysLeftRange(steps, 0, days) ?? (hasLot ? delivery ?? startingImportRange() : null);
             const measured = steps.some((step) => rangeForStep(days, step.name));
             if (whole) return <span className="rsprev__eta">Order to delivery: <DaysChip range={whole} lead="About" /></span>;
             return (

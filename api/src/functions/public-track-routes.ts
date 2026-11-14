@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
-import { asBuyerSees, inLot, lotIsDone, settledHistory } from '../../../shared/fulfilment.js';
+import { DIRECT_LOT_ID, asBuyerSees, inLot, lotIsDone, settledHistory } from '../../../shared/fulfilment.js';
 import { ladderBeforeLot, withReceivedAs } from '../../../shared/buttons.js';
 import {
   currentStepOf, itemStepOn, renderStepText, routeOf, ticksOf, triggeredStep,
@@ -11,7 +11,7 @@ import { config } from '../config.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
 import { shopDays } from '../step-days.js';
-import { daysLeftRange, rangeForStep, type DayRange } from '../../../shared/step-days.js';
+import { daysLeftOfDelivery, daysLeftRange, rangeForStep, type DayRange } from '../../../shared/step-days.js';
 
 /**
  * "Where is my parcel", for people without an account.
@@ -108,6 +108,13 @@ async function publicTracking(request: HttpRequest, _context: InvocationContext)
     at = Math.max(0, triggeredStep({ steps: ladder }, ticksOf(order)));
   }
   if (order.status === 'delivered') at = steps.length - 1;
+  /* Until each step has been measured, the whole delivery's usual range -
+     the shop's, the market's, or the trade's starting quote - counted from
+     when it was ordered. Imports only: a parcel from the shop's own shelf has
+     no such figure to lean on. */
+  if (!eta && !stopped && order.status !== 'delivered' && order.lotId !== DIRECT_LOT_ID) {
+    eta = daysLeftOfDelivery(order.placedAt ?? order.createdAt, days?.delivery.import);
+  }
 
   const lead = listing?.photos.find((photo) => photo.isPrimary) ?? listing?.photos[0] ?? null;
   const updates = settledHistory(order.stageHistory)

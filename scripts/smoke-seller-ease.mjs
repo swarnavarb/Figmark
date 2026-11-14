@@ -112,6 +112,15 @@ await check('a whole delivery is counted from order to the buyer\'s hands, in-ha
   assert.deepEqual(spans.import, [40]);
 });
 
+await check('with no deliveries anywhere yet, an import reads the 45–50 day market trend, counted down from the order', () => {
+  const start = stepDays.startingImportRange();
+  assert.deepEqual(start, { low: 45, high: 50, source: 'market', samples: 0 });
+  const now = Date.parse(at(10));
+  assert.deepEqual(stepDays.daysLeftOfDelivery(at(0), start, now), { low: 35, high: 40, source: 'market' });
+  assert.equal(stepDays.daysLeftOfDelivery(at(0), start, Date.parse(at(60))), null, 'past the top of the range it says nothing');
+  assert.equal(stepDays.pickRange([], []), null, 'real data, once there is any, is what pickRange answers with');
+});
+
 console.log('button words');
 
 await check('a long step name becomes a short button in its own words', () => {
