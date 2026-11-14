@@ -537,7 +537,18 @@ function DiscoverBody() {
     <main className="page discpage">
       <header className="dischero">
         <div className="dischero__row">
-          <h1 className="dischero__title">Discover</h1>
+          <div className="dischero__brand">
+            <span className="dischero__badge" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="8.4" />
+                <path d="m15.4 8.6-2.1 4.7-4.7 2.1 2.1-4.7Z" fill="currentColor" />
+              </svg>
+            </span>
+            <div className="dischero__titles">
+              <span className="dischero__kicker">Shelves · debates · finds</span>
+              <h1 className="dischero__title">Discover</h1>
+            </div>
+          </div>
           <div className="dischero__actions">
             {liveCount > 0 && (
               <button type="button" className="dischero__stat" onClick={() => setLens('live')}>
@@ -1387,7 +1398,7 @@ function WeeklyBest() {
     <div className="discweek">
       <h2 className="discsection"><Icon name="trophy" size={15} /> This week’s best</h2>
       {players.length > 0 && (
-        <section className="discweek__block">
+        <section className="discweek__block discweek__block--players">
           <h2><Icon name="star" size={16} /> Top players{board.playersSeason ? ` · ${seasonLabel(board.playersSeason)}` : ''} <PeriodTag period="monthly" /></h2>
           <ol className="discweek__list">
             {players.map((player, index) => {
@@ -1412,7 +1423,7 @@ function WeeklyBest() {
         </section>
       )}
       {board.shelves.length > 0 && (
-        <section className="discweek__block">
+        <section className="discweek__block discweek__block--shelves">
           <h2><Icon name="camera" size={16} /> Most loved shelves <PeriodTag period="weekly" /></h2>
           <ol className="discweek__list">
             {board.shelves.map((shelf, index) => (
@@ -1429,7 +1440,7 @@ function WeeklyBest() {
         </section>
       )}
       {board.debates.length > 0 && (
-        <section className="discweek__block">
+        <section className="discweek__block discweek__block--debates">
           <h2><Icon name="forum" size={16} /> Most argued debates <PeriodTag period="weekly" /></h2>
           <ol className="discweek__list">
             {board.debates.map((debate, index) => (
@@ -1448,7 +1459,7 @@ function WeeklyBest() {
         </section>
       )}
       {board.voices.length > 0 && (
-        <section className="discweek__block">
+        <section className="discweek__block discweek__block--voices">
           <h2><Icon name="megaphone" size={16} /> Voices of the week <PeriodTag period="weekly" /></h2>
           <ol className="discweek__list">
             {board.voices.map((voice, index) => {

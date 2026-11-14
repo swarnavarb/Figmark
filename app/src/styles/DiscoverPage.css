@@ -6,7 +6,10 @@
 
 /* Discover: the public side, ranked. */
 
-.discpage { display: grid; align-content: start; gap: 14px; max-width: 680px; margin-inline: auto; }
+.discpage { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 14px; max-width: 680px; margin-inline: auto; }
+/* Grid items default to min-width: auto, so one long unwrapped line (a debate's
+   question) could stretch the whole page past the screen. Never again. */
+.discpage > * { min-width: 0; }
 
 /* The top: one compact line - the title, what is live, search and the week's
    best - on the brand's own gradient, so the first screen is mostly content. */
@@ -46,10 +49,28 @@
   animation: disc-ping 1.8s var(--ease-out) infinite;
 }
 @keyframes disc-ping { from { transform: scale(1); opacity: 0.7; } to { transform: scale(3); opacity: 0; } }
+/* The name: a lit compass badge, a small kicker, and the title in the brand's
+   gradient with a soft glow. */
+.dischero__brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.dischero__badge {
+  flex: none; display: grid; place-items: center; width: 42px; height: 42px; border-radius: 14px;
+  color: #fff; background: var(--grad-hero, linear-gradient(135deg, #7C3AED, #EC4899 60%, #FF5A5F));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 6px 18px rgba(236, 72, 153, 0.45);
+  animation: disc-spin-in 600ms var(--ease-out) both;
+}
+@keyframes disc-spin-in { from { transform: rotate(-90deg) scale(0.6); opacity: 0; } }
+.dischero__titles { display: grid; gap: 3px; min-width: 0; }
+.dischero__kicker {
+  font-family: var(--mono); font-size: var(--t-2xs); font-weight: var(--w-semi);
+  letter-spacing: 0.14em; text-transform: uppercase; color: rgba(255, 255, 255, 0.7);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .dischero__title {
-  margin: 0; font-family: var(--display); font-size: var(--t-2xl); font-weight: var(--w-bold);
-  letter-spacing: -0.03em; line-height: 1;
-  background: linear-gradient(110deg, #fff 25%, #FBCFE8 60%, #FFB4B6); -webkit-background-clip: text; background-clip: text; color: transparent;
+  margin: 0; font-family: var(--display); font-size: calc(var(--t-2xl) * 1.08); font-weight: 800;
+  letter-spacing: -0.04em; line-height: 0.95;
+  background: linear-gradient(100deg, #fff 0%, #fff 30%, #F9A8D4 62%, #FDBA74 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 2px 14px rgba(236, 72, 153, 0.35));
 }
 /* A guest's way in: one sentence, all of it the button. */
 .dischero__guest {
@@ -284,6 +305,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .dischero, .contestcard { animation: fade-in 160ms ease both; }
+  .dischero__badge { animation: none; }
   .contestcard, .dislens__tab, .dischero__stat, .dislens, .spotcard, .spotdeck__dots button::before { transition: none; }
   .dischero__pulse::after { animation: none; }
   .discsearch, .discfresh { animation: none; }
@@ -388,20 +410,43 @@
 .discwall p { margin: 0; color: var(--text-dim); font-size: var(--t-sm); max-width: 42ch; }
 
 /* This week's best: three short ranked lists. */
-.discweek { display: grid; gap: var(--s4); }
-.discweek__block { display: grid; gap: var(--s2); }
-.discweek__block h2 { display: flex; align-items: center; gap: 6px; margin: 0; font-size: var(--t-md); }
-.discweek__list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
-.discweek__row {
-  display: flex; align-items: center; gap: 10px; padding: var(--s2) 10px;
-  border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface);
-  color: inherit; text-decoration: none;
+.discweek { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s4); }
+/* Each board wears its own colour (--tint, as r, g, b), so four lists in a
+   row read as four different things rather than one long grey column. */
+.discweek__block {
+  --tint: 139, 92, 246;
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s2); min-width: 0;
+  padding: 12px; border-radius: var(--r-lg);
+  border: 1px solid rgba(var(--tint), 0.22);
+  background: linear-gradient(160deg, rgba(var(--tint), 0.14), rgba(var(--tint), 0.03) 70%);
 }
-a.discweek__row:hover { border-color: var(--border-strong); }
+.discweek__block--players { --tint: 245, 197, 66; }
+.discweek__block--shelves { --tint: 236, 72, 153; }
+.discweek__block--debates { --tint: 255, 90, 95; }
+.discweek__block--voices { --tint: 34, 211, 238; }
+.discweek__block h2 { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; font-size: var(--t-md); min-width: 0; }
+.discweek__block h2 > svg { color: rgb(var(--tint)); }
+.discweek__list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin: 0; padding: 0; list-style: none; }
+.discweek__list > li { min-width: 0; }
+.discweek__row {
+  display: flex; align-items: center; gap: 10px; min-width: 0; padding: var(--s2) 10px;
+  border: 1px solid rgba(var(--tint), 0.16); border-left: 3px solid rgba(var(--tint), 0.35);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  color: inherit; text-decoration: none;
+  transition: border-color var(--dur-1) ease, transform var(--dur-1) var(--ease-out);
+}
+/* Rows alternate in shade, and the podium glows brighter, top first. */
+.discweek__list > li:nth-child(even) .discweek__row { background: color-mix(in srgb, var(--surface-2, var(--surface)) 92%, rgba(var(--tint), 0.06)); }
+.discweek__list > li:nth-child(1) .discweek__row { background: linear-gradient(90deg, rgba(var(--tint), 0.28), rgba(var(--tint), 0.06)); border-left-color: rgb(var(--tint)); }
+.discweek__list > li:nth-child(2) .discweek__row { background: linear-gradient(90deg, rgba(var(--tint), 0.19), rgba(var(--tint), 0.04)); border-left-color: rgba(var(--tint), 0.8); }
+.discweek__list > li:nth-child(3) .discweek__row { background: linear-gradient(90deg, rgba(var(--tint), 0.12), rgba(var(--tint), 0.02)); border-left-color: rgba(var(--tint), 0.6); }
+a.discweek__row:active { transform: scale(0.99); }
+@media (hover: hover) and (pointer: fine) { a.discweek__row:hover { border-color: rgba(var(--tint), 0.5); } }
+.discweek__rank { flex: none; width: 1.4em; text-align: center; font-family: var(--mono); font-weight: var(--w-bold); color: rgb(var(--tint)); }
 .discweek__rank--1 { color: var(--warn); }
 .discweek__rank--2 { color: #CBD5E1; }
 .discweek__rank--3 { color: var(--gold); opacity: 0.8; }
-.discweek__rank { width: 1.4em; text-align: center; font-family: var(--mono); font-weight: var(--w-bold); color: var(--accent-text); }
 .discweek__photo { width: 40px; height: 40px; border-radius: var(--r-sm); flex: 0 0 auto; }
 .discweek__name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-sm); }
 .discweek__count { flex: 0 0 auto; color: var(--text-dim); font-size: var(--t-xs); font-family: var(--mono); }
