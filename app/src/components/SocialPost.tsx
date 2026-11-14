@@ -510,7 +510,8 @@ export function SocialPostCard({
   const type = nested ? null : contentTypeOf(card, promoted);
 
   return (
-    <article ref={shell} data-post-id={nested ? undefined : post.id} className={`spost spost--${categoryOf(card)}${nested ? ' spost--nested' : ''}${rank ? ' spost--ranked' : ''}`}>
+    <article ref={shell} data-post-id={nested ? undefined : post.id} data-kind={nested ? undefined : (type ?? categoryOf(card))}
+      className={`spost spost--${categoryOf(card)}${nested ? ' spost--nested' : ''}${rank ? ' spost--ranked' : ''}`}>
       {dialog}
       {type && !(inDiscover && (card.why || (card.followedActed && !following))) && <ContentBadge type={type} />}
       {!nested && card.followedActed && !following && !(inDiscover && card.why && card.why.kind !== 'followed') && (

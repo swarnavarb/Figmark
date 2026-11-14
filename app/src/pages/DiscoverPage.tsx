@@ -545,8 +545,8 @@ function DiscoverBody() {
               </svg>
             </span>
             <div className="dischero__titles">
-              <span className="dischero__kicker">Shelves · debates · finds</span>
               <h1 className="dischero__title">Discover</h1>
+              <span className="dischero__kicker">Shelves · debates · finds</span>
             </div>
           </div>
           <div className="dischero__actions">
