@@ -1242,6 +1242,18 @@ export class CosmosRepository implements Repository {
     return resources;
   }
 
+  async listGamePostsSince(sinceIso: string, limit: number): Promise<Post[]> {
+    // Every channel's, so cross-partition. A game decided this season may have been posted before it.
+    const { resources } = await this.container('posts').items.query<Post>({
+      query: 'SELECT * FROM c WHERE (IS_OBJECT(c.contest) OR IS_OBJECT(c.debate) OR IS_OBJECT(c.guess))'
+        + ' AND (c.createdAt >= @since OR c.contest.settledAt >= @since'
+        + ' OR c.guess.revealedAt >= @since OR c.resultsSentAt >= @since)'
+        + ' ORDER BY c.createdAt DESC OFFSET 0 LIMIT @limit',
+      parameters: [{ name: '@since', value: sinceIso }, { name: '@limit', value: limit }],
+    }).fetchAll();
+    return resources;
+  }
+
   async listPreOrdersDue(nowIso: string, limit: number): Promise<Listing[]> {
     // Every seller's, so cross-partition; IS_STRING is false for absent and null alike.
     const { resources } = await this.container('listings').items.query<Listing>({

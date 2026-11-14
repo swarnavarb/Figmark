@@ -10032,7 +10032,7 @@ await check('there are daily, weekly, monthly and milestone quests, and the week
   const kinds = (kind) => view.tasks.filter((task) => task.kind === kind).length;
   assert.equal(kinds('daily'), 5, 'check in, reveal, share a find and two from the pool');
   assert.equal(kinds('weekly'), 6, 'five check-ins, two opens, three from the pool and one marketing quest');
-  assert.equal(kinds('monthly'), 5, 'bring a friend, three from the pool and one marketing quest');
+  assert.equal(kinds('monthly'), 6, 'bring a friend, climb a leaderboard, three from the pool and one marketing quest');
   assert.ok(kinds('starter') >= 10, 'Getting started');
   assert.equal(view.tasks.filter((task) => task.kind === 'weekly' && task.id.startsWith('weekly-mk-')).length, 1);
   assert.ok(kinds('milestone') >= 8);
@@ -10208,19 +10208,18 @@ await check('a delivered purchase can go in the collection, once, and be renamed
   assert.equal(removed.jsonBody.items.length, 0);
 });
 
-await check('hobby boards are generic: any category heading or any hobby typed is a board', () => {
-  assert.equal(boardsRules.boardInfo('cat:figures').label, 'Figures');
+await check('hobby boards are a fixed set of broad hobbies, and old ids land on the board they became', () => {
+  assert.equal(boardsRules.boardInfo('cat:figures').label, 'Action figures');
+  assert.equal(boardsRules.boardInfo('cat:sneakers').label, 'Sneakers');
   assert.equal(boardsRules.boardInfo('cat:nope'), null);
-  assert.equal(boardsRules.tagBoardId('#Gunpla'), boardsRules.tagBoardId('gunpla'), 'case and hashes fold');
-  assert.equal(boardsRules.tagBoardId('Resin Kits'), boardsRules.tagBoardId('resin kit'), 'plurals fold');
-  assert.equal(boardsRules.tagBoardId('x'), null, 'one letter is not a hobby');
-  assert.equal(boardsRules.boardInfo(boardsRules.tagBoardId('resin kits')).kind, 'tag');
-  assert.equal(boardsRules.categoryBoards().length > 0, true);
+  assert.equal(boardsRules.boardInfo('tag:resin-kit').id, 'cat:models', 'an old hobby board reads as its category board');
+  assert.equal(boardsRules.boardInfo('cat:wear').id, 'cat:sneakers');
+  assert.equal(boardsRules.boardInfo('tag:made-up-thing'), null, 'nobody can start a board of their own');
   const kit = { category: 'Model kits', title: 'RG Gunpla Strike Freedom', tags: [] };
   assert.equal(boardsRules.listingOnBoard('cat:models', kit), true);
   assert.equal(boardsRules.listingOnBoard('cat:figures', kit), false);
-  assert.equal(boardsRules.listingOnBoard(boardsRules.tagBoardId('gunpla'), kit), true, 'a tag board reads the title');
-  assert.equal(boardsRules.postOnBoard(boardsRules.tagBoardId('gunpla'), { body: 'New build #gunpla' }, null), true);
+  assert.equal(boardsRules.postOnBoard('cat:models', { body: 'New build #gunpla' }, null), true, 'a hobby hashtag counts');
+  assert.equal(boardsRules.postOnBoard('cat:models', { body: 'New build' }, null), false);
 });
 
 await check('a board season counts only that month, and posts are capped', () => {
@@ -10239,15 +10238,16 @@ await check('a board season counts only that month, and posts are capped', () =>
   assert.equal(boardsRules.seasonEndsAt('2026-12'), new Date(Date.parse('2027-01-01T00:00:00+05:30')).toISOString());
 });
 
-await check('joining boards: up to three, any hobby, and leaving makes room', async () => {
+await check('joining boards: up to three, and leaving makes room', async () => {
   const player = await newBuyer('Board Joiner');
   assert.equal((await boardJoin(req({ body: { board: 'cat:figures' } }), ctx)).status, 401);
   assert.equal((await boardJoin(req({ headers: player.headers, body: { board: 'cat:nope' } }), ctx)).status, 400);
+  assert.equal((await boardJoin(req({ headers: player.headers, body: { tag: 'my own thing' } }), ctx)).status, 400, 'no made-up boards');
   assert.equal((await boardJoin(req({ headers: player.headers, body: { board: 'cat:figures' } }), ctx)).status, 200);
   assert.equal((await boardJoin(req({ headers: player.headers, body: { board: 'cat:figures' } }), ctx)).status, 200, 'twice is fine');
   const tag = (await boardJoin(req({ headers: player.headers, body: { tag: '#Gunpla' } }), ctx)).jsonBody;
-  assert.equal(tag.joined.kind, 'tag');
-  await boardJoin(req({ headers: player.headers, body: { tag: 'Pokemon cards' } }), ctx);
+  assert.equal(tag.joined.id, 'cat:models', 'an older app sending a hobby joins its board');
+  await boardJoin(req({ headers: player.headers, body: { board: 'cat:sneakers' } }), ctx);
   const full = await boardJoin(req({ headers: player.headers, body: { board: 'cat:cards' } }), ctx);
   assert.equal(full.status, 409);
   assert.equal(full.jsonBody.error, 'board_limit');
@@ -10255,17 +10255,26 @@ await check('joining boards: up to three, any hobby, and leaving makes room', as
   assert.equal((await boardJoin(req({ headers: player.headers, body: { board: 'cat:cards' } }), ctx)).status, 200);
 
   const list = (await boardsList(req({ headers: player.headers }), ctx)).jsonBody;
-  assert.equal(list.mine.length, 3);
-  assert.ok(list.boards.some((board) => board.id === tag.joined.id && board.members >= 1), 'a typed hobby is listed once someone joins');
-  assert.ok(list.boards.filter((board) => board.kind === 'category').length >= 5, 'every category heading is a board');
+  assert.deepEqual(list.mine, ['cat:models', 'cat:sneakers', 'cat:cards']);
+  assert.equal(list.boards.length, boardsRules.BOARD_CATEGORIES.length, 'every board, and only those');
+  assert.ok(list.boards.every((board) => board.kind === 'category'));
+});
+
+await check('an account on old boards is read onto the boards they became', async () => {
+  const repository = await getRepository();
+  const player = await newBuyer('Old Boarder');
+  const account = await repository.getUserById(player.id);
+  await repository.updateUser({ ...account, boards: ['cat:wear', 'tag:gunpla', 'tag:something-odd'] });
+  const list = (await boardsList(req({ headers: player.headers }), ctx)).jsonBody;
+  assert.deepEqual(list.mine, ['cat:sneakers', 'cat:models']);
+  const view = (await boardRead(req({ headers: player.headers, params: { id: 'cat:sneakers' } }), ctx)).jsonBody;
+  assert.equal(view.joined, true);
 });
 
 await check('a board ranks this month by activity in the hobby, and the viewer sees whether they are on it', async () => {
   const repository = await getRepository();
   const listing = await repository.getListing('lst_kbeauty');
-  const group = (await import(new URL('../api/dist/shared/catalog.js', import.meta.url))).CATEGORY_GROUPS
-    .find((entry) => entry.members.includes(listing.category));
-  const boardId = `cat:${group.id}`;
+  const boardId = boardsRules.boardForCategory(listing.category);
   const player = await newBuyer('Board Climber');
   await boardJoin(req({ headers: player.headers, body: { board: boardId } }), ctx);
   await deliveredOrderFor(player, 'lst_kbeauty');
@@ -10278,6 +10287,24 @@ await check('a board ranks this month by activity in the hobby, and the viewer s
   assert.equal(row.delivered, 1);
   assert.equal(row.points, boardsRules.BOARD_POINTS.delivered);
   assert.equal((await boardRead(req({ params: { id: 'cat:nope' } }), ctx)).status, 404);
+  const account = await repository.getUserById(player.id);
+  assert.ok(account.boardScores[boardId].seasons, 'the score is kept on the account');
+
+  // A rival on the same board, ahead of the climber: the climber is told the gap.
+  const rival = await newBuyer('Board Rival');
+  await boardJoin(req({ headers: rival.headers, body: { board: boardId } }), ctx);
+  await deliveredOrderFor(rival, 'lst_kbeauty');
+  await deliveredOrderFor(rival, 'lst_kbeauty');
+  // Opening the board recounts your own score at once.
+  await boardRead(req({ headers: rival.headers, params: { id: boardId } }), ctx);
+  const behind = (await boardRead(req({ headers: player.headers, params: { id: boardId } }), ctx)).jsonBody;
+  assert.ok(behind.gap, JSON.stringify(behind.rows));
+  assert.equal(behind.gap.points, boardsRules.BOARD_POINTS.delivered);
+
+  // Only the people you follow: the rival drops out until followed.
+  const mine = (await boardRead(req({ headers: player.headers, params: { id: boardId }, query: { scope: 'following' } }), ctx)).jsonBody;
+  assert.equal(mine.scope, 'following');
+  assert.ok(mine.rows.every((entry) => entry.userId === player.id), JSON.stringify(mine.rows));
 });
 
 

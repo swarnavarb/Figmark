@@ -3,9 +3,10 @@ import { isPersonFollow, reviewSide } from '../../../shared/storefront.js';
 import type { Dispute, QuestState, User } from '../../../shared/models.js';
 import { isCancelledLike, isPlaced, reviewRevealed, scoreFrom } from '../../../shared/orders.js';
 import {
-  DETAILED_REVIEW_CHARS, EARLY_BACK_HOURS, claimKey, dayKey, emptyQuestState, questView, tidyQuestState,
-  type QuestFacts, type QuestView,
+  DETAILED_REVIEW_CHARS, EARLY_BACK_HOURS, autoCollect, claimKey, dayKey, emptyQuestState, questView, streakRepairFor,
+  tidyQuestState, type QuestFacts, type QuestView,
 } from '../../../shared/quest.js';
+import { currentBoards } from '../../../shared/boards.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { invitedSellerCount } from '../share.js';
@@ -63,6 +64,7 @@ export async function factsFor(repository: Repo, user: User): Promise<QuestFacts
         totalMinor: order.unitPriceMinor * order.quantity,
         preOrder: preOrder.has(order.listingId),
         sellerId: order.sellerId,
+        completedAt: order.completedAt ?? null,
         early: preOrder.has(order.listingId) && opened !== undefined
           && Date.parse(at) - opened <= EARLY_BACK_HOURS * 3_600_000,
       };
@@ -106,8 +108,20 @@ export async function factsFor(repository: Repo, user: User): Promise<QuestFacts
     pushOn: (user.pushEndpoints ?? []).length > 0,
     phoneVerified: user.verification?.phone === 'verified',
     emailVerified: user.verification?.email === 'verified',
-    boards: (user.boards ?? []).length,
+    boards: currentBoards(user.boards).length,
+    boardPoints: bestBoardPoints(user),
   };
+}
+
+/** Points on the person's best board, season by season, from the scores kept on their account. */
+function bestBoardPoints(user: User): Record<string, number> {
+  const best: Record<string, number> = {};
+  for (const board of currentBoards(user.boards)) {
+    for (const [season, score] of Object.entries(user.boardScores?.[board]?.seasons ?? {})) {
+      best[season] = Math.max(best[season] ?? 0, score.points);
+    }
+  }
+  return best;
 }
 
 /**
@@ -117,14 +131,25 @@ export async function factsFor(repository: Repo, user: User): Promise<QuestFacts
  * recounting every account's orders; it is rewritten whenever it has moved,
  * and never read as the truth about anybody's own XP.
  */
-async function viewFor(repository: Repo, user: User, state: QuestState = user.quest ?? emptyQuestState()) {
-  const view = questView(user.id, await factsFor(repository, user), state);
-  if (state.xpCache !== view.xp || state.levelCache !== view.level) {
-    user.quest = tidyQuestState({ ...state, xpCache: view.xp, levelCache: view.level, computedAt: new Date().toISOString() });
-    user.updatedAt = new Date().toISOString();
+async function viewFor(repository: Repo, user: User, given: QuestState = user.quest ?? emptyQuestState(), now = Date.now()) {
+  return (await viewAndCollect(repository, user, given, now)).view;
+}
+
+/**
+ * The view, after collecting anything finished in a period that has ended and
+ * never tapped (see autoCollect). What was collected is returned so the app
+ * can say so.
+ */
+async function viewAndCollect(repository: Repo, user: User, given: QuestState = user.quest ?? emptyQuestState(), now = Date.now()) {
+  const facts = await factsFor(repository, user);
+  const { state, collected } = autoCollect(facts, given, now);
+  const view = questView(user.id, facts, state, now);
+  if (collected.length || state.xpCache !== view.xp || state.levelCache !== view.level) {
+    user.quest = tidyQuestState({ ...state, xpCache: view.xp, levelCache: view.level, computedAt: new Date(now).toISOString() });
+    user.updatedAt = new Date(now).toISOString();
     await repository.updateUser(user);
   }
-  return view;
+  return { view, collected };
 }
 
 /** Somebody's level as of now, the cache brought up to date on the way. */
@@ -141,11 +166,11 @@ async function signedIn(request: HttpRequest) {
 }
 
 /** Saves a changed state and answers with what it did to the numbers. */
-async function commit(repository: Repo, user: User, before: QuestView, next: QuestState, extra: object = {}) {
+async function commit(repository: Repo, user: User, before: QuestView, next: QuestState, extra: object = {}, now = Date.now()) {
   user.quest = tidyQuestState(next);
-  user.updatedAt = new Date().toISOString();
+  user.updatedAt = new Date(now).toISOString();
   await repository.updateUser(user);
-  const view = await viewFor(repository, user, user.quest);
+  const view = await viewFor(repository, user, user.quest, now);
   return json(200, {
     ...extra,
     view,
@@ -159,15 +184,17 @@ async function commit(repository: Repo, user: User, before: QuestView, next: Que
 async function me(request: HttpRequest, _context: InvocationContext) {
   const { repository, user } = await signedIn(request);
   if (!user) return error(404, 'not_found', 'This account no longer exists.');
-  return json(200, { view: await viewFor(repository, user) });
+  const { view, collected } = await viewAndCollect(repository, user);
+  return json(200, { view, autoCollected: collected });
 }
 
 /** POST /api/quest/checkin - once a day, India time. Asking twice is not an error. */
 async function checkIn(request: HttpRequest, _context: InvocationContext) {
   const { repository, user } = await signedIn(request);
   if (!user) return error(404, 'not_found', 'This account no longer exists.');
+  // viewFor may collect past rewards into the account first; build on that.
+  const before = await viewFor(repository, user);
   const state = user.quest ?? emptyQuestState();
-  const before = await viewFor(repository, user, state);
   const today = dayKey(Date.now());
   if (state.checkIns.includes(today)) {
     return json(200, { view: before, gained: 0, levelBefore: before.level, levelAfter: before.level, already: true });
@@ -187,11 +214,14 @@ async function claim(request: HttpRequest, _context: InvocationContext) {
     return error(400, 'invalid_body', 'Request body must be JSON.');
   }
   const taskId = String(body.taskId ?? '');
-  const key = claimKey(taskId);
+  // One reading of the clock for the whole claim: a tap at midnight must not
+  // check the task on one day and store the claim under the next.
+  const now = Date.now();
+  const key = claimKey(taskId, now);
   if (!key) return error(404, 'not_found', 'No such task.');
 
+  const before = await viewFor(repository, user, user.quest ?? emptyQuestState(), now);
   const state = user.quest ?? emptyQuestState();
-  const before = await viewFor(repository, user, state);
   const task = before.tasks.find((entry) => entry.id === taskId);
   if (!task) return error(409, 'not_active', 'That task is not on your list right now.');
   if (!task.done) return error(409, 'not_done', 'Finish the task first.');
@@ -199,9 +229,33 @@ async function claim(request: HttpRequest, _context: InvocationContext) {
 
   return commit(repository, user, before, {
     ...state,
-    claimed: { ...state.claimed, [key]: new Date().toISOString() },
+    claimed: { ...state.claimed, [key]: new Date(now).toISOString() },
     bumps: (state.bumps ?? 0) + task.bumps,
-  }, { taskId });
+  }, { taskId }, now);
+}
+
+/**
+ * POST /api/quest/repair - spend bump points to fill in yesterday and keep
+ * the streak. Once in STREAK_REPAIR_DAYS days; the saved day keeps the streak
+ * but pays no check-in XP.
+ */
+async function repair(request: HttpRequest, _context: InvocationContext) {
+  const { repository, user } = await signedIn(request);
+  if (!user) return error(404, 'not_found', 'This account no longer exists.');
+  const now = Date.now();
+  const before = await viewFor(repository, user, user.quest ?? emptyQuestState(), now);
+  const state = user.quest ?? emptyQuestState();
+  const offer = streakRepairFor(state, now);
+  if (!offer) return error(409, 'nothing_to_save', 'There is no missed day to save right now.');
+  if (!offer.affordable) {
+    return error(409, 'no_bumps', `Saving a streak takes ${offer.cost} bump point. Weekly and monthly quests pay them.`);
+  }
+  return commit(repository, user, before, {
+    ...state,
+    checkIns: [...state.checkIns, offer.day],
+    repairs: [...(state.repairs ?? []), offer.day],
+    bumps: (state.bumps ?? 0) - offer.cost,
+  }, { saved: offer.day }, now);
 }
 
 /**
@@ -213,9 +267,9 @@ async function claim(request: HttpRequest, _context: InvocationContext) {
 async function reveal(request: HttpRequest, _context: InvocationContext) {
   const { repository, user } = await signedIn(request);
   if (!user) return error(404, 'not_found', 'This account no longer exists.');
+  const before = await viewFor(repository, user);
   const state = user.quest ?? emptyQuestState();
   const today = dayKey(Date.now());
-  const before = await viewFor(repository, user, state);
   if ((state.reveals ?? []).includes(today)) {
     return json(200, { view: before, gained: 0, levelBefore: before.level, levelAfter: before.level, already: true });
   }
@@ -325,6 +379,7 @@ export const questMeRoute = handler(me);
 export const questCheckInRoute = handler(checkIn);
 export const questClaimRoute = handler(claim);
 export const questRevealRoute = handler(reveal);
+export const questRepairRoute = handler(repair);
 export const collectorRoute = handler(collector);
 
 const anon = { authLevel: 'anonymous' } as const;
@@ -332,4 +387,5 @@ app.http('quest-me', { ...anon, methods: ['GET'], route: 'quest/me', handler: qu
 app.http('quest-checkin', { ...anon, methods: ['POST'], route: 'quest/checkin', handler: questCheckInRoute });
 app.http('quest-claim', { ...anon, methods: ['POST'], route: 'quest/claim', handler: questClaimRoute });
 app.http('quest-reveal', { ...anon, methods: ['POST'], route: 'quest/reveal', handler: questRevealRoute });
+app.http('quest-repair', { ...anon, methods: ['POST'], route: 'quest/repair', handler: questRepairRoute });
 app.http('user-collector', { ...anon, methods: ['GET'], route: 'users/{id}/collector', handler: collectorRoute });

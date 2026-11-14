@@ -284,3 +284,10 @@ export interface PlayerRow {
 
 /** Points on the leaderboard: a win is worth far more than a vote, but voting is how most people play. */
 export const LEADER_POINTS = { first: 10, second: 6, third: 4, debate: 5, guess: 5, vote: 1 } as const;
+/**
+ * Most points votes can earn one person in a season. Votes only count on the
+ * games themselves (a competition's entries, a debate's sides), never on an
+ * ordinary poll, and this cap keeps a pile of polls and friends from buying a
+ * place: past it, only winning moves you up.
+ */
+export const VOTE_POINTS_CAP = 30;

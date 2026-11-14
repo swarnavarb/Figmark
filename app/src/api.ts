@@ -49,7 +49,7 @@ import type { CommunityAction } from '@shared/disputes';
 import type { MarketSettings } from '@shared/settings';
 import type { Allocation, OrderMoney } from '@shared/payments';
 import type { QuestView, StickerView } from '@shared/quest';
-import type { BoardInfo, BoardView } from '@shared/boards';
+import type { BoardInfo, BoardScope, BoardView } from '@shared/boards';
 import type { CollectionGroup, CollectionItem, ShareEvent, ShareKind } from '@shared/models';
 import type { LearnDoc } from '@shared/learn';
 import type { AffiliateEarningStatus } from '@shared/affiliate';
@@ -3041,14 +3041,20 @@ export const api = {
     post<{ order: Order; heldMinor: number }>(`/orders/${encodeURIComponent(id)}/credit-hold`, { creditId }),
   myPosts: () => request<{ posts: PostCard[] }>('/me/posts'),
   personPosts: (userId: string) => request<{ posts: PostCard[] }>(`/users/${encodeURIComponent(userId)}/posts`),
-  quest: () => request<{ view: QuestView }>('/quest/me'),
+  quest: () => request<{ view: QuestView; autoCollected?: { taskId: string; title: string; xp: number; bumps: number }[] }>('/quest/me'),
   questCheckIn: () => post<QuestResult>('/quest/checkin'),
   questClaim: (taskId: string) => post<QuestResult>('/quest/claim', { taskId }),
   questReveal: () => post<QuestResult>('/quest/reveal'),
+  questRepair: () => post<QuestResult>('/quest/repair'),
   boards: () => request<BoardList>('/boards'),
-  board: (id: string, season?: string) =>
-    request<BoardView>(`/boards/board/${encodeURIComponent(id)}${season ? `?season=${encodeURIComponent(season)}` : ''}`),
-  boardJoin: (target: { board: string } | { tag: string }) => post<{ boards: string[]; joined: BoardInfo }>('/boards/join', target),
+  board: (id: string, season?: string, scope?: BoardScope) => {
+    const query = new URLSearchParams();
+    if (season) query.set('season', season);
+    if (scope && scope !== 'all') query.set('scope', scope);
+    const tail = query.toString();
+    return request<BoardView>(`/boards/board/${encodeURIComponent(id)}${tail ? `?${tail}` : ''}`);
+  },
+  boardJoin: (target: { board: string }) => post<{ boards: string[]; joined: BoardInfo }>('/boards/join', target),
   boardLeave: (board: string) => post<{ boards: string[] }>('/boards/leave', { board }),
   collector: (userId: string) => request<CollectorPage>(`/users/${encodeURIComponent(userId)}/collector`),
   learn: () => request<LearnDoc & { customised: boolean }>('/learn'),

@@ -24,6 +24,7 @@ import { sendHeldPushes } from './push.js';
 import { sweepExpiredQuotes } from './functions/service-work-routes.js';
 import { refreshAllSellerStats } from './seller-stats.js';
 import { sweepFees } from './billing.js';
+import { refreshBoards } from './functions/board-routes.js';
 
 /** Run one clock; a failure is logged and the rest still run. */
 async function run(
@@ -59,6 +60,10 @@ app.timer('clock', {
 
     /* Dispute deadlines and the release of money they hold: once an hour, on the first run of it. */
     if (new Date().getUTCMinutes() < 5) await disputeClock(timer, context);
+    /* Hobby leaderboards: members' scores recounted and finished seasons' podiums written, once an hour. */
+    if (new Date().getUTCMinutes() >= 30 && new Date().getUTCMinutes() < 35) {
+      await run(context, 'boards-clock', () => refreshBoards(repository), (n) => `recounted ${n} board member(s)`);
+    }
     /* Each shop's on-time and repeat-buyer numbers, once a day: a parcel goes overdue with nobody pressing anything. */
     const at = new Date();
     if (at.getUTCHours() === 20 && at.getUTCMinutes() < 5) {

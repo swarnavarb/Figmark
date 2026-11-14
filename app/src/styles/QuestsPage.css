@@ -111,8 +111,7 @@
 .qboards__picker { display: grid; gap: var(--s2); padding: var(--s3); margin-bottom: var(--s3); border-radius: var(--r-md); background: var(--surface-2); }
 .qboards__picker p { margin: 0; font-size: var(--t-xs); }
 .qboards__label { font-size: var(--t-2xs); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.08em; }
-.qboards__typed { display: flex; gap: var(--s2); }
-.qboards__typed input { flex: 1; min-width: 0; }
+.qboards__gap { margin: 0; font-size: var(--t-xs); padding: 6px 10px; border-radius: var(--r-md); background: var(--surface-2); }
 .qboards__board { display: grid; gap: var(--s2); }
 .qboards__head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px var(--s2); }
 .qboards__head .faint { flex: 1; min-width: 0; font-size: var(--t-xs); }
@@ -129,3 +128,4 @@
 .qranks li { display: flex; justify-content: space-between; gap: var(--s2); padding: 3px 8px; border-radius: var(--r-sm); font-size: var(--t-xs); }
 .qranks li.is-me { background: var(--violet-soft); }
 .qranks small { color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.qstreak__save { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); flex-wrap: wrap; }

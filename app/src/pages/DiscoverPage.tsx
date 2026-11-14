@@ -1,3 +1,4 @@
+import { seasonLabel } from '@shared/boards';
 import {
   useCallback, useEffect, useMemo, useRef, useState, type ReactNode,
   type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent,
@@ -1385,7 +1386,7 @@ function WeeklyBest() {
       <h2 className="discsection"><Icon name="trophy" size={15} /> This week’s best</h2>
       {players.length > 0 && (
         <section className="discweek__block">
-          <h2><Icon name="star" size={16} /> Top players</h2>
+          <h2><Icon name="star" size={16} /> Top players{board.playersSeason ? ` · ${seasonLabel(board.playersSeason)}` : ''}</h2>
           <ol className="discweek__list">
             {players.map((player, index) => {
               const row = (

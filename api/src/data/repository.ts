@@ -613,6 +613,12 @@ export interface Repository {
    * and isDue picks from it. Finishing a game takes it off the list.
    */
   listOpenGames(nowIso: string, limit: number): Promise<Post[]>;
+  /**
+   * The games (competitions, debates, guess-the-prices) posted since `sinceIso`
+   * or decided since then, newest first, at most `limit`: what the season's
+   * Top players board is counted from.
+   */
+  listGamePostsSince(sinceIso: string, limit: number): Promise<Post[]>;
 
   listForums(): Promise<Forum[]>;
   getForum(id: string): Promise<Forum | null>;

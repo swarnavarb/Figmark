@@ -148,7 +148,7 @@ const {
   adminReassignRoute, adminActionsRoute, adminDecideActionRoute, adminLedgerRoute, adminAuditRoute,
 } = await import(new URL('admin-routes.js', apiRoot));
 const {
-  questMeRoute, questCheckInRoute, questClaimRoute, questRevealRoute, collectorRoute,
+  questMeRoute, questCheckInRoute, questClaimRoute, questRevealRoute, questRepairRoute, collectorRoute,
 } = await import(new URL('quest-routes.js', apiRoot));
 const {
   boardsListRoute, boardJoinRoute, boardLeaveRoute, boardReadRoute,
@@ -384,6 +384,7 @@ const routes = [
   ['POST', '/api/quest/checkin', questCheckInRoute],
   ['POST', '/api/quest/claim', questClaimRoute],
   ['POST', '/api/quest/reveal', questRevealRoute],
+  ['POST', '/api/quest/repair', questRepairRoute],
   ['GET', '/api/boards', boardsListRoute],
   ['POST', '/api/boards/join', boardJoinRoute],
   ['POST', '/api/boards/leave', boardLeaveRoute],

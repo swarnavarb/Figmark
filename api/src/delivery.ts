@@ -121,6 +121,8 @@ export async function confirmReceived(order: Order, by: string, repository: Repo
   }
   const saved = await releaseHeld(order, 'The buyer confirmed they received it.', by, repository);
   await refreshSellerStats(repository, order.sellerId).catch(() => null);
+  // The buyer's hobby leaderboards move with every arrival, not an hour later.
+  await import('./functions/board-routes.js').then(({ refreshScores }) => refreshScores(repository, order.buyerId)).catch(() => null);
   const named = await orderNames(repository, order);
   await notify(
     repository,
@@ -184,6 +186,8 @@ export async function afterDelivered(order: Order, repository: Repo, by: string)
   await refreshSellerStats(repository, order.sellerId).catch(() => null);
   // A delivered order stamps the buyer's loyalty cards with this shop.
   await import('./loyalty.js').then(({ syncLoyalty }) => syncLoyalty(repository, order.buyerId, order.sellerId)).catch(() => null);
+  // The buyer's hobby leaderboards move with every arrival, not an hour later.
+  await import('./functions/board-routes.js').then(({ refreshScores }) => refreshScores(repository, order.buyerId)).catch(() => null);
   const held = order.hold.state === 'held';
   const named = await orderNames(repository, order);
   await notify(
