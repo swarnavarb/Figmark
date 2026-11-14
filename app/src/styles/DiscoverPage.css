@@ -54,7 +54,7 @@
 .dischero__brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
 .dischero__badge {
   flex: none; display: grid; place-items: center; width: 42px; height: 42px; border-radius: 14px;
-  color: #fff; background: var(--grad-hero, linear-gradient(135deg, #7C3AED, #EC4899 60%, #FF5A5F));
+  color: #fff; background: var(--grad-hero);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 6px 18px rgba(236, 72, 153, 0.45);
   animation: disc-spin-in 600ms var(--ease-out) both;
 }
@@ -68,7 +68,7 @@
 .dischero__title {
   margin: 0; font-family: var(--display); font-size: calc(var(--t-2xl) * 1.08); font-weight: 800;
   letter-spacing: -0.04em; line-height: 0.95;
-  background: linear-gradient(100deg, #fff 0%, #fff 30%, #F9A8D4 62%, #FDBA74 100%);
+  background: linear-gradient(100deg, #fff 0%, #fff 30%, var(--pink-pale) 62%, #FDBA74 100%);
   -webkit-background-clip: text; background-clip: text; color: transparent;
   filter: drop-shadow(0 2px 14px rgba(236, 72, 153, 0.35));
 }
