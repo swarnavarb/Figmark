@@ -110,10 +110,6 @@ export function PowerSalePanel({ storeId, startWith }: { storeId: string; startW
 
   return (
     <div className="stack">
-            <button type="button" className="btn btn--lg" style={{ justifySelf: 'start' }}
-        onClick={() => build()}>
-        <Icon name="plus" size={15} /> Schedule a sale
-      </button>
       {error && <ErrorNotice message={error} />}
       {sales && sales.length > 0 && (
         <div className="stack" style={{ gap: 10 }}>

@@ -418,6 +418,7 @@ function ShopConsole({ store, onChanged }: { store: StoreAccess; onChanged: () =
     if (first) setSection(first.id);
   };
   const canList = store.permissions.includes('listings');
+  const dropLocked = useProLocked('powerSale', store.ownerId) === true;
   const { data, failed } = useSellData(store.ownerId, active);
 
   return (
@@ -448,6 +449,13 @@ function ShopConsole({ store, onChanged }: { store: StoreAccess; onChanged: () =
           {canList && (
             <Link to={`/sell?store=${encodeURIComponent(store.ownerId)}`} className="btn shophead__list">
               <Icon name="plus" size={16} /> List an item
+            </Link>
+          )}
+          {canList && (
+            <Link to={dropLocked ? '/pro' : `/shop/power-sale?store=${encodeURIComponent(store.ownerId)}`}
+              className="btn btn--ghost shophead__list shophead__drop"
+              title={dropLocked ? 'Live drops are part of Pro' : 'Start a live drop'}>
+              <span aria-hidden="true">⚡️</span> Live Drop <span className="probadge">PRO</span>
             </Link>
           )}
         </div>
@@ -1440,7 +1448,6 @@ function MyItems({ store }: { store: StoreAccess }) {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const base = useShopBase();
-  const dropLocked = useProLocked('powerSale', store.ownerId) === true;
   /* Shelf, search and sort live in the URL, so opening an item and coming
      back lands on the same list - and a count above the tab can point at one. */
   const find = FINDS[params.get('find') ?? ''] ? params.get('find')! : null;
@@ -1650,12 +1657,6 @@ function MyItems({ store }: { store: StoreAccess }) {
           {shelf !== 'drops' && (
             <button type="button" className="linkbtn" onClick={() => setImporting(true)}>
               <Icon name="plus" size={14} /> Import a spreadsheet
-            </button>
-          )}
-          {shelf === 'drops' && (
-            <button type="button" className="linkbtn"
-              onClick={() => navigate(dropLocked ? '/pro' : `/shop/power-sale?store=${encodeURIComponent(store.ownerId)}`)}>
-              <Icon name="bolt" size={14} /> {dropLocked ? 'Start a live drop (Pro)' : 'Start a live drop'}
             </button>
           )}
         </div>
