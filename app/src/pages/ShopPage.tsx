@@ -422,18 +422,21 @@ function ShopConsole({ store, onChanged }: { store: StoreAccess; onChanged: () =
     <ShopBase.Provider value={base}>
     <ProOwnerProvider ownerId={store.ownerId}>
     <main className="page tab-view sellpage">
-      {/* Your shop, the shops you help run and every other job you do, one dropdown apart. */}
-      <WorkSwitcher />
       {store.isOwner && <FeeLockBanner />}
       {store.isOwner && <CancelFlagBanner />}
       {store.isOwner && <SetupChecklist hasStore />}
 
       <header className="shophead">
         <div className="shophead__top">
-          <div className="shophead__id">
-            <h1 className="shophead__name">{store.name}</h1>
-            {!store.isOwner && <span className="shophead__role">You help run this shop</span>}
-          </div>
+          {/* Your shop, the shops you help run and every other job you do, one
+              dropdown apart. The dropdown already names the shop and your part
+              in it, so the title shows only when there is nothing to switch to. */}
+          <WorkSwitcher className="shophead__switch" fallback={(
+            <div className="shophead__id">
+              <h1 className="shophead__name">{store.name}</h1>
+              {!store.isOwner && <span className="shophead__role">You help run this shop</span>}
+            </div>
+          )} />
           <div className="shophead__side">
             {hasSettings && (
               <button type="button" className={`iconbtn shophead__gear${activeGroup === 'settings' ? ' is-on' : ''}`}

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import type { StoreAccess } from '@shared/stores';
 import { STORE_KIND_LABELS } from '@shared/service-stores';
@@ -154,7 +154,12 @@ export function roleAt(roles: WorkRole[], pathname: string, search: string): Wor
  * Drawn only when there is somewhere else to go: somebody who just has a shop
  * sees their shop exactly as before.
  */
-export function WorkSwitcher({ title }: { title?: string } = {}) {
+export function WorkSwitcher({ title, fallback = null, className }: {
+  title?: string;
+  /** Drawn instead while the roles load, or when there is nowhere else to go: the page's own title, say. */
+  fallback?: ReactNode;
+  className?: string;
+} = {}) {
   const { user } = useSession();
   const { pathname, search } = useLocation();
   const [roles, setRoles] = useState<WorkRole[] | null>(null);
@@ -189,13 +194,13 @@ export function WorkSwitcher({ title }: { title?: string } = {}) {
     };
   }, [open]);
 
-  if (!roles) return null;
+  if (!roles) return <>{fallback}</>;
   const others = roles.filter((role) => role !== current);
-  if (others.length === 0) return null;
+  if (others.length === 0) return <>{fallback}</>;
   const elsewhere = others.reduce((sum, role) => sum + role.waiting, 0);
 
   return (
-    <div className="wsw" ref={box}>
+    <div className={`wsw${className ? ` ${className}` : ''}`} ref={box}>
       <button type="button" className={`wsw__btn wsw--${current?.tone ?? 'aqua'}`} aria-haspopup="menu" aria-expanded={open}
         onClick={() => setOpen((now) => !now)}>
         <span className="wsw__icon" aria-hidden="true"><Icon name={current?.icon ?? 'tag'} size={16} /></span>

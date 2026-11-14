@@ -1007,6 +1007,8 @@ label.rdy__line { cursor: pointer; }
 .shophead { display: grid; gap: var(--s3); margin-bottom: var(--s3); }
 .shophead__top { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); min-width: 0; }
 .shophead__id { display: grid; gap: 4px; min-width: 0; }
+/* The workspace switcher in the title's place: no gap under it, and it gives way to the gear and status, its name trimming first. */
+.shophead__top .shophead__switch { margin: 0; min-width: 0; flex: 0 1 auto; }
 .shophead__name {
   margin: 0; font-size: var(--t-lg); line-height: 1.15; letter-spacing: -.01em;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
