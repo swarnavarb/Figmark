@@ -299,9 +299,15 @@ export function ContentBadge({ type }: { type: ContentType }) {
 
 export function SocialPostCard({
   card: initial, openComments = false, onRemoved, onReposted, nested = false, rank, inForum = false, canModerate = false, onPinned,
-  promoted = false,
+  promoted = false, compact = false,
 }: {
   card: PostCard;
+  /**
+   * Read in Discover's stream among many strangers: one line saying why it is
+   * there (with a quick "not for me"), no newcomer level, and Follow only once
+   * the reader has taken part in it.
+   */
+  compact?: boolean;
   /** Shown because its conversation took off (Discover's hot debates), not for the post alone. */
   promoted?: boolean;
   /** Read by the forum's admin or a moderator, who may take it down or pin it. */
@@ -508,8 +514,8 @@ export function SocialPostCard({
     <article ref={shell} data-post-id={nested ? undefined : post.id} className={`spost spost--${categoryOf(card)}${nested ? ' spost--nested' : ''}${rank ? ' spost--ranked' : ''}`}>
       {!nested && <span className="spost__glow" aria-hidden="true" />}
       {dialog}
-      {type && <ContentBadge type={type} />}
-      {!nested && card.followedActed && !following && (
+      {type && !(compact && (card.why || (card.followedActed && !following))) && <ContentBadge type={type} />}
+      {!nested && card.followedActed && !following && !(compact && card.why && card.why.kind !== 'followed') && (
         <p className="spost__social">
           <Icon name="users" size={12} />
           <span>{actedLine(card.followedActed)}</span>
@@ -519,6 +525,12 @@ export function SocialPostCard({
         <p className={`spost__social spost__why spost__why--${card.why.kind}`}>
           <span aria-hidden="true">{WHY_MARK[card.why.kind] ?? '✦'}</span>
           <span>{card.why.label}</span>
+          {compact && user && !social.mine && (
+            <button type="button" className="spost__notfor" onClick={() => void putAway('less')}
+              aria-label={`Not for me: see fewer posts like this from ${post.authorName}`}>
+              Not for me
+            </button>
+          )}
         </p>
       )}
       {rank !== undefined && <span className="spost__rank" aria-label={`Trending number ${rank}`}>#{rank}</span>}
@@ -526,7 +538,7 @@ export function SocialPostCard({
         <Avatar name={post.authorName} size={nested ? 32 : 42} />
         <div className="spost__who">
           <span className="spost__byline">
-            <PersonLink party={author} className="spost__name">{post.authorName}</PersonLink>
+            <PersonLink party={compact && (author as { level?: { level: number } } | null)?.level?.level === 1 ? { ...author, level: undefined } : author} className="spost__name">{post.authorName}</PersonLink>
             {card.forum && !inForum && (
               <>
                 <Icon name="right" size={12} className="spost__in" />
@@ -559,7 +571,8 @@ export function SocialPostCard({
         </div>
         {/* On the right, before the menu, for anyone not yet followed. A shop does not
             follow anybody, so speaking as one still follows as the person. */}
-        {!nested && !social.mine && !following && post.channel === 'seller' && voice.storeId !== post.channelId && (
+        {!nested && !social.mine && !following && post.channel === 'seller' && voice.storeId !== post.channelId
+          && (!compact || Boolean(social.reactions.mine || social.poll?.myVote || social.commentCount && social.preview.some((c) => c.mine))) && (
           <button type="button" className="spost__follow" disabled={followBusy}
             title={voice.storeId ? 'Shops do not follow - this follows as you' : undefined}
             onClick={async () => {

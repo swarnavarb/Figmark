@@ -25,6 +25,7 @@ import type { DealState } from '@shared/deals';
 import type { Badge, ContestJudging, GuessView, StoreCredit } from '@shared/play';
 import type { LotTally } from '@shared/board';
 import type { DiscoverWhy, FollowSuggestion, Leaderboard, SeenEntry, SpottedItem, TopicChip, WantRow } from '@shared/feed';
+import type { FindWhy } from '@shared/discover-finds';
 import type { BoxEstimate, LotPhase, Timings } from '@shared/insights';
 import type { CrewRole, ServiceKind, ServiceMeta } from '@shared/services';
 import type { ArtistJobAction, StoreKind } from '@shared/service-stores';
@@ -1455,6 +1456,10 @@ export interface DiscoverResponse {
   topics?: TopicChip[];
   wants?: WantRow[];
   spotted?: SpottedItem[];
+  /** Items worth a look, ranked over the whole catalogue, each saying why. First page only. */
+  finds?: { listing: FeedListing; why: FindWhy }[];
+  /** The categories this reader saves from, most first: what Discover leans towards. */
+  leaning?: string[];
   /**
    * The endless stream: every public post worth a look in one order made for
    * this reader, each saying why. The first page rides with the lists above;

@@ -1,7 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import {
+  useCallback, useEffect, useMemo, useRef, useState, type ReactNode,
+  type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent,
+} from 'react';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { contestPhase } from '@shared/play';
-import { IN_DEMAND_SCORE, factsOf, popularity } from '@shared/catalog';
+import { factsOf } from '@shared/catalog';
+import type { FindWhy } from '@shared/discover-finds';
 import { hashtagsIn, type Leaderboard, type SpottedItem, type TopicChip, type WantRow } from '@shared/feed';
 import { tagKey, tagSlug } from '@shared/shop-tags';
 import { ApiRequestError, api, type DiscoverResponse, type FeedListing, type PostCard } from '../api';
@@ -21,81 +25,59 @@ import '../styles/DiscoverPage.css';
  * to search for.
  *
  * Social is who you chose, in order. This is everybody, ranked for whoever is
- * reading: the debates worth joining, the conversations that took off, the
- * shelves people loved, new posts on the rise, and the items that are scarce
- * or wanted - leaning towards the categories this person saves. One endless
- * stream mixes them, ordered for whoever is reading and saying why each post is
- * there, so scrolling is browsing rather than choosing a list first; the
- * chips narrow it to one kind. Between posts sit the people worth following,
- * the hunts this person could answer, and things seen in posts that can be
- * bought. It pages on as it is scrolled, putting what this device has already
- * scrolled past behind what is new; a guest is asked to join instead.
+ * reading. One endless stream mixes the debates worth joining, the
+ * conversations that took off, the shelves people loved and new posts on the
+ * rise, each saying why it is there; between posts sit the finds (ranked on
+ * the server over the whole catalogue), the people worth following, the hunts
+ * this person could answer and things seen in posts that can be bought.
  *
- * Above it all sits what is live: polls, guesses and competitions still open
- * that this person has not joined - the things that are over if you wait -
- * and the competitions shops are running, with what they are giving away.
+ * Five lenses narrow it - For you, Live, Debates, Shelves, Finds - and a
+ * category chip narrows it to one kind of thing. The week's best is one tap
+ * away in the header. The lens, category and search live in the address, so
+ * back and a shared link land where the reader was.
+ *
+ * Above the stream sits the spotlight: a deck of the liveliest things to take
+ * part in right now. What it shows is held back from the top of the stream, so
+ * nothing is shown twice on the first screens.
  */
 
-type Lens = 'all' | 'live' | 'contests' | 'rising' | 'debates' | 'threads' | 'flexes' | 'finds' | 'top';
+type Lens = 'all' | 'live' | 'debates' | 'shelves' | 'finds' | 'week';
+type IconName = Parameters<typeof Icon>[0]['name'];
 
-const LENSES: { id: Lens; label: string }[] = [
-  { id: 'all', label: '✨ For you' },
-  { id: 'live', label: '🗳️ Live' },
-  { id: 'contests', label: '🏆 Competitions' },
-  { id: 'rising', label: '🚀 Rising' },
-  { id: 'debates', label: '⚔️ Debates' },
-  { id: 'threads', label: '🔥 Hot debates' },
-  { id: 'flexes', label: '📸 Flexes' },
-  { id: 'finds', label: '💎 Rare finds' },
-  { id: 'top', label: '🥇 This week' },
+const LENSES: { id: Exclude<Lens, 'week'>; label: string; icon: IconName }[] = [
+  { id: 'all', label: 'For you', icon: 'spark' },
+  { id: 'live', label: 'Live', icon: 'poll' },
+  { id: 'debates', label: 'Debates', icon: 'forum' },
+  { id: 'shelves', label: 'Shelves', icon: 'camera' },
+  { id: 'finds', label: 'Finds', icon: 'tag' },
 ];
 
-/** An item worth surfacing, and the one word that says why. */
-interface Find {
-  listing: FeedListing;
-  why: { kind: 'rare' | 'filling' | 'hot' | 'yours'; label: string } | null;
-  score: number;
+/** Older addresses, and the lenses folded into others. */
+const LEGACY_LENS: Record<string, Lens> = {
+  contests: 'live', flexes: 'shelves', top: 'week', threads: 'debates', rising: 'all',
+};
+
+function lensFrom(value: string | null, hash: string): Lens {
+  if (hash === '#competitions') return 'live';
+  if (!value) return 'all';
+  if (LEGACY_LENS[value]) return LEGACY_LENS[value]!;
+  return (['all', 'live', 'debates', 'shelves', 'finds', 'week'] as const).find((lens) => lens === value) ?? 'all';
 }
 
-/** Most finds a stream carries, so it stays a stream and not the catalogue. */
-const MAX_FINDS = 24;
+/** An item worth surfacing, and the one word that says why. Ranked on the server. */
+interface Find {
+  listing: FeedListing;
+  why: FindWhy;
+}
+
 /** Items to a rail between posts. */
 const RAIL = 4;
 /** Where in the stream the other rails go, counted in entries. */
 const PEOPLE_AT = 3;
 const HUNTS_AT = 6;
 const SPOTTED_AT = 9;
-
-/**
- * Rank the catalogue's most-wanted for this person.
- *
- * Scarcity first - the last one or two of something, or a group pre-order
- * past halfway - then what is in demand, with a lift for the categories they
- * save from, which is the plainest sign of what they collect.
- */
-function rankFinds(listings: FeedListing[], hobbies: ReadonlySet<string>, me: string | null): Find[] {
-  return listings
-    .filter((listing) => listing.sellerId !== me)
-    .map((listing) => {
-      const left = listing.quantityMode === 'multiple' ? null : listing.quantityAvailable;
-      const rare = left !== null && left > 0 && left <= 2;
-      const pre = listing.preOrder;
-      const filling = Boolean(pre && pre.fillThreshold > 0 && pre.filledCount / pre.fillThreshold >= 0.5
-        && pre.filledCount < pre.fillThreshold);
-      const hot = popularity(listing) >= IN_DEMAND_SCORE;
-      const yours = hobbies.has(listing.category);
-      const why: Find['why'] = rare ? { kind: 'rare', label: left === 1 ? 'Rare · last one' : `Rare · last ${left}` }
-        : filling ? { kind: 'filling', label: `Pre-order ${pre!.filledCount}/${pre!.fillThreshold}` }
-          : hot ? { kind: 'hot', label: 'High demand' }
-            : yours ? { kind: 'yours', label: `For your ${listing.category}` }
-              : null;
-      const score = popularity(listing) + (yours ? 400 : 0) + (rare ? 300 : 0) + (filling ? 200 : 0);
-      return { listing, why, score };
-    })
-    .filter((find) => find.why !== null)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, MAX_FINDS);
-}
+/** Places at the top of the stream kept clear of what the spotlight already shows. */
+const SPOTLIT_GAP = 10;
 
 type Entry =
   | { kind: 'post'; key: string; card: PostCard }
@@ -118,6 +100,10 @@ const FIRST_RAIL_AT = 4;
 const RAIL_EVERY = 8;
 /** Comments before a post reads as a hot thread. The server promotes on the same number. */
 const HOT_THREAD = 3;
+/** Inline topic chips; the rest are in the search panel. */
+const TOPICS_INLINE = 8;
+/** How often an open Discover checks for new posts at the top. */
+const FRESH_EVERY_MS = 120_000;
 
 /** One card of the stream, and which time round it is: a post can come back in a later lap. */
 interface FlowItem {
@@ -159,6 +145,23 @@ function weaveFlow(items: FlowItem[], finds: Find[], extras: { people: boolean; 
   ];
   for (const [at, entry] of inserts) if (entry) out.splice(Math.min(at, out.length), 0, entry);
   return out;
+}
+
+/**
+ * Keep what the spotlight shows out of the first places of the stream: the
+ * same debate as the deck's top card and the first post read as a repeat.
+ * Held posts come back just below the gap, in their order.
+ */
+function deferSpotlit(items: FlowItem[], spotlit: ReadonlySet<string>, gap = SPOTLIT_GAP): FlowItem[] {
+  if (!spotlit.size) return items;
+  const out: FlowItem[] = [];
+  const held: FlowItem[] = [];
+  for (const item of items) {
+    if (out.length < gap && spotlit.has(item.card.post.id)) held.push(item);
+    else out.push(item);
+    if (out.length === gap && held.length) out.push(...held.splice(0));
+  }
+  return [...out, ...held];
 }
 
 /* ── what this device has already shown ──────────────────────────────────── */
@@ -211,6 +214,34 @@ function topicsOfCard(card: PostCard): string[] {
   ])];
 }
 
+/** The keys a category answers to among a post's topics: "Trading cards" is #tradingcards, #tradingcard and #cards. */
+function categoryKeys(category: string): Set<string> {
+  const keys = new Set<string>();
+  const add = (word: string) => {
+    const key = tagKey(word);
+    if (key.length < 3) return;
+    keys.add(key);
+    if (key.endsWith('s')) keys.add(key.slice(0, -1));
+    else keys.add(`${key}s`);
+  };
+  add(category);
+  for (const word of category.split(/[\s/&,-]+/)) if (word.length >= 4) add(word);
+  return keys;
+}
+
+/** Whether a post belongs under a category chip: it sells that kind of thing, or talks about it. */
+function postInCategory(card: PostCard, keys: ReadonlySet<string>): boolean {
+  const title = card.listing ? tagKey(card.listing.title) : '';
+  return topicsOfCard(card).some((topic) => keys.has(topic)) || [...keys].some((key) => key.length >= 4 && title.includes(key));
+}
+
+/** Whether a post matches what was typed in Discover's search. */
+function postMatches(card: PostCard, words: string[]): boolean {
+  const text = `${card.post.body} ${card.post.authorName} ${card.post.contest?.title ?? ''} ${card.listing?.title ?? ''}`.toLowerCase();
+  const topics = topicsOfCard(card);
+  return words.every((word) => text.includes(word) || topics.some((topic) => topic.includes(tagKey(word))));
+}
+
 /** What a guest has opened on this device, newest first: all Discover has to go on for somebody with no account. */
 function guestInterests(): string[] {
   try {
@@ -256,12 +287,28 @@ function DiscoverBody() {
   const { user, promptAuth } = useSession();
   const toast = useToast();
   const location = useLocation();
-  const [lens, setLens] = useState<Lens>(location.hash === '#competitions' ? 'contests' : 'all');
+  const [params, setParams] = useSearchParams();
+  const lens = lensFrom(params.get('lens'), location.hash);
+  const category = params.get('cat');
+  const query = params.get('q') ?? '';
+  const [searchOpen, setSearchOpen] = useState(Boolean(query));
+
+  /** Change what the address says, without a history entry for every chip. */
+  const setParam = useCallback((key: 'lens' | 'cat' | 'q', value: string | null) => {
+    setParams((current) => {
+      const next = new URLSearchParams(current);
+      if (value && !(key === 'lens' && value === 'all')) next.set(key, value);
+      else next.delete(key);
+      return next;
+    }, { replace: true });
+  }, [setParams]);
+  const setLens = useCallback((next: Lens) => {
+    setParam('lens', next);
+    window.scrollTo({ top: 0 });
+  }, [setParam]);
+
   const [live, setLive] = useState<PostCard[]>([]);
   const [contests, setContests] = useState<PostCard[]>([]);
-  useEffect(() => {
-    if (location.hash === '#competitions') setLens('contests');
-  }, [location.hash]);
   const [stream, setStream] = useState<Stream | null>(null);
   /** The endless stream, in the order the server gave it, and where to read on from. */
   const [flow, setFlow] = useState<FlowItem[]>([]);
@@ -271,15 +318,18 @@ function DiscoverBody() {
   const [rails, setRails] = useState<{ topics: TopicChip[]; wants: WantRow[]; spotted: SpottedItem[] }>({ topics: [], wants: [], spotted: [] });
   const [next, setNext] = useState<number | null>(null);
   const [more, setMore] = useState(false);
-  const [listings, setListings] = useState<FeedListing[] | null>(null);
-  const [hobbies, setHobbies] = useState<ReadonlySet<string>>(new Set());
+  const [finds, setFinds] = useState<Find[]>([]);
+  const [leaning, setLeaning] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   /** A guest scrolled past the first page: asked to join rather than shown more. */
   const [guestWall, setGuestWall] = useState(false);
+  /** Newer posts are waiting at the top. */
+  const [fresh, setFresh] = useState(false);
 
   const load = useCallback(async () => {
     setError(null);
     setGuestWall(false);
+    setFresh(false);
     // Each part lands as soon as it is read and stands on its own: one slow or
     // failed read must not keep the others - or the page - waiting. The posts
     // are asked for apart from the lists and rails, which take longer, so they
@@ -320,6 +370,8 @@ function DiscoverBody() {
         setRails({ topics: page.topics ?? [], wants: page.wants ?? [], spotted: page.spotted ?? [] });
         setLive(page.live ?? []);
         setContests(page.contests ?? []);
+        setFinds(page.finds ?? []);
+        setLeaning(page.leaning ?? []);
         setNext(page.next ?? null);
       },
       () => {
@@ -327,19 +379,27 @@ function DiscoverBody() {
         setNext(null);
       },
     );
-    const catalogue = api.feed({ sort: 'popular' }).then(
-      (found) => setListings(found.listings),
-      () => setListings([]),
-    );
-    const saved = user
-      ? api.saved().then((found) => setHobbies(new Set(found.listings.map((listing) => listing.category))), () => undefined)
-      : Promise.resolve();
-    await Promise.all([posts, lists, catalogue, saved]);
+    await Promise.all([posts, lists]);
   }, [user]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Every so often, while Discover is open and visible, ask whether anything
+  // new has reached the top. Nothing moves under the reader: a button says so.
+  const flowIds = useMemo(() => new Set(flow.map((item) => item.card.post.id)), [flow]);
+  useEffect(() => {
+    if (!flowReady || lens !== 'all') return undefined;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState !== 'visible' || fresh) return;
+      void api.discoverStream({ interests: user ? [] : guestInterests() }).then((page) => {
+        const seen = readSeen();
+        if (page.stream.some((card) => !flowIds.has(card.post.id) && !seen.has(card.post.id))) setFresh(true);
+      }, () => undefined);
+    }, FRESH_EVERY_MS);
+    return () => window.clearInterval(timer);
+  }, [flowReady, lens, fresh, flowIds, user]);
 
   const loadMore = useCallback(async () => {
     const endless = lens === 'all';
@@ -357,14 +417,14 @@ function DiscoverBody() {
         rememberSeen(flow.map((item) => item.card.post.id));
         // A page that adds nothing new (all of it already shown) is not the end: read on.
         let from: string | null = cursor;
-        let fresh: FlowItem[] = [];
+        let added: FlowItem[] = [];
         const have = new Set(flow.map((item) => item.key));
-        for (let tries = 0; from && !fresh.length && tries < 3; tries += 1) {
+        for (let tries = 0; from && !added.length && tries < 3; tries += 1) {
           const page = await api.discoverMore(from);
-          fresh = flowItems(page.stream, page.lap ?? 0).filter((item) => !have.has(item.key));
+          added = flowItems(page.stream, page.lap ?? 0).filter((item) => !have.has(item.key));
           from = page.nextCursor;
         }
-        setFlow((current) => [...current, ...fresh]);
+        setFlow((current) => [...current, ...added]);
         setCursor(from);
       } else {
         const page = await api.discover(next ?? 0);
@@ -380,37 +440,65 @@ function DiscoverBody() {
     }
   }, [lens, cursor, next, more, user, flow]);
 
-  const finds = useMemo(
-    () => rankFinds(listings ?? [], hobbies, user?.id ?? null),
-    [listings, hobbies, user?.id],
+  /* ── narrowing: category chip and search ──────────────────────────────── */
+
+  const categories = useMemo(() => {
+    // The reader's own categories first, then everything the finds are in.
+    const all = new Set(finds.map((find) => find.listing.category));
+    return [...new Set([...leaning, ...[...all].sort()])];
+  }, [finds, leaning]);
+  const catKeys = useMemo(() => (category ? categoryKeys(category) : null), [category]);
+  const shownFinds = useMemo(
+    () => (category ? finds.filter((find) => find.listing.category === category) : finds),
+    [finds, category],
   );
+  const words = useMemo(() => query.trim().toLowerCase().split(/\s+/).filter(Boolean), [query]);
+  const narrow = useCallback((cards: PostCard[]) => cards.filter((card) =>
+    (!category || !catKeys || postInCategory(card, catKeys)) && (!words.length || postMatches(card, words))), [category, catKeys, words]);
+  const lists = stream ?? EMPTY;
+
+  const spots = useMemo(
+    () => spotlight(narrow(live), narrow(contests), { ...lists, flexes: narrow(lists.flexes), debates: narrow(lists.debates), rising: narrow(lists.rising) }, shownFinds),
+    [live, contests, lists, shownFinds, narrow],
+  );
+  const spotlit = useMemo(() => new Set(spots.filter((spot) => spot.postId).map((spot) => spot.postId!)), [spots]);
+  const narrowed = Boolean(category || words.length);
+  const flowShown = useMemo(() => {
+    const kept = narrowed ? flow.filter((item) => narrow([item.card]).length > 0) : flow;
+    return deferSpotlit(kept, spotlit);
+  }, [flow, narrowed, narrow, spotlit]);
+
   // Only the first few are drawn; the rest are added as the reader nears the end of them.
   const entries = useMemo(
-    () => (flowReady ? weaveFlow(flow.slice(0, shown), finds, { people: Boolean(user), wants: rails.wants, spotted: rails.spotted }) : []),
-    [flowReady, flow, shown, finds, user, rails.wants, rails.spotted],
+    () => (flowReady ? weaveFlow(flowShown.slice(0, shown), shownFinds, {
+      people: Boolean(user) && !narrowed,
+      wants: narrowed ? [] : rails.wants,
+      spotted: narrowed ? [] : rails.spotted,
+    }) : []),
+    [flowReady, flowShown, shown, shownFinds, user, narrowed, rails.wants, rails.spotted],
   );
   // The finds and the lists are a bonus: the stream is ready once its posts are.
   const loading = lens === 'all' ? !flowReady : !stream;
-  const lists = stream ?? EMPTY;
 
   /** The reader is near the last card drawn: draw more, and when all are drawn, read the next page. */
   const reach = useCallback(() => {
-    if (lens === 'all' && shown < flow.length) setShown((count) => Math.min(flow.length, count + REVEAL));
+    if (lens === 'all' && shown < flowShown.length) setShown((count) => Math.min(flowShown.length, count + REVEAL));
     else void loadMore();
-  }, [lens, shown, flow.length, loadMore]);
+  }, [lens, shown, flowShown.length, loadMore]);
 
   // Read the next page while the reader is still on the last few, so it is there when they arrive.
   useEffect(() => {
-    if (lens === 'all' && user && flowReady && cursor !== null && !more && flow.length - shown <= PREFETCH_AHEAD) void loadMore();
-  }, [lens, user, flowReady, cursor, more, flow.length, shown, loadMore]);
-  const spots = useMemo(() => spotlight(live, contests, lists, finds), [live, contests, lists, finds]);
+    if (lens === 'all' && user && flowReady && cursor !== null && !more && flowShown.length - shown <= PREFETCH_AHEAD) void loadMore();
+  }, [lens, user, flowReady, cursor, more, flowShown.length, shown, loadMore]);
 
   const posts = (cards: PostCard[], promoted = false) => cards.map((card) => (
-    <SocialPostCard key={card.post.id} card={card} promoted={promoted} />
+    <SocialPostCard key={card.post.id} card={card} promoted={promoted} compact />
   ));
-  const openContests = contests.filter((card) => card.post.contest && contestPhase(card.post.contest) !== 'ended').length;
-  const paged = lens === 'all' || lens === 'rising' || lens === 'debates' || lens === 'threads' || lens === 'flexes';
-  const hasMore = lens === 'all' ? shown < flow.length || cursor !== null : next !== null;
+  const openContests = contests.filter((card) => card.post.contest && contestPhase(card.post.contest) !== 'ended');
+  const liveCount = live.length + openContests.filter((card) => !live.some((other) => other.post.id === card.post.id)).length;
+  const paged = lens === 'all' || lens === 'debates' || lens === 'shelves';
+  const hasMore = lens === 'all' ? shown < flowShown.length || cursor !== null : next !== null;
+  const guestLeft = !user && lens === 'all' && cursor !== null ? Math.max(0, flowShown.length - shown) : null;
 
   /** A guest has no history, so what they tap is what Discover learns from, kept on this device. */
   function noteTap(event: ReactMouseEvent) {
@@ -433,147 +521,254 @@ function DiscoverBody() {
     }
   }
 
+  function freshen() {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    rememberSeen(flow.slice(0, shown).map((item) => item.card.post.id));
+    setFlowReady(false);
+    void load();
+  }
+
+  const showChips = (lens === 'all' || lens === 'finds') && categories.length > 1;
+
   return (
     <main className="page discpage">
       <header className="dischero">
-        <span className="dischero__aurora" aria-hidden="true"><span /><span /><span /></span>
-        <div className="dischero__top">
-          <span className="dischero__kicker"><span aria-hidden="true">✦</span> Across Figmark</span>
-          <button type="button" className="iconbtn dischero__share" aria-label="Share Discover" onClick={() => void share()}>
-            <Icon name="share" size={18} />
-          </button>
-        </div>
-        <h1 className="dischero__title">Discover</h1>
-        <p className="dischero__sub">
-          Polls to settle, competitions to win, shelves to envy and finds that will not last.
-          {hobbies.size > 0 && <> Leaning towards {[...hobbies].slice(0, 3).join(', ')}.</>}
-        </p>
-        {(live.length > 0 || openContests > 0) && (
-          <div className="dischero__stats">
-            {live.length > 0 && (
+        <div className="dischero__row">
+          <h1 className="dischero__title">Discover</h1>
+          <div className="dischero__actions">
+            {liveCount > 0 && (
               <button type="button" className="dischero__stat" onClick={() => setLens('live')}>
-                <span className="dischero__pulse" aria-hidden="true" /> <strong>{live.length}</strong> live to vote on
+                <span className="dischero__pulse" aria-hidden="true" /> <strong>{liveCount}</strong> live
               </button>
             )}
-            {openContests > 0 && (
-              <button type="button" className="dischero__stat" onClick={() => setLens('contests')}>
-                🏆 <strong>{openContests}</strong> competition{openContests === 1 ? '' : 's'} open
-              </button>
-            )}
-          </div>
-        )}
-        {!user && (
-          <p className="dischero__guest">
-            <button type="button" className="btn btn--sm" onClick={() => promptAuth('Sign in to vote, react and follow.')}>
-              Sign in
+            <button type="button" className={`iconbtn dischero__btn${searchOpen ? ' is-on' : ''}`} aria-label="Search Discover"
+              aria-expanded={searchOpen} onClick={() => {
+                if (searchOpen) setParam('q', null);
+                setSearchOpen(!searchOpen);
+              }}>
+              <Icon name={searchOpen ? 'close' : 'search'} size={18} />
             </button>
-            <span>to vote, enter competitions and follow the people behind them.</span>
-          </p>
+            <button type="button" className={`iconbtn dischero__btn${lens === 'week' ? ' is-on' : ''}`} aria-label="This week's best"
+              aria-pressed={lens === 'week'} onClick={() => setLens(lens === 'week' ? 'all' : 'week')}>
+              <Icon name="trophy" size={18} />
+            </button>
+          </div>
+        </div>
+        {!user && (
+          <button type="button" className="dischero__guest" onClick={() => promptAuth('Sign in to vote, react and follow.')}>
+            <span>Sign in to vote, enter competitions and follow people</span>
+            <Icon name="right" size={14} />
+          </button>
         )}
       </header>
 
-      {!loading && lens === 'all' && spots.length > 1 && <SpotlightDeck spots={spots} />}
+      {searchOpen && (
+        <SearchPanel query={query} onQuery={(value) => setParam('q', value || null)}
+          topics={rails.topics} flow={flow} />
+      )}
 
       <nav className="dislens" aria-label="Show">
         {LENSES.map((entry) => (
           <button key={entry.id} type="button" className={`dislens__tab${lens === entry.id ? ' is-on' : ''}`}
             aria-pressed={lens === entry.id} onClick={() => setLens(entry.id)}>
-            {entry.label}
+            <Icon name={entry.icon} size={14} /> {entry.label}
+            {entry.id === 'live' && liveCount > 0 && <span className="dislens__count">{liveCount}</span>}
           </button>
         ))}
       </nav>
 
-      {rails.topics.length > 0 && lens === 'all' && (
-        <nav className="distopics" aria-label="Topics">
-          {rails.topics.map((topic) => (
-            <Link key={topic.key} to={`/tags/${encodeURIComponent(tagSlug(topic.key))}`} className="distopic">
-              #{topic.label.replace(/ /g, '')}
-              <span className="faint">{topic.posts}</span>
-            </Link>
-          ))}
+      {showChips && (
+        <nav className="discats" aria-label="Categories">
+          <button type="button" className={`discat${!category ? ' is-on' : ''}`} aria-pressed={!category} onClick={() => setParam('cat', null)}>
+            All
+          </button>
+          {categories.map((name) => {
+            const yours = leaning.includes(name);
+            return (
+              <button key={name} type="button" className={`discat${category === name ? ' is-on' : ''}${yours ? ' discat--yours' : ''}`}
+                aria-pressed={category === name} title={yours ? 'You save from this category' : undefined}
+                onClick={() => setParam('cat', category === name ? null : name)}>
+                {yours && <Icon name="heart" size={11} />} {name}
+              </button>
+            );
+          })}
         </nav>
       )}
 
-      {!loading && lens === 'all' && live.length > 0 && <LiveStrip cards={live} onAll={() => setLens('live')} />}
-      {!loading && lens === 'all' && contests.length > 0 && <ContestRow cards={contests} onAll={() => setLens('contests')} />}
-
       {error && <ErrorNotice message={error} />}
+
+      {fresh && (
+        <button type="button" className="discfresh" onClick={freshen}>
+          <Icon name="up" size={14} /> New posts
+        </button>
+      )}
 
       {loading ? (
         <DiscoverSkeleton />
       ) : lens === 'all' ? (
-        // The people rail is always woven in for somebody signed in, and draws
-        // nothing when there is nobody to suggest: it is not content, so on
-        // its own it must not stand in for the empty state.
-        entries.every((entry) => entry.kind === 'people') ? (
-          <>
-            <EmptyState title="Quiet right now">
-              Nothing is trending yet. Start a debate or share your shelf with the + below, and be the first thing here.
-            </EmptyState>
-            {user && <FollowSuggestions title="People to follow" />}
-          </>
-        ) : (
-          <div className="discover__stream" onClick={noteTap}>
-            {entries.map((entry, index) => {
-              switch (entry.kind) {
-                case 'rail': return <FindRail key={`r${index}`} finds={entry.finds} first={index < 2} />;
-                case 'people': return <FollowSuggestions key="people" title="People to follow" />;
-                case 'hunts': return <HuntRail key="hunts" wants={entry.wants} />;
-                case 'spotted': return <SpottedRail key="spotted" items={entry.items} />;
-                case 'divider': return <p key={entry.key} className="discend discend--lap">{entry.text}</p>;
-                default: return (
-                  <SocialPostCard key={entry.key} card={entry.card}
-                    promoted={entry.card.social.commentCount >= HOT_THREAD && !entry.card.post.debate && !entry.card.post.flex} />
-                );
-              }
-            })}
-          </div>
-        )
+        <>
+          {spots.length > 0 && !words.length && <SpotlightDeck spots={spots} />}
+          {rails.topics.length > 0 && !narrowed && (
+            <nav className="distopics" aria-label="Topics">
+              {rails.topics.slice(0, TOPICS_INLINE).map((topic) => (
+                <Link key={topic.key} to={`/tags/${encodeURIComponent(tagSlug(topic.key))}`} className="distopic">
+                  #{topic.label.replace(/ /g, '')}
+                  <span className="faint">{topic.posts}</span>
+                </Link>
+              ))}
+              {rails.topics.length > TOPICS_INLINE && (
+                <button type="button" className="distopic distopic--more" onClick={() => setSearchOpen(true)}>
+                  All topics
+                </button>
+              )}
+            </nav>
+          )}
+          {narrowed && (
+            <p className="discnarrow">
+              {flowShown.length === 0 ? 'Nothing here matches yet.' : `Showing posts about ${[category, words.length ? `“${query.trim()}”` : null].filter(Boolean).join(' and ')}.`}
+              <button type="button" className="discnarrow__clear" onClick={() => {
+                setParam('cat', null);
+                setParam('q', null);
+              }}>Clear</button>
+            </p>
+          )}
+          {/* The people rail is always woven in for somebody signed in, and draws
+              nothing when there is nobody to suggest: it is not content, so on
+              its own it must not stand in for the empty state. */}
+          {entries.every((entry) => entry.kind === 'people') ? (
+            narrowed ? null : (
+              <>
+                <EmptyState title="Quiet right now">
+                  Nothing is trending yet. Start a debate or share your shelf with the + below, and be the first thing here.
+                </EmptyState>
+                {user && <FollowSuggestions title="People to follow" />}
+              </>
+            )
+          ) : (
+            <div className="discover__stream" onClick={noteTap}>
+              {entries.map((entry, index) => {
+                switch (entry.kind) {
+                  case 'rail': return <FindRail key={`r${index}`} finds={entry.finds} first={index < 3} onAll={() => setLens('finds')} />;
+                  case 'people': return <FollowSuggestions key="people" title="People to follow" />;
+                  case 'hunts': return <HuntRail key="hunts" wants={entry.wants} />;
+                  case 'spotted': return <SpottedRail key="spotted" items={entry.items} onAll={() => setLens('finds')} />;
+                  case 'divider': return <p key={entry.key} className="discend discend--lap">{entry.text}</p>;
+                  default: return (
+                    <SocialPostCard key={entry.key} card={entry.card} compact
+                      promoted={entry.card.social.commentCount >= HOT_THREAD && !entry.card.post.debate && !entry.card.post.flex} />
+                  );
+                }
+              })}
+            </div>
+          )}
+        </>
       ) : lens === 'finds' ? (
-        finds.length === 0 ? (
-          <EmptyState title="No rare finds today">Nothing is running low or filling fast. Check back after the next drop.</EmptyState>
-        ) : (
-          <div className="discgrid">{finds.map((find) => <FindCard key={find.listing.id} find={find} />)}</div>
-        )
-      ) : lens === 'top' ? (
+        <FindsView finds={shownFinds} spotted={rails.spotted} category={category} />
+      ) : lens === 'week' ? (
         <WeeklyBest />
       ) : lens === 'live' ? (
-        live.length === 0 ? (
-          <EmptyState title="You're all caught up">
-            Every open poll, guess and competition here has your vote. Start one with the + below.
-          </EmptyState>
-        ) : <div className="discover__stream">{posts(live)}</div>
-      ) : lens === 'contests' ? (
-        contests.length === 0 ? (
-          <EmptyState title="No competitions running">
-            Shops run photo competitions with store credit for the winners. Run one from the + below as your store.
-          </EmptyState>
-        ) : <div className="discover__stream" id="competitions">{posts(contests)}</div>
+        <LiveView live={live} contests={contests} posts={posts} />
+      ) : lens === 'debates' ? (
+        lists.debates.length || lists.threads.length ? (
+          <div className="discover__stream">
+            {posts(lists.debates)}
+            {lists.threads.length > 0 && (
+              <>
+                <h2 className="discsection"><Icon name="message" size={15} /> Conversations taking off</h2>
+                {posts(lists.threads, true)}
+              </>
+            )}
+          </div>
+        ) : (
+          <EmptyState title="No debates yet">Put two pieces side by side with the + below and let people vote.</EmptyState>
+        )
       ) : (
-        <div className="discover__stream">
-          {lens === 'rising' && (lists.rising.length ? posts(lists.rising) : (
-            <EmptyState title="Nothing rising yet">New posts that people are starting to notice show up here first.</EmptyState>
-          ))}
-          {lens === 'debates' && (lists.debates.length ? posts(lists.debates) : (
-            <EmptyState title="No debates yet">Put two pieces side by side with the + below and let people vote.</EmptyState>
-          ))}
-          {lens === 'threads' && (lists.threads.length ? posts(lists.threads, true) : (
-            <EmptyState title="No hot debates yet">When a conversation takes off anywhere on Figmark, it shows up here.</EmptyState>
-          ))}
-          {lens === 'flexes' && (lists.flexes.length ? posts(lists.flexes) : (
-            <EmptyState title="No flexes yet">Share your shelf with its pieces tagged, from the + below.</EmptyState>
-          ))}
-        </div>
+        lists.flexes.length ? <div className="discover__stream">{posts(lists.flexes)}</div> : (
+          <EmptyState title="No shelves yet">Share your shelf with its pieces tagged, from the + below.</EmptyState>
+        )
       )}
 
       {!loading && paged && (guestWall ? (
         <DiscoverWall onJoin={() => promptAuth('Join to keep scrolling, vote and follow.')} />
       ) : hasMore ? (
-        <MoreSentinel busy={more} onReach={reach} />
+        <>
+          {guestLeft !== null && guestLeft <= REVEAL && (
+            <p className="discguest">
+              {guestLeft > 0 ? `${guestLeft} more post${guestLeft === 1 ? '' : 's'}, then` : 'From here,'} join free to keep scrolling.
+            </p>
+          )}
+          <MoreSentinel busy={more} onReach={reach} />
+        </>
       ) : lens === 'all' && flow.length > 0 && (
-        <p className="discend">That is everything for now. Check back soon, or start something with the + below.</p>
+        <div className="discend">
+          <p>That is everything for now. Check back soon, or start something with the + below.</p>
+          <button type="button" className="btn btn--quiet btn--sm" onClick={() => void share()}>
+            <Icon name="share" size={14} /> Share Discover
+          </button>
+        </div>
       ))}
     </main>
+  );
+}
+
+/**
+ * Searching Discover: topics to open, and the words to look for in posts here
+ * (the stream narrows as you type), in the topic's own page, or in the shop.
+ */
+function SearchPanel({ query, onQuery, topics, flow }: {
+  query: string;
+  onQuery: (value: string) => void;
+  topics: TopicChip[];
+  flow: FlowItem[];
+}) {
+  const [draft, setDraft] = useState(query);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (draft !== query) onQuery(draft.trim());
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [draft, query, onQuery]);
+  const term = tagKey(draft.trim());
+  // Topics people post under, and any more seen in the posts already read.
+  const known = useMemo(() => {
+    const byKey = new Map(topics.map((topic) => [topic.key, { key: topic.key, label: topic.label.replace(/ /g, ''), posts: topic.posts }]));
+    for (const item of flow) {
+      for (const key of topicsOfCard(item.card)) {
+        if (!byKey.has(key)) byKey.set(key, { key, label: key, posts: 0 });
+      }
+    }
+    return [...byKey.values()];
+  }, [topics, flow]);
+  const matching = term ? known.filter((topic) => topic.key.includes(term)) : known;
+  return (
+    <section className="discsearch" aria-label="Search Discover">
+      <label className="discsearch__field">
+        <Icon name="search" size={16} />
+        <input type="search" value={draft} onChange={(event) => setDraft(event.target.value)} autoFocus
+          placeholder="Search posts and topics" aria-label="Search posts and topics" enterKeyHint="search" />
+      </label>
+      {matching.length > 0 && (
+        <div className="discsearch__topics">
+          {matching.slice(0, 24).map((topic) => (
+            <Link key={topic.key} to={`/tags/${encodeURIComponent(tagSlug(topic.key))}`} className="distopic">
+              #{topic.label}{topic.posts > 0 && <span className="faint">{topic.posts}</span>}
+            </Link>
+          ))}
+        </div>
+      )}
+      {term && (
+        <div className="discsearch__go">
+          {!known.some((topic) => topic.key === term) && (
+            <Link to={`/tags/${encodeURIComponent(tagSlug(term))}`} className="discsearch__link">
+              <Icon name="forum" size={14} /> Posts tagged #{term}
+            </Link>
+          )}
+          <Link to={`/?q=${encodeURIComponent(draft.trim())}`} className="discsearch__link">
+            <Icon name="tag" size={14} /> Search the shop for “{draft.trim()}”
+          </Link>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -599,7 +794,7 @@ function MoreSentinel({ busy, onReach }: { busy: boolean; onReach: () => void })
   );
 }
 
-/** Where a guest's scrolling stops: what an account gets them, and the way in. */
+/** Where a guest's scrolling stops: laid over the last posts, faded, so it is clear what waits. */
 function DiscoverWall({ onJoin }: { onJoin: () => void }) {
   return (
     <section className="discwall">
@@ -611,12 +806,12 @@ function DiscoverWall({ onJoin }: { onJoin: () => void }) {
 }
 
 /** A row of finds between posts, sideways on a phone. */
-function FindRail({ finds, first }: { finds: Find[]; first: boolean }) {
+function FindRail({ finds, first, onAll }: { finds: Find[]; first: boolean; onAll: () => void }) {
   return (
-    <section className="discrail" aria-label={first ? 'High demand and rare, for you' : 'More finds'}>
+    <section className="discrail" aria-label={first ? 'Worth a look, for you' : 'More finds'}>
       <div className="discrail__head">
-        <h2>{first ? 'High demand & rare, for you' : 'More finds'}</h2>
-        <Link to="/?sort=popular" className="discrail__all">See all</Link>
+        <h2>{first ? 'Worth a look, for you' : 'More finds'}</h2>
+        <button type="button" className="discrail__all" onClick={onAll}>See all</button>
       </div>
       <div className="discrail__row">
         {finds.map((find) => <FindCard key={find.listing.id} find={find} />)}
@@ -625,22 +820,97 @@ function FindRail({ finds, first }: { finds: Find[]; first: boolean }) {
   );
 }
 
+/** A picture for an item card: its photo, or the category's mark when it has none. */
+function ItemArt({ seed, title, category, photo, badge }: {
+  seed: string; title: string; category: string | null; photo: { url?: string; thumbUrl?: string } | null; badge: 'sale' | 'iso';
+}) {
+  if (photo?.url) {
+    return (
+      <Thumb seed={seed} label={title} photo={photo} className="thumb discitem__photo">
+        <ContentBadge type={badge} />
+      </Thumb>
+    );
+  }
+  return (
+    <span className="discitem__photo discitem__photo--blank">
+      <ContentBadge type={badge} />
+      <Icon name={badge === 'iso' ? 'target' : 'tag'} size={26} />
+      {category && <span className="discitem__cat">{category}</span>}
+    </span>
+  );
+}
+
 function FindCard({ find }: { find: Find }) {
   const { listing, why } = find;
+  const { user, promptAuth } = useSession();
+  const [saved, setSaved] = useState(listing.liked);
+  const [busy, setBusy] = useState(false);
+  const toast = useToast();
+  const was = Math.max(0, ...(listing.priceHistory ?? []).map((entry) => entry.priceMinor));
+  async function save(event: ReactMouseEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!user) {
+      promptAuth('Sign in to save items.');
+      return;
+    }
+    if (busy) return;
+    setBusy(true);
+    const before = saved;
+    setSaved(!before);
+    try {
+      const { liked } = await api.like(listing.id);
+      setSaved(liked);
+      if (liked) toast('Saved');
+    } catch {
+      setSaved(before);
+      toast('Could not save that');
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <Link to={`/listing/${encodeURIComponent(listing.id)}`} className="discitem">
-      <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)} className="thumb discitem__photo">
-        <ContentBadge type="sale" />
-      </Thumb>
+      <span className="discitem__art">
+        <ItemArt seed={listing.id} title={listing.title} category={listing.category} photo={leadPhoto(listing)} badge="sale" />
+        <button type="button" className={`discitem__save${saved ? ' is-on' : ''}`} onClick={(event) => void save(event)}
+          aria-label={saved ? `Saved: ${listing.title}` : `Save ${listing.title}`} aria-pressed={saved}>
+          <Icon name="heart" size={15} />
+        </button>
+      </span>
       <span className="discitem__body">
-        {why && <span className={`discitem__why discitem__why--${why.kind}`}>{why.label}</span>}
+        <span className={`discitem__why discitem__why--${why.kind}`}>{why.label}</span>
         <span className="discitem__name">{listing.title}</span>
         <span className="discitem__meta">
           <strong>{formatMoney(listing.priceMinor, listing.currency)}</strong>
-          <span className="faint">{factsOf(listing).condition}</span>
+          {was > listing.priceMinor
+            ? <s className="faint">{formatMoney(was, listing.currency)}</s>
+            : <span className="faint">{factsOf(listing).condition}</span>}
         </span>
       </span>
     </Link>
+  );
+}
+
+/** The Finds lens: things seen in posts first, then the catalogue's finds. */
+function FindsView({ finds, spotted, category }: { finds: Find[]; spotted: SpottedItem[]; category: string | null }) {
+  if (finds.length === 0 && spotted.length === 0) {
+    return (
+      <EmptyState title={category ? `Nothing in ${category} right now` : 'No finds today'}>
+        Nothing is running low, dropping in price or filling fast. Check back after the next drop.
+      </EmptyState>
+    );
+  }
+  return (
+    <div className="discover__stream">
+      {spotted.length > 0 && !category && <SpottedRail items={spotted} />}
+      {finds.length > 0 && (
+        <section className="discrail">
+          <div className="discrail__head"><h2>{category ? `Finds in ${category}` : 'Low stock, price drops & in demand'}</h2></div>
+          <div className="discgrid">{finds.map((find) => <FindCard key={find.listing.id} find={find} />)}</div>
+        </section>
+      )}
+    </div>
   );
 }
 
@@ -659,9 +929,7 @@ function HuntRail({ wants }: { wants: WantRow[] }) {
         {wants.map((want) => (
           <Link key={want.id} className="discitem"
             to={`/social?view=wanted&want=${encodeURIComponent(want.id)}&buyer=${encodeURIComponent(want.buyerId)}`}>
-            <Thumb seed={want.id} label={want.title} photo={want.photoUrl ? { url: want.photoUrl } : null} className="thumb discitem__photo">
-              <ContentBadge type="iso" />
-            </Thumb>
+            <ItemArt seed={want.id} title={want.title} category={null} photo={want.photoUrl ? { url: want.photoUrl } : null} badge="iso" />
             <span className="discitem__body">
               {want.why && <span className="discitem__why discitem__why--yours">{want.why}</span>}
               <span className="discitem__name">{want.title}</span>
@@ -677,22 +945,24 @@ function HuntRail({ wants }: { wants: WantRow[] }) {
   );
 }
 
+/** A name, cut to the first word: "Karan Malhotra" is Karan on a small label. */
+const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? name;
+
 /** Things seen on somebody's shelf or in a debate, that can be bought now. */
-function SpottedRail({ items }: { items: SpottedItem[] }) {
+function SpottedRail({ items, onAll }: { items: SpottedItem[]; onAll?: () => void }) {
   return (
-    <section className="discrail" aria-label="Spotted and buyable">
+    <section className="discrail" aria-label="Spotted in posts, buyable now">
       <div className="discrail__head">
-        <h2>Spotted &amp; buyable</h2>
+        <h2>Spotted in posts</h2>
+        {onAll && <button type="button" className="discrail__all" onClick={onAll}>See all</button>}
       </div>
       <div className="discrail__row">
         {items.map((item) => (
           <Link key={item.listingId} className="discitem" to={`/listing/${encodeURIComponent(item.listingId)}`}>
-            <Thumb seed={item.listingId} label={item.title} photo={item.photoUrl ? { url: item.photoUrl } : null} className="thumb discitem__photo">
-              <ContentBadge type="sale" />
-            </Thumb>
+            <ItemArt seed={item.listingId} title={item.title} category={null} photo={item.photoUrl ? { url: item.photoUrl } : null} badge="sale" />
             <span className="discitem__body">
-              <span className="discitem__why discitem__why--hot">
-                {item.how === 'debate' ? 'In a debate by' : 'On the shelf of'} {item.spottedBy}
+              <span className="discitem__why discitem__why--hot" title={`${item.how === 'debate' ? 'In a debate by' : 'On the shelf of'} ${item.spottedBy}`}>
+                {item.how === 'debate' ? `In ${firstName(item.spottedBy)}’s debate` : `On ${firstName(item.spottedBy)}’s shelf`}
               </span>
               <span className="discitem__name">{item.title}</span>
               <span className="discitem__meta">
@@ -706,14 +976,23 @@ function SpottedRail({ items }: { items: SpottedItem[] }) {
   );
 }
 
+/* ── the spotlight ───────────────────────────────────────────────────────── */
+
 /** One card in the spotlight deck: a picture, what it is, and where it goes. */
 interface Spot {
   id: string;
+  /** The post behind it, so the stream can hold it back from the top. */
+  postId: string | null;
   kind: string;
+  icon: IconName;
   title: string;
+  /** Who, what it costs, or what it gives away. */
   line: string | null;
+  /** How many have joined in, said short. */
+  count: string | null;
+  /** When it stops taking part, and whether that is soon. */
+  left: { text: string; soon: boolean } | null;
   photo: string | null;
-  emoji: string;
   href: string;
   cta: string;
   tone: string;
@@ -721,40 +1000,49 @@ interface Spot {
 
 /** Most cards the deck holds: enough to keep flicking, few enough to finish. */
 const SPOTS_MAX = 8;
+/** Hours before closing that a card says so in the hot colour. */
+const SOON_HOURS = 6;
 
 /**
- * The deck's cards, from what the page already read: the liveliest open game,
- * a competition, the most loved shelf, the hottest debate, something rising,
- * a rare find - then round again. No request of its own.
+ * The deck's cards, from what the page already read: the liveliest open game
+ * (closing soonest first), a competition, the most loved shelf, the hottest
+ * debate, a find, something rising - then round again. No request of its own.
  */
 function spotlight(live: PostCard[], contests: PostCard[], stream: Stream, finds: Find[]): Spot[] {
-  const post = (card: PostCard, kind: string, tone: string, cta: string, emoji: string): Spot => ({
+  const post = (card: PostCard, kind: string, icon: IconName, tone: string, cta: string, line: string | null = null): Spot => ({
     id: `p${card.post.id}`,
+    postId: card.post.id,
     kind,
+    icon,
     title: card.post.contest?.title ?? (card.post.body || 'Which one?'),
-    line: closesIn(card) ?? `by ${card.post.authorName}`,
+    line: line ?? `by ${card.post.authorName}`,
+    count: countOf(card),
+    left: closing(card),
     photo: pictures(card)[0] ?? null,
-    emoji,
     href: postHref(card.post),
     cta,
     tone,
   });
-  const fromLive = live.map((card) => {
+  const soonest = [...live].sort((a, b) => (closesAt(a) ?? Infinity) - (closesAt(b) ?? Infinity));
+  const fromLive = soonest.map((card) => {
     const kind = liveKind(card);
-    return post(card, `${kind.emoji} ${kind.label}`, kind.tone, kind.cta, kind.emoji);
+    return post(card, kind.label, kind.icon, kind.tone, kind.cta);
   });
   const fromContests = contests.filter((card) => card.post.contest && contestPhase(card.post.contest) !== 'ended')
-    .map((card) => post(card, '🏆 Competition', 'gold', 'Take a look', '🏆'));
-  const fromFlexes = stream.flexes.map((card) => post(card, '📸 Shelf', 'violet', 'See the shelf', '📸'));
-  const fromDebates = stream.debates.map((card) => post(card, '⚔️ Debate', 'pink', 'Pick a side', '⚔️'));
-  const fromRising = stream.rising.map((card) => post(card, '🚀 Rising', 'aqua', 'Open', '🚀'));
+    .map((card) => post(card, 'Competition', 'trophy', 'gold', contestPhase(card.post.contest!) === 'entries' ? 'Enter' : 'Vote', prizeOf(card)));
+  const fromFlexes = stream.flexes.map((card) => post(card, 'Shelf', 'camera', 'violet', 'See the shelf'));
+  const fromDebates = stream.debates.map((card) => post(card, 'Debate', 'forum', 'pink', 'Pick a side'));
+  const fromRising = stream.rising.map((card) => post(card, 'Rising', 'rising', 'aqua', 'Open'));
   const fromFinds = finds.map(({ listing, why }): Spot => ({
     id: `l${listing.id}`,
-    kind: `💎 ${why?.label ?? 'Find'}`,
+    postId: null,
+    kind: why.label,
+    icon: 'tag',
     title: listing.title,
     line: formatMoney(listing.priceMinor, listing.currency),
+    count: null,
+    left: null,
     photo: leadPhoto(listing)?.url ?? null,
-    emoji: '💎',
     href: `/listing/${encodeURIComponent(listing.id)}`,
     cta: 'View item',
     tone: 'coral',
@@ -781,8 +1069,8 @@ const FLING_MS = 260;
 
 /**
  * The spotlight: a deck of cards, the top one big, two more peeking behind.
- * Flick it either way - or tap Next - and it flies off to show the next
- * thing; the deck goes round. A small, physical way to come across something.
+ * Flick it left for the next, right for the one before - or use the arrows,
+ * the dots or the arrow keys. A small, physical way to come across something.
  */
 function SpotlightDeck({ spots }: { spots: Spot[] }) {
   const [at, setAt] = useState(0);
@@ -790,16 +1078,24 @@ function SpotlightDeck({ spots }: { spots: Spot[] }) {
   const [drag, setDrag] = useState(0);
   const start = useRef<{ x: number; y: number; id: number } | null>(null);
   const moved = useRef(false);
+  const count = spots.length;
+  const current = ((at % count) + count) % count;
 
+  // A narrower deck (a category picked, a search typed) starts again from the top.
+  useEffect(() => {
+    setAt(0);
+  }, [count]);
+
+  /** Send the top card away: left shows the next, right the one before. */
   const fling = useCallback((way: 1 | -1) => {
-    if (flying) return;
-    setFlying({ id: spots[at % spots.length]!.id, way });
+    if (flying || count < 2) return;
+    setFlying({ id: spots[current]!.id, way });
     window.setTimeout(() => {
-      setAt((value) => (value + 1) % spots.length);
+      setAt((value) => value + (way < 0 ? 1 : -1));
       setFlying(null);
       setDrag(0);
     }, FLING_MS);
-  }, [at, flying, spots]);
+  }, [current, count, flying, spots]);
 
   const onDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (flying) return;
@@ -822,12 +1118,21 @@ function SpotlightDeck({ spots }: { spots: Spot[] }) {
     if (Math.abs(drag) > FLING_PX) fling(drag > 0 ? 1 : -1);
     else setDrag(0);
   };
+  const onKey = (event: ReactKeyboardEvent) => {
+    if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      fling(-1);
+    } else if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      fling(1);
+    }
+  };
 
   return (
-    <section className="spotdeck" aria-roledescription="carousel" aria-label="Spotlight">
+    <section className="spotdeck" aria-roledescription="carousel" aria-label="Spotlight" onKeyDown={onKey}>
       <div className="spotdeck__head">
-        <h2>✨ Spotlight</h2>
-        <span className="spotdeck__count" aria-live="polite">{(at % spots.length) + 1} / {spots.length}</span>
+        <h2><Icon name="spark" size={15} /> Spotlight</h2>
+        <span className="spotdeck__count" aria-live="polite">{current + 1} of {count}</span>
       </div>
       <div className="spotdeck__stack" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
         onClickCapture={(event) => {
@@ -839,7 +1144,7 @@ function SpotlightDeck({ spots }: { spots: Spot[] }) {
           }
         }}>
         {spots.map((spot, index) => {
-          const depth = (index - (at % spots.length) + spots.length) % spots.length;
+          const depth = (index - current + count) % count;
           const isFlying = flying?.id === spot.id;
           const top = depth === 0;
           const style = top && !isFlying && drag !== 0
@@ -847,17 +1152,23 @@ function SpotlightDeck({ spots }: { spots: Spot[] }) {
             : undefined;
           return (
             <Link key={spot.id} to={spot.href} tabIndex={top ? 0 : -1} aria-hidden={!top}
+              aria-roledescription="slide" aria-label={top ? `${spot.kind}: ${spot.title}, ${current + 1} of ${count}` : undefined}
               className={`spotcard spotcard--${spot.tone}${isFlying ? ` is-flying is-flying--${flying!.way > 0 ? 'right' : 'left'}` : ''}`}
               data-depth={Math.min(depth, 3)} style={style} draggable={false}>
               {spot.photo
                 ? <img className="spotcard__photo" src={spot.photo} alt="" loading={depth < 3 ? 'eager' : 'lazy'} draggable={false} />
-                : <span className="spotcard__emoji" aria-hidden="true">{spot.emoji}</span>}
+                : <span className="spotcard__mark" aria-hidden="true"><Icon name={spot.icon} size={64} /></span>}
               <span className="spotcard__shade" aria-hidden="true" />
+              <span className="spotcard__top">
+                <span className="spotcard__kind"><Icon name={spot.icon} size={12} /> {spot.kind}</span>
+                {spot.left && <span className={`spotcard__left${spot.left.soon ? ' is-soon' : ''}`}>{spot.left.text}</span>}
+              </span>
               <span className="spotcard__body">
-                <span className="spotcard__kind">{spot.kind}</span>
                 <span className="spotcard__title">{spot.title}</span>
                 <span className="spotcard__foot">
-                  {spot.line && <span className="spotcard__line">{spot.line}</span>}
+                  <span className="spotcard__line">
+                    {[spot.line, spot.count].filter(Boolean).join(' · ')}
+                  </span>
                   <span className="spotcard__cta">{spot.cta} <Icon name="right" size={12} /></span>
                 </span>
               </span>
@@ -865,38 +1176,75 @@ function SpotlightDeck({ spots }: { spots: Spot[] }) {
           );
         })}
       </div>
-      <div className="spotdeck__controls">
-        <span className="spotdeck__dots" aria-hidden="true">
-          {spots.map((spot, index) => <span key={spot.id} className={index === at % spots.length ? 'is-on' : undefined} />)}
-        </span>
-        <button type="button" className="spotdeck__next" onClick={() => fling(-1)}>
-          Next <Icon name="right" size={14} />
-        </button>
-      </div>
+      {count > 1 && (
+        <div className="spotdeck__controls">
+          <button type="button" className="spotdeck__arrow" aria-label="Previous" onClick={() => fling(1)}>
+            <Icon name="left" size={16} />
+          </button>
+          <span className="spotdeck__dots">
+            {spots.map((spot, index) => (
+              <button key={spot.id} type="button" className={index === current ? 'is-on' : undefined}
+                aria-label={`Show ${index + 1}: ${spot.kind}`} aria-current={index === current}
+                onClick={() => setAt(index)} />
+            ))}
+          </span>
+          <button type="button" className="spotdeck__arrow" aria-label="Next" onClick={() => fling(-1)}>
+            <Icon name="right" size={16} />
+          </button>
+        </div>
+      )}
     </section>
   );
 }
 
-/** What a live card is, in a word and a colour. */
-function liveKind(card: PostCard): { emoji: string; label: string; cta: string; tone: string } {
+/** What a live card is, in a word, a mark and a colour. */
+function liveKind(card: PostCard): { icon: IconName; label: string; cta: string; tone: string } {
   const { post, social } = card;
-  if (post.contest) return { emoji: '🏆', label: 'Competition', cta: contestPhase(post.contest) === 'entries' ? 'Enter' : 'Vote', tone: 'gold' };
-  if (social.guess) return { emoji: '🎯', label: 'Guess the price', cta: 'Guess', tone: 'violet' };
-  if (post.debate) return { emoji: '⚔️', label: 'Debate', cta: 'Pick a side', tone: 'pink' };
-  if (social.poll?.style === 'rating') return { emoji: '⭐', label: 'Rate it', cta: 'Rate', tone: 'gold' };
-  return { emoji: '📊', label: social.poll?.stock ? 'Stock poll' : 'Poll', cta: 'Vote', tone: 'aqua' };
+  if (post.contest) return { icon: 'trophy', label: 'Competition', cta: contestPhase(post.contest) === 'entries' ? 'Enter' : 'Vote', tone: 'gold' };
+  if (social.guess) return { icon: 'target', label: 'Guess the price', cta: 'Guess', tone: 'violet' };
+  if (post.debate) return { icon: 'forum', label: 'Debate', cta: 'Pick a side', tone: 'pink' };
+  if (social.poll?.style === 'rating') return { icon: 'star', label: 'Rate it', cta: 'Rate', tone: 'gold' };
+  return { icon: 'poll', label: social.poll?.stock ? 'Stock poll' : 'Poll', cta: 'Vote', tone: 'aqua' };
 }
 
-/** When a live card stops taking part, said short. */
-function closesIn(card: PostCard): string | null {
+/** When a live card stops taking part, as a time. */
+function closesAt(card: PostCard): number | null {
   const { post, social } = card;
   const at = post.contest
     ? (contestPhase(post.contest) === 'entries' ? post.contest.entriesCloseAt : post.contest.endsAt)
     : social.guess?.revealAt ?? social.poll?.closesAt ?? null;
   if (!at) return null;
-  const hours = (Date.parse(at) - Date.now()) / 3_600_000;
-  if (hours <= 0) return null;
-  return hours < 1 ? 'Ends within the hour' : hours < 24 ? `${Math.round(hours)}h left` : `${Math.round(hours / 24)}d left`;
+  const time = Date.parse(at);
+  return time > Date.now() ? time : null;
+}
+
+/** When a live card stops taking part, said short, and whether that is soon. */
+function closing(card: PostCard): { text: string; soon: boolean } | null {
+  const at = closesAt(card);
+  if (at === null) return null;
+  const hours = (at - Date.now()) / 3_600_000;
+  const text = hours < 1 ? 'Ends within the hour' : hours < 24 ? `${Math.round(hours)}h left` : `${Math.round(hours / 24)}d left`;
+  return { text, soon: hours < SOON_HOURS };
+}
+
+/** How many have joined in, said short. */
+function countOf(card: PostCard): string | null {
+  if (card.post.contest) {
+    const entries = card.post.contest.entries.length;
+    return `${entries} ${entries === 1 ? 'entry' : 'entries'}`;
+  }
+  if (card.social.guess) return `${card.social.guess.count} guess${card.social.guess.count === 1 ? '' : 'es'}`;
+  if (card.social.poll) return `${card.social.poll.total} vote${card.social.poll.total === 1 ? '' : 's'}`;
+  const reactions = card.social.reactions.total;
+  return reactions ? `${reactions} reaction${reactions === 1 ? '' : 's'}` : null;
+}
+
+/** What a competition gives its winner, said short. */
+function prizeOf(card: PostCard): string | null {
+  const top = card.post.contest?.prizes[0];
+  if (!top) return null;
+  const prize = [top.amountMinor > 0 ? `${formatMoney(top.amountMinor, 'INR')} credit` : '', top.note].filter(Boolean).join(' + ');
+  return prize ? `Win ${prize}` : null;
 }
 
 /** Up to three pictures that say what a live card is about. */
@@ -908,90 +1256,108 @@ function pictures(card: PostCard): string[] {
   return [...fromPoll, ...own, ...fromContest].slice(0, 3);
 }
 
+/* ── the Live lens ───────────────────────────────────────────────────────── */
+
 /**
- * Live now: open things to take part in, sideways, at the top. Each card is
- * a door to the post - voting happens there, where the result is drawn.
+ * Everything open to take part in: what closes within the day first, then the
+ * competitions shops are running, then every other open poll, guess and
+ * debate, and last the competitions that just finished.
  */
-function LiveStrip({ cards, onAll }: { cards: PostCard[]; onAll: () => void }) {
+function LiveView({ live, contests, posts }: {
+  live: PostCard[];
+  contests: PostCard[];
+  posts: (cards: PostCard[]) => ReactNode;
+}) {
+  const now = Date.now();
+  const soonCut = now + 24 * 3_600_000;
+  const open = contests.filter((card) => card.post.contest && contestPhase(card.post.contest) !== 'ended');
+  const ended = contests.filter((card) => card.post.contest && contestPhase(card.post.contest) === 'ended');
+  const all = [...new Map([...live, ...open].map((card) => [card.post.id, card])).values()];
+  const soon = all.filter((card) => (closesAt(card) ?? Infinity) < soonCut)
+    .sort((a, b) => (closesAt(a) ?? 0) - (closesAt(b) ?? 0));
+  const soonIds = new Set(soon.map((card) => card.post.id));
+  const competitions = open.filter((card) => !soonIds.has(card.post.id));
+  const rest = live.filter((card) => !soonIds.has(card.post.id) && !card.post.contest);
+  if (all.length === 0 && ended.length === 0) {
+    return (
+      <EmptyState title="You're all caught up">
+        Every open poll, guess and competition here has your vote. Start one with the + below.
+      </EmptyState>
+    );
+  }
   return (
-    <section className="dislive" aria-label="Live now">
-      <div className="discrail__head">
-        <h2><span className="dischero__pulse" aria-hidden="true" /> Live now</h2>
-        <button type="button" className="discrail__all" onClick={onAll}>See all {cards.length}</button>
-      </div>
-      <div className="dislive__row">
-        {cards.map((card, index) => {
-          const kind = liveKind(card);
-          const shots = pictures(card);
-          const left = closesIn(card);
-          const votes = card.post.contest ? card.post.contest.entries.length : card.social.guess?.count ?? card.social.poll?.total ?? 0;
-          return (
-            <Link key={card.post.id} to={postHref(card.post)} className={`livecard livecard--${kind.tone}`}
-              style={{ animationDelay: `${index * 40}ms` }}>
-              <span className={`livecard__art livecard__art--${shots.length}`}>
-                {shots.length ? shots.map((url) => <img key={url} src={url} alt="" loading="lazy" />) : (
-                  <span className="livecard__emoji" aria-hidden="true">{kind.emoji}</span>
-                )}
-              </span>
-              <span className="livecard__body">
-                <span className="livecard__kind">{kind.emoji} {kind.label}</span>
-                <span className="livecard__q">{card.post.contest?.title ?? (card.post.body || 'Which one?')}</span>
-                <span className="livecard__meta">
-                  <span>{votes} {card.post.contest ? 'in' : card.social.guess ? 'guesses' : 'votes'}</span>
-                  {left && <span className="livecard__left">{left}</span>}
-                </span>
-                <span className="livecard__cta">{kind.cta} <Icon name="right" size={12} /></span>
-              </span>
-            </Link>
-          );
-        })}
-      </div>
-    </section>
+    <div className="discover__stream">
+      {soon.length > 0 && (
+        <>
+          <h2 className="discsection discsection--soon"><span className="dischero__pulse" aria-hidden="true" /> Closing soon</h2>
+          {posts(soon)}
+        </>
+      )}
+      {competitions.length > 0 && (
+        <>
+          <h2 className="discsection" id="competitions"><Icon name="trophy" size={15} /> Competitions</h2>
+          <ContestRow cards={competitions} />
+        </>
+      )}
+      {rest.length > 0 && (
+        <>
+          <h2 className="discsection"><Icon name="poll" size={15} /> Open to vote</h2>
+          {posts(rest)}
+        </>
+      )}
+      {ended.length > 0 && (
+        <>
+          <h2 className="discsection"><Icon name="check" size={15} /> Just finished</h2>
+          <ContestRow cards={ended} />
+        </>
+      )}
+    </div>
   );
 }
 
 /** The competitions row: what each shop is giving away, and how long is left. */
-function ContestRow({ cards, onAll }: { cards: PostCard[]; onAll: () => void }) {
+function ContestRow({ cards }: { cards: PostCard[] }) {
   return (
-    <section className="dislive" aria-label="Competitions" id="competitions">
-      <div className="discrail__head">
-        <h2>🏆 Competitions</h2>
-        <button type="button" className="discrail__all" onClick={onAll}>See all</button>
-      </div>
-      <div className="dislive__row">
-        {cards.map((card, index) => {
-          const contest = card.post.contest!;
-          const phase = contestPhase(contest);
-          const top = contest.prizes[0];
-          const cover = card.post.photoUrl ?? contest.winners?.[0]?.photoUrl ?? contest.entries[0]?.photoUrl ?? null;
-          const left = closesIn(card);
-          return (
-            <Link key={card.post.id} to={postHref(card.post)} className="contestcard" style={{ animationDelay: `${index * 40}ms` }}>
-              <span className="contestcard__art">
-                {cover ? <img src={cover} alt="" loading="lazy" /> : <span aria-hidden="true">{contest.host === 'figmark' ? '🌟' : '🏆'}</span>}
-                <span className={`contestcard__phase contestcard__phase--${phase}`}>
-                  {phase === 'entries' ? 'Entries open' : phase === 'voting' ? 'Voting' : phase === 'ended' ? 'Winners' : 'Judging'}
-                </span>
+    <div className="dislive__row">
+      {cards.map((card, index) => {
+        const contest = card.post.contest!;
+        const phase = contestPhase(contest);
+        const top = contest.prizes[0];
+        const cover = card.post.photoUrl ?? contest.winners?.[0]?.photoUrl ?? contest.entries[0]?.photoUrl ?? null;
+        const left = closing(card);
+        return (
+          <Link key={card.post.id} to={postHref(card.post)} className="contestcard" style={{ animationDelay: `${index * 40}ms` }}>
+            <span className="contestcard__art">
+              {cover ? <img src={cover} alt="" loading="lazy" /> : <Icon name={contest.host === 'figmark' ? 'star' : 'trophy'} size={40} />}
+              <span className={`contestcard__phase contestcard__phase--${phase}`}>
+                {phase === 'entries' ? 'Entries open' : phase === 'voting' ? 'Voting' : phase === 'ended' ? 'Winners' : 'Judging'}
               </span>
-              <span className="contestcard__body">
-                <strong>{contest.title}</strong>
-                <span className="faint">{contest.host === 'figmark' ? 'Figmark weekly challenge' : contest.hostName}</span>
-                {top && (
-                  <span className="contestcard__prize">
-                    🥇 {[top.amountMinor > 0 ? `${formatMoney(top.amountMinor, 'INR')} credit` : '', top.note].filter(Boolean).join(' + ')}
-                  </span>
-                )}
-                <span className="livecard__meta">
-                  <span>{contest.entries.length} {contest.entries.length === 1 ? 'entry' : 'entries'}</span>
-                  {left && <span className="livecard__left">{left}</span>}
+            </span>
+            <span className="contestcard__body">
+              <strong>{contest.title}</strong>
+              <span className="faint">{contest.host === 'figmark' ? 'Figmark weekly challenge' : contest.hostName}</span>
+              {top && (
+                <span className="contestcard__prize">
+                  <Icon name="trophy" size={12} /> {[top.amountMinor > 0 ? `${formatMoney(top.amountMinor, 'INR')} credit` : '', top.note].filter(Boolean).join(' + ')}
                 </span>
+              )}
+              <span className="livecard__meta">
+                <span>{contest.entries.length} {contest.entries.length === 1 ? 'entry' : 'entries'}</span>
+                {left && <span className={`livecard__left${left.soon ? ' is-soon' : ''}`}>{left.text}</span>}
               </span>
-            </Link>
-          );
-        })}
-      </div>
-    </section>
+            </span>
+          </Link>
+        );
+      })}
+    </div>
   );
+}
+
+/* ── the week's best ─────────────────────────────────────────────────────── */
+
+/** A place on a board: the first three marked, the rest numbered. */
+function Rank({ at }: { at: number }) {
+  return <span className={`discweek__rank${at < 3 ? ` discweek__rank--${at + 1}` : ''}`}>{at + 1}</span>;
 }
 
 /** The week's best: the most loved shelves, the most argued debates, the loudest voices. */
@@ -1016,14 +1382,15 @@ function WeeklyBest() {
   }
   return (
     <div className="discweek">
+      <h2 className="discsection"><Icon name="trophy" size={15} /> This week’s best</h2>
       {players.length > 0 && (
         <section className="discweek__block">
-          <h2>🏅 Top players</h2>
+          <h2><Icon name="star" size={16} /> Top players</h2>
           <ol className="discweek__list">
             {players.map((player, index) => {
               const row = (
                 <>
-                  <span className="discweek__rank">{index < 3 ? ['🥇', '🥈', '🥉'][index] : index + 1}</span>
+                  <Rank at={index} />
                   <span className="discweek__name">
                     {player.name}
                     <span className="faint"> · {player.wins} win{player.wins === 1 ? '' : 's'} · {player.votes} vote{player.votes === 1 ? '' : 's'}</span>
@@ -1043,12 +1410,12 @@ function WeeklyBest() {
       )}
       {board.shelves.length > 0 && (
         <section className="discweek__block">
-          <h2><Icon name="trophy" size={16} /> Most loved shelves</h2>
+          <h2><Icon name="camera" size={16} /> Most loved shelves</h2>
           <ol className="discweek__list">
             {board.shelves.map((shelf, index) => (
               <li key={shelf.postId}>
                 <Link to={postHref({ channelId: shelf.channelId, id: shelf.postId })} className="discweek__row">
-                  <span className="discweek__rank">{index + 1}</span>
+                  <Rank at={index} />
                   <Thumb seed={shelf.postId} label={shelf.name} photo={shelf.photoUrl ? { url: shelf.photoUrl } : null} className="thumb discweek__photo" />
                   <span className="discweek__name">{shelf.name}</span>
                   <span className="discweek__count">♥ {shelf.reactions}</span>
@@ -1060,12 +1427,12 @@ function WeeklyBest() {
       )}
       {board.debates.length > 0 && (
         <section className="discweek__block">
-          <h2>⚔️ Most argued debates</h2>
+          <h2><Icon name="forum" size={16} /> Most argued debates</h2>
           <ol className="discweek__list">
             {board.debates.map((debate, index) => (
               <li key={debate.postId}>
                 <Link to={postHref({ channelId: debate.channelId, id: debate.postId })} className="discweek__row">
-                  <span className="discweek__rank">{index + 1}</span>
+                  <Rank at={index} />
                   <span className="discweek__name">
                     {debate.question || 'Which one?'}
                     <span className="faint">{debate.leading ? ` · ${debate.leading} leads` : ' · level'}</span>
@@ -1079,12 +1446,12 @@ function WeeklyBest() {
       )}
       {board.voices.length > 0 && (
         <section className="discweek__block">
-          <h2>📣 Voices of the week</h2>
+          <h2><Icon name="megaphone" size={16} /> Voices of the week</h2>
           <ol className="discweek__list">
             {board.voices.map((voice, index) => {
               const row = (
                 <>
-                  <span className="discweek__rank">{index + 1}</span>
+                  <Rank at={index} />
                   <span className="discweek__name">
                     {voice.name}<span className="faint"> · {voice.shop ? 'Shop' : 'Collector'} · {voice.posts} post{voice.posts === 1 ? '' : 's'}</span>
                   </span>

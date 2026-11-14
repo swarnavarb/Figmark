@@ -3408,6 +3408,11 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 /* Why Discover is showing it, in a word or two over the post. */
 .spost__why--ending, .spost__why--taking-off, .spost__why--scarce, .spost__why--prize { color: var(--accent-text); }
 .spost__why--explore { color: var(--text-dim); font-style: italic; }
+.spost__notfor {
+  margin-left: auto; padding: 2px 8px; min-height: 24px; border: 1px solid var(--border); border-radius: var(--r-pill);
+  background: none; color: var(--text-faint); font: inherit; font-size: var(--t-2xs); font-style: normal; cursor: pointer;
+}
+@media (hover: hover) and (pointer: fine) { .spost__notfor:hover { color: var(--text); border-color: var(--border-strong); } }
 .spost__mention, .spost__topic { color: var(--accent-text); font-weight: var(--w-semi); text-decoration: none; }
 .spost__mention:hover, .spost__topic:hover { text-decoration: underline; }
 

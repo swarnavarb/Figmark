@@ -8,29 +8,24 @@
 
 .discpage { display: grid; align-content: start; gap: 14px; max-width: 680px; margin-inline: auto; }
 
-/* The top: the brand's own gradient - the same violet, pink and coral the
-   chosen lens and the + wear - with an aurora drifting slowly behind glass. */
+/* The top: one compact line - the title, what is live, search and the week's
+   best - on the brand's own gradient, so the first screen is mostly content. */
 .dischero {
   position: relative; overflow: hidden; isolation: isolate;
   display: grid; gap: var(--s2);
-  padding: 18px;
+  padding: 12px 12px 12px 16px;
   border-radius: var(--r-xl); border: 1px solid rgba(255, 255, 255, 0.1);
   background:
-    linear-gradient(150deg, rgba(124, 58, 237, 0.5) 0%, rgba(236, 72, 153, 0.28) 55%, rgba(255, 90, 95, 0.22) 100%),
+    radial-gradient(120% 140% at 100% 0%, rgba(236, 72, 153, 0.32), transparent 60%),
+    linear-gradient(150deg, rgba(124, 58, 237, 0.5) 0%, rgba(236, 72, 153, 0.22) 60%, rgba(255, 90, 95, 0.18) 100%),
     color-mix(in srgb, var(--surface) 88%, transparent);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 18px 44px rgba(124, 58, 237, 0.22);
-  animation: disc-in 380ms var(--ease-out) both;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 12px 30px rgba(124, 58, 237, 0.18);
+  animation: disc-in 300ms var(--ease-out) both;
 }
-.dischero__aurora { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
-.dischero__aurora span { position: absolute; border-radius: 50%; filter: blur(42px); opacity: 0.75; will-change: transform; }
-.dischero__aurora span:nth-child(1) { width: 240px; height: 240px; top: -110px; right: -70px; background: var(--pink); animation: aurora-a 14s ease-in-out infinite alternate; }
-.dischero__aurora span:nth-child(2) { width: 200px; height: 200px; bottom: -120px; left: -50px; background: var(--violet); animation: aurora-b 17s ease-in-out infinite alternate; }
-.dischero__aurora span:nth-child(3) { width: 140px; height: 140px; bottom: -60px; right: 22%; background: var(--coral); opacity: 0.45; animation: aurora-a 20s ease-in-out infinite alternate-reverse; }
-@keyframes aurora-a { to { transform: translate(-40px, 30px) scale(1.15); } }
-@keyframes aurora-b { to { transform: translate(50px, -24px) scale(1.1); } }
-.dischero__stats { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s1); }
+.dischero__row { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); min-width: 0; }
+.dischero__actions { display: flex; align-items: center; gap: 6px; flex: none; }
 .dischero__stat {
-  display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 13px;
+  display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px;
   border-radius: var(--r-pill); border: 1px solid rgba(255, 255, 255, 0.18);
   background: rgba(8, 11, 18, 0.38); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
   color: #fff; font: inherit; font-size: var(--t-sm); cursor: pointer;
@@ -39,6 +34,8 @@
 .dischero__stat:active { transform: scale(0.97); }
 @media (hover: hover) and (pointer: fine) { .dischero__stat:hover { border-color: rgba(255, 255, 255, 0.4); background: rgba(8, 11, 18, 0.5); } }
 .dischero__stat strong { font-family: var(--display); }
+.dischero__btn { color: #fff; background: rgba(8, 11, 18, 0.3); border-color: rgba(255, 255, 255, 0.16); }
+.dischero__btn.is-on { background: #fff; color: var(--bg); border-color: #fff; }
 /* Live: a lit dot, the colour of "now", breathing. */
 .dischero__pulse {
   position: relative; display: inline-block; width: 8px; height: 8px; border-radius: 50%;
@@ -49,26 +46,87 @@
   animation: disc-ping 1.8s var(--ease-out) infinite;
 }
 @keyframes disc-ping { from { transform: scale(1); opacity: 0.7; } to { transform: scale(3); opacity: 0; } }
-.dischero__kicker {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-family: var(--mono); font-size: var(--t-2xs); letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255, 255, 255, 0.78);
-}
 .dischero__title {
-  margin: 0; font-family: var(--display); font-size: calc(var(--t-2xl) * 1.3); font-weight: var(--w-bold);
-  letter-spacing: -0.035em; line-height: 0.95;
+  margin: 0; font-family: var(--display); font-size: var(--t-2xl); font-weight: var(--w-bold);
+  letter-spacing: -0.03em; line-height: 1;
   background: linear-gradient(110deg, #fff 25%, #FBCFE8 60%, #FFB4B6); -webkit-background-clip: text; background-clip: text; color: transparent;
 }
-.dischero__sub { margin: 0; max-width: 46ch; color: rgba(255, 255, 255, 0.78); font-size: var(--t-sm); line-height: 1.45; }
-.dischero__share { color: #fff; background: rgba(8, 11, 18, 0.3); border-color: rgba(255, 255, 255, 0.16); }
+/* A guest's way in: one sentence, all of it the button. */
+.dischero__guest {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s2); width: 100%;
+  min-height: 40px; padding: 8px 12px; border-radius: var(--r-md);
+  border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(8, 11, 18, 0.35);
+  color: #fff; font: inherit; font-size: var(--t-sm); font-weight: var(--w-semi); text-align: left; cursor: pointer;
+}
+/* The words take the room; the arrow stays at the end of the line. */
+.dischero__guest > span { flex: 1; min-width: 0; }
+.dischero__guest > svg { flex: none; }
+@media (hover: hover) and (pointer: fine) { .dischero__guest:hover { border-color: rgba(255, 255, 255, 0.45); } }
+
+/* Searching Discover: a field, topics to open, and the ways on. */
+.discsearch {
+  display: grid; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: var(--r-lg);
+  background: var(--surface); animation: disc-in 200ms var(--ease-out) both;
+}
+.discsearch__field {
+  display: flex; align-items: center; gap: var(--s2); min-height: 44px; padding: 0 12px;
+  border: 1px solid var(--border-strong); border-radius: var(--r-pill); background: var(--bg); color: var(--text-dim);
+}
+.discsearch__field:focus-within { border-color: var(--violet-lit); }
+.discsearch__field input { flex: 1; min-width: 0; border: 0; background: none; color: var(--text); font: inherit; font-size: var(--t-base); outline: none; }
+.discsearch__topics { display: flex; flex-wrap: wrap; gap: 6px; }
+.discsearch__go { display: grid; gap: 4px; }
+.discsearch__link {
+  display: flex; align-items: center; gap: var(--s2); min-height: 40px; padding: 0 var(--s2);
+  border-radius: var(--r-md); color: var(--accent-text); font-size: var(--t-sm); font-weight: var(--w-semi); text-decoration: none;
+}
+.discsearch__link:hover { background: var(--accent-soft); }
+
+/* Category chips: the reader's own first, marked with a heart. */
+.discats {
+  display: flex; gap: 6px; margin: -4px calc(var(--page-pad) * -1) 0; padding-inline: var(--page-pad);
+  overflow-x: auto; scrollbar-width: none;
+}
+.discats::-webkit-scrollbar { display: none; }
+.discat {
+  flex: none; display: inline-flex; align-items: center; gap: 4px; min-height: 32px; padding: 0 12px;
+  border: 1px solid var(--border); border-radius: var(--r-pill); background: none;
+  color: var(--text-dim); font: inherit; font-size: var(--t-xs); font-weight: var(--w-semi); cursor: pointer;
+}
+.discat--yours { color: var(--text); }
+.discat--yours svg { color: var(--pink); }
+.discat.is-on { background: var(--text); border-color: var(--text); color: var(--bg); }
+.discat.is-on svg { color: inherit; }
+@media (hover: hover) and (pointer: fine) { .discat:hover:not(.is-on) { border-color: var(--border-strong); color: var(--text); } }
+
+/* Newer posts are waiting: a pill under the lenses, never a jump. */
+.discfresh {
+  position: sticky; top: calc(var(--nav-h) + 56px); z-index: var(--z-popover); justify-self: center;
+  display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 16px;
+  border: 0; border-radius: var(--r-pill); background: var(--grad-hero); box-shadow: var(--shadow-violet);
+  color: #fff; font: inherit; font-size: var(--t-sm); font-weight: var(--w-bold); cursor: pointer;
+  animation: disc-in 240ms var(--ease-out) both;
+}
+
+/* A narrowed stream says so, with a way back. */
+.discnarrow { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); margin: 0; color: var(--text-dim); font-size: var(--t-sm); }
+.discnarrow__clear { border: 0; background: none; padding: 4px 0; color: var(--accent-text); font: inherit; font-weight: var(--w-semi); cursor: pointer; }
+
+/* A heading inside a lens: closing soon, competitions, conversations. */
+.discsection { display: flex; align-items: center; gap: 8px; margin: var(--s2) 0 0; font-size: var(--t-md); font-weight: var(--w-bold); }
+.discsection:first-child { margin-top: 0; }
+.discsection--soon { color: var(--coral); }
 
 /* The spotlight: a deck of cards to flick through. The top one is big; two
    more peek out behind it, smaller and lower, so it reads as a pile. */
 .spotdeck { display: grid; gap: 10px; }
 .spotdeck__head { display: flex; align-items: baseline; justify-content: space-between; }
-.spotdeck__head h2 { margin: 0; font-size: var(--t-md); font-weight: var(--w-bold); }
+.spotdeck__head h2 { display: flex; align-items: center; gap: 6px; margin: 0; font-size: var(--t-md); font-weight: var(--w-bold); }
+.spotdeck__head h2 svg { color: var(--pink); }
+.spotdeck:focus-within .spotcard[data-depth='0'] { outline-offset: 3px; }
 .spotdeck__count { font-family: var(--mono); font-size: var(--t-xs); color: var(--text-faint); }
 .spotdeck__stack {
-  position: relative; height: clamp(250px, 64vw, 330px); margin-bottom: 26px;
+  position: relative; height: clamp(210px, 54vw, 290px); margin-bottom: 22px;
   touch-action: pan-y; user-select: none; -webkit-user-select: none;
 }
 .spotcard {
@@ -94,11 +152,22 @@
 .spotcard--gold { background: linear-gradient(160deg, #B45309, #451A03); }
 .spotcard--coral { background: linear-gradient(160deg, #BE123C, #3F0D1E); }
 .spotcard__photo { position: absolute; inset: 0; z-index: -2; width: 100%; height: 100%; object-fit: cover; }
-.spotcard__emoji { position: absolute; inset: 0; z-index: -2; display: grid; place-items: center; font-size: calc(84px * var(--text-scale)); opacity: 0.9; }
+.spotcard__mark { position: absolute; inset: 0 0 30% 0; z-index: -2; display: grid; place-items: center; color: rgba(255, 255, 255, 0.28); }
+.spotcard__top {
+  position: absolute; top: var(--s3); left: var(--s3); right: var(--s3);
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s2);
+}
+.spotcard__left {
+  padding: 3px 9px; border-radius: var(--r-pill); background: rgba(4, 6, 12, 0.6);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  font-size: var(--t-2xs); font-weight: var(--w-bold); color: #fff; white-space: nowrap;
+}
+.spotcard__left.is-soon { background: var(--coral); }
 .spotcard__shade { position: absolute; inset: 0; z-index: -1; background: linear-gradient(180deg, transparent 30%, rgba(4, 6, 12, 0.88) 100%); }
 .spotcard__body { display: grid; gap: 6px; padding: var(--s4); min-width: 0; }
 .spotcard__kind {
-  justify-self: start; padding: var(--s1) 10px; border-radius: var(--r-pill);
+  display: inline-flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  padding: var(--s1) 10px; border-radius: var(--r-pill);
   background: rgba(255, 255, 255, 0.16); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
   font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.04em;
 }
@@ -112,19 +181,27 @@
   flex: none; display: inline-flex; align-items: center; gap: var(--s1); padding: 7px 13px; border-radius: var(--r-pill);
   background: var(--grad-hero); box-shadow: var(--shadow-violet); font-size: var(--t-xs); font-weight: var(--w-bold);
 }
-.spotdeck__controls { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); }
-.spotdeck__dots { display: flex; gap: 5px; }
-.spotdeck__dots span { width: 6px; height: 6px; border-radius: var(--r-pill); background: var(--border-strong); transition: transform var(--dur-2) var(--ease-out), background-color var(--dur-2) ease; }
-.spotdeck__dots span.is-on { background: var(--pink); transform: scaleX(2.4); margin-inline: 5px; }
-.spotdeck__next {
-  display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 0 var(--s4);
-  border-radius: var(--r-pill); border: 1px solid var(--border-strong); background: var(--surface);
-  color: var(--text); font: inherit; font-size: var(--t-sm); font-weight: var(--w-semi); cursor: pointer;
+.spotdeck__controls { display: flex; align-items: center; justify-content: center; gap: var(--s3); }
+.spotdeck__dots { display: flex; align-items: center; gap: 2px; }
+/* Each dot is a 24px target around a 6px mark. */
+.spotdeck__dots button {
+  position: relative; width: 20px; height: 28px; padding: 0; border: 0; background: none; cursor: pointer;
+}
+.spotdeck__dots button::before {
+  content: ''; position: absolute; top: 50%; left: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px;
+  border-radius: var(--r-pill); background: var(--border-strong);
+  transition: transform var(--dur-2) var(--ease-out), background-color var(--dur-2) ease;
+}
+.spotdeck__dots button.is-on::before { background: var(--pink); transform: scaleX(2.4); }
+.spotdeck__arrow {
+  display: inline-grid; place-items: center; width: 38px; height: 38px; padding: 0;
+  border-radius: 50%; border: 1px solid var(--border-strong); background: var(--surface);
+  color: var(--text); cursor: pointer;
   transition: border-color var(--dur-1) ease, transform var(--dur-1) var(--ease-out);
 }
-.spotdeck__next:active { transform: scale(0.96); }
+.spotdeck__arrow:active { transform: scale(0.94); }
 @media (hover: hover) and (pointer: fine) {
-  .spotdeck__next:hover { border-color: var(--violet-lit); }
+  .spotdeck__arrow:hover { border-color: var(--violet-lit); }
   .spotcard[data-depth='0']:not(.is-flying):hover { transform: translateY(-3px); }
 }
 
@@ -142,19 +219,27 @@
 }
 :root[data-bars='hidden'] .dislens { top: env(safe-area-inset-top, 0px); }
 .dislens::-webkit-scrollbar { display: none; }
+/* Five lenses fit a phone's width without scrolling: the marks go, the words stay. */
+@media (max-width: 479px) {
+  .dislens { gap: 4px; }
+  .dislens__tab { padding: 0 8px; font-size: var(--t-xs); }
+  .dislens__tab > svg { display: none; }
+}
 .dislens__tab {
-  flex: none; min-height: 36px; padding: 0 14px; border-radius: var(--r-pill);
+  flex: 1 0 auto; justify-content: center; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border-radius: var(--r-pill);
   border: 1px solid var(--border); background: var(--surface); color: var(--text-dim);
   font: inherit; font-size: var(--t-sm); font-weight: var(--w-semi); cursor: pointer;
   transition: background-color var(--dur-1) ease, color var(--dur-1) ease, border-color var(--dur-1) ease, transform var(--dur-1) var(--ease-out);
 }
 .dislens__tab:active { transform: scale(0.96); }
+.dislens__count {
+  min-width: 18px; padding: 0 5px; border-radius: var(--r-pill); background: var(--coral); color: #fff;
+  font-size: var(--t-2xs); line-height: 18px; text-align: center;
+}
 .dislens__tab.is-on { background: var(--grad-hero); border-color: transparent; color: #fff; box-shadow: var(--shadow-violet); }
 @media (hover: hover) and (pointer: fine) { .dislens__tab:hover:not(.is-on) { color: var(--text); border-color: var(--border-strong); } }
 
 /* Live now and the competitions: sideways rows of doors into the posts. */
-.dislive { display: grid; gap: var(--s2); }
-.dislive .discrail__head h2 { display: flex; align-items: center; gap: var(--s2); }
 .dislive__row {
   display: grid; grid-auto-flow: column; grid-auto-columns: minmax(220px, 72%);
   gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none;
@@ -162,41 +247,19 @@
 }
 .dislive__row::-webkit-scrollbar { display: none; }
 @media (min-width: 640px) { .dislive__row { grid-auto-columns: minmax(0, 46%); } }
-.livecard, .contestcard {
+.contestcard {
   display: grid; grid-template-rows: auto 1fr; overflow: hidden; scroll-snap-align: start;
   border-radius: var(--r-lg); border: 1px solid var(--border); background: var(--surface);
   color: inherit; text-decoration: none;
   animation: disc-in 300ms var(--ease-out) both;
   transition: border-color var(--dur-1) ease, transform var(--dur-1) var(--ease-out);
 }
-.livecard:active, .contestcard:active { transform: scale(0.98); }
+.contestcard:active { transform: scale(0.98); }
 @media (hover: hover) and (pointer: fine) {
-  .livecard:hover, .contestcard:hover { border-color: var(--border-strong); transform: translateY(-2px); }
-}
-.livecard--aqua { border-top: 3px solid var(--aqua); }
-.livecard--pink { border-top: 3px solid var(--pink); }
-.livecard--gold { border-top: 3px solid var(--warn); }
-.livecard--violet { border-top: 3px solid var(--violet-lit); }
-.livecard__art {
-  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); grid-template-rows: 100%;
-  gap: 2px; height: 112px; overflow: hidden; background: var(--surface-2);
-}
-.livecard__art img { width: 100%; height: 100%; min-height: 0; object-fit: cover; }
-.livecard__art--0 { place-items: center; }
-.livecard__emoji { font-size: calc(40px * var(--text-scale)); }
-.livecard__body { display: grid; gap: 6px; align-content: start; padding: 10px var(--s3) var(--s3); min-width: 0; }
-.livecard__kind { font-size: var(--t-2xs); font-weight: var(--w-bold); text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); }
-.livecard__q {
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-  font-size: var(--t-base); font-weight: var(--w-semi); line-height: 1.3;
+  .contestcard:hover { border-color: var(--border-strong); transform: translateY(-2px); }
 }
 .livecard__meta { display: flex; justify-content: space-between; gap: var(--s2); font-size: var(--t-xs); color: var(--text-dim); }
 .livecard__left { color: var(--coral); font-weight: var(--w-semi); }
-.livecard__cta {
-  justify-self: start; display: inline-flex; align-items: center; gap: var(--s1); margin-top: 2px;
-  padding: 6px var(--s3); border-radius: var(--r-pill); background: var(--grad-hero); color: #fff;
-  font-size: var(--t-xs); font-weight: var(--w-bold);
-}
 .contestcard { border-color: rgba(251, 191, 36, 0.35); }
 .contestcard__art { position: relative; display: grid; place-items: center; height: 128px; overflow: hidden; background: var(--grad-gold); font-size: calc(44px * var(--text-scale)); }
 .contestcard__art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
@@ -220,9 +283,10 @@
    wherever that timeline did not start. */
 
 @media (prefers-reduced-motion: reduce) {
-  .dischero, .livecard, .contestcard { animation: fade-in 160ms ease both; }
-  .livecard, .contestcard, .dislens__tab, .dischero__stat, .dislens, .spotcard, .spotdeck__dots span { transition: none; }
-  .dischero__aurora span, .dischero__pulse::after { animation: none; }
+  .dischero, .contestcard { animation: fade-in 160ms ease both; }
+  .contestcard, .dislens__tab, .dischero__stat, .dislens, .spotcard, .spotdeck__dots button::before { transition: none; }
+  .dischero__pulse::after { animation: none; }
+  .discsearch, .discfresh { animation: none; }
 }
 .dischero__guest { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; margin: 6px 0 0; font-size: var(--t-sm); }
 
@@ -255,7 +319,25 @@
   transition: border-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
 }
 .discitem:hover { border-color: var(--border-strong); transform: translateY(-1px); }
-.discitem__photo { aspect-ratio: 1; border-radius: 0; }
+/* The picture holds its square whatever the photo's shape: a tall photo used
+   to stretch it and push the price out of the card. */
+.discitem__art { position: relative; display: block; }
+.discitem__photo { position: relative; aspect-ratio: 1; width: 100%; overflow: hidden; border-radius: 0; }
+.discitem__photo .thumb__img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.discitem__photo--blank {
+  display: grid; place-items: center; align-content: center; gap: 6px;
+  background: linear-gradient(160deg, var(--surface-2), color-mix(in srgb, var(--violet) 22%, var(--surface)));
+  color: var(--text-faint);
+}
+.discitem__cat { font-size: var(--t-xs); font-weight: var(--w-semi); color: var(--text-dim); }
+.discitem__save {
+  position: absolute; top: 6px; right: 6px; display: inline-grid; place-items: center; width: 34px; height: 34px; padding: 0;
+  border: 0; border-radius: 50%; background: rgba(8, 11, 18, 0.6); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  color: #fff; cursor: pointer; transition: transform var(--dur-1) var(--ease-out);
+}
+.discitem__save:active { transform: scale(0.9); }
+.discitem__save.is-on { color: var(--pink); }
+.discitem__save.is-on svg { fill: currentColor; }
 .discitem__body { display: grid; gap: var(--s1); padding: 10px; min-width: 0; }
 .discitem__why {
   justify-self: start; padding: 2px 7px; border-radius: var(--r-pill);
@@ -266,6 +348,9 @@
 .discitem__why--filling { color: var(--aqua-pale); background: var(--aqua-soft); }
 .discitem__why--hot { color: var(--warn); background: var(--warn-soft); }
 .discitem__why--yours { color: var(--accent-text); background: var(--accent-soft); }
+.discitem__why--drop { color: var(--ok); background: color-mix(in srgb, var(--ok) 16%, transparent); }
+.discitem__why--restock { color: var(--aqua-pale); background: var(--aqua-soft); }
+.discitem__why { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .discitem__name {
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   font-size: var(--t-sm); font-weight: var(--w-semi); line-height: 1.35;
@@ -273,8 +358,6 @@
 .discitem__meta { display: flex; align-items: baseline; gap: 6px; font-size: var(--t-sm); }
 .discitem__meta strong { font-family: var(--mono); font-weight: var(--w-medium); }
 
-/* The title, with a way to pass Discover on beside it. */
-.dischero__top { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
 
 /* What people are posting about: one sideways line of #topics. */
 .distopics {
@@ -288,13 +371,19 @@
   color: var(--accent-text); font-size: var(--t-xs); font-weight: var(--w-semi); text-decoration: none;
 }
 .distopic:hover { border-color: var(--accent-line); background: var(--accent-soft); }
+.distopic--more { background: none; color: var(--text-dim); font: inherit; font-size: var(--t-xs); font-weight: var(--w-semi); cursor: pointer; }
+.livecard__left.is-soon { color: #fff; background: var(--coral); padding: 0 6px; border-radius: var(--r-pill); }
+.discend p { margin: 0; }
 
-/* Where a guest's scrolling stops. */
+/* Where a guest's scrolling stops: laid over the last posts, which fade under
+   it, so it is plain there is more behind it. */
 .discwall {
+  position: relative; z-index: 1;
   display: grid; gap: var(--s2); justify-items: center; text-align: center;
-  padding: 22px 18px; border: 1px solid var(--accent-line); border-radius: var(--r-lg, 16px);
-  background: var(--accent-soft);
+  margin-top: -240px; padding: 200px 18px 26px;
+  background: linear-gradient(180deg, transparent 0, var(--bg) 190px);
 }
+.discguest { margin: 0; text-align: center; color: var(--text-dim); font-size: var(--t-sm); }
 .discwall h2 { margin: 0; font-size: var(--t-lg); }
 .discwall p { margin: 0; color: var(--text-dim); font-size: var(--t-sm); max-width: 42ch; }
 
@@ -309,6 +398,9 @@
   color: inherit; text-decoration: none;
 }
 a.discweek__row:hover { border-color: var(--border-strong); }
+.discweek__rank--1 { color: var(--warn); }
+.discweek__rank--2 { color: #CBD5E1; }
+.discweek__rank--3 { color: var(--gold); opacity: 0.8; }
 .discweek__rank { width: 1.4em; text-align: center; font-family: var(--mono); font-weight: var(--w-bold); color: var(--accent-text); }
 .discweek__photo { width: 40px; height: 40px; border-radius: var(--r-sm); flex: 0 0 auto; }
 .discweek__name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-sm); }
@@ -316,6 +408,7 @@ a.discweek__row:hover { border-color: var(--border-strong); }
 
 /* The bottom of the stream, when there really is nothing further. */
 .discend {
+  display: grid; justify-items: center; gap: var(--s2);
   margin: var(--s4) 0 var(--s6); text-align: center;
   color: var(--text-dim); font-size: var(--t-sm);
 }

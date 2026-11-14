@@ -160,21 +160,9 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
   const likedIds = new Set(liked);
   // Expired is read off the clock, so it is filtered here rather than stored.
   const listings = catalog.filter((listing) => !isExpired(listing));
-
-  // Only the lots these listings ride in, not every lot on the site.
-  const lotKeys = [...new Map(listings.filter((l) => l.lotId).map((l) => [l.lotId!, l.sellerId])).entries()];
-  const [sellers, lots] = await Promise.all([
-    repository.listSellerCardsByIds([...new Set(listings.map((l) => l.sellerId))]),
-    Promise.all(lotKeys.map(([lotId, sellerId]) => repository.getLot(sellerId, lotId))),
-  ]);
-  const sellerById = new Map(sellers.map((s) => [s.id, toSellerCard(s)]));
   // A shop that stopped taking orders leaves the Shop feed and search; its
   // own page (asked for with ?seller=) still shows everything it has up.
-  const stopped = new Set(sellers.filter((s) => !listedInShop(s.sellerProfile?.orderStatus)).map((s) => s.id));
-  const shown = request.query.get('seller') || stopped.size === 0
-    ? listings : listings.filter((listing) => !stopped.has(listing.sellerId));
-  // The lot contributes exactly one buyer-visible fact: when it ships.
-  const dispatchByLot = new Map(lots.filter((l) => l !== null).map((l) => [l.id, l.estimatedDispatchAt]));
+  const cards = await feedCards(repository, listings, likedIds, { keepStopped: Boolean(request.query.get('seller')) });
 
   // A catalog search is counted, by term and whether anything came back: the
   // shops' Data screens show what buyers look for, and what nobody stocks.
@@ -185,22 +173,49 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
   }
 
   return json(200, {
-    listings: shown.map((listing) => ({
-      ...cardListing(publicListing(listing)),
-      liked: likedIds.has(listing.id),
-      seller: sellerById.get(listing.sellerId) ?? null,
-      estimatedDispatchAt: listing.lotId ? (dispatchByLot.get(listing.lotId) ?? null) : null,
-    })),
+    listings: cards,
     // Facets are derived from the live catalog so the filter chips can never
     // offer a category that has nothing behind it. Note that this narrows with
     // the filters, which is the point: it answers "what else is in here", not
     // "what exists somewhere".
-    categories: [...new Set(shown.map((l) => l.category))].sort(),
+    categories: [...new Set(cards.map((l) => l.category))].sort(),
     followedSellerIds,
     // Under a page's worth: this is every match there is, so a search typed
     // further can narrow these on the device instead of asking again.
     complete: catalog.length < limit,
   });
+}
+
+/**
+ * Listings as catalogue cards: one photo, a cut description, the shop's card,
+ * when its lot ships, and whether this reader saved it. Expired items and the
+ * items of shops that stopped taking orders are left out, unless `keepStopped`
+ * (a shop's own page shows everything it has up).
+ *
+ * Shared by the Shop feed and Discover's finds, so a card reads the same in both.
+ */
+export async function feedCards(
+  repository: Awaited<ReturnType<typeof getRepository>>, catalog: readonly Listing[], likedIds: ReadonlySet<string>,
+  { keepStopped = false }: { keepStopped?: boolean } = {},
+) {
+  const listings = catalog.filter((listing) => !isExpired(listing));
+  // Only the lots these listings ride in, not every lot on the site.
+  const lotKeys = [...new Map(listings.filter((l) => l.lotId).map((l) => [l.lotId!, l.sellerId])).entries()];
+  const [sellers, lots] = await Promise.all([
+    repository.listSellerCardsByIds([...new Set(listings.map((l) => l.sellerId))]),
+    Promise.all(lotKeys.map(([lotId, sellerId]) => repository.getLot(sellerId, lotId))),
+  ]);
+  const sellerById = new Map(sellers.map((s) => [s.id, toSellerCard(s)]));
+  const stopped = new Set(sellers.filter((s) => !listedInShop(s.sellerProfile?.orderStatus)).map((s) => s.id));
+  const shown = keepStopped || stopped.size === 0 ? listings : listings.filter((listing) => !stopped.has(listing.sellerId));
+  // The lot contributes exactly one buyer-visible fact: when it ships.
+  const dispatchByLot = new Map(lots.filter((l) => l !== null).map((l) => [l.id, l.estimatedDispatchAt]));
+  return shown.map((listing) => ({
+    ...cardListing(publicListing(listing)),
+    liked: likedIds.has(listing.id),
+    seller: sellerById.get(listing.sellerId) ?? null,
+    estimatedDispatchAt: listing.lotId ? (dispatchByLot.get(listing.lotId) ?? null) : null,
+  }));
 }
 
 /** GET /api/listings/{id} - detail, with seller, lot, comments and like state. */
