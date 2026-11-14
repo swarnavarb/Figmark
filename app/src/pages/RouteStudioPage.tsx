@@ -992,9 +992,9 @@ function StepNode({ step, index, zone, open, onToggle, problems, canUp, canDown,
   const isDelivered = step.trigger === 'delivered';
   const fixed = isFixed(step);
   const hasButton = Boolean(stepTickKey(step));
-  /* The two steps that take a courier name and an AWB: the item's own
-     dispatch, always, and any step in the lot the seller switches it on for. */
-  const asksCourier = step.trigger === 'dispatched' || (zone === 'lot' && Boolean(step.forward));
+  /* The steps that take a courier name and an AWB: the item's own dispatch,
+     always, and any other step the seller switches it on for. */
+  const asksCourier = step.trigger === 'dispatched' || Boolean(step.forward);
 
   return (
     <div className={`rsstep${open ? ' is-open' : ''}${problems.length ? ' is-wrong' : ''}`} data-step={step.id}>
@@ -1089,8 +1089,10 @@ function StepNode({ step, index, zone, open, onToggle, problems, canUp, canDown,
 
           {/* Courier name and AWB: asked for when this step is reached, and
               shown to buyers on it. Always on the item's dispatch; a switch on
-              any step in the lot, where the crate changes hands. */}
-          {(zone === 'lot' || step.trigger === 'dispatched') && (
+              every other step but Delivered. Outside the lot it is asked when
+              the step's button is pressed, so switching it on gives the step
+              a button if it had none. */}
+          {!isDelivered && (
             <div className={`rscourier${asksCourier ? ' is-on' : ''}`}>
               <label className="rscourier__head">
                 <span className="rscourier__title"><span aria-hidden="true">🚚</span> Courier name and AWB</span>
@@ -1099,7 +1101,9 @@ function StepNode({ step, index, zone, open, onToggle, problems, canUp, canDown,
                   : (
                     <input type="checkbox" className="rscourier__switch" checked={Boolean(step.forward)}
                       aria-label={`Ask for the courier name and AWB at step ${index + 1}`}
-                      onChange={(event) => onChange({ forward: event.target.checked || undefined })} />
+                      onChange={(event) => onChange(event.target.checked && zone !== 'lot' && !hasButton
+                        ? { forward: true, custom: true }
+                        : { forward: event.target.checked || undefined })} />
                   )}
               </label>
               {asksCourier ? (
@@ -1109,12 +1113,14 @@ function StepNode({ step, index, zone, open, onToggle, problems, canUp, canDown,
                     <span>AWB / tracking ID<em>e.g. 1234567890</em></span>
                   </span>
                   <span className="rsbtn__note">
-                    You are asked for these two {step.trigger === 'dispatched' ? 'when you press the button' : 'when you move the lot here'}.
+                    You are asked for these two {zone === 'lot' ? 'when you move the lot here' : 'when you press the button'}.
                     Both are optional, and buyers see what you fill in.
                   </span>
                 </>
               ) : (
-                <span className="rsbtn__note">Turn on to add the courier name and AWB when the lot moves here.</span>
+                <span className="rsbtn__note">
+                  Turn on to add the courier name and AWB {zone === 'lot' ? 'when the lot moves here' : 'when this step is pressed'}.
+                </span>
               )}
             </div>
           )}
