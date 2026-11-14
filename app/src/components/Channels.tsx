@@ -66,7 +66,8 @@ export function ChannelList() {
   const mine = rows.filter((row) => row.mine && match(row));
   const following = rows.filter((row) => !row.mine && match(row));
   const strangers = discover.filter(match);
-  const totalUnread = following.reduce((sum, row) => sum + unreadOf(row, seen), 0);
+  /** Channels with something unread: the same number as the tab's badge. */
+  const withNews = following.filter((row) => unreadOf(row, seen) > 0).length;
 
   return (
     <div className="chlist">
@@ -94,7 +95,7 @@ export function ChannelList() {
       <section className="chsection">
         <h2 className="chsection__title">
           Following
-          {totalUnread > 0 && <span className="chsection__count">{totalUnread > 99 ? '99+' : totalUnread} new</span>}
+          {withNews > 0 && <span className="chsection__count">{withNews} with news</span>}
         </h2>
         {following.length === 0 ? (
           <p className="chsection__empty">
