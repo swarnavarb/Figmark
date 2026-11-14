@@ -9,7 +9,6 @@ import {
 import { Link, useSearchParams } from 'react-router-dom';
 import { AdvanceStrip } from '../components/Buy';
 import { SOURCING_LABELS } from '@shared/enums';
-import { advanceMinor } from '@shared/payments';
 import {
   CATALOG_KINDS, CATALOG_KIND_LABELS, CATALOG_SORTS, CATALOG_SORT_LABELS, CATEGORY_GROUPS, CONDITION_BUCKETS, categoriesIn, factsOf, filterOptions, matchesKind, priceCeiling,
   type CatalogKind,
@@ -18,7 +17,13 @@ import { isTakingBookings, preOrderView } from '@shared/preorder';
 import { RARITY_LABELS, XP, dayKey, listingRarity, type ListingRarity, type RarityTier } from '@shared/quest';
 import { api, type FeedListing, type FeedResponse, type ShopCard } from '../api';
 import { ShopStrip, ShopsForYou, useShopsForYou } from '../components/ShopCards';
-import { ServiceGrid, ServiceStrip, searchWants, useProviders, useStudioSearch } from '../components/ServiceCards';
+import {
+  ServiceCard, ServiceGrid, ServiceStrip, placeServices, searchWants, useProviders, useStudioSearch,
+  type ForwarderPick, type ProviderPick, type Providers,
+} from '../components/ServiceCards';
+import { FREIGHT_MODE_LABELS } from '@shared/service-stores';
+import { countryFlag } from '@shared/countries';
+import { EarnPill, earnOf } from '../components/Affiliate';
 import { CategoryIcon } from '../components/CategoryIcon';
 import {
   DemandRail, EarnRail, EndingRail, FEED_VIEW_TITLES, PreOrderRail, demandPicks, earnPicks, endingPicks, isFeedView,
@@ -28,10 +33,10 @@ import { DropsStage, FillingBoxes, useDrops, useFillingLots } from '../component
 import { SkeletonGrid } from '../components/Feedback';
 import { ActiveOrders } from '../components/ActiveOrders';
 import { SkelBlock } from '../components/PageSkeletons';
-import { Glyph, RarityRibbon, XpBar, useQuest } from '../components/Quest';
-import { EmptyState, ErrorNotice, Icon, Thumb, leadPhoto } from '../components/ui';
+import { CollectorChip, Glyph, RarityRibbon, StoreChip, XpBar, useQuest } from '../components/Quest';
+import { EmptyState, ErrorNotice, Icon, LevelChip, Thumb, leadPhoto } from '../components/ui';
 import { useSave } from '../components/useSave';
-import { formatMoney } from '../format';
+import { formatMoney, timeAgo } from '../format';
 import { useRecentlyViewed } from '../recentViews';
 import {
   AlertMe, DAY_CHOICES, FilterChips, FilterSheet, RecentRail, ShopSearch, priceLabel, sheetCount, type FilterValues,
@@ -199,6 +204,7 @@ export function useCatalog() {
     (id: string) => {
       const next = new URLSearchParams(params);
       next.delete('category');
+      clearServices(next);
       if (next.get('group') === id || id === '') next.delete('group');
       else next.set('group', id);
       setParams(next, { replace: true });
@@ -275,6 +281,19 @@ export function FeedPage() {
   } = useCatalog();
   const rarityFilter = (params.get('rarity') ?? '') as RarityTier | '';
   const [sheetOpen, setSheetOpen] = useState(false);
+  // Forwarders or artists instead of items: a badge on the category row.
+  const svcParam = params.get('svc');
+  const svc: ServiceKind | null = svcParam === 'forwarder' || svcParam === 'artist' ? svcParam : null;
+  const chooseService = (kind: ServiceKind) => {
+    const next = new URLSearchParams(params);
+    const off = svc === kind;
+    clearServices(next);
+    if (!off) {
+      for (const key of ['group', 'category', 'type', 'size', 'authenticity', 'kind', 'maxPrice', 'minPrice', 'minTrust', 'maxDays', 'condition', 'rarity', 'view']) next.delete(key);
+      next.set('svc', kind);
+    }
+    setParams(next, { replace: true });
+  };
 
   // Read against one clock per render so every card agrees on "now".
   const now = useNow(60_000);
@@ -321,7 +340,7 @@ export function FeedPage() {
   // grades ("7A", "Batch / 1:1") appear once a heading narrows what is meant.
   const authenticityChoices = group ? authenticityOptions : authenticityOptions.slice(0, 2);
 
-  const browsing = !search && !photo && activeFilters === 0 && !rarityFilter && !feedView;
+  const browsing = !search && !photo && activeFilters === 0 && !rarityFilter && !feedView && !svc;
 
   /* The page fills top to bottom: the daily pick, the drops, then the grid. A
      section waits for the ones above it, so nothing that answers late pushes
@@ -344,10 +363,13 @@ export function FeedPage() {
     if (left < row.scrollLeft || left + on.offsetWidth > row.scrollLeft + row.clientWidth) {
       row.scrollTo({ left: left - (row.clientWidth - on.offsetWidth) / 2 });
     }
-  }, [group]);
+  }, [group, svc]);
 
+  // Forwarders and artists among the items: each beside an item it fits (ServiceCards).
   // A search for a repaint or a forwarder is asking for a person: the studios or routes first.
   const providers = useProviders();
+  const services = useMemo(() => (browsing ? placeServices(shown, providers) : new Map<number, never[]>()),
+    [browsing, shown, providers]);
   const wants = search && !photo ? searchWants(search) : null;
   const studioHits = useStudioSearch(wants === 'artist' ? search : null);
   // What has loaded is not everything there is: counts say so with a "+".
@@ -413,6 +435,7 @@ export function FeedPage() {
     <main className="page qfeed">
       {/* The catalogue's cards are its heading; this names the page for screen readers. */}
       <h1 className="sr-only">Shop</h1>
+      <QuestBar />
       <ShopSearch value={search} onSearch={(term) => set('q', term)} />
       {/* Orders still on their way, first: after paying, "where is it?" is the question. */}
       {browsing && <ActiveOrders />}
@@ -428,11 +451,20 @@ export function FeedPage() {
       <div className="stack" id="catalogue" style={{ marginBottom: 14 }}>
         {/* Zones: what a thing is. Round, like the pin badges they are named after. */}
         <div className="qzones" role="tablist" aria-label="Categories" ref={zonesRef}>
-          <button type="button" role="tab" aria-selected={group === ''}
-            className={`qzone${group === '' ? ' is-on' : ''}`} onClick={() => chooseGroup('')}>
+          <button type="button" role="tab" aria-selected={group === '' && !svc}
+            className={`qzone${group === '' && !svc ? ' is-on' : ''}`} onClick={() => chooseGroup('')}>
             <span className="qzone__medal qhue--gold"><CategoryIcon id="everything" /></span>
             <span className="qzone__label">Everything</span>
           </button>
+          {/* Services next to Everything: who ships it in, who makes it one of a kind. */}
+          {SERVICE_ZONES.map((entry) => (
+            <button key={entry.kind} type="button" role="tab" aria-selected={svc === entry.kind}
+              className={`qzone qzone--service${svc === entry.kind ? ' is-on' : ''}`} onClick={() => chooseService(entry.kind)}>
+              <span className={`qzone__medal qhue--${entry.hue}`}>{entry.icon}</span>
+              <span className="qzone__label">{entry.label}</span>
+            </button>
+          ))}
+          <span className="qzones__rule" aria-hidden="true" />
           {CATEGORY_GROUPS.map((entry) => (
             <button key={entry.id} type="button" role="tab" aria-selected={group === entry.id}
               className={`qzone${group === entry.id ? ' is-on' : ''}`} onClick={() => chooseGroup(entry.id)}>
@@ -442,6 +474,8 @@ export function FeedPage() {
           ))}
         </div>
 
+        {svc ? <ServiceFilters kind={svc} providers={providers} params={params} set={set} /> : (
+        <>
         {/* How it is sold, then the order, then every other filter behind one button. */}
         <KindTabs value={(kind || 'all') as CatalogKind} onChoose={chooseKind} />
         <div className="filters">
@@ -454,6 +488,8 @@ export function FeedPage() {
           </button>
         </div>
         <FilterChips chips={chips} onClearAll={clearFilters} />
+        </>
+        )}
       </div>
       )}
       {sheetOpen && (
@@ -468,6 +504,8 @@ export function FeedPage() {
       {wants === 'forwarder' && <ServiceStrip title="Forwarders" sub="Routes, days and price per kg" picks={providers.forwarders} />}
       {search && !photo && <ShopStrip title={`Shops for “${search}”`} sub="Known for it by name, tags or what they list" shops={searchShops} />}
 
+      {showGrid && svc ? <ServiceResults kind={svc} providers={providers} params={params} /> : (
+      <>
       {showGrid && error && <ErrorNotice message={error} />}
 
       <div className="qrow__head">
@@ -513,7 +551,9 @@ export function FeedPage() {
           {shown.slice(0, drawn).map((listing, n) => (
             <Fragment key={listing.id}>
               <LootCard listing={listing} priority={n < 2} />
+              {/* A shelf first, then a service card: the card then starts the row under the shelf. */}
               {browsing && shelves.map((entry, r) => entry.at === n && entry.node && <Fragment key={r}>{entry.node}</Fragment>)}
+              {services.get(n)?.map((pick) => <ServiceCard key={`${pick.kind}:${pick.store.ownerId}`} pick={pick} />)}
             </Fragment>
           ))}
           {drawn < shown.length && <span ref={sentinel} className="qgrid__more" aria-hidden="true" />}
@@ -525,6 +565,8 @@ export function FeedPage() {
             {loading ? 'Loading…' : 'Show more'}
           </button>
         </div>
+      )}
+      </>
       )}
     </main>
   );
@@ -577,6 +619,28 @@ function useProgressive(total: number, resetKey: string) {
     return () => watcher.disconnect();
   }, [sentinel]);
   return [drawn, setSentinel] as const;
+}
+
+/* ── The top bar ───────────────────────────────────────────────────────── */
+
+function QuestBar() {
+  const { view } = useQuest();
+  const waiting = view ? view.tasks.filter((task) => task.claimable).length : 0;
+  return (
+    <div className="qbar qbar--buy">
+      {/* You and your shop as one pill; the shop half only when you run one. */}
+      <div className="qduo">
+        <CollectorChip />
+        <StoreChip />
+      </div>
+      <span className="qbar__spacer" />
+      {view && (
+        <Link to="/quests" className="btn btn--sm btn--ghost">
+          <Glyph name="shield" size={14} /> Quests{waiting > 0 && <span className="qdot">{waiting}</span>}
+        </Link>
+      )}
+    </div>
+  );
 }
 
 /* ── Loot of the day ───────────────────────────────────────────────────── */
@@ -726,12 +790,6 @@ export const LootCard = memo(function LootCard({ listing, priority = false }: { 
   const wasPrice = rarity.priceDropPercent
     ? Math.max(...(listing.priceHistory ?? []).map((entry) => entry.priceMinor))
     : null;
-  // The one thing worth saying after how it ships: a clock running out, then few left.
-  const signal = rarity.hoursLeft !== null && rarity.hoursLeft <= 72
-    ? { text: `Ends in ${hoursLabel(rarity.hoursLeft)}`, hot: rarity.hoursLeft <= 24 }
-    : left !== null && left > 0 && left <= 5
-      ? { text: `${left} left`, hot: true }
-      : null;
 
   function toggleSave(event: MouseEvent) {
     // The card is a link; the heart must not navigate.
@@ -762,17 +820,14 @@ export const LootCard = memo(function LootCard({ listing, priority = false }: { 
       {listing.channelDrop && listing.advancePercent ? (
         <span className="qloot__strips">
           <span className="qloot__drop" title="Exclusive channel drop"><Glyph name="bolt" size={11} /><span>Exclusive</span></span>
-          <span className="qloot__book" title={`Pay ${listing.advancePercent}% now, the rest later`}>
-            Book for {formatMoney(advanceMinor(listing.priceMinor, listing.advancePercent), listing.currency)}
-          </span>
+          <span className="qloot__book" title={`Book with ${listing.advancePercent}% of the price`}>Book {listing.advancePercent}%</span>
         </span>
       ) : listing.channelDrop ? (
         <span className="qloot__drop" title="Exclusive channel drop"><Glyph name="bolt" size={11} /><span>Channel exclusive</span></span>
       ) : (
-        <AdvanceStrip percent={listing.advancePercent} priceMinor={listing.priceMinor} currency={listing.currency} />
+        <AdvanceStrip percent={listing.advancePercent} />
       )}
 
-      {/* Title, price, one line of what matters about this one, and the shop. */}
       <div className="qloot__body">
         <span className="qloot__title">{listing.title}</span>
         <span className="pricerow">
@@ -780,6 +835,7 @@ export const LootCard = memo(function LootCard({ listing, priority = false }: { 
             {formatMoney(listing.priceMinor, listing.currency)}
             {wasPrice && <s>{formatMoney(wasPrice, listing.currency)}</s>}
           </span>
+          <EarnPill amountMinor={earnOf(listing)} currency={listing.currency} />
         </span>
         {/* Shipping is beside the price, never in it; wholesale is the one offer worth a flag. */}
         {(listing.shippingMinor != null || wholesaleHint(listing.offers, listing.priceMinor)) && (
@@ -788,19 +844,33 @@ export const LootCard = memo(function LootCard({ listing, priority = false }: { 
             <WholesaleChip offers={listing.offers} priceMinor={listing.priceMinor} currency={listing.currency} />
           </span>
         )}
+        <span className="qloot__meta">
+          {rarity.hoursLeft !== null ? (
+            <span className={`qtimer${rarity.hoursLeft <= 24 ? ' qhot' : ''}`}>
+              <Glyph name="clock" size={11} />{countdown(rarity.hoursLeft)}
+            </span>
+          ) : (
+            <span className="qtimer qtimer--ago"><Glyph name="clock" size={11} />{timeAgo(listing.bumpedAt ?? listing.createdAt)}</span>
+          )}
+          {' · '}
+          <b className={listing.sourcing === 'in_hand' ? 'qok' : ''}>{SOURCING_LABELS[listing.sourcing]}</b>
+          {' · '}{listing.category}
+          {left !== null && left > 0 && left <= 5 && <> · <b className="qhot">{left} left</b></>}
+          {left === null && ' · plenty'}
+        </span>
 
-        {view ? (
+        {view && (
           <span className="qloot__lv">
-            <span className="qloot__lvlabel">{view.committed} of {view.fillThreshold} joined</span>
+            <span className="qloot__lvlabel">LV {view.committed}/{view.fillThreshold}</span>
             <XpBar progress={view.committed / view.fillThreshold} tone={tier === 'legendary' ? 'gold' : 'violet'} />
-          </span>
-        ) : (
-          <span className="qloot__meta">
-            <b className={listing.sourcing === 'in_hand' ? 'qok' : ''}>{SOURCING_LABELS[listing.sourcing]}</b>
-            {signal && <> · <span className={signal.hot ? 'qhot' : ''}>{signal.text}</span></>}
           </span>
         )}
 
+        {rarity.reasons.length > 0 && (
+          <span className="qloot__why">{rarity.reasons.slice(0, 2).join(' · ')}</span>
+        )}
+
+        {/* The store, then its level under it: side by side they never fit a phone's half-width card. */}
         {listing.seller && (
           <span className="qloot__foot qseller" title={`Trust ${listing.seller.trustScore} of 100`}>
             <span className={`qseller__crest qcrest__mark--${crestFor(listing.seller.trustScore)}`}>
@@ -808,6 +878,7 @@ export const LootCard = memo(function LootCard({ listing, priority = false }: { 
               {listing.seller.photoUrl && <StorePic url={listing.seller.photoUrl} />}
             </span>
             <span className="qseller__name">{listing.seller.storefrontName}{listing.seller.pro && <ProBadge />}</span>
+            <span className="qseller__lv"><LevelChip tag={listing.seller.level} /></span>
           </span>
         )}
       </div>
@@ -840,7 +911,7 @@ function crestFor(score: number): 'gold' | 'silver' | 'bronze' {
   return score >= 85 ? 'gold' : score >= 65 ? 'silver' : 'bronze';
 }
 
-function hoursLabel(hours: number): string {
+function countdown(hours: number): string {
   if (hours < 1) return `${Math.max(1, Math.round(hours * 60))}m`;
   if (hours < 24) return `${Math.floor(hours)}h ${Math.floor((hours % 1) * 60)}m`;
   return `${Math.floor(hours / 24)}d ${Math.floor(hours % 24)}h`;
@@ -983,4 +1054,125 @@ function tapFx(event: PointerEvent<HTMLElement>) {
   wave.addEventListener('animationend', () => wave.remove(), { once: true });
   // Reduced motion runs no animation, so nothing would fire animationend.
   window.setTimeout(() => wave.remove(), 800);
+}
+
+/* ── Services: forwarders and artists, found from the category row ─────── */
+
+type ServiceKind = 'forwarder' | 'artist';
+
+/** The filters only a services view reads, cleared whenever it is left. */
+const SERVICE_KEYS = ['svc', 'from', 'to', 'mode', 'craft', 'svsort'] as const;
+function clearServices(params: URLSearchParams) {
+  for (const key of SERVICE_KEYS) params.delete(key);
+}
+
+const SERVICE_ZONES: { kind: ServiceKind; label: string; hue: string; icon: ReactNode }[] = [
+  {
+    kind: 'forwarder', label: 'Forwarders', hue: 'aqua',
+    icon: (
+      <svg className="cat__glyph" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M3 8 12 3l9 5v8l-9 5-9-5z" /><path d="m3 8 9 5 9-5M12 13v8M7.5 5.5l9 5" />
+      </svg>
+    ),
+  },
+  {
+    kind: 'artist', label: 'Artists', hue: 'pink',
+    icon: (
+      <svg className="cat__glyph" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M12 3a9 9 0 1 0 0 18c1.4 0 2-1 2-2 0-1.5-1.5-1.6-1.5-3 0-1.1.9-2 2-2H17a4 4 0 0 0 4-4c0-4-4-7-9-7z" />
+        <circle cx="7.5" cy="11" r="1" /><circle cx="10" cy="7" r="1" /><circle cx="15" cy="7.5" r="1" />
+      </svg>
+    ),
+  },
+];
+
+const FORWARDER_SORTS = [{ value: 'rated', label: 'Top rated' }, { value: 'cheap', label: 'Cheapest per kg' }];
+const ARTIST_SORTS = [{ value: 'rated', label: 'Top rated' }, { value: 'cheap', label: 'Lowest price' }];
+
+/** Every distinct value, sorted, as picker options. */
+function optionsOf(values: string[]) {
+  return [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b)).map((value) => ({ value, label: value }));
+}
+
+/** What each services view can be narrowed by, read from who is offering. */
+function ServiceFilters({ kind, providers, params, set }: {
+  kind: ServiceKind;
+  providers: Providers;
+  params: URLSearchParams;
+  set: (key: string, value: string) => void;
+}) {
+  if (kind === 'forwarder') {
+    const lanes = providers.forwarders.flatMap((pick) => pick.lanes);
+    const modes = [...new Set(lanes.map((lane) => lane.mode))];
+    return (
+      <div className="filters">
+        <Picker label="Sort" icon="sort" value={params.get('svsort') ?? 'rated'} onChange={(value) => set('svsort', value === 'rated' ? '' : value)}
+          options={FORWARDER_SORTS} />
+        <Picker label="Ships from" icon="route" value={params.get('from') ?? ''} onChange={(value) => set('from', value)}
+          empty="From anywhere" options={optionsOf(lanes.map((lane) => lane.originCountry)).map((option) => ({ ...option, label: `${countryFlag(option.value)} ${option.value}` }))} />
+        <Picker label="Ships to" icon="route" value={params.get('to') ?? ''} onChange={(value) => set('to', value)}
+          empty="To anywhere" options={optionsOf(lanes.map((lane) => lane.destinationCountry)).map((option) => ({ ...option, label: `${countryFlag(option.value)} ${option.value}` }))} />
+        <Picker label="Mode" icon="type" value={params.get('mode') ?? ''} onChange={(value) => set('mode', value)}
+          empty="Any mode" options={modes.map((mode) => ({ value: mode, label: `${FREIGHT_MODE_LABELS[mode].glyph} ${FREIGHT_MODE_LABELS[mode].label}` }))} />
+      </div>
+    );
+  }
+  return (
+    <div className="filters">
+      <Picker label="Sort" icon="sort" value={params.get('svsort') ?? 'rated'} onChange={(value) => set('svsort', value === 'rated' ? '' : value)}
+        options={ARTIST_SORTS} />
+      <Picker label="Speciality" icon="craft" value={params.get('craft') ?? ''} onChange={(value) => set('craft', value)}
+        empty="Any speciality" options={optionsOf(providers.artists.flatMap((pick) => pick.specialties))} />
+    </div>
+  );
+}
+
+/** Rating first, then work done: a store nobody has rated yet sits after the rated ones. */
+const byStanding = (a: ProviderPick, b: ProviderPick) =>
+  (b.store.rating ?? -1) - (a.store.rating ?? -1) || b.store.completed - a.store.completed;
+
+/** The forwarders or artists the filters leave, as cards in the Shop's own grid. */
+function ServiceResults({ kind, providers, params }: { kind: ServiceKind; providers: Providers; params: URLSearchParams }) {
+  const cheap = params.get('svsort') === 'cheap';
+  let picks: ProviderPick[];
+  if (kind === 'forwarder') {
+    const from = params.get('from') ?? '';
+    const to = params.get('to') ?? '';
+    const mode = params.get('mode') ?? '';
+    const fits = (lane: ForwarderPick['lanes'][number]) =>
+      (!from || lane.originCountry === from) && (!to || lane.destinationCountry === to) && (!mode || lane.mode === mode);
+    // Only the routes that fit, cheapest first, so the card shows the one asked about.
+    const found = providers.forwarders
+      .map((pick) => ({ ...pick, lanes: pick.lanes.filter(fits) }))
+      .filter((pick) => pick.lanes.length > 0);
+    const cheapest = (pick: ForwarderPick) => Math.min(...pick.lanes.map((lane) => lane.fromMinor || Infinity));
+    picks = found.sort((a, b) => (cheap ? cheapest(a) - cheapest(b) : 0) || byStanding(a, b));
+  } else {
+    const craft = params.get('craft') ?? '';
+    const found = providers.artists.filter((pick) => !craft || pick.specialties.includes(craft));
+    picks = found.sort((a, b) => (cheap ? (a.fromMinor || Infinity) - (b.fromMinor || Infinity) : 0) || byStanding(a, b));
+  }
+  const noun = kind === 'forwarder' ? 'forwarder' : 'artist';
+  return (
+    <>
+      <div className="qrow__head">
+        <h2>{kind === 'forwarder' ? 'Freight forwarders' : 'Artists'}</h2>
+        <span className="faint">{picks.length} {picks.length === 1 ? noun : `${noun}s`}</span>
+      </div>
+      {picks.length === 0 ? (
+        <EmptyState title={`No ${noun}s match`}>Try removing a filter.</EmptyState>
+      ) : (
+        <div className="grid qgrid">
+          {picks.map((pick) => <ServiceCard key={`${pick.kind}:${pick.store.ownerId}`} pick={pick} />)}
+        </div>
+      )}
+      <div className="qgrid__showmore">
+        <Link to={kind === 'forwarder' ? '/services/forwarder' : '/services/artist'} className="btn btn--ghost">
+          All {noun}s and how to book
+        </Link>
+      </div>
+    </>
+  );
 }
