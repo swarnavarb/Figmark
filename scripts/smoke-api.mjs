@@ -13787,6 +13787,31 @@ await check('"tell me when it is back" rings once the item is restocked, then em
   assert.deepEqual((await repository.getListing(item.id)).restockWatch, []);
 });
 
+await check('a price cut tells whoever saved the item, and nobody else', async () => {
+  const saver = await newBuyer('Price Saver');
+  const passer = await newBuyer('Price Passer');
+  const item = (await createListing(req({ headers: auth, body: { title: 'Price drop figure', priceMinor: 400_000, quantityAvailable: 2 } }), ctx)).jsonBody.listing;
+  await toggleLike(req({ headers: saver.headers, params: { id: item.id } }), ctx);
+  await editListing(req({ headers: auth, params: { id: item.id }, body: { priceMinor: 450_000 } }), ctx);
+  const dearer = (await notifications(req({ headers: saver.headers }), ctx)).jsonBody.notifications;
+  assert.ok(!dearer.some((row) => row.kind === 'price_drop'), 'a rise is not news');
+  await editListing(req({ headers: auth, params: { id: item.id }, body: { priceMinor: 360_000 } }), ctx);
+  const told = (await notifications(req({ headers: saver.headers }), ctx)).jsonBody.notifications;
+  assert.ok(told.some((row) => row.kind === 'price_drop' && row.link === `/listing/${item.id}`));
+  const notTold = (await notifications(req({ headers: passer.headers }), ctx)).jsonBody.notifications;
+  assert.ok(!notTold.some((row) => row.kind === 'price_drop'));
+});
+
+await check('the feed narrows by price floor, shop trust and days to arrive', async () => {
+  const all = (await feed(req({ query: {} }), ctx)).jsonBody.listings;
+  const floor = (await feed(req({ query: { minPrice: '500000' } }), ctx)).jsonBody.listings;
+  assert.ok(floor.length < all.length && floor.every((listing) => listing.priceMinor >= 500_000));
+  const trusted = (await feed(req({ query: { minTrust: '101' } }), ctx)).jsonBody.listings;
+  assert.equal(trusted.length, 0, 'nobody is trusted past 100');
+  const fast = (await feed(req({ query: { maxDays: '7' } }), ctx)).jsonBody.listings;
+  assert.ok(fast.every((listing) => listing.deliveryEta && listing.deliveryEta.maxDays <= 7));
+});
+
 await check('a shop stocking what its poll asked gives the voters first dibs, and tells them', async () => {
   const voter = await newBuyer('Dibs Voter');
   const late = await newBuyer('Dibs Late');

@@ -232,3 +232,31 @@
   background: var(--surface-2); border-left: 3px solid var(--warn);
 }
 .buybox__shut--stopped { border-left-color: #F87171; }
+
+/* Add to cart, beside Buy now. */
+.buybox__cart { flex: 0 0 48px; padding: 0; justify-content: center; }
+
+/* Ask a question and Make an offer, side by side. */
+.lp__talk { display: flex; gap: var(--s2); margin-top: 10px; }
+.lp__talk .buybox__ask { flex: 1; margin-top: 0; font: inherit; font-weight: var(--w-semi); cursor: pointer; }
+
+/* The price and Buy, following along once the buy box has scrolled away. */
+.buybar {
+  position: fixed; z-index: var(--z-float); left: 50%; transform: translateX(-50%);
+  bottom: calc(var(--tabbar-h) + 8px); width: min(calc(100% - 20px), 640px);
+  display: flex; align-items: center; gap: var(--s2); padding: 8px 8px 8px 14px;
+  border: 1px solid var(--border-strong); border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  animation: buybar-in var(--dur-2) cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+.buybar__what { flex: 1; min-width: 0; display: grid; }
+.buybar__title { font-size: var(--t-2xs); color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.buybar__price { font-size: var(--t-lg); font-variant-numeric: tabular-nums; line-height: 1.15; }
+.buybar__cart { flex: 0 0 44px; height: 44px; padding: 0; justify-content: center; }
+.buybar__buy { flex: none; height: 44px; padding: 0 var(--s4); background: var(--grad-hero); }
+@keyframes buybar-in { from { opacity: 0; transform: translate(-50%, 16px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@media (prefers-reduced-motion: reduce) { .buybar { animation: none; } }
+/* Room under the page for the bar, so it never sits on the last of it. */
+.buybar__room { height: 76px; }

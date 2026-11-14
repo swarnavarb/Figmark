@@ -3242,6 +3242,8 @@ export type NotificationKind =
   | 'answer_accepted'
   /** Something you asked to hear about is back in stock. */
   | 'back_in_stock'
+  /** Something you saved got cheaper. */
+  | 'price_drop'
   /** A shop stocked what you voted for, and you may buy it before anybody else. */
   | 'first_dibs'
   /** A live drop you set a reminder for starts within minutes. */

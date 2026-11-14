@@ -78,6 +78,8 @@ export interface CatalogQuery {
   includeHidden?: boolean;
   /** The most an item may cost, in paise. Absent, zero or less means no ceiling. */
   maxPriceMinor?: number;
+  /** The least an item may cost, in paise. Absent, zero or less means no floor. */
+  minPriceMinor?: number;
 }
 
 /**

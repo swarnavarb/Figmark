@@ -28,7 +28,9 @@ let chosen: StreetMode | null = null;
 
 export function streetMode(): StreetMode {
   if (chosen) return chosen;
-  let mode: StreetMode = STREET_DEFAULT;
+  // A phone that asked for less motion, or for less data, gets the calm street
+  // unless somebody picked one on purpose.
+  let mode: StreetMode = prefersCalm() ? 'lite' : STREET_DEFAULT;
   try {
     const asked = new URLSearchParams(window.location.search).get('street');
     if (isMode(asked)) {
@@ -43,4 +45,14 @@ export function streetMode(): StreetMode {
   }
   chosen = mode;
   return mode;
+}
+
+/** Reduced motion, or a data saver: either is a reason to draw less. */
+function prefersCalm(): boolean {
+  try {
+    const saveData = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData === true;
+    return saveData || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch {
+    return false;
+  }
 }

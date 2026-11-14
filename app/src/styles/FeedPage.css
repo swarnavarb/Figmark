@@ -26,20 +26,8 @@
   opacity: 0.75;
 }
 .picker:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
-.filters__clear {
-  flex: none;
-  border: 0; background: none; padding: 6px var(--s1);
-  color: var(--text-faint); font-size: var(--t-sm); cursor: pointer;
-  text-decoration: underline; text-underline-offset: 3px;
-}
-.filters__clear:hover { color: var(--text); }
 .cat__glyph { display: block; color: var(--cat-hue, var(--text-dim)); transition: color var(--dur-1) var(--ease); }
 .qfeed { padding-top: 0; }
-.qbar--buy { flex-wrap: nowrap; gap: 6px; }
-.qduo {
-  display: inline-flex; align-items: center; min-width: 0;
-  border-radius: var(--r-pill); background: var(--surface-2); border: 1px solid var(--border-strong);
-}
 .qhot { color: var(--coral); font-weight: var(--w-semi); }
 .qdrop {
   position: relative; overflow: hidden; display: flex; gap: var(--s4); align-items: center;
@@ -95,8 +83,6 @@
   .qpop { display: none; }
 }
 .qloot__meta b.qhot { color: var(--coral); }
-.qtimer { display: inline-flex; align-items: center; gap: var(--s1); font-family: var(--ui); font-variant-numeric: tabular-nums; color: var(--text-dim); white-space: nowrap; }
-.qtimer.qhot { color: var(--coral); }
 .qcrest__mark--gold { color: var(--q-gold); }
 .qcrest__mark--silver { color: #C9D3E3; }
 .qcrest__mark--bronze { color: #D08A4E; }
@@ -104,7 +90,7 @@
   display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 7px; row-gap: 3px; align-items: center; min-width: 0;
 }
 .qseller__crest {
-  grid-row: span 2; width: 26px; height: 26px; border-radius: var(--r-sm); display: grid; place-items: center;
+  width: 26px; height: 26px; border-radius: var(--r-sm); display: grid; place-items: center;
   background: rgba(255, 255, 255, 0.05); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
 }
 .qseller__crest { position: relative; overflow: hidden; }
@@ -116,8 +102,6 @@
   font-size: var(--t-2xs); font-weight: var(--w-semi); color: var(--text-dim);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.qseller__lv { display: flex; min-width: 0; }
-.qtimer--ago { color: var(--text-faint); }
 .qheart:active { transform: scale(0.85); }
 .qheart { transition: transform var(--dur-1) cubic-bezier(0.34, 1.56, 0.64, 1), background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease); }
 .qloot__drop {
@@ -189,9 +173,6 @@
  * chunk rather than in front of every page. Split out of styles.css by
  * where each class is used; see the note at the top of styles.css.
  */
-.qbar--buy .qchip { min-width: 0; padding-right: 10px; }
-.qduo:hover { border-color: var(--accent-line); }
-.qbar--buy .qchip__text { min-width: 0; }
 .qdrop__body h3 a { color: inherit; text-decoration: none; }
 .qzone.is-on .qzone__medal {
   border: 2px solid var(--q-gold);
@@ -204,10 +185,7 @@
 /* A photo search: the photo stands where the heading's words would. */
 .qrow__head h2.qphoto { gap: var(--s2); }
 .qseller__pic.is-in { opacity: 1; }
-.qseller__lv .lvtag { font-size: var(--t-2xs); }
 /* On a half-width card the shop mark pushed the level title off; the crest already says store. */
-.qseller__lv .lvtag__shop { display: none; }
-.qloot__meta .qtimer { vertical-align: -2px; }
 .picker { overflow: hidden; -webkit-tap-highlight-color: transparent; }
 /* ── The pickers on the feed: an icon bubble, a pop on every new choice ─── */
 .picker--icon { padding-left: 5px; gap: 7px; }
@@ -392,10 +370,6 @@
 /* Between the services and the things on the category row. Its negative
    margins give back its width and one gap, so the boxes either side of it
    stand as far apart as any other two. */
-.qzones__rule {
-  flex: none; align-self: flex-start; width: 1px; height: 44px; margin: 7px -2.5px 0;
-  background: linear-gradient(transparent, var(--border-strong), transparent);
-}
 
 /* ── The page filling in, top to bottom ─────────────────────────────────
    FeedPage lets a section draw only once every section above it has (its
@@ -410,4 +384,117 @@
   .qfeed > :nth-child(6) { animation-delay: 200ms; }
   .qfeed > :nth-child(7) { animation-delay: 250ms; }
   .qfeed > :nth-child(n+8) { animation-delay: 300ms; }
+}
+
+/* ── Search on the page ─────────────────────────────────────────────────── */
+.qsearch { position: relative; margin: 0 0 var(--s3); }
+.qsearch__form {
+  display: flex; align-items: center; gap: var(--s2); height: 46px; padding: 0 var(--s2) 0 var(--s3);
+  border: 1px solid var(--border-strong); border-radius: var(--r-pill); background: var(--surface);
+  transition: border-color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease);
+}
+.qsearch__form:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+.qsearch__icon { display: grid; place-items: center; color: var(--text-faint); flex: none; }
+.qsearch__form input {
+  flex: 1; min-width: 0; height: 100%; border: 0; background: none; color: var(--text);
+  font: inherit; font-size: var(--t-md); outline: none;
+}
+.qsearch__form input::-webkit-search-cancel-button { display: none; }
+.qsearch__clear {
+  flex: none; display: grid; place-items: center; width: 28px; height: 28px; padding: 0;
+  border: 0; border-radius: 50%; background: var(--surface-2); color: var(--text-dim); cursor: pointer;
+}
+.qsearch__recent { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: var(--s2); font-size: var(--t-xs); }
+.qsearch__recentlabel { color: var(--text-faint); margin-right: 2px; }
+.qsearch__term {
+  display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: var(--r-pill);
+  background: var(--surface); overflow: hidden;
+}
+.qsearch__term button { border: 0; background: none; color: var(--text-dim); font: inherit; cursor: pointer; padding: 5px 4px 5px 10px; }
+.qsearch__term .qsearch__forget { display: grid; place-items: center; padding: 5px 9px 5px 4px; color: var(--text-faint); }
+.qsearch__wipe { border: 0; background: none; color: var(--text-faint); font: inherit; text-decoration: underline; cursor: pointer; }
+
+/* ── Today's pick, once flipped: one line ───────────────────────────────── */
+.qdropline {
+  display: flex; align-items: center; gap: var(--s2); min-width: 0; margin: 0 0 var(--s3); padding: 10px var(--s3);
+  border: 1px solid color-mix(in srgb, var(--q-gold) 45%, transparent); border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--q-gold) 8%, var(--surface)); color: var(--text); text-decoration: none;
+  font-size: var(--t-sm);
+}
+.qdropline__mark { flex: none; color: var(--q-gold); display: grid; place-items: center; }
+.qdropline__label { flex: none; font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.06em; text-transform: uppercase; color: var(--q-gold); }
+.qdropline__title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qdropline__price { flex: none; font-variant-numeric: tabular-nums; }
+.qdropline__go { flex: none; color: var(--text-faint); transform: rotate(-90deg); }
+
+/* ── Filters: Sort, one button for the rest, chips for what is on ───────── */
+.filters__open {
+  position: relative; flex: none; display: inline-flex; align-items: center; gap: 6px; overflow: hidden;
+  padding: 6px var(--s3); border: 1px solid var(--border); border-radius: var(--r-pill);
+  background: var(--surface); color: var(--text-dim); font: inherit; font-size: var(--t-sm); cursor: pointer;
+}
+.filters__open:hover { color: var(--text); border-color: var(--border-strong); }
+.filters__open.is-on { color: var(--text); border-color: var(--accent); }
+.filters__count {
+  display: grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--r-pill);
+  background: var(--accent); color: #fff; font-size: var(--t-2xs); font-weight: var(--w-bold);
+}
+.fchips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.fchip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px 4px 11px; border-radius: var(--r-pill);
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--text);
+  font: inherit; font-size: var(--t-xs); cursor: pointer;
+}
+.fchip__x { display: grid; place-items: center; opacity: 0.75; }
+.fchips__clear { border: 0; background: none; color: var(--text-faint); font: inherit; font-size: var(--t-xs); text-decoration: underline; cursor: pointer; }
+
+.fsheet { display: grid; gap: var(--s4); padding-bottom: var(--s2); color: var(--text); }
+.fsheet__group { display: grid; gap: var(--s2); margin: 0; padding: 0; border: 0; min-width: 0; }
+.fsheet__group legend, .fsheet__legend { padding: 0; margin-bottom: var(--s2); font-size: var(--t-sm); font-weight: var(--w-semi); color: var(--text); }
+.fsheet__choices { display: flex; flex-wrap: wrap; gap: 6px; }
+.fsheet__choices button {
+  padding: 7px 12px; border: 1px solid var(--border); border-radius: var(--r-pill); background: var(--surface);
+  color: var(--text-dim); font: inherit; font-size: var(--t-sm); cursor: pointer;
+}
+.fsheet__choices button.is-on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--text); }
+.fsheet__price { display: flex; align-items: center; gap: var(--s2); }
+.fsheet__price input {
+  flex: 1 1 0; width: 0; min-width: 0; height: 40px; padding: 0 var(--s3); box-sizing: border-box; border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--surface); color: var(--text); font: inherit; font-size: var(--t-md);
+}
+.fsheet__foot {
+  position: sticky; bottom: -18px; display: flex; gap: var(--s2); justify-content: space-between;
+  margin: var(--s2) -18px -18px; padding: var(--s3) 18px; border-top: 1px solid var(--border); background: var(--bg-elev, var(--surface));
+}
+.fsheet__foot .btn:last-child { flex: 1; }
+
+/* ── The list's heading, with its count and "Alert me" ──────────────────── */
+.qrow__side { display: inline-flex; align-items: center; gap: var(--s2); flex: none; }
+.qrow__head h2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qrow__head { gap: var(--s2); align-items: center; }
+.qalert { white-space: nowrap; }
+
+/* ── Shelves that are whole sections, laid between rows of items ────────── */
+.qshelf-wide { grid-column: 1 / -1; min-width: 0; margin: var(--s2) 0; }
+
+/* ── Recently viewed ────────────────────────────────────────────────────── */
+.qrecent { grid-column: 1 / -1; min-width: 0; margin: var(--s2) 0; }
+.qrecent__head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: var(--s2); }
+.qrecent__head h2 { margin: 0; font-size: var(--t-md); }
+.qrecent__clear { border: 0; background: none; color: var(--text-faint); font: inherit; font-size: var(--t-xs); cursor: pointer; }
+.qrecent__track { display: flex; gap: var(--s2); overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+.qrecent__track::-webkit-scrollbar { display: none; }
+.qrecent__item {
+  flex: none; width: 116px; display: grid; gap: 4px; color: var(--text); text-decoration: none; font-size: var(--t-xs);
+}
+.qrecent__art { width: 116px; height: 116px; border-radius: var(--r-sm); overflow: hidden; display: grid; place-items: center; }
+.qrecent__art .thumb__img { width: 100%; height: 100%; object-fit: cover; }
+.qrecent__title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.3; }
+.qrecent__price { font-variant-numeric: tabular-nums; }
+
+/* The category row scrolls: a soft edge says there is more past it. */
+.qzones {
+  -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent);
+  mask-image: linear-gradient(90deg, #000 85%, transparent);
 }

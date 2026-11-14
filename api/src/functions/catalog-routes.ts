@@ -50,7 +50,7 @@ import { sniffImageType } from '../storage/sanitize.js';
 import { fingerprint, storedFingerprint } from '../image-hash.js';
 import { rankByPhoto, type LearnedHash } from '../photo-search.js';
 import { alreadyRead, everListed, findSales, onSale, type PhotoSales } from '../photo-sales.js';
-import { announceFirstDibs, firstDibsView, restockView, startFirstDibs, tellRestocked } from './stock-alert-routes.js';
+import { announceFirstDibs, firstDibsView, restockView, startFirstDibs, tellPriceDropped, tellRestocked } from './stock-alert-routes.js';
 import { tooFast, clientIp } from '../rate-limit.js';
 import { describePhoto, visionAvailable } from '../vision.js';
 import { refreshIdentity } from '../shop-identity.js';
@@ -145,6 +145,7 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
     kind: request.query.get('kind') ?? undefined,
     sort: request.query.get('sort') ?? undefined,
     maxPriceMinor: priceCeiling(request.query.get('maxPrice')),
+    minPriceMinor: priceCeiling(request.query.get('minPrice')),
     // One shop's live stock, for its storefront.
     sellerId: request.query.get('seller') ?? undefined,
   });
@@ -171,8 +172,16 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
   // A shop that stopped taking orders leaves the Shop feed and search; its
   // own page (asked for with ?seller=) still shows everything it has up.
   const stopped = new Set(sellers.filter((s) => !listedInShop(s.sellerProfile?.orderStatus)).map((s) => s.id));
-  const shown = request.query.get('seller') || stopped.size === 0
+  const open = request.query.get('seller') || stopped.size === 0
     ? listings : listings.filter((listing) => !stopped.has(listing.sellerId));
+  // Two questions asked of the shop and the promise rather than the item row:
+  // how far the shop is trusted, and how soon it says the parcel arrives.
+  // Answered here, after the shops are read, so the stored query stays the same.
+  const minTrust = Number(request.query.get('minTrust')) || 0;
+  const maxDays = Number(request.query.get('maxDays')) || 0;
+  const shown = open.filter((listing) =>
+    (minTrust <= 0 || (sellerById.get(listing.sellerId)?.trustScore ?? 0) >= minTrust)
+    && (maxDays <= 0 || (listing.deliveryEta != null && listing.deliveryEta.maxDays <= maxDays)));
   // The lot contributes exactly one buyer-visible fact: when it ships.
   const dispatchByLot = new Map(lots.filter((l) => l !== null).map((l) => [l.id, l.estimatedDispatchAt]));
 
@@ -1832,6 +1841,7 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
   if (refusal) return refusal;
   if (!updated) return error(404, 'not_found', 'No such listing.');
   await tellRestocked(repository, listing, updated);
+  await tellPriceDropped(repository, listing, updated);
   await claimPhotos(updated.photos.map((photo) => photo.blobName || photo.url), `listing:${updated.id}`);
   if (Array.isArray(body.photos)) {
     // Photos taken off the listing leave the blob too, unless something else still names them.

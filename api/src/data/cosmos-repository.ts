@@ -2092,6 +2092,7 @@ export class CosmosRepository implements Repository {
       where('ARRAY_CONTAINS(@auths, c.attributes["authenticity"])', '@auths', [...query.authenticity]);
     }
     if (query.maxPriceMinor && query.maxPriceMinor > 0) where('c.priceMinor <= @price', '@price', query.maxPriceMinor);
+    if (query.minPriceMinor && query.minPriceMinor > 0) where('c.priceMinor >= @floor', '@floor', query.minPriceMinor);
     const kind = query.kind && query.kind !== 'all' ? query.kind : '';
     if (kind === 'pre_order') clauses.push('IS_DEFINED(c.preOrder) AND NOT IS_NULL(c.preOrder)');
     if (kind === 'mixed_lot') clauses.push('c.bundle = true');

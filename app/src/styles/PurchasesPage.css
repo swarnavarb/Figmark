@@ -161,3 +161,14 @@ button.needs__chip { border: 0; font-family: inherit; cursor: pointer; }
 .lotbox .ptrack__stop.is-here .ptrack__label { display: block; }
 .lotbox .ptrack__stop:first-child.is-here .ptrack__label { justify-self: start; }
 .lotbox .ptrack__stop:last-child.is-here .ptrack__label { justify-self: end; }
+
+/* The cart, one shop at a time. */
+.cartshop { gap: var(--s2); }
+.cartshop__head {
+  display: flex; justify-content: space-between; align-items: baseline; gap: var(--s2);
+  padding: var(--s2) 2px 0; border-top: 1px solid var(--border);
+}
+.cartshop:first-child .cartshop__head { border-top: 0; padding-top: 0; }
+.cartshop__name { font-weight: var(--w-bold); color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cartshop__sum { flex: none; font-size: var(--t-sm); color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.cartshop__sum b { color: var(--text); }

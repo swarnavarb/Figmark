@@ -3,9 +3,9 @@ import { useState, type ReactNode } from 'react';
 import { useNow } from '../clock';
 import { Link } from 'react-router-dom';
 import { listingRarity, RARITY_LABELS } from '@shared/quest';
-import { factsOf, isInDemand } from '@shared/catalog';
+import { isInDemand } from '@shared/catalog';
 import { SOURCING_LABELS } from '@shared/enums';
-import { advanceMinor, isExpired, isMultiple } from '@shared/payments';
+import { advanceMinor, isMultiple } from '@shared/payments';
 import type { Listing } from '@shared/models';
 import { formatMoney, formatDateTime } from '../format';
 import type { PriceChange } from '../api';
@@ -211,21 +211,13 @@ export function DetailBlocks({ listing }: { listing: Listing }) {
       value: RARITY_LABELS[rarity.tier], note: rarity.reasons.slice(0, 2).join(' · ') || undefined,
     });
   }
-  tiles.push({ tone: 'cool', icon: 'shield', label: 'Condition', value: factsOf(listing).condition });
+  // Condition, stock and category are said already - in the facts table, the
+  // buy box and the back link - so the tiles keep to what is said nowhere else.
   tiles.push({
     tone: sourcing === 'in_hand' ? 'play' : 'blue', icon: sourcing === 'in_hand' ? 'home' : 'ship', label: 'Sourcing',
     value: SOURCING_LABELS[sourcing],
     note: sourcing === 'in_hand' ? 'Ships straight from the seller'
       : listing.lotId ? 'Imported in a shipment lot' : 'Coming in from abroad - the shop puts it in a shipment lot',
-  });
-  tiles.push({
-    tone: 'sea', icon: 'box', label: 'Stock',
-    // "Made to order" only for an item that is: a shelf of many in hand is
-    // simply in stock, and an expired or removed one is in stock for nobody.
-    value: isExpired(listing) || listing.status === 'archived' ? 'No longer for sale'
-      : isMultiple(listing) ? (sourcing === 'in_hand' ? 'Plenty available' : 'Made to order')
-      : listing.quantityAvailable > 0 ? `${listing.quantityAvailable} available` : 'Sold out',
-    note: listing.soldCount ? `${listing.soldCount} sold so far` : undefined,
   });
   if (listing.advancePercent) {
     const now = advanceMinor(listing.priceMinor, listing.advancePercent);
@@ -247,7 +239,6 @@ export function DetailBlocks({ listing }: { listing: Listing }) {
       value: formatDateTime(listing.expiresAt),
     });
   }
-  tiles.push({ tone: 'cool', icon: 'tag', label: 'Category', value: listing.category });
 
   return (
     <div className="dtiles">
