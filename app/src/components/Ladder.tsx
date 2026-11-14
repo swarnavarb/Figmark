@@ -174,7 +174,7 @@ export function Ladder({
         return (
           <Fragment key={step.id}>
           {stage && (
-            <li className="ladder__stage" aria-hidden="true">
+            <li className={`ladder__stage ladder__stage--${stage.icon}`} aria-hidden="true">
               <Icon name={STAGE_ICON_META[stage.icon].icon} size={14} />
               <span>{stage.name}</span>
             </li>

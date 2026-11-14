@@ -120,33 +120,45 @@
 
 .rslanes { display: grid; gap: var(--s5); }
 .rslane { display: grid; gap: var(--s2); scroll-margin-top: 80px; }
-.rslane--pre { --zone: var(--aqua); }
-.rslane--lot { --zone: var(--coral); }
-.rslane--post { --zone: var(--lime); }
+.rslane--pre { --zone: var(--aqua); --zone-soft: var(--aqua-soft); --zone-line: var(--aqua-line); }
+.rslane--lot { --zone: var(--coral); --zone-soft: var(--coral-soft); --zone-line: var(--coral-line); }
+.rslane--post { --zone: var(--lime); --zone-soft: var(--lime-soft); --zone-line: var(--lime-line); }
 .rslane__empty { margin: 0; padding: var(--s3) var(--s4); border-radius: var(--r-lg); border: 1px dashed var(--border); font-size: var(--t-xs); color: var(--text-faint); }
 .rszone { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); min-height: 28px; padding: 0 var(--s1); }
-.rszone__text { display: inline-flex; align-items: center; gap: var(--s2); min-width: 0; font-size: var(--t-xs); letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); }
-.rszone__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--zone); }
+.rszone__text { display: inline-flex; align-items: center; gap: var(--s2); min-width: 0; font-size: var(--t-xs); font-weight: var(--w-bold); letter-spacing: 0.06em; text-transform: uppercase; color: var(--zone); }
+.rszone__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--zone); }
 .rszone__add {
   display: inline-flex; align-items: center; gap: var(--s1); height: 28px; padding: 0 var(--s2); border: 0; border-radius: var(--r-pill);
-  background: none; color: var(--accent-text); font: inherit; font-size: var(--t-xs); font-weight: var(--w-semi); cursor: pointer;
+  background: var(--zone-soft); color: var(--zone); font: inherit; font-size: var(--t-xs); font-weight: var(--w-semi); cursor: pointer;
 }
-.rszone__add:hover { background: var(--accent-soft); }
+.rszone__add:hover { box-shadow: inset 0 0 0 1px var(--zone-line); }
 
 /* The steps of one part: a single card, a hairline between rows. */
-.rschain { display: grid; border-radius: var(--r-lg); background: var(--surface); box-shadow: inset 0 0 0 1px var(--border); overflow: hidden; }
-.rsstep + .rsstep { border-top: 1px solid var(--border); }
+.rschain {
+  display: grid; border-radius: var(--r-lg); overflow: hidden;
+  background: linear-gradient(90deg, var(--zone-soft), transparent 55%), var(--surface);
+  box-shadow: inset 4px 0 0 var(--zone), inset 0 0 0 1px var(--zone-line);
+}
+.rsstep + .rsstep { border-top: 1px solid var(--zone-line); }
 .rsstep__row {
   display: flex; align-items: center; gap: var(--s3); width: 100%; min-height: 52px; padding: var(--s2) var(--s4);
   border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer;
 }
 .rsstep--fixed .rsstep__row { cursor: default; }
 .rsstep__row > svg { flex: none; color: var(--text-faint); }
-.rsstep__icon { flex: none; width: 22px; text-align: center; font-size: var(--t-md); line-height: 1; }
+.rsstep__icon {
+  flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: var(--r-sm);
+  background: var(--zone-soft); font-size: var(--t-md); line-height: 1;
+}
+.rsstep__pill {
+  flex: none; padding: 3px var(--s2); border-radius: var(--r-pill); font-size: var(--t-2xs); font-weight: var(--w-semi); white-space: nowrap;
+}
+.rsstep__pill--button { background: var(--accent-soft); color: var(--accent-text); }
+.rsstep__pill--days { background: var(--warn-soft); color: var(--warn); }
+.rsstep__pill--wrong { background: var(--danger-soft); color: var(--danger-text); }
 .rsstep__name { flex: 1; min-width: 0; font-size: var(--t-base); font-weight: var(--w-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rsstep__name.is-blank { color: var(--text-faint); }
 .rsstep__meta { flex: none; font-size: var(--t-xs); color: var(--text-faint); white-space: nowrap; }
-.rsstep.is-wrong .rsstep__meta { color: var(--danger); }
 .rsstep.is-open .rsstep__row { min-height: 48px; }
 .rsstep.is-open .rsstep__name { font-weight: var(--w-semi); }
 .rsstep__edit { display: grid; gap: var(--s4); padding: var(--s1) var(--s4) var(--s4); }
@@ -196,20 +208,24 @@
   height: 28px; padding: 0 var(--s3); border: 1px solid var(--border); border-radius: var(--r-pill);
   background: none; color: var(--text-dim); font: inherit; font-size: var(--t-xs); cursor: pointer;
 }
-.rsbtn__whochip.is-on { border-color: transparent; background: var(--surface-2); color: var(--text); font-weight: var(--w-semi); }
+.rsbtn__whochip.is-on { border-color: transparent; background: var(--accent-soft); color: var(--accent-text); font-weight: var(--w-semi); }
+.rsbtn__whochip--supplier.is-on { background: var(--aqua-soft); color: var(--aqua); }
+.rsbtn__whochip--forwarder.is-on { background: var(--coral-soft); color: var(--coral); }
+.rsbtn__whochip--handler.is-on { background: var(--lime-soft); color: var(--lime); }
 .rsbtn__whochip.is-fixed { display: inline-flex; align-items: center; cursor: default; }
 
 /* The two place tags, under the field being typed in. */
 .rstags { display: none; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: calc(var(--s2) * -1); }
 .rsfield:focus-within + .rstags, .rsbtn__row:focus-within + .rstags { display: flex; }
 .rstags__tag {
-  padding: 3px 9px; border: 1px solid var(--border); border-radius: var(--r-pill);
-  background: none; color: var(--text-dim); font: inherit; font-size: var(--t-2xs); cursor: pointer;
+  padding: 3px 9px; border: 1px solid var(--warn); border-radius: var(--r-pill);
+  background: var(--warn-soft); color: var(--warn); font: inherit; font-size: var(--t-2xs); cursor: pointer;
 }
 .rstags__hint { font-size: var(--t-2xs); color: var(--text-faint); }
 
 .rslearn {
   display: flex; align-items: center; justify-content: space-between; gap: var(--s2) var(--s3); flex-wrap: wrap;
+  padding: var(--s2) var(--s3); border-radius: var(--r-md); background: var(--warn-soft);
   font-size: var(--t-xs); color: var(--text-dim);
 }
 .rslearn b { color: var(--text); font-weight: var(--w-semi); }
@@ -241,4 +257,38 @@
 .rsnew__body { display: grid; gap: 2px; flex: 1; min-width: 0; }
 .rsnew__name { font-size: var(--t-base); font-weight: var(--w-semi); }
 .rsnew__blurb { font-size: var(--t-xs); line-height: 1.45; color: var(--text-dim); }
+.rsnew__bar { display: flex; gap: 3px; height: 6px; margin-top: var(--s1); }
+.rsnew__seg { flex: 1 1 0; min-width: 8px; border-radius: 3px; }
+.rsnew__seg--pre { background: var(--aqua); }
+.rsnew__seg--lot { background: var(--coral); }
+.rsnew__seg--post { background: var(--lime); }
+.rsnew__key { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s3); padding: 0 var(--s1); font-size: var(--t-2xs); color: var(--text-dim); }
+.rsnew__keyitem { display: inline-flex; align-items: center; gap: 6px; }
+.rsnew__keyitem::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.rsnew__keyitem--pre { color: var(--aqua); }
+.rsnew__keyitem--lot { color: var(--coral); }
+.rsnew__keyitem--post { color: var(--lime); }
 .rsnew__count { flex: none; font-size: var(--t-xs); color: var(--text-faint); white-space: nowrap; }
+
+/* The lot a route carries, and the people who work it: two groups of their
+   own above the steps, each in a colour of its own. */
+.rsgroup {
+  display: grid; gap: var(--s3); padding: var(--s4); border-radius: var(--r-lg);
+  background: linear-gradient(180deg, var(--group-soft), transparent 120px), var(--surface);
+  box-shadow: inset 0 0 0 1px var(--group-line);
+}
+.rsgroup--lot { --group: var(--violet-text); --group-soft: var(--violet-soft); --group-line: var(--violet-line); }
+.rsgroup--people { --group: var(--warn); --group-soft: var(--warn-soft); --group-line: rgba(251, 191, 36, 0.4); }
+.rsgroup__title {
+  display: flex; align-items: center; gap: var(--s2); margin: 0;
+  font-size: var(--t-xs); font-weight: var(--w-bold); letter-spacing: 0.06em; text-transform: uppercase; color: var(--group);
+}
+.rsgroup__opt { margin-left: auto; font-weight: var(--w-normal); letter-spacing: 0; text-transform: none; color: var(--text-faint); }
+.rsgroup__lane { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: var(--s2); align-items: end; }
+.rsgroup__arrow { display: grid; place-items: center; height: 40px; color: var(--group); }
+.rsgroup__hint { font-size: var(--t-xs); line-height: 1.45; color: var(--text-dim); }
+.rsgroup__dot { display: inline-block; width: 8px; height: 8px; margin-right: 4px; border-radius: 50%; background: var(--zone); }
+.rsfield--pre { --zone: var(--aqua); }
+.rsfield--lot { --zone: var(--coral); }
+.rsfield--post { --zone: var(--lime); }
+.rsfield--pre > span, .rsfield--lot > span, .rsfield--post > span { color: var(--zone); font-weight: var(--w-semi); }

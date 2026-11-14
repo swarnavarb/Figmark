@@ -6398,7 +6398,7 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
   50% { box-shadow: inset 0 0 0 1px var(--coral-line), 0 0 0 6px rgba(255, 90, 95, 0); }
 }
 .trk__bar span {
-  display: block; height: 100%; border-radius: inherit; background: var(--ok);
+  display: block; height: 100%; border-radius: inherit; background: var(--grad-play);
   transition: width 500ms var(--ease);
 }
 .trk__ladder { padding-top: var(--s1); }
@@ -10032,3 +10032,12 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
    carries on from there when its section scrolls back into view. */
 [data-offscreen], [data-offscreen]::before, [data-offscreen]::after,
 [data-offscreen] *, [data-offscreen] *::before, [data-offscreen] *::after { animation-play-state: paused !important; }
+
+/* The person tag: a handle typed, with the accounts it matches listed under it.
+   Used by the lot form and the route maker, so it is here rather than in either chunk. */
+.ptag { position: relative; display: block; }
+.ptag__list { position: absolute; z-index: var(--z-popover); top: calc(100% + 4px); left: 0; right: 0; margin: 0; padding: var(--s1); list-style: none; border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface); box-shadow: var(--shadow); }
+.ptag__opt { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 9px 10px; border-radius: var(--r-sm); cursor: pointer; }
+.ptag__opt:hover, .ptag__opt.is-active { background: var(--surface-hover); }
+.ptag__name { font-weight: var(--w-semi); color: var(--text); }
+.ptag__handle { font-size: var(--t-xs); color: var(--text-faint); }

@@ -5,7 +5,10 @@
   font-size: var(--t-2xs); font-weight: var(--w-semi);
   letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-faint);
 }
-.ladder__stage svg { display: none; }
+/* Each part of the journey in its own colour, the same three the route maker uses. */
+.ladder__stage--supplier { color: var(--aqua); }
+.ladder__stage--transit { color: var(--coral); }
+.ladder__stage--delivery { color: var(--lime); }
 .ladder__row::before {
   content: ''; position: absolute; left: 9px; top: 0; bottom: 0;
   width: 1px; background: var(--border);
@@ -30,8 +33,8 @@
 .ladder__note-text { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .ladder__note-when {
   flex: 0 0 auto; margin-left: auto;
-  font-size: var(--t-2xs); font-weight: var(--w-normal);
-  color: var(--text-faint); white-space: nowrap;
+  font-size: var(--t-2xs); font-weight: var(--w-medium);
+  color: var(--accent-text); white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 .ladder__track-link {
@@ -49,10 +52,10 @@
   display: grid; grid-template-columns: 16px minmax(0, 1fr) auto;
   column-gap: var(--s2); row-gap: var(--s2); align-items: start;
   margin-top: var(--s1); padding: var(--s2) 10px;
-  border-radius: var(--r-sm); background: var(--surface-2);
+  border-radius: var(--r-sm); background: var(--coral-soft);
   font-size: var(--t-xs); font-weight: var(--w-normal); color: var(--text);
 }
-.ladder__lot-icon { display: grid; place-items: center; height: 1.45em; color: var(--text-dim); }
+.ladder__lot-icon { display: grid; place-items: center; height: 1.45em; color: var(--coral); }
 .ladder__lot-text { min-width: 0; overflow-wrap: anywhere; line-height: 1.45; }
 .ladder__lot-no {
   display: block; margin-top: 1px;
@@ -93,8 +96,8 @@
 .ladder__stage:first-child { margin-top: 0; }
 .ladder__row.is-done .ladder__dot { border-color: var(--ok); color: var(--ok-ink); background: var(--ok); }
 .ladder__row.is-current .ladder__dot {
-  border-color: var(--ok); color: var(--ok); background: var(--surface);
-  box-shadow: 0 0 0 4px var(--ok-soft);
+  border-color: var(--accent); color: var(--accent-ink); background: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
 }
 .ladder__track-link:hover { text-decoration: underline; }
 .ladder__leave.is-past .ladder__leave-text { color: var(--text-dim); }
