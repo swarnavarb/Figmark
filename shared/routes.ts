@@ -326,6 +326,21 @@ export function shortButtonText(text: string, max = BUTTON_TEXT_MAX): string {
   const parts = out.split(/\s*(?:&|\+|,|;|\band\b|\bthen\b)\s*/i).map((part) => part.trim()).filter(Boolean);
   if (parts.length > 1) out = parts[parts.length - 1]!;
   if (out.length > max) out = out.replace(BUTTON_ACTOR, '');
+  /* Then the longest words from the middle, keeping what happened (the first
+     word) and where (the last): "Received at international WH" → "Received at WH". */
+  const small = /^(?:to|at|from|in|on|for|with|by|of|the|a|an|into|onto)$/i;
+  const words = out.split(' ');
+  let dropped = 0;
+  while (words.join(' ').length > max && words.length > 2 && dropped < 2) {
+    dropped += 1;
+    let drop = -1;
+    for (let index = 1; index < words.length - 1; index += 1) {
+      if (!small.test(words[index]!) && (drop < 0 || words[index]!.length > words[drop]!.length)) drop = index;
+    }
+    if (drop < 0) break;
+    words.splice(drop, 1);
+  }
+  if (words.length >= 2 && words.join(' ').length <= max) out = words.join(' ');
   if (out.length > max) {
     let fitted = '';
     for (const word of out.split(' ')) {

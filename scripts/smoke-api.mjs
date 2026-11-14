@@ -7631,7 +7631,7 @@ await check('a button the shop already presses writes the buyer\'s tracking', as
      in the route's words - and nothing while the lot has to move it. */
   const card = async () => (await sales(req({ headers: auth }), ctx)).jsonBody.orders.find((row) => row.id === order.id);
   assert.equal((await card()).next.checkpoint, 'china_received');
-  assert.match((await card()).next.label, /^Received at international/);
+  assert.match((await card()).next.label, /^Received at /, 'in the route\'s words, cut to button size');
   /* The lot's own next move rides on the card too - and says it would carry
      an item past the warehouse check-in that was never ticked in there. */
   assert.equal((await card()).lotNext.label, 'Dispatched from China');
