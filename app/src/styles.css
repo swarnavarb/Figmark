@@ -3440,9 +3440,10 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 /* Why the home feed shows a post: an icon that explains itself in a bubble above it. */
 .boost { position: relative; display: inline-flex; }
 .boost__icon {
-  display: inline-grid; place-items: center;
-  width: 20px; height: 20px; padding: 0;
-  border: 1px solid transparent; border-radius: 50%;
+  display: inline-flex; align-items: center; gap: 3px;
+  height: 20px; padding: 0 7px 0 5px;
+  border: 1px solid transparent; border-radius: var(--r-pill);
+  font-size: var(--t-2xs); font-weight: 700; line-height: 1;
   cursor: pointer;
   transition: transform var(--dur-1) var(--ease);
 }
@@ -3450,6 +3451,7 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 .boost__icon:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 2px; }
 .boost__icon--trending { background: var(--warn-soft); color: var(--warn); border-color: rgba(251, 191, 36, 0.4); }
 .boost__icon--rising { background: var(--aqua-soft); color: var(--aqua); border-color: var(--aqua-line); }
+.boost__icon--result { background: var(--violet-soft, rgba(124, 58, 237, 0.18)); color: var(--violet-lit); border-color: rgba(139, 92, 246, 0.4); }
 .boost__tip {
   position: absolute; z-index: var(--z-popover);
   left: -8px; bottom: calc(100% + 8px);
@@ -4536,7 +4538,6 @@ a.psheet__row:hover { background: var(--surface-hover); }
   transition: box-shadow var(--dur-2) var(--ease), transform var(--dur-2) var(--ease);
 }
 @media (hover: hover) {
-  .social .spost:not(.spost--nested):hover { box-shadow: 0 14px 34px rgb(var(--c1) / 0.16); }
 }
 .social .spost--nested { background: var(--surface-2); border-radius: var(--r-md); }
 .spost--ranked { margin-top: 10px; }
@@ -4588,7 +4589,8 @@ a.psheet__row:hover { background: var(--surface-hover); }
   font-size: var(--t-2xs); font-weight: var(--w-bold);
   letter-spacing: 0.1em; text-transform: uppercase; color: var(--sx-blaze, var(--lime));
 }
-.spost__itemmeta { display: flex; align-items: baseline; gap: var(--s2); }
+.spost__itemmeta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--s2); }
+.spost__itemmeta > * { white-space: nowrap; }
 .social .spost__price { color: var(--sx-volt); font-size: var(--t-md); }
 .spost__itemcta {
   flex: 0 0 auto; display: inline-flex; align-items: center; gap: 3px;
@@ -4615,12 +4617,6 @@ a.psheet__row:hover { background: var(--surface-hover); }
   color: var(--text-dim); font-size: var(--t-xs);
 }
 .spost__saleline > span { display: inline-flex; align-items: center; gap: var(--s1); }
-.spost__offer {
-  padding: var(--s1) 10px; border-radius: var(--r-pill);
-  border: 1px solid var(--border-strong); color: var(--text);
-  font-weight: var(--w-semi);
-}
-.spost__offer:hover { background: var(--surface-2); }
 .writer__tool--item svg { color: var(--sx-blaze, var(--coral)); }
 
 .stockpick {
@@ -4713,77 +4709,8 @@ a.psheet__row:hover { background: var(--surface-hover); }
    inside the feed's column instead of bleeding past it. */
 @media (min-width: 720px) {
   .hotstrip__row, .feed__filters { margin-inline: 0; padding-inline: 0; }
-}
-
-/* ── Post colours: two hues per kind of post, pushing against each other ──
-
-   Every post carries a pair of colours for what it is - an item, a poll, a
-   photo post, a line of text - so a feed reads by kind before it is read by
-   word. Each colour is a soft blob in one corner; they drift towards each
-   other and back on different clocks, so the two are always mid-scuffle and
-   no two cards are in step. Kept to a quarter strength over the dark card:
-   vivid at the edges, quiet behind the words.
-
-   Only transform is animated, on layers of their own, so a long feed costs
-   the compositor and never the layout. */
-
-.spost--text   { --c1: 255 122 26;  --c2: 192 38 211; }
-.spost--item   { --c1: 212 255 58;  --c2: 255 91 31; }
-.spost--photo  { --c1: 255 46 126;  --c2: 34 211 238; }
-.spost--poll   { --c1: 6 214 231;   --c2: 139 92 246; }
-.spost--vibe   { --c1: 255 184 0;   --c2: 236 72 153; }
-.spost--repost { --c1: 59 130 246;  --c2: 255 90 95; }
-
-.spost__glow {
-  position: absolute; inset: 0; z-index: -1;
-  overflow: hidden;
-  border-radius: inherit;
-  pointer-events: none;
-}
-.spost__glow::before,
-.spost__glow::after {
-  content: '';
-  position: absolute;
-  width: 85%; aspect-ratio: 1;
-  border-radius: 50%;
-  will-change: transform;
-}
-.spost__glow::before {
-  left: -30%; top: -35%;
-  background: radial-gradient(circle, rgb(var(--c1) / 0.3), rgb(var(--c1) / 0.1) 38%, transparent 66%);
-  animation: glow-lunge-a 11s ease-in-out infinite alternate;
-}
-.spost__glow::after {
-  right: -30%; bottom: -35%;
-  background: radial-gradient(circle, rgb(var(--c2) / 0.3), rgb(var(--c2) / 0.1) 38%, transparent 66%);
-  animation: glow-lunge-b 13s ease-in-out infinite alternate;
-}
-.spost:nth-child(3n + 1) .spost__glow::before { animation-delay: -4s; }
-.spost:nth-child(3n + 2) .spost__glow::after { animation-delay: -7s; }
-.spost:nth-child(4n) .spost__glow::before { animation-duration: 9s; }
-@keyframes glow-lunge-a {
-  0% { transform: translate(0, 0) scale(1); }
-  50% { transform: translate(38%, 22%) scale(1.18); }
-  100% { transform: translate(62%, 8%) scale(0.92); }
-}
-@keyframes glow-lunge-b {
-  0% { transform: translate(0, 0) scale(1); }
-  50% { transform: translate(-40%, -26%) scale(1.2); }
-  100% { transform: translate(-60%, -6%) scale(0.95); }
-}
-
-/* The edge: a hairline in the post's two colours, so the card is framed by
-   its kind even where the blobs have drifted away. */
-.social .spost:not(.spost--nested)::before {
-  content: '';
-  position: absolute; inset: 0; z-index: -1;
-  padding: 1px;
-  border-radius: inherit;
-  background: linear-gradient(125deg, rgb(var(--c1) / 0.6), rgba(255, 255, 255, 0.05) 45%, rgb(var(--c2) / 0.55));
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
+  /* Room for every chip: wrap rather than hide the last one past the column's edge. */
+  .feed__filters { flex-wrap: wrap; overflow: visible; }
 }
 
 /* ── The composer: a line forever running round it ─────────────────────── */
@@ -4812,7 +4739,7 @@ a.psheet__row:hover { background: var(--surface-hover); }
 :root[data-bars='hidden'] .tabbar { transform: translateY(calc(100% + var(--tabbar-gap) + 24px)); }
 
 @media (prefers-reduced-motion: reduce) {
-  .spost__glow::before, .spost__glow::after, .social .writer::before { animation: none; }
+  .social .writer::before { animation: none; }
   .nav, .tabbar { transition: none; }
 }
 
@@ -5263,16 +5190,6 @@ body.is-locked { overflow: hidden; }
   transform: skewX(-9deg); transform-origin: left bottom;
   text-shadow: 0 2px 14px rgba(0, 0, 0, 0.18);
 }
-.soctop__live {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 2px var(--s2) 2px 6px; border-radius: var(--r-pill);
-  background: rgba(0, 0, 0, 0.22);
-  font-size: var(--t-2xs); font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase;
-}
-.soctop__live::before {
-  content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--sx-volt);
-  animation: live-dot 1.8s ease-out infinite;
-}
 .soctop__tools { display: flex; align-items: center; gap: var(--s2); margin-left: auto; }
 .soctop__icon, .soccompact__search {
   display: grid; place-items: center; width: 36px; height: 36px; flex: 0 0 auto;
@@ -5290,10 +5207,9 @@ body.is-locked { overflow: hidden; }
 .soctop .bell__panel { top: calc(env(safe-area-inset-top, 0px) + 60px); color: var(--text); }
 .soctop .pmenu__btn { background: #fff; }
 .soctop .pmenu__panel { color: var(--text); }
-/* A narrow phone has room for the title and the four buttons, not the Live tag too. */
+/* A narrow phone: the title and the four buttons, a little closer together. */
 @media (max-width: 360px) {
   .soctop__bar { gap: var(--s2); }
-  .soctop__live { display: none; }
   .soctop__tools { gap: 6px; }
 }
 
@@ -5638,24 +5554,32 @@ body.is-locked { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
   .soctop { animation: none; }
   .soccompact, .socsearch, .forumcard, .wanted .wantcard { transition: none; animation: none; }
-  .soctop__live::before { animation: none; }
 }
 
-/* All five sections in one row on a phone: icon over word, equal widths, so
-   none of them hides past the edge. */
+/* All five sections in one row on a phone: a word each, equal widths, so
+   none of them hides past the edge and the header stays one slim band. The
+   icons come back on a wide screen, where there is room for them. */
 .soctop__tabs {
   display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px;
   margin-inline: 0; padding: 0; overflow: visible;
 }
 .soctop__tabs .soctab {
-  flex-direction: column; justify-content: center; gap: var(--s1);
-  padding: 9px 2px var(--s2); border-radius: var(--r-lg); font-size: var(--t-xs); letter-spacing: 0.01em;
+  justify-content: center;
+  padding: 8px 2px; border-radius: var(--r-pill); font-size: var(--t-xs); letter-spacing: 0.01em;
+}
+.soctop__tabs .soctab > svg { display: none; }
+@media (max-width: 719px) {
+  .soctop__in { gap: 10px; padding-bottom: var(--s3); }
+  .soctop__title { font-size: var(--t-lg); }
+  .soctop__bar { min-height: 38px; }
 }
 .soctop__tabs .soctab > span:not(.soctab__badge) { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 @media (min-width: 720px) {
-  .soctop__tabs { max-width: 640px; }
-  .soctop__tabs .soctab { flex-direction: row; font-size: var(--t-sm); padding: 10px var(--s2); }
+  .soctop__in, .soccompact__in { max-width: calc(640px + 2 * var(--page-pad)); }
+  .socialtab .wanted, .socialtab .forums { max-width: 640px; width: 100%; margin-inline: auto; }
+  .soctop__tabs .soctab { gap: 7px; font-size: var(--t-sm); padding: 10px var(--s2); }
+  .soctop__tabs .soctab > svg { display: block; }
 }
 .soccompact .soctab__badge { min-width: 16px; height: 16px; line-height: 16px; font-size: var(--t-2xs); }
 @media (max-width: 380px) {
@@ -5765,17 +5689,20 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
 }
 .isoanswer__as > span:last-child { display: grid; font-size: var(--t-sm); }
 
-/* The switch on its own: the small green disc, so it never reads as a second
-   profile photo next to the real one. */
+/* The switch on its own: a pill with the profile speaking now and a caret, so
+   it reads as "posting as this - change" and never as a second profile photo. */
 .voicepick__switch {
-  display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%;
-  background: var(--sx-volt, #D4FF3A); color: var(--sx-ink, #1A0B06);
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85), 0 4px 12px rgba(0, 0, 0, 0.2);
+  display: inline-flex; align-items: center; gap: 2px; height: 30px; padding: 2px 6px 2px 3px;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.92); color: var(--sx-ink, #1A0B06);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
-.soccompact .voicepick__switch { width: 28px; height: 28px; }
+.voicepick__switch .avatar, .voicepick__switch .voiceav { box-shadow: none; }
+.voicepick__button:has(.voicepick__switch) { border-radius: var(--r-pill); }
+.soccompact .voicepick__switch { height: 28px; }
 /* The same switch in the top bar on Discover, where the cart would be. */
 .nav__voice { display: grid; flex: 0 0 auto; }
-.nav__voice .voicepick__switch { width: 34px; height: 34px; }
+.nav__voice .voicepick__switch { height: 34px; }
 .nav__voice .voicepick__menu { color: var(--text); }
 .soctop__voice { flex: 0 0 auto; }
 /* Room for the counts on the corners, which a scrolling row would clip. */

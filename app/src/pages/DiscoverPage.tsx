@@ -492,7 +492,7 @@ function DiscoverBody() {
   }, [lens, user, flowReady, cursor, more, flowShown.length, shown, loadMore]);
 
   const posts = (cards: PostCard[], promoted = false) => cards.map((card) => (
-    <SocialPostCard key={card.post.id} card={card} promoted={promoted} compact />
+    <SocialPostCard key={card.post.id} card={card} promoted={promoted} inDiscover />
   ));
   const openContests = contests.filter((card) => card.post.contest && contestPhase(card.post.contest) !== 'ended');
   const liveCount = live.length + openContests.filter((card) => !live.some((other) => other.post.id === card.post.id)).length;
@@ -654,7 +654,7 @@ function DiscoverBody() {
                   case 'spotted': return <SpottedRail key="spotted" items={entry.items} onAll={() => setLens('finds')} />;
                   case 'divider': return <p key={entry.key} className="discend discend--lap">{entry.text}</p>;
                   default: return (
-                    <SocialPostCard key={entry.key} card={entry.card} compact
+                    <SocialPostCard key={entry.key} card={entry.card} inDiscover
                       promoted={entry.card.social.commentCount >= HOT_THREAD && !entry.card.post.debate && !entry.card.post.flex} />
                   );
                 }

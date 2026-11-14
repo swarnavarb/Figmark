@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { CommunityNotices } from '../components/CommunityAlerts';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ApiRequestError, api, type FollowingKind, type ForumRow, type ForumsResponse, type PostCard } from '../api';
-import { EmptyState, ErrorNotice, Icon } from '../components/ui';
+import { Avatar, EmptyState, ErrorNotice, Icon } from '../components/ui';
 import { SocialPostCard } from '../components/SocialPost';
 import { PersonVoice, VoicePicker, VoiceProvider, useVoice } from '../components/SocialVoice';
 import { ChannelList, ChannelRoom, forumHasNews, seenMap } from '../components/Channels';
@@ -62,7 +62,7 @@ export function SocialPage() {
 
 /* ── Feed ───────────────────────────────────────────────────────────────── */
 
-type FeedFilter = 'all' | FollowingKind | 'saved';
+type FeedFilter = 'all' | FollowingKind | 'saved' | 'muted';
 
 const FILTERS: { id: FeedFilter; label: string }[] = [
   { id: 'all', label: 'Everything' },
@@ -71,6 +71,7 @@ const FILTERS: { id: FeedFilter; label: string }[] = [
   { id: 'polls', label: '📊 Polls' },
   { id: 'photos', label: '📸 Photos' },
   { id: 'saved', label: '🔖 Saved' },
+  { id: 'muted', label: '🔇 Muted' },
 ];
 
 /** How often the feed asks whether anything new has been posted, while it is open and on screen. */
@@ -151,6 +152,7 @@ function useNearScreen(onReach: (() => void) | null) {
  */
 function FollowingFeed() {
   const { voice } = useVoice();
+  const { user } = useSession();
   const as = voice.storeId;
   const [posts, setPosts] = useState<PostCard[] | null>(null);
   const [next, setNext] = useState<string | null>(null);
@@ -171,7 +173,9 @@ function FollowingFeed() {
     if (posts && posts.length === 0 && filter === 'all' && !next) setStarting(true);
   }, [posts, filter, next]);
 
-  const kind = filter === 'all' || filter === 'saved' ? null : filter;
+  /** Not a slice of the feed: a list of its own, with nothing to read from the server's feed. */
+  const own = filter === 'saved' || filter === 'muted';
+  const kind = filter === 'all' || own ? null : filter;
   /** Which load is the latest: the voice settles after the first one has gone out, and only the newest answer counts. */
   const loading = useRef(0);
   const load = useCallback(async () => {
@@ -214,11 +218,11 @@ function FollowingFeed() {
   }, [as, kind, next]);
 
   useEffect(() => {
-    if (filter === 'saved') return;
+    if (own) return;
     setPosts(null);
     setNext(null);
     void load();
-  }, [load, filter]);
+  }, [load, own]);
 
   // Saved is its own list: posts saved from anywhere, not only from this feed.
   useEffect(() => {
@@ -276,17 +280,22 @@ function FollowingFeed() {
     }
   }, [as, filter, load]);
 
-  const reachEnd = useNearScreen(filter !== 'saved' && next && !error ? loadMore : null);
+  const reachEnd = useNearScreen(!own && next && !error ? loadMore : null);
 
   // A channel message is said to the room, never to the feed - whatever the
   // server sends, a room message is not drawn here.
   const shown = filter === 'saved' ? saved ?? [] : (posts ?? []).filter((card) => !inRoomOnly(card));
   const entries = foldRuns(shown);
-  // The line goes above the first post already seen, when something above it is new.
-  const caughtUpAt = filter === 'all' && lastVisit
+  // The line goes above the first post already seen, when something above it
+  // is new - new to this reader: an older post lifted by a friend taking part,
+  // or what they just posted themselves, is not news.
+  const seenAt = filter === 'all' && lastVisit
     ? entries.findIndex((entry, index) => index > 0 && entry.kind === 'post' && !entry.card.badges?.length
       && entry.card.post.createdAt <= lastVisit)
     : -1;
+  const isNews = (card: PostCard) => Boolean(lastVisit) && card.post.createdAt > lastVisit! && card.post.authorId !== user?.id;
+  const caughtUpAt = seenAt > 0 && entries.slice(0, seenAt)
+    .some((entry) => (entry.kind === 'post' ? [entry.card] : entry.cards).some(isNews)) ? seenAt : -1;
   const remove = (id: string) => setPosts((all) => all?.filter((entry) => entry.post.id !== id) ?? null);
   const repost = (card: PostCard) => setPosts((all) => [card, ...(all ?? [])]);
   const done = filter === 'all' && posts !== null && posts.length > 0 && !next;
@@ -295,7 +304,7 @@ function FollowingFeed() {
     <div className="feed">
       <Composer onPosted={posted} />
 
-      {fresh && filter !== 'saved' && (
+      {fresh && !own && (
         <button type="button" className="feed__fresh" onClick={() => {
           window.scrollTo({ top: 0, behavior: 'smooth' });
           void load();
@@ -315,7 +324,9 @@ function FollowingFeed() {
         ))}
       </div>
 
-      {error && !posts ? (
+      {filter === 'muted' ? (
+        <MutedList onChanged={() => void load()} />
+      ) : error && !posts ? (
         <ErrorNotice message={error} />
       ) : (filter === 'saved' ? !saved : !posts) ? (
         <FeedSkeleton />
@@ -326,7 +337,7 @@ function FollowingFeed() {
             Follow a few and it fills up.
             <span className="feed__empty-go">
               <Link to="/discover" className="btn btn--sm">Find people in Discover</Link>
-              <Link to="/social?view=forums" className="btn btn--quiet btn--sm">Browse groups</Link>
+              <Link to="/social?view=forums" className="btn btn--quiet btn--sm">Browse forums</Link>
             </span>
           </EmptyState>
           <FollowSuggestions title="Start with these" onFollowed={() => void load()} />
@@ -358,8 +369,8 @@ function FollowingFeed() {
         </>
       )}
 
-      {error && posts && <ErrorNotice message={error} />}
-      {filter !== 'saved' && posts && next && shown.length > 0 && (
+      {error && posts && !own && <ErrorNotice message={error} />}
+      {!own && posts && next && shown.length > 0 && (
         <button ref={reachEnd} type="button" className="chmore" disabled={more} onClick={() => void loadMore()}>
           {more ? <><Spinner size={14} label="Loading" /> Loading older posts</> : 'Show older posts'}
         </button>
@@ -415,6 +426,67 @@ function AfterFollowing({ exclude }: { exclude: readonly PostCard[] }) {
   );
 }
 
+/**
+ * Who this person muted, each with a way back in. Muting happens from a post's
+ * ··· menu; this is where it is undone, so a mute is never a one-way door.
+ */
+function MutedList({ onChanged }: { onChanged: () => void }) {
+  const toast = useToast();
+  const [rows, setRows] = useState<{ id: string; name: string; handle: string | null; shop: boolean }[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    api.feedMutes()
+      .then((found) => live && setRows(found.muted))
+      .catch((err: unknown) => live && setError(err instanceof ApiRequestError ? err.message : 'Could not load who you muted.'));
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const unmute = async (id: string, name: string) => {
+    setBusy(id);
+    try {
+      await api.muteFeed(id, false);
+      setRows((current) => current?.filter((row) => row.id !== id) ?? null);
+      toast(`${name} is back in your feed`);
+      onChanged();
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not unmute.');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (error) return <ErrorNotice message={error} />;
+  if (!rows) return <div className="mutedlist"><Spinner size={16} label="Loading" /></div>;
+  if (rows.length === 0) {
+    return (
+      <EmptyState title="Nobody muted">
+        Press ··· on a post and Mute its author to stop seeing them without unfollowing. They show up here to let back in.
+      </EmptyState>
+    );
+  }
+  return (
+    <ul className="mutedlist" aria-label="Muted">
+      {rows.map((row) => (
+        <li key={row.id} className="mutedlist__row">
+          <Avatar name={row.name} size={36} />
+          <span className="mutedlist__who">
+            {row.handle ? <Link to={`/${row.handle}`}>{row.name}</Link> : <strong>{row.name}</strong>}
+            <span className="faint">{row.shop ? 'Shop' : 'Person'}{row.handle ? ` · @${row.handle}` : ''}</span>
+          </span>
+          <button type="button" className="followbtn" disabled={busy === row.id} onClick={() => void unmute(row.id, row.name)}>
+            Unmute
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** One entry in the feed, with the "caught up" line above it when that is where the new posts stop. */
 function FeedItem({ entry, caughtUp, onRemoved, onReposted }: {
   entry: FeedEntry;
@@ -453,19 +525,21 @@ function PostRun({ cards, drops, onRemoved, onReposted }: {
   if (open) {
     return <>{cards.map((card) => <SocialPostCard key={card.post.id} card={card} onRemoved={onRemoved} onReposted={onReposted} />)}</>;
   }
+  const photos = rest.slice(0, 4).flatMap((card) => {
+    const photo = thumbOf(card);
+    return photo ? [{ id: card.post.id, photo }] : [];
+  });
   const noun = drops ? (rest.length === 1 ? 'item' : 'items') : (rest.length === 1 ? 'post' : 'posts');
   return (
     <div className="dropbatch">
       <SocialPostCard card={first!} onRemoved={onRemoved} onReposted={onReposted} />
       <button type="button" className="dropbatch__more" onClick={() => setOpen(true)}>
-        <span className="dropbatch__thumbs" aria-hidden="true">
-          {rest.slice(0, 4).map((card) => {
-            const photo = thumbOf(card);
-            return photo
-              ? <img key={card.post.id} src={photo} alt="" loading="lazy" />
-              : <span key={card.post.id} className="dropbatch__blank" />;
-          })}
-        </span>
+        {/* Only real photos: a row of empty squares reads as something broken. */}
+        {photos.length > 0 && (
+          <span className="dropbatch__thumbs" aria-hidden="true">
+            {photos.map(({ id, photo }) => <img key={id} src={photo} alt="" loading="lazy" />)}
+          </span>
+        )}
         <span>
           <strong>{first!.author.name}</strong> posted {rest.length} more {noun}
         </span>

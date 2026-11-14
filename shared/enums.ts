@@ -46,6 +46,23 @@ export const CONDITION_MEANINGS: Record<ConditionTag, string> = {
   LOOSE: 'Loose - no box',
 };
 
+/** The grade in plain words, for a card read by anyone - not only collectors who know the codes. */
+export const CONDITION_WORDS: Record<ConditionTag, string> = {
+  MISB: 'Sealed',
+  MIB: 'Mint in box',
+  BIB: 'Opened, boxed',
+  LOOSE: 'Loose',
+};
+
+/** A condition as words, and its full meaning for a tooltip; anything unknown is kept as it was given. */
+export function conditionWords(condition: string | null | undefined): { words: string; meaning: string } | null {
+  if (!condition) return null;
+  const tag = condition as ConditionTag;
+  return CONDITION_WORDS[tag]
+    ? { words: CONDITION_WORDS[tag], meaning: CONDITION_MEANINGS[tag] }
+    : { words: condition, meaning: condition };
+}
+
 /**
  * Where the item comes from, chosen when it is listed.
  *

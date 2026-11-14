@@ -970,6 +970,9 @@ async function following(request: HttpRequest, _context: InvocationContext) {
   return feedFor(request, true);
 }
 
+/** How long the reader's own post keeps the top of their feed over a debate result. */
+const OWN_ON_TOP_MS = 24 * 3_600_000;
+
 async function feedFor(request: HttpRequest, followingOnly: boolean) {
   const auth = await getAuthService();
   const user = await auth.requireAuth(request);
@@ -1042,9 +1045,14 @@ async function feedFor(request: HttpRequest, followingOnly: boolean) {
       .sort((a, b) => sink(a) - sink(b) || engagedActors(b).size - engagedActors(a).size || b.createdAt.localeCompare(a.createdAt)),
   ].filter((post) => !inFeed.has(post.id) && !resultIds.has(post.id) && post.authorId !== user.id && post.channelId !== user.id);
 
-  const merged: Post[] = [...results];
+  // What the reader has just said themselves stays where they left it, on
+  // top: a debate result is news, but not above their own fresh post.
+  const ownFirst = results.length === 0 ? 0
+    : followedPosts.findIndex((post) => post.authorId !== user.id || now - Date.parse(post.createdAt) > OWN_ON_TOP_MS);
+  const leading = followedPosts.slice(0, ownFirst === -1 ? followedPosts.length : ownFirst);
+  const merged: Post[] = [...leading, ...results];
   let next = 0;
-  followedPosts.forEach((post, index) => {
+  followedPosts.slice(leading.length).forEach((post, index) => {
     merged.push(post);
     if ((index + 1) % DISCOVER_EVERY === 0 && next < found.length) merged.push(found[next++]!);
   });
