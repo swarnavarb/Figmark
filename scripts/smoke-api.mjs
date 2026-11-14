@@ -7639,7 +7639,7 @@ await check('a button the shop already presses writes the buyer\'s tracking', as
   /* And every button the item has - its own and the lot's - on one line, in route order. */
   const serial = (await card()).serial;
   assert.deepEqual(serial.slice(0, 2).map((button) => [button.kind, button.label]),
-    [['item', 'Received at international WH'], ['lot', 'Dispatched from China']]);
+    [['item', 'Received at WH'], ['lot', 'Dispatched from China']]);
   assert.equal(serial[1].gated, true, 'the lot move warns while the item is not checked in');
   assert.ok(serial.some((button) => button.kind === 'item' && button.key === 'delivered'), 'the last mile is on the line');
 
