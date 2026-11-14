@@ -39,7 +39,7 @@ import { useSave } from '../components/useSave';
 import { formatMoney, timeAgo } from '../format';
 import { useRecentlyViewed } from '../recentViews';
 import {
-  AlertMe, DAY_CHOICES, FilterChips, FilterSheet, RecentRail, ShopSearch, priceLabel, sheetCount, type FilterValues,
+  AlertMe, DAY_CHOICES, FilterChips, FilterSheet, RecentRail, priceLabel, sheetCount, type FilterValues,
 } from '../components/ShopFinder';
 import { clearPhotoQuery, usePhotoQuery } from '../photoQuery';
 import '../styles/FeedPage.css';
@@ -436,7 +436,6 @@ export function FeedPage() {
       {/* The catalogue's cards are its heading; this names the page for screen readers. */}
       <h1 className="sr-only">Shop</h1>
       <QuestBar />
-      <ShopSearch value={search} onSearch={(term) => set('q', term)} />
       {/* Orders still on their way, first: after paying, "where is it?" is the question. */}
       {browsing && <ActiveOrders />}
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { CONDITION_TAGS } from '@shared/enums';
 import { CATEGORY_GROUPS, CONDITION_BUCKETS, categoriesIn } from '@shared/catalog';
@@ -6,68 +6,11 @@ import { RARITY_LABELS, type RarityTier } from '@shared/quest';
 import { ApiRequestError, api } from '../api';
 import { useSession } from '../session';
 import { formatMoney } from '../format';
-import { forgetSearch, forgetViewed, rememberSearch, useRecentSearches, type Viewed } from '../recentViews';
+import { forgetViewed, type Viewed } from '../recentViews';
 import { Icon } from './Icon';
 import { Modal, Thumb } from './ui';
 import { Select } from './Select';
 import { useToast } from './Feedback';
-
-/* ── Search, on the page itself ────────────────────────────────────────── */
-
-/**
- * The Shop tab's search field.
- *
- * Shop is where somebody who knows what they want comes to find it, so the
- * field sits at the top of the page rather than behind an icon. Focused and
- * empty, it offers the last few searches made on this device.
- */
-export function ShopSearch({ value, onSearch }: { value: string; onSearch: (term: string) => void }) {
-  const [text, setText] = useState(value);
-  const [focused, setFocused] = useState(false);
-  const recent = useRecentSearches();
-  useEffect(() => setText(value), [value]);
-  // However the search arrived - typed here, the header's search, a tag - it is remembered.
-  useEffect(() => { if (value) rememberSearch(value); }, [value]);
-
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    onSearch(text.trim());
-    (document.activeElement as HTMLElement | null)?.blur();
-  }
-
-  const offerRecent = focused && !text && recent.length > 0;
-  return (
-    <div className="qsearch">
-      <form role="search" className="qsearch__form" onSubmit={submit}>
-        <span className="qsearch__icon" aria-hidden="true"><Icon name="search" size={17} /></span>
-        <input type="search" enterKeyHint="search" value={text} aria-label="Search the shop"
-          placeholder="Search figures, sneakers, shops…" autoComplete="off"
-          onChange={(event) => setText(event.target.value)}
-          onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} />
-        {text && (
-          <button type="button" className="qsearch__clear" aria-label="Clear search"
-            onClick={() => { setText(''); onSearch(''); }}>
-            <Icon name="close" size={12} />
-          </button>
-        )}
-      </form>
-      {offerRecent && (
-        // Pressed before the field loses focus, so the list is still there to be pressed.
-        <div className="qsearch__recent" onMouseDown={(event) => event.preventDefault()}>
-          <span className="qsearch__recentlabel">Recent</span>
-          {recent.map((term) => (
-            <span key={term} className="qsearch__term">
-              <button type="button" onClick={() => { setText(term); onSearch(term); }}>{term}</button>
-              <button type="button" className="qsearch__forget" aria-label={`Forget “${term}”`}
-                onClick={() => forgetSearch(term)}><Icon name="close" size={10} /></button>
-            </span>
-          ))}
-          <button type="button" className="qsearch__wipe" onClick={() => forgetSearch()}>Clear</button>
-        </div>
-      )}
-    </div>
-  );
-}
 
 /* ── Filters: one button, one sheet, and chips for what is on ──────────── */
 

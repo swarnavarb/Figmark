@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 /**
- * What this device looked at and searched for lately.
+ * What this device looked at lately.
  *
  * Kept on the device only: it is a convenience for picking up where somebody
  * left off, not a record anybody else reads. Storage can be missing (a private
@@ -19,9 +19,7 @@ export interface Viewed {
 }
 
 const VIEWED_KEY = 'figmark.viewed.v1';
-const SEARCHES_KEY = 'figmark.searches.v1';
 const VIEWED_MAX = 12;
-const SEARCHES_MAX = 6;
 const CHANGED = 'figmark:recent';
 
 function read<T>(key: string): T[] {
@@ -53,18 +51,6 @@ export function forgetViewed() {
   write<Viewed>(VIEWED_KEY, []);
 }
 
-/** A search run: first in the list, once, whatever its letter case was. */
-export function rememberSearch(term: string) {
-  const clean = term.trim();
-  if (clean.length < 2) return;
-  const rest = read<string>(SEARCHES_KEY).filter((entry) => entry.toLowerCase() !== clean.toLowerCase());
-  write(SEARCHES_KEY, [clean, ...rest].slice(0, SEARCHES_MAX));
-}
-
-export function forgetSearch(term?: string) {
-  write(SEARCHES_KEY, term === undefined ? [] : read<string>(SEARCHES_KEY).filter((entry) => entry !== term));
-}
-
 /** A list kept in step with storage: this tab's writes and other tabs' alike. */
 function useStored<T>(key: string): T[] {
   const [list, setList] = useState<T[]>(() => read<T>(key));
@@ -81,4 +67,3 @@ function useStored<T>(key: string): T[] {
 }
 
 export const useRecentlyViewed = () => useStored<Viewed>(VIEWED_KEY);
-export const useRecentSearches = () => useStored<string>(SEARCHES_KEY);

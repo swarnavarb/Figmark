@@ -405,34 +405,6 @@
   .qfeed > :nth-child(n+8) { animation-delay: 300ms; }
 }
 
-/* ── Search on the page ─────────────────────────────────────────────────── */
-.qsearch { position: relative; margin: 0 0 var(--s3); }
-.qsearch__form {
-  display: flex; align-items: center; gap: var(--s2); height: 46px; padding: 0 var(--s2) 0 var(--s3);
-  border: 1px solid var(--border-strong); border-radius: var(--r-pill); background: var(--surface);
-  transition: border-color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease);
-}
-.qsearch__form:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
-.qsearch__icon { display: grid; place-items: center; color: var(--text-faint); flex: none; }
-.qsearch__form input {
-  flex: 1; min-width: 0; height: 100%; border: 0; background: none; color: var(--text);
-  font: inherit; font-size: var(--t-md); outline: none;
-}
-.qsearch__form input::-webkit-search-cancel-button { display: none; }
-.qsearch__clear {
-  flex: none; display: grid; place-items: center; width: 28px; height: 28px; padding: 0;
-  border: 0; border-radius: 50%; background: var(--surface-2); color: var(--text-dim); cursor: pointer;
-}
-.qsearch__recent { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: var(--s2); font-size: var(--t-xs); }
-.qsearch__recentlabel { color: var(--text-faint); margin-right: 2px; }
-.qsearch__term {
-  display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: var(--r-pill);
-  background: var(--surface); overflow: hidden;
-}
-.qsearch__term button { border: 0; background: none; color: var(--text-dim); font: inherit; cursor: pointer; padding: 5px 4px 5px 10px; }
-.qsearch__term .qsearch__forget { display: grid; place-items: center; padding: 5px 9px 5px 4px; color: var(--text-faint); }
-.qsearch__wipe { border: 0; background: none; color: var(--text-faint); font: inherit; text-decoration: underline; cursor: pointer; }
-
 /* ── Today's pick, once flipped: one line ───────────────────────────────── */
 .qdropline {
   display: flex; align-items: center; gap: var(--s2); min-width: 0; margin: 0 0 var(--s3); padding: 10px var(--s3);
