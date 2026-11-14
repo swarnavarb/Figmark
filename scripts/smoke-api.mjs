@@ -10264,9 +10264,15 @@ await check('an account on old boards is read onto the boards they became', asyn
   const repository = await getRepository();
   const player = await newBuyer('Old Boarder');
   const account = await repository.getUserById(player.id);
-  await repository.updateUser({ ...account, boards: ['cat:wear', 'tag:gunpla', 'tag:something-odd'] });
+  await repository.updateUser({ ...account, boards: ['cat:wear', 'tag:gunpla', 'tag:something-odd'], podiums: [
+    { board: 'tag:gunpla', season: '2026-09', place: 2 },
+    { board: 'cat:figures', season: '2026-10', place: 1 },
+  ] });
   const list = (await boardsList(req({ headers: player.headers }), ctx)).jsonBody;
   assert.deepEqual(list.mine, ['cat:sneakers', 'cat:models']);
+  assert.deepEqual(list.podiums.map((entry) => `${entry.board} ${entry.season} ${entry.place}`),
+    ['cat:figures 2026-10 1', 'cat:models 2026-09 2'], 'your medals, newest first, under today\'s boards');
+  assert.equal((await boardsList(req(), ctx)).jsonBody.podiums.length, 0, 'nobody\'s medals when signed out');
   const view = (await boardRead(req({ headers: player.headers, params: { id: 'cat:sneakers' } }), ctx)).jsonBody;
   assert.equal(view.joined, true);
 });

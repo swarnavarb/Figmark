@@ -15,6 +15,8 @@ import { Glyph, Sticker, StickerSheet, useQuest } from '../components/Quest';
 import { HobbyBoards } from '../components/HobbyBoards';
 import { BoardHead, InfoTip, InviteStrip, NoBumpsNotice, QuestHero, QuestRow, QuestTabs } from '../components/QuestKit';
 import { Avatar } from '../components/ui';
+import { PeriodTag, WinStrip } from '../components/WinStrip';
+import type { Badge } from '@shared/play';
 import { QuestShooter } from '../components/QuestShooter';
 import { ShopQuests } from '../components/ShopQuests';
 import { useSession } from '../session';
@@ -346,6 +348,15 @@ function GamePlayers() {
   const { user } = useSession();
   const [players, setPlayers] = useState<PlayerRow[] | null>(null);
   const [season, setSeason] = useState<string | null>(null);
+  const [mine, setMine] = useState<Badge[]>([]);
+  useEffect(() => {
+    if (!user) return;
+    let live = true;
+    api.myRewards().then(({ badges }) => live && setMine(badges)).catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [user]);
   useEffect(() => {
     let live = true;
     api.weeklyBest().then((board) => {
@@ -360,7 +371,7 @@ function GamePlayers() {
   return (
     <section className="qpanel">
       <div className="qpanel__head">
-        <h3>🏅 Top players{season ? ` · ${seasonLabel(season)}` : ''}</h3>
+        <h3>🏅 Top players{season ? ` · ${seasonLabel(season)}` : ''} <PeriodTag period="monthly" title="Starts again on the 1st, India time" /></h3>
         <Link to="/discover#competitions" className="faint">Play</Link>
         <InfoTip label="About top players">
           <b>Top players</b>
@@ -368,13 +379,14 @@ function GamePlayers() {
           <p>The board starts again on the 1st of every month, India time.</p>
         </InfoTip>
       </div>
+      {user && <WinStrip badges={mine} profileHref="/me?tab=wins" />}
       {!players ? <SkeletonText lines={3} /> : players.length === 0 ? (
         <p className="faint" style={{ margin: 0 }}>Nobody has played this month yet. Vote in a competition or debate, or enter one, to get on the board.</p>
       ) : (
         <ol className="qleaders">
           {players.map((row, index) => (
             <li key={row.userId} className={row.userId === user?.id ? 'is-me' : ''}>
-              <span className={`qleaders__rank qboard__rank--${Math.min(index + 1, 4)}`}>#{index + 1}</span>
+              <span className={`qleaders__rank qboard__rank--${Math.min(row.rank ?? index + 1, 4)}`}>#{row.rank ?? index + 1}</span>
               <Avatar name={row.name} size={30} />
               <span className="qleaders__who">
                 {row.handle ? <Link to={`/${row.handle}`}>{row.name}</Link> : row.name}

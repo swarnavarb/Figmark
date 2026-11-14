@@ -14,6 +14,7 @@ import { formatOf } from '../discover-rank.js';
 import { moderation } from '../moderation.js';
 import { tooFast } from '../rate-limit.js';
 import { leaderboardOf } from '../play.js';
+import { rankPlayers } from '../../../shared/play.js';
 import { monthKey } from '../../../shared/quest.js';
 import { error, handler, json } from './http.js';
 import {
@@ -393,8 +394,8 @@ async function leaderboard(_request: HttpRequest, _context: InvocationContext) {
   // this month's games off the board.
   const season = monthKey(Date.now());
   const seasonStart = new Date(Date.parse(`${season}-01T00:00:00+05:30`)).toISOString();
-  const games = [...leaderboardOf(await repository.listGamePostsSince(seasonStart, GAME_POSTS), season).values()]
-    .sort((a, b) => b.points - a.points || b.wins - a.wins).slice(0, 10);
+  const games = rankPlayers([...leaderboardOf(await repository.listGamePostsSince(seasonStart, GAME_POSTS), season).values()]
+    .sort((a, b) => b.points - a.points || b.wins - a.wins)).slice(0, 10);
   const people = new Map((await repository.listUsersByIds([...loudest.map(([id]) => id), ...games.map((row) => row.userId)]))
     .map((person) => [person.id, person]));
   const board: Leaderboard = {

@@ -9867,6 +9867,40 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .medalcard__board { font-size: var(--t-sm); line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .medalcard__season { font-size: var(--t-xs); color: var(--text-dim); }
 
+/* The same medals, small: your own wins in a strip above a leaderboard. */
+.winstrip { display: grid; gap: 6px; }
+.winstrip__label { display: flex; align-items: baseline; gap: var(--s2); font-size: var(--t-2xs); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.08em; }
+.winstrip__all { margin-left: auto; text-transform: none; letter-spacing: 0; font-size: var(--t-xs); }
+.winstrip__row { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 6px; scrollbar-width: thin; }
+.minimedal, .winchip {
+  --metal-hi: #FFF3B0; --metal: #F5C542; --metal-lo: #A0700E; --glow: 245, 197, 66;
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; max-width: 220px;
+  padding: 5px 10px 5px 5px; border-radius: 999px; color: inherit; text-decoration: none;
+  background: linear-gradient(180deg, var(--surface-2), var(--surface));
+  border: 1px solid rgba(var(--glow), 0.4);
+}
+.minimedal--silver { --metal-hi: #FFFFFF; --metal: #CBD5E1; --metal-lo: #64748B; --glow: 203, 213, 225; }
+.minimedal--bronze { --metal-hi: #FFD9B0; --metal: #D08A4E; --metal-lo: #7C4319; --glow: 208, 138, 78; }
+.winchip { --glow: 139, 92, 246; }
+.winchip:hover { border-color: rgba(var(--glow), 0.8); }
+.minimedal__disc {
+  display: grid; place-items: center; width: 26px; height: 26px; flex: 0 0 auto; border-radius: 50%;
+  background: radial-gradient(circle at 32% 28%, var(--metal-hi), transparent 42%), radial-gradient(circle, var(--metal) 0 55%, var(--metal-lo) 100%);
+  box-shadow: 0 0 0 2px var(--metal-lo), 0 2px 6px rgba(var(--glow), 0.35);
+}
+.minimedal__disc b { font-size: var(--t-xs); line-height: 1; color: var(--metal-lo); text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6); }
+.winchip__emoji { display: grid; place-items: center; width: 26px; height: 26px; flex: 0 0 auto; border-radius: 50%; background: rgba(var(--glow), 0.18); font-size: var(--t-sm); }
+.minimedal__text { display: grid; min-width: 0; line-height: 1.2; }
+.minimedal__text b { font-size: var(--t-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.minimedal__text small { font-size: var(--t-2xs); color: var(--text-dim); white-space: nowrap; }
+/* Which period a board or a win belongs to. */
+.periodtag {
+  display: inline-block; padding: 1px 7px; border-radius: 999px; vertical-align: middle;
+  font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--q-gold, #F5C542); background: rgba(245, 197, 66, 0.14); border: 1px solid rgba(245, 197, 66, 0.35);
+}
+.periodtag--weekly { color: #22D3EE; background: rgba(34, 211, 238, 0.12); border-color: rgba(34, 211, 238, 0.35); }
+
 /* Wins: one card each, in its kind's colour, rising in turn; the medal glints. */
 .wincards { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); }
 .wincard {

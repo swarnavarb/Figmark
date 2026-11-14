@@ -1,4 +1,5 @@
 import { seasonLabel } from '@shared/boards';
+import { PeriodTag } from '../components/WinStrip';
 import {
   useCallback, useEffect, useMemo, useRef, useState, type ReactNode,
   type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent,
@@ -1387,12 +1388,12 @@ function WeeklyBest() {
       <h2 className="discsection"><Icon name="trophy" size={15} /> This week’s best</h2>
       {players.length > 0 && (
         <section className="discweek__block">
-          <h2><Icon name="star" size={16} /> Top players{board.playersSeason ? ` · ${seasonLabel(board.playersSeason)}` : ''}</h2>
+          <h2><Icon name="star" size={16} /> Top players{board.playersSeason ? ` · ${seasonLabel(board.playersSeason)}` : ''} <PeriodTag period="monthly" /></h2>
           <ol className="discweek__list">
             {players.map((player, index) => {
               const row = (
                 <>
-                  <Rank at={index} />
+                  <Rank at={(player.rank ?? index + 1) - 1} />
                   <span className="discweek__name">
                     {player.name}
                     <span className="faint"> · {player.wins} win{player.wins === 1 ? '' : 's'} · {player.votes} vote{player.votes === 1 ? '' : 's'}</span>
@@ -1412,7 +1413,7 @@ function WeeklyBest() {
       )}
       {board.shelves.length > 0 && (
         <section className="discweek__block">
-          <h2><Icon name="camera" size={16} /> Most loved shelves</h2>
+          <h2><Icon name="camera" size={16} /> Most loved shelves <PeriodTag period="weekly" /></h2>
           <ol className="discweek__list">
             {board.shelves.map((shelf, index) => (
               <li key={shelf.postId}>
@@ -1429,7 +1430,7 @@ function WeeklyBest() {
       )}
       {board.debates.length > 0 && (
         <section className="discweek__block">
-          <h2><Icon name="forum" size={16} /> Most argued debates</h2>
+          <h2><Icon name="forum" size={16} /> Most argued debates <PeriodTag period="weekly" /></h2>
           <ol className="discweek__list">
             {board.debates.map((debate, index) => (
               <li key={debate.postId}>
@@ -1448,7 +1449,7 @@ function WeeklyBest() {
       )}
       {board.voices.length > 0 && (
         <section className="discweek__block">
-          <h2><Icon name="megaphone" size={16} /> Voices of the week</h2>
+          <h2><Icon name="megaphone" size={16} /> Voices of the week <PeriodTag period="weekly" /></h2>
           <ol className="discweek__list">
             {board.voices.map((voice, index) => {
               const row = (

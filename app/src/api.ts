@@ -426,6 +426,8 @@ export interface BoardList {
   boards: (BoardInfo & { members: number })[];
   mine: string[];
   suggestions: (BoardInfo & { members: number })[];
+  /** Your own top-three finishes, newest first (signed in). */
+  podiums?: { board: string; season: string; place: 1 | 2 | 3 }[];
   limit: number;
 }
 

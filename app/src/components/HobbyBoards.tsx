@@ -7,6 +7,7 @@ import { SkeletonText, useToast } from './Feedback';
 import { Glyph } from './Quest';
 import { InfoTip } from './QuestKit';
 import { Avatar } from './ui';
+import { MedalStrip, PeriodTag } from './WinStrip';
 
 /**
  * Hobby leaderboards on the Quests page.
@@ -86,7 +87,7 @@ export function HobbyBoards() {
   return (
     <section className="qpanel" id="boards">
       <div className="qpanel__head">
-        <h3><Glyph name="crown" size={15} /> Hobby leaderboards</h3>
+        <h3><Glyph name="crown" size={15} /> Hobby leaderboards <PeriodTag period="monthly" title="Every board starts again on the 1st, India time" /></h3>
         <InfoTip label="About hobby leaderboards">
           <b>Hobby leaderboards</b>
           <p>Compete with the people who collect what you do. Join up to {list?.limit ?? 3} hobby boards, such as Action figures, Sneakers or Trading cards.</p>
@@ -97,6 +98,7 @@ export function HobbyBoards() {
 
       {!list ? <SkeletonText lines={3} /> : (
         <>
+          {user && <MedalStrip podiums={list.podiums ?? []} profileHref="/me?tab=wins" />}
           <div className="chips qboards__mine">
             {mine.map((board) => (
               <button key={board.id} type="button" className={`chip${chosen === board.id ? ' is-on' : ''}`}
@@ -170,7 +172,7 @@ function Standings({ view, onLeave, onSeason, onJoin, busy, canJoin, scope, onSc
       <div className="qboards__head">
         <b>{view.board.glyph} {view.board.label}</b>
         <span className="faint">
-          {seasonLabel(view.season)} · {current ? daysLeft(view.endsAt) : 'final'} · {view.board.members} on the board
+          Monthly season · {seasonLabel(view.season)} · {current ? daysLeft(view.endsAt) : 'final'} · {view.board.members} on the board
         </span>
         {!current && <button type="button" className="btn btn--sm btn--quiet" onClick={() => onSeason(null)}>This month</button>}
         {view.joined
@@ -206,7 +208,7 @@ function Standings({ view, onLeave, onSeason, onJoin, busy, canJoin, scope, onSc
       )}
       {view.hall.some((entry) => entry.podium.length > 0) && (
         <div className="qboards__hall">
-          <small className="qboards__label">Hall of Fame</small>
+          <small className="qboards__label">Hall of Fame · top three of each month</small>
           {view.hall.filter((entry) => entry.podium.length > 0).map((entry) => (
             <button key={entry.season} type="button" className="qboards__season" onClick={() => onSeason(entry.season)}>
               <b>{seasonLabel(entry.season)}</b>

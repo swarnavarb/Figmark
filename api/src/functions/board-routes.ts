@@ -271,13 +271,18 @@ async function listBoards(request: HttpRequest, _context: InvocationContext) {
 
   let mine: string[] = [];
   let suggestions: typeof boards = [];
+  let podiums: NonNullable<User['podiums']> = [];
   if (viewer) {
     const account = await repository.getUserById(viewer.id);
     mine = currentBoards(account?.boards);
+    // Your own top-three finishes, newest first, under today's board ids, shown small above the boards.
+    podiums = (account?.podiums ?? [])
+      .map((entry) => ({ ...entry, board: currentBoardId(entry.board) ?? entry.board }))
+      .sort((a, b) => b.season.localeCompare(a.season) || a.place - b.place);
     const hinted = new Set((account?.tags ?? []).map(boardForHobby).filter((id): id is string => id !== null));
     suggestions = boards.filter((board) => hinted.has(board.id) && !mine.includes(board.id));
   }
-  return json(200, { boards, mine, suggestions, limit: BOARD_LIMIT });
+  return json(200, { boards, mine, suggestions, podiums, limit: BOARD_LIMIT });
 }
 
 /** The board a request names: `{ board }`, or `{ tag }` from older apps, read as the board that hobby is on. */
