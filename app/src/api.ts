@@ -725,6 +725,8 @@ export interface InviteOpen {
   };
   asSeller: boolean;
   self: boolean;
+  /** A Spread the word link: what the friend is joining. */
+  drive?: { storeName: string; welcomeMinor: number; endsAt: string; link: string } | null;
 }
 
 export interface OrderTracking {
@@ -1501,6 +1503,8 @@ export interface NewPost {
     rewardMinor: number; maxPerPerson: number; topPrizeMinor?: number; timing: ReferralTiming; hours?: number;
     target: { kind: 'shop' } | { kind: 'drop'; saleId: string } | { kind: 'listing'; listingId: string };
     terms?: string | null;
+    welcomeMinor?: number;
+    milestones?: { at: number; creditMinor: number; perk: string }[];
   } | null;
 }
 

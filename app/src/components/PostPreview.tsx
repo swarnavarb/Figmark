@@ -28,7 +28,10 @@ export interface PreviewDraft {
   revealLabel?: string | null;
   blur?: string | null;
   /** Spread the word: what it pays, the cap and bonus, when it runs, and what it is about. */
-  spread?: { rewardMinor: number; perPerson: number; topMinor: number; when: string; about: string } | null;
+  spread?: {
+    rewardMinor: number; perPerson: number; topMinor: number; when: string; about: string;
+    welcomeMinor: number; goals: { at: number; creditMinor: number; perk: string }[];
+  } | null;
 }
 
 const KIND: Record<StudioMode, { emoji: string; label: string }> = {
@@ -153,14 +156,42 @@ export function PostPreview({ draft }: { draft: PreviewDraft }) {
             <span className="spread__kicker">📣 Spread the word</span>
             <span className="spread__clock"><span className="spread__dot" aria-hidden="true" />{draft.spread.when}</span>
           </div>
-          <p className="spread__offer">
-            <strong>{formatMoney(draft.spread.rewardMinor, 'INR')}</strong>
-            <span> store credit for every new buyer you bring to {draft.spread.about}</span>
-          </p>
-          <p className="spread__small faint">
-            Up to {draft.spread.perPerson} people each
-            {draft.spread.topMinor > 0 && <> · <b>+{formatMoney(draft.spread.topMinor, 'INR')}</b> for whoever brings the most</>}
-          </p>
+          {draft.spread.rewardMinor > 0 ? (
+            <p className="spread__offer">
+              <strong>{formatMoney(draft.spread.rewardMinor, 'INR')}</strong>
+              <span> store credit for every new buyer you bring to {draft.spread.about}</span>
+            </p>
+          ) : (
+            <p className="spread__offer"><span>Bring new buyers to {draft.spread.about} and unlock rewards </span><strong>together</strong></p>
+          )}
+          {(draft.spread.rewardMinor > 0 || draft.spread.topMinor > 0) && (
+            <p className="spread__small faint">
+              {draft.spread.rewardMinor > 0 && `Up to ${draft.spread.perPerson} people each`}
+              {draft.spread.topMinor > 0 && <>{draft.spread.rewardMinor > 0 ? ' · ' : ''}<b>+{formatMoney(draft.spread.topMinor, 'INR')}</b> for whoever brings the most</>}
+            </p>
+          )}
+          {draft.spread.welcomeMinor > 0 && (
+            <p className="spread__welcome">🎁 Friends get <b>{formatMoney(draft.spread.welcomeMinor, 'INR')}</b> to spend here when they join</p>
+          )}
+          {draft.spread.goals.length > 0 && (
+            <div className="goals">
+              <div className="goals__head"><span className="goals__title">🎯 Goals everyone unlocks</span><span className="goals__count"><b>0</b> / {draft.spread.goals[0]!.at} new buyers</span></div>
+              <div className="goals__bar">
+                <span className="goals__fill" style={{ transform: 'scaleX(0)' }} />
+                {draft.spread.goals.map((goal) => (
+                  <span key={goal.at} className="goals__mark" style={{ left: `${(goal.at / draft.spread!.goals[draft.spread!.goals.length - 1]!.at) * 100}%` }}>{goal.at}</span>
+                ))}
+              </div>
+              <ul className="goals__list">
+                {draft.spread.goals.map((goal) => (
+                  <li key={goal.at}>
+                    <span className="goals__at">🔒 {goal.at}</span>
+                    <span className="goals__gift">{[goal.creditMinor ? `${formatMoney(goal.creditMinor, 'INR')} credit for everyone who brought someone` : '', goal.perk].filter(Boolean).join(' + ')}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <span className="btn spread__go ppreview__fakebtn" aria-hidden="true">Get my link</span>
         </section>
       )}

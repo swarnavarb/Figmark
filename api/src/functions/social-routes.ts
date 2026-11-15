@@ -51,7 +51,7 @@ import { verifiedChecks } from '../../../shared/verification.js';
 import { gameAudience, gameWhat, isDue, milestone, payContest, payDebate, payGuess, settlePlay } from '../play.js';
 import {
   REFERRAL_DEFAULT_PER_PERSON, REFERRAL_LEADERS, REFERRAL_MAX_HOURS, REFERRAL_MAX_PER_PERSON, REFERRAL_MAX_SHARERS, REFERRAL_MIN_HOURS,
-  isReferralTiming, referralLeaders, referralPhase,
+  REFERRAL_MAX_MILESTONES, goalCount, isReferralTiming, milestonesFrom, referralLeaders, referralPhase,
   type PostReferral, type ReferralTarget, type ReferralTiming, type ReferralView,
 } from '../../../shared/referral.js';
 import { finishesAt, firstDropAt } from './power-sale.js';
@@ -2751,6 +2751,7 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
 interface ReferralAsk {
   rewardMinor?: unknown; maxPerPerson?: unknown; topPrizeMinor?: unknown; timing?: unknown; hours?: unknown;
   target?: { kind?: unknown; saleId?: unknown; listingId?: unknown } | null; terms?: unknown;
+  welcomeMinor?: unknown; milestones?: unknown;
 }
 
 /**
@@ -2770,9 +2771,19 @@ async function referralFrom(
     return Number.isInteger(number) && number >= 0 && number <= PRIZE_MAX_MINOR ? number : null;
   };
   const rewardMinor = amount(raw.rewardMinor);
-  if (!rewardMinor) return refuse(`Set the credit per new buyer, up to ${rupees(PRIZE_MAX_MINOR)}.`);
+  if (rewardMinor === null) return refuse(`Credit per new buyer is up to ${rupees(PRIZE_MAX_MINOR)}.`);
   const topPrizeMinor = amount(raw.topPrizeMinor);
   if (topPrizeMinor === null) return refuse(`A bonus is store credit up to ${rupees(PRIZE_MAX_MINOR)}.`);
+  const welcomeMinor = amount(raw.welcomeMinor);
+  if (welcomeMinor === null) return refuse(`Welcome credit is up to ${rupees(PRIZE_MAX_MINOR)}.`);
+  const milestones = milestonesFrom(raw.milestones, PRIZE_MAX_MINOR);
+  if (!milestones) {
+    return refuse(`Up to ${REFERRAL_MAX_MILESTONES} goals, each a different number of new buyers, each giving credit, a perk or both.`);
+  }
+  // Something has to be on offer, or there is nothing to spread the word for.
+  if (!rewardMinor && !topPrizeMinor && !milestones.length) {
+    return refuse('Set credit per new buyer, a bonus for the top sharer, or a goal everyone unlocks together.');
+  }
   const maxPerPerson = Number(raw.maxPerPerson ?? REFERRAL_DEFAULT_PER_PERSON);
   if (!Number.isInteger(maxPerPerson) || maxPerPerson < 1 || maxPerPerson > REFERRAL_MAX_PER_PERSON) {
     return refuse(`Pay each person for 1 to ${REFERRAL_MAX_PER_PERSON} people they bring.`);
@@ -2828,6 +2839,8 @@ async function referralFrom(
       storeId: shop.id, storeName: shop.name, storeHandle, target, timing,
       startsAt: new Date(startsAt).toISOString(), endsAt: new Date(endsAt).toISOString(),
       rewardMinor, maxPerPerson, topPrizeMinor, terms: termsFrom(raw.terms), sharers: [], joins: [],
+      ...(welcomeMinor ? { welcomeMinor } : {}),
+      ...(milestones.length ? { milestones, reached: milestones.map(() => null) } : {}),
     },
   };
 }
@@ -2855,6 +2868,8 @@ function referralView(referral: PostReferral, viewerId: string): ReferralView {
     payouts: referral.payouts
       ? referral.payouts.filter((row) => row.amountMinor > 0).map((row) => ({ name: row.name, joins: row.joins, amountMinor: row.amountMinor, top: Boolean(row.top) }))
       : null,
+    welcomeMinor: referral.welcomeMinor ?? 0,
+    goals: (referral.milestones ?? []).map((goal) => ({ ...goal, reached: goalCount(referral) >= goal.at })),
   };
 }
 

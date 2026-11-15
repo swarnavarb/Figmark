@@ -5,6 +5,7 @@ import { tidyGrowth } from '../../shared/store-growth.js';
 import { REFERRAL_MAX_JOINS, REFERRAL_MAX_SHARERS, parseDriveTag, referralPhase } from '../../shared/referral.js';
 import { accessFor } from '../../shared/stores.js';
 import { notify } from './functions/notify.js';
+import { announceGoals } from './play.js';
 import type { getRepository } from './data/index.js';
 
 type Repo = Awaited<ReturnType<typeof getRepository>>;
@@ -267,6 +268,7 @@ async function countDriveJoin(
       return { ...current, referral: { ...now, sharers, joins: [...now.joins, { userId: newUserId, sharerId: sharer.id, at }] } };
     });
     if (!saved?.referral?.joins.some((join) => join.userId === newUserId)) return;
+    await announceGoals(repository, saved);
     const brought = saved.referral.joins.filter((join) => join.sharerId === sharer.id).length;
     await notify(repository, [sharer.id], {
       kind: 'store_gift',

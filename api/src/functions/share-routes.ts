@@ -114,7 +114,8 @@ async function openInvite(request: HttpRequest, _context: InvocationContext) {
   // rather than letting every shared page overwrite whose friend this is.
   // A Spread the word link is a campaign somebody is running right now, so
   // it does take over an earlier invite: the newest drive link wins.
-  const drive = viewer ? null : await openDrive(repository, request.query.get('d'));
+  const drivePost = await openDrive(repository, request.query.get('d'));
+  const drive = viewer || !drivePost ? null : driveTag(drivePost.channelId, drivePost.id);
   const keep = viewer || (readCookie(request, INVITE_COOKIE) && !drive);
   // One cookie per response (see `json`), and the invite is the one that
   // matters. The visitor cookie normally came earlier, from /api/auth/me.
@@ -128,15 +129,22 @@ async function openInvite(request: HttpRequest, _context: InvocationContext) {
     },
     asSeller,
     self: viewer?.id === inviter.id,
+    // What a friend arriving on a Spread the word link is joining, for the welcome they see.
+    drive: drivePost?.referral ? {
+      storeName: drivePost.referral.storeName,
+      welcomeMinor: drivePost.referral.welcomeMinor ?? 0,
+      endsAt: drivePost.referral.endsAt,
+      link: `/social/p/${encodeURIComponent(drivePost.channelId)}/${encodeURIComponent(drivePost.id)}`,
+    } : null,
   }, cookies);
 }
 
-/** A drive tag from a link, when it names a drive that is still to run or running. */
-async function openDrive(repository: Repo, raw: string | null): Promise<string | null> {
+/** The drive a link's tag names, when it is still to run or running. */
+async function openDrive(repository: Repo, raw: string | null) {
   const tag = parseDriveTag(raw);
   if (!tag) return null;
   const post = await repository.getPost(tag.channelId, tag.postId);
-  return post?.referral && referralPhase(post.referral) !== 'ended' ? driveTag(tag.channelId, tag.postId) : null;
+  return post?.referral && referralPhase(post.referral) !== 'ended' ? post : null;
 }
 
 /** What an invite-carrying link pointed at, and the shop it leads into. */

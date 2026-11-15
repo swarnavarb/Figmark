@@ -10321,3 +10321,65 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
   margin: 0 0 var(--s3); padding: var(--s2) var(--s3); border-radius: var(--r-md); font-size: var(--t-sm); line-height: 1.5;
   background: linear-gradient(115deg, var(--warn-soft), transparent 80%); box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.3);
 }
+
+/* The welcome a friend sees after opening a Spread the word link signed out (DriveWelcome). */
+.dwelcome {
+  position: fixed; z-index: 60; left: 50%; transform: translateX(-50%);
+  bottom: calc(var(--nav-h, 72px) + 14px + env(safe-area-inset-bottom, 0px));
+  width: min(560px, calc(100% - 24px));
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 10px;
+  padding: 12px 12px 12px 14px; border-radius: var(--r-lg);
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  background: radial-gradient(100% 140% at 0% 0%, rgba(251, 191, 36, 0.22), transparent 60%), var(--surface);
+  box-shadow: 0 18px 40px -16px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(0, 0, 0, 0.3);
+  animation: dwelcome-in 360ms var(--ease-out) both;
+}
+@keyframes dwelcome-in { from { opacity: 0; transform: translate(-50%, 16px); } }
+.dwelcome__gift {
+  display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px;
+  background: var(--grad-gold); font-size: calc(20px * var(--text-scale));
+}
+.dwelcome__copy { display: grid; gap: 2px; font-size: var(--t-sm); line-height: 1.35; min-width: 0; }
+.dwelcome__copy span { color: var(--text-dim); font-size: var(--t-xs); }
+.dwelcome__copy b { color: var(--warn); }
+.dwelcome__go { background: var(--grad-gold); border-color: transparent; color: #1A1206; }
+.dwelcome__close {
+  width: 28px; height: 28px; border: 0; border-radius: 50%; background: transparent; color: var(--text-faint);
+  font-size: calc(20px * var(--text-scale)); line-height: 1; cursor: pointer;
+}
+
+/* The goals a whole Spread the word unlocks together (GoalTrack). */
+.goals { display: grid; gap: 10px; padding: 12px; border-radius: var(--r-md); background: rgba(0, 0, 0, 0.24); }
+.goals__head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s2); font-size: var(--t-sm); }
+.goals__title { font-weight: var(--w-bold); }
+.goals__count { color: var(--text-dim); font-size: var(--t-xs); }
+.goals__count b { color: var(--text); font: var(--w-bold) var(--t-sm)/1 var(--mono); }
+.goals__bar { position: relative; height: 10px; margin: 8px 12px 14px 0; border-radius: var(--r-pill); background: rgba(255, 255, 255, 0.08); }
+.goals__fill {
+  position: absolute; inset: 0; border-radius: inherit; background: var(--grad-gold);
+  transform-origin: left center; transition: transform 600ms var(--ease-out);
+  box-shadow: 0 0 12px rgba(251, 191, 36, 0.45);
+}
+.goals__mark {
+  position: absolute; top: 50%; transform: translate(-50%, -50%);
+  display: grid; place-items: center; min-width: 26px; height: 26px; padding: 0 5px; border-radius: var(--r-pill);
+  background: var(--surface); border: 2px solid rgba(255, 255, 255, 0.18);
+  font: var(--w-bold) var(--t-2xs)/1 var(--mono); color: var(--text-dim);
+}
+.goals__mark.is-reached { background: var(--grad-gold); border-color: transparent; color: #1A1206; box-shadow: 0 0 0 4px var(--warn-soft); }
+.goals__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.goals__list li { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: var(--s2); align-items: baseline; font-size: var(--t-sm); color: var(--text-dim); }
+.goals__list li.is-reached { color: var(--text); }
+.goals__at { font: var(--w-bold) var(--t-xs)/1.4 var(--mono); color: var(--text-faint); white-space: nowrap; }
+.goals__list li.is-reached .goals__at { color: var(--warn); }
+.goals__gift { min-width: 0; }
+.spread__welcome {
+  margin: 0; padding: 8px 10px; border-radius: var(--r-md); font-size: var(--t-sm);
+  background: var(--ok-soft); box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.3);
+}
+.spread__welcome b { color: var(--ok); }
+.spread__next { color: var(--text-dim); }
+.spread__offerline { color: var(--text-dim); font-size: var(--t-sm); }
+.spreadcard__goal { display: grid; gap: 4px; font-size: var(--t-xs); color: var(--text-dim); }
+.spreadcard__bar { display: block; height: 6px; border-radius: var(--r-pill); background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.spreadcard__bar > span { display: block; height: 100%; background: var(--grad-gold); transform-origin: left center; }

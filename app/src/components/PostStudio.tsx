@@ -17,7 +17,7 @@ import { ErrorNotice, Modal, Thumb, leadPhoto } from './ui';
 import { Icon } from './Icon';
 import { PostPreview } from './PostPreview';
 import { useSession } from '../session';
-import { REFERRAL_DEFAULT_PER_PERSON, REFERRAL_MAX_PER_PERSON, TIMING_LABELS } from '@shared/referral';
+import { PERK_IDEAS, REFERRAL_DEFAULT_PER_PERSON, REFERRAL_MAX_MILESTONES, REFERRAL_MAX_PER_PERSON, REFERRAL_PERK_MAX, TIMING_LABELS } from '@shared/referral';
 import type { SpreadAbout } from './SpreadKit';
 import type { Listing } from '@shared/models';
 import type { PowerSaleView } from '../api';
@@ -404,6 +404,13 @@ export function PostStudio({
   const [perJoin, setPerJoin] = useState('100');
   const [perPerson, setPerPerson] = useState(String(REFERRAL_DEFAULT_PER_PERSON));
   const [topOn, setTopOn] = useState(false);
+  // Goals the whole drive unlocks together, and the welcome a new buyer gets: the shop sets each.
+  const [goals, setGoals] = useState<{ at: string; credit: string; perk: string }[]>(() => [
+    { at: '10', credit: '50', perk: about?.kind === 'drop' ? PERK_IDEAS[0] : '' },
+    { at: '25', credit: '', perk: about?.kind === 'drop' ? PERK_IDEAS[1] : PERK_IDEAS[2] },
+  ]);
+  const [welcomeOn, setWelcomeOn] = useState(true);
+  const [welcome, setWelcome] = useState('50');
   const [topPrize, setTopPrize] = useState('500');
   const [drops, setDrops] = useState<PowerSaleView[] | null>(null);
   const [ownItems, setOwnItems] = useState<Listing[] | null>(null);
@@ -545,8 +552,15 @@ export function PostStudio({
     if (mode === 'question') return words.length < 5 ? 'Ask the question' : null;
     if (mode === 'spread') {
       if (words.length < 2) return 'Say what people are sharing';
-      if (!paise(perJoin)) return 'Set the credit per new buyer';
-      if ((paise(perJoin) ?? 0) > PRIZE_MAX_MINOR || (topOn && (paise(topPrize) ?? 0) > PRIZE_MAX_MINOR)) return `A prize is up to ${formatMoney(PRIZE_MAX_MINOR, 'INR')}`;
+      if (perJoin.trim() && paise(perJoin) === null) return 'Set the credit per new buyer, or leave it empty';
+      if ((paise(perJoin) ?? 0) > PRIZE_MAX_MINOR || (topOn && (paise(topPrize) ?? 0) > PRIZE_MAX_MINOR)
+        || (welcomeOn && (paise(welcome) ?? 0) > PRIZE_MAX_MINOR)) return `A prize is up to ${formatMoney(PRIZE_MAX_MINOR, 'INR')}`;
+      const steps = goals.map((goal) => Number(goal.at));
+      if (goals.some((goal) => !Number.isInteger(Number(goal.at)) || Number(goal.at) < 1)) return 'Give every goal a number of new buyers';
+      if (new Set(steps).size !== steps.length) return 'Two goals ask for the same number';
+      if (goals.some((goal) => !paise(goal.credit) && !goal.perk.trim())) return 'Give every goal credit, a perk or both';
+      if (!paise(perJoin) && !(topOn && paise(topPrize)) && goals.length === 0) return 'Pay per new buyer, a bonus, or add a goal';
+      if (welcomeOn && !paise(welcome)) return 'Set the welcome credit, or turn it off';
       const most = Number(perPerson);
       if (!Number.isInteger(most) || most < 1 || most > REFERRAL_MAX_PER_PERSON) return `Pay each person for 1 to ${REFERRAL_MAX_PER_PERSON} people`;
       if (topOn && !paise(topPrize)) return 'Set the bonus, or turn it off';
@@ -620,9 +634,11 @@ export function PostStudio({
       body = {
         ...base, photoUrls: photos.slice(0, 1),
         referral: {
-          rewardMinor: paise(perJoin)!,
+          rewardMinor: paise(perJoin) ?? 0,
           maxPerPerson: Number(perPerson),
           topPrizeMinor: topOn ? paise(topPrize) ?? 0 : 0,
+          welcomeMinor: welcomeOn ? paise(welcome) ?? 0 : 0,
+          milestones: goals.map((goal) => ({ at: Number(goal.at), creditMinor: paise(goal.credit) ?? 0, perk: goal.perk.trim() })),
           timing: onDrop ? timing : 'now',
           ...(!onDrop || timing === 'after' ? { hours: driveHours } : {}),
           target: onDrop ? { kind: 'drop', saleId } : spreadOn === 'listing' ? { kind: 'listing', listingId: spreadItem } : { kind: 'shop' },
@@ -703,9 +719,7 @@ export function PostStudio({
       : voting && rewardOn && paise(reward) ? `${formatMoney(paise(reward)!, 'INR')} credit for the winning side · first ${rewardCap || 1}`
         : mode === 'guess' && guessPrizeOn && paise(guessPrize)
           ? `${formatMoney(paise(guessPrize)!, 'INR')} store credit · ${guessJudge === 'store' ? 'the shop picks a winner' : Number(guessWinners) > 1 ? `the ${guessWinners} closest win` : 'the closest wins'}`
-          : mode === 'spread' && paise(perJoin)
-            ? `📣 ${formatMoney(paise(perJoin)!, 'INR')} store credit for every new buyer you bring · up to ${perPerson || 1} each`
-            : null;
+          : null;
 
   const photoStrip = (
     <>
@@ -856,6 +870,10 @@ export function PostStudio({
                 rewardMinor: paise(perJoin) ?? 0,
                 perPerson: Math.max(1, Number(perPerson) || 1),
                 topMinor: topOn ? paise(topPrize) ?? 0 : 0,
+                welcomeMinor: welcomeOn ? paise(welcome) ?? 0 : 0,
+                goals: goals.filter((goal) => Number(goal.at) > 0)
+                  .map((goal) => ({ at: Number(goal.at), creditMinor: paise(goal.credit) ?? 0, perk: goal.perk.trim() }))
+                  .sort((a, b) => a.at - b.at),
                 when: spreadOn === 'drop' && timing !== 'after' ? TIMING_LABELS[timing]
                   : `${label(DRIVE_HOURS, driveHours) ?? ''} left`,
                 about: spreadOn === 'drop' ? (pickedDrop?.name ?? 'your live drop')
@@ -1141,8 +1159,58 @@ export function PostStudio({
               )}
               <div className="pstudio__store">
                 <p className="pstudio__storehead"><Icon name="spark" size={13} /> As {storeName ?? 'your store'}</p>
+                <div className="pstudio__goals">
+                  <p className="pstudio__goalshead">
+                    <strong>🎯 Goals everyone unlocks together</strong>
+                    <span>When the whole drive brings this many new buyers, everyone who brought someone gets it.</span>
+                  </p>
+                  {goals.map((goal, index) => (
+                    <div key={index} className="pstudio__goal">
+                      <label className="pstudio__goalat">
+                        <span>At</span>
+                        <input inputMode="numeric" value={goal.at} aria-label={`Goal ${index + 1}: new buyers`}
+                          onChange={(event) => setGoals((all) => all.map((row, at) => (at === index ? { ...row, at: event.target.value.replace(/\D/g, '').slice(0, 4) } : row)))} />
+                        <span>new buyers</span>
+                      </label>
+                      <span className="pstudio__moneybox pstudio__moneybox--sm">
+                        <span aria-hidden="true">₹</span>
+                        <input inputMode="decimal" value={goal.credit} placeholder="Credit each" aria-label={`Goal ${index + 1}: credit for each person who helped`}
+                          onChange={(event) => setGoals((all) => all.map((row, at) => (at === index ? { ...row, credit: event.target.value.replace(/[^\d.]/g, '') } : row)))} />
+                      </span>
+                      <input className="pstudio__goalperk" value={goal.perk} maxLength={REFERRAL_PERK_MAX} placeholder="And/or a perk: mystery item, early access…"
+                        aria-label={`Goal ${index + 1}: what else unlocks`}
+                        onChange={(event) => setGoals((all) => all.map((row, at) => (at === index ? { ...row, perk: event.target.value } : row)))} />
+                      <button type="button" className="pstudio__goalx" aria-label={`Remove goal ${index + 1}`}
+                        onClick={() => setGoals((all) => all.filter((_, at) => at !== index))}>×</button>
+                    </div>
+                  ))}
+                  <div className="pstudio__perkideas" aria-label="Perk ideas">
+                    {PERK_IDEAS.map((idea) => (
+                      <button key={idea} type="button" className="chip"
+                        onClick={() => setGoals((all) => {
+                          const empty = all.findIndex((row) => !row.perk.trim());
+                          if (empty >= 0) return all.map((row, at) => (at === empty ? { ...row, perk: idea } : row));
+                          if (all.length >= REFERRAL_MAX_MILESTONES) return all;
+                          const last = Number(all[all.length - 1]?.at) || 0;
+                          return [...all, { at: String(last ? last * 2 : 10), credit: '', perk: idea }];
+                        })}>
+                        + {idea}
+                      </button>
+                    ))}
+                  </div>
+                  {goals.length < REFERRAL_MAX_MILESTONES && (
+                    <button type="button" className="pstudio__addanswer"
+                      onClick={() => setGoals((all) => [...all, { at: String((Number(all[all.length - 1]?.at) || 5) * 2), credit: '', perk: '' }])}>
+                      <Icon name="plus" size={14} /> Add a goal
+                    </button>
+                  )}
+                </div>
+                <Toggle on={welcomeOn} onChange={setWelcomeOn} title="Welcome credit for each new buyer"
+                  line="The friend who joins gets it too, to spend at your shop.">
+                  <Rupees label="Each new buyer gets" value={welcome} onChange={setWelcome} placeholder="50" />
+                </Toggle>
                 <div className="pstudio__pair">
-                  <Rupees label="Credit per new buyer" value={perJoin} onChange={setPerJoin} placeholder="100" />
+                  <Rupees label="Credit per new buyer (optional)" value={perJoin} onChange={setPerJoin} placeholder="100" />
                   <label className="field">
                     <span>Most people per sharer</span>
                     <input inputMode="numeric" value={perPerson} onChange={(event) => setPerPerson(event.target.value.replace(/\D/g, '').slice(0, 2))} />
@@ -1152,11 +1220,12 @@ export function PostStudio({
                   line="Paid on top, when the timer ends.">
                   <Rupees label="Bonus" value={topPrize} onChange={setTopPrize} placeholder="500" />
                 </Toggle>
-                {paise(perJoin) && (
-                  <p className="faint pstudio__cost">
-                    At most {formatMoney(paise(perJoin)! * Math.max(1, Number(perPerson) || 1), 'INR')} per sharer{topOn && paise(topPrize) ? `, plus ${formatMoney(paise(topPrize)!, 'INR')} once` : ''}, spent at your shop only.
-                  </p>
-                )}
+                <p className="faint pstudio__cost">
+                  At most {formatMoney((paise(perJoin) ?? 0) * Math.max(1, Number(perPerson) || 1)
+                    + goals.reduce((sum, goal) => sum + (paise(goal.credit) ?? 0), 0), 'INR')} per sharer
+                  {topOn && paise(topPrize) ? `, ${formatMoney(paise(topPrize)!, 'INR')} once to the top sharer` : ''}
+                  {welcomeOn && paise(welcome) ? `, and ${formatMoney(paise(welcome)!, 'INR')} to each new buyer` : ''}. All store credit, spent at your shop only, paid when the timer ends.
+                </p>
                 <TermsField value={terms} onChange={setTerms} />
               </div>
               <p className="pstudio__note">

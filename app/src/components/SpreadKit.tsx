@@ -39,6 +39,20 @@ function targetLine(referral: ReferralView): string {
   return referral.storeName;
 }
 
+/** The next goal still to reach, and how far off it is, in a few words. */
+function nextGoalLine(referral: ReferralView): string | null {
+  const next = referral.goals.find((goal) => !goal.reached);
+  if (!next) return referral.goals.length ? 'Every goal reached 🎉' : null;
+  const gift = next.perk || (next.creditMinor ? `${formatMoney(next.creditMinor, 'INR')} credit each` : '');
+  return `${next.at - referral.joined} more to unlock: ${gift}`;
+}
+
+/** What a drive pays, short: per friend, or its goals. */
+function payShort(referral: ReferralView): { big: string; small: string } {
+  if (referral.rewardMinor > 0) return { big: formatMoney(referral.rewardMinor, 'INR'), small: 'per friend you bring' };
+  return { big: `${referral.goals.length} goal${referral.goals.length === 1 ? '' : 's'}`, small: 'to unlock together' };
+}
+
 /** The share sheet's spec for this person's link to a drive. */
 export function driveShareSpec(referral: ReferralView, channelId: string, postId: string, body: string): ShareSpec {
   const drive = driveTag(channelId, postId);
@@ -75,6 +89,65 @@ function DriveClock({ referral }: { referral: ReferralView }) {
       <span className="spread__dot" aria-hidden="true" />
       {soon ? `Starts in ${left}` : `${left} left`}
     </span>
+  );
+}
+
+/** What a drive pays a sharer, as the big line: per friend when it does, else its first goal. */
+function Offer({ referral, compact = false }: { referral: ReferralView; compact?: boolean }) {
+  const first = referral.goals[0];
+  if (referral.rewardMinor > 0) {
+    return (
+      <p className="spread__offer">
+        <strong>{formatMoney(referral.rewardMinor, 'INR')}</strong>
+        <span> store credit for every new buyer you bring{compact ? '' : ` to ${targetLine(referral)}`}</span>
+      </p>
+    );
+  }
+  return (
+    <p className="spread__offer">
+      <span>Bring new buyers to {targetLine(referral)} and unlock rewards </span><strong>together</strong>
+      {first && !compact && <span className="spread__offerline"> - first at {first.at} new buyers</span>}
+    </p>
+  );
+}
+
+/**
+ * The goals everybody is working towards, as one bar with a marker per goal
+ * and a line for each saying what it unlocks. The bar fills as people join;
+ * a goal passed glows. The count is everyone who joined while it runs and
+ * the verified count once it is paid - goals pay on that one.
+ */
+export function GoalTrack({ referral }: { referral: ReferralView }) {
+  if (referral.goals.length === 0) return null;
+  const top = referral.goals[referral.goals.length - 1]!.at;
+  const next = referral.goals.find((goal) => !goal.reached) ?? null;
+  const fill = Math.min(1, referral.joined / top);
+  return (
+    <div className="goals">
+      <div className="goals__head">
+        <span className="goals__title">🎯 Goals everyone unlocks</span>
+        <span className="goals__count"><b>{referral.joined}</b>{next ? ` / ${next.at}` : ''} new buyers</span>
+      </div>
+      <div className="goals__bar" role="progressbar" aria-valuemin={0} aria-valuemax={top} aria-valuenow={Math.min(referral.joined, top)}
+        aria-label="New buyers brought so far">
+        <span className="goals__fill" style={{ transform: `scaleX(${fill})` }} />
+        {referral.goals.map((goal) => (
+          <span key={goal.at} className={`goals__mark${goal.reached ? ' is-reached' : ''}`} style={{ left: `${(goal.at / top) * 100}%` }}>
+            {goal.reached ? '✓' : goal.at}
+          </span>
+        ))}
+      </div>
+      <ul className="goals__list">
+        {referral.goals.map((goal) => (
+          <li key={goal.at} className={goal.reached ? 'is-reached' : ''}>
+            <span className="goals__at">{goal.reached ? '🔓' : '🔒'} {goal.at}</span>
+            <span className="goals__gift">
+              {[goal.creditMinor ? `${formatMoney(goal.creditMinor, 'INR')} credit for everyone who brought someone` : '', goal.perk].filter(Boolean).join(' + ')}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -117,14 +190,15 @@ export function SpreadPlay({ card, disabled, onCard }: { card: PostCard; disable
         <span className="spread__kicker"><Icon name="megaphone" size={13} /> Spread the word</span>
         <DriveClock referral={referral} />
       </div>
-      <p className="spread__offer">
-        <strong>{formatMoney(referral.rewardMinor, 'INR')}</strong>
-        <span> store credit for every new buyer you bring to {targetLine(referral)}</span>
-      </p>
+      <Offer referral={referral} />
       <p className="spread__small faint">
-        {TIMING_LABELS[referral.timing]} · up to {referral.maxPerPerson} people each
+        {TIMING_LABELS[referral.timing]}{referral.rewardMinor > 0 && ` · up to ${referral.maxPerPerson} people each`}
         {referral.topPrizeMinor > 0 && <> · <b>+{formatMoney(referral.topPrizeMinor, 'INR')}</b> for whoever brings the most</>}
       </p>
+      {referral.welcomeMinor > 0 && (
+        <p className="spread__welcome">🎁 Friends get <b>{formatMoney(referral.welcomeMinor, 'INR')}</b> to spend at {referral.storeName} when they join</p>
+      )}
+      <GoalTrack referral={referral} />
 
       {!ended && !disabled && user && (
         <div className="spread__act">
@@ -230,10 +304,8 @@ export function ShopDriveBanner({ shopId, isMe }: { shopId: string; isMe: boolea
         <span className="spread__kicker"><Icon name="megaphone" size={13} /> Spread the word</span>
         <DriveClock referral={referral} />
       </div>
-      <p className="spread__offer">
-        {isMe ? 'You are paying ' : 'Bring a friend, get '}<strong>{formatMoney(referral.rewardMinor, 'INR')}</strong>
-        <span> store credit {isMe ? 'for every new buyer people bring' : `for each new buyer you bring to ${targetLine(referral)}`}</span>
-      </p>
+      <Offer referral={referral} />
+      {nextGoalLine(referral) && <p className="spread__small spread__next">🎯 {nextGoalLine(referral)}</p>}
       <div className="spread__act">
         {user ? (
           <button type="button" className="btn btn--sm spread__go" onClick={() => void take()}>
@@ -330,7 +402,7 @@ export function SpreadNudge({ storeId, storeName, about, compact = false }: {
           <span className="spread-nudge__badge" aria-hidden="true">📣</span>
           <span className="spread-nudge__copy">
             <span className="spread-nudge__eyebrow">Spread the word is on</span>
-            <strong>{formatMoney(referral.rewardMinor, 'INR')} per new buyer · {targetLine(referral)}</strong>
+            <strong>{payShort(referral).big} {payShort(referral).small.replace('you bring', 'brought')} · {targetLine(referral)}</strong>
           </span>
         </div>
         <div className="spread-nudge__stats">
@@ -339,6 +411,7 @@ export function SpreadNudge({ storeId, storeName, about, compact = false }: {
           <span><b>{referral.sharers}</b> sharing</span>
           {referral.leaders[0] && <span>🏆 <b>{referral.leaders[0].name}</b> leads</span>}
         </div>
+        <GoalTrack referral={referral} />
         <div className="spread-nudge__acts">
           <Link className="btn btn--sm spread-nudge__go" to={href}>See the board</Link>
           <button type="button" className="btn btn--quiet btn--sm"
@@ -409,10 +482,16 @@ export function SpreadRow({ cards }: { cards: PostCard[] }) {
             </span>
             <span className="spreadcard__body">
               <span className="spreadcard__shop">{referral.storeName}</span>
-              <span className="spreadcard__pay"><strong>{formatMoney(referral.rewardMinor, 'INR')}</strong> per friend you bring</span>
+              <span className="spreadcard__pay"><strong>{payShort(referral).big}</strong> {payShort(referral).small}</span>
               <span className="faint">
                 {referral.target.kind === 'drop' ? `⚡ ${referral.target.name}` : referral.target.kind === 'listing' ? referral.target.title : 'The whole shop'}
               </span>
+              {referral.goals.length > 0 && (
+                <span className="spreadcard__goal">
+                  <span className="spreadcard__bar"><span style={{ transform: `scaleX(${Math.min(1, referral.joined / referral.goals[referral.goals.length - 1]!.at)})` }} /></span>
+                  <span>{nextGoalLine(referral)}</span>
+                </span>
+              )}
               <span className="spreadcard__meta">
                 {referral.joined} joined · {referral.sharers} sharing{referral.mine?.in ? ' · you’re in' : ''}
               </span>

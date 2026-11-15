@@ -204,4 +204,51 @@ await check('an ended drive takes nobody new', async () => {
   assert.equal(joined.status, 409);
 });
 
+await check('goals unlock together: credit for everyone who helped, a perk, and welcome credit for each new buyer', async () => {
+  const goalsOnly = await drive({
+    rewardMinor: 0, maxPerPerson: 5, timing: 'now', hours: 24, target: { kind: 'shop' }, welcomeMinor: 2500,
+    milestones: [{ at: 10, creditMinor: 5000, perk: '' }, { at: 2, creditMinor: 3000, perk: 'A mystery item added to the drop' }],
+  }, 'Help us hit 2 new buyers - a mystery item unlocks');
+  assert.equal(goalsOnly.status, 201, JSON.stringify(goalsOnly.jsonBody));
+  const goalPost = goalsOnly.jsonBody.post;
+  const stored = (await repository.getPost(goalPost.channelId, goalPost.id)).referral;
+  assert.deepEqual(stored.milestones.map((goal) => goal.at), [2, 10], 'kept in order');
+  assert.equal((await drive({ rewardMinor: 0, maxPerPerson: 5, timing: 'now', hours: 24, target: { kind: 'shop' } })).status, 400,
+    'nothing on offer is refused');
+  assert.equal((await drive({ rewardMinor: 0, maxPerPerson: 5, timing: 'now', hours: 24, target: { kind: 'shop' }, milestones: [{ at: 3, creditMinor: 0, perk: '' }] })).status, 400,
+    'a goal that gives nothing is refused');
+
+  const helper = await newPerson('Helper Hema');
+  const lone = await newPerson('Lone Leela');
+  await joinSpread(req({ headers: lone.headers, params: { channel: goalPost.channelId, id: goalPost.id } }), ctx);
+  const helperCode = (await myInvite(req({ headers: helper.headers }), ctx)).jsonBody.code;
+  const bring = async (name) => {
+    const opened = await openInvite(req({ headers: { 'user-agent': BROWSER }, params: { code: helperCode }, query: { d: `${goalPost.channelId}/${goalPost.id}` } }), ctx);
+    assert.equal(opened.jsonBody.drive.welcomeMinor, 2500, 'the friend is told what is waiting for them');
+    return newPerson(name, { cookie: cookieHeader(cookiesOf(opened)) });
+  };
+  const first = await bring('Goal Friend One');
+  await bring('Goal Friend Two');
+  const live = (await repository.getPost(goalPost.channelId, goalPost.id)).referral;
+  assert.ok(live.reached[0], 'the first goal is stamped the moment it is reached');
+  assert.equal(live.reached[1], null);
+  const view = (await readPost(req({ headers: helper.headers, params: { channel: goalPost.channelId, id: goalPost.id } }), ctx)).jsonBody.card.social.referral;
+  assert.deepEqual(view.goals.map((goal) => goal.reached), [true, false]);
+  assert.equal(view.welcomeMinor, 2500);
+
+  await repository.mutatePost(goalPost.channelId, goalPost.id, (current) => ({
+    ...current, referral: { ...current.referral, endsAt: new Date(Date.now() - 1000).toISOString() },
+  }));
+  await settleDueGames(repository);
+  const settled = (await repository.getPost(goalPost.channelId, goalPost.id)).referral;
+  assert.equal(settled.counted, 2);
+  const hema = settled.payouts.find((row) => row.userId === helper.id);
+  assert.equal(hema.amountMinor, 3000, 'no per-friend credit, only the goal reached');
+  assert.equal(hema.goalsMinor, 3000);
+  assert.equal(settled.payouts.some((row) => row.userId === lone.id), false, 'taking a link and bringing nobody earns nothing');
+  const welcomed = (await repository.getUserById(first.id)).storeCredits.find((entry) => entry.id === `refw_${goalPost.id}_${first.id}`);
+  assert.equal(welcomed.amountMinor, 2500);
+  assert.equal(welcomed.storeId, shop.id);
+});
+
 console.log(`\n${passed} spread checks passed`);

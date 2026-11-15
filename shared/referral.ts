@@ -71,6 +71,51 @@ export interface ReferralJoin {
   at: string;
 }
 
+/**
+ * A goal everyone works towards together: when the drive brings this many new
+ * buyers, it unlocks for everyone who helped. The shop decides what it gives -
+ * store credit to each person who brought at least one, a perk it writes
+ * itself (a mystery item, early access, free shipping), or both.
+ */
+export interface ReferralMilestone {
+  /** New buyers the whole drive has to bring. */
+  at: number;
+  /** Store credit for each person who brought at least one, in paise. Zero for none. */
+  creditMinor: number;
+  /** What else unlocks, in the shop's words. Empty for none. */
+  perk: string;
+}
+
+export const REFERRAL_MAX_MILESTONES = 3;
+export const REFERRAL_MILESTONE_MAX_AT = 1000;
+export const REFERRAL_PERK_MAX = 80;
+/** Perks a shop can start from; it can write its own. */
+export const PERK_IDEAS = [
+  'A mystery item added to the drop',
+  'The drop opens 15 minutes early for sharers',
+  'Free shipping on the drop',
+  '10% off the whole drop for everyone',
+] as const;
+
+/** Goals as asked for: sane, in order, each a step past the last; null when one is wrong. */
+export function milestonesFrom(raw: unknown, maxCreditMinor: number): ReferralMilestone[] | null {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw) || raw.length > REFERRAL_MAX_MILESTONES) return null;
+  const out: ReferralMilestone[] = [];
+  for (const entry of raw as Record<string, unknown>[]) {
+    const at = Number(entry?.at);
+    const creditMinor = entry?.creditMinor === undefined || entry?.creditMinor === null || entry?.creditMinor === '' ? 0 : Number(entry.creditMinor);
+    const perk = typeof entry?.perk === 'string' ? entry.perk.trim().slice(0, REFERRAL_PERK_MAX) : '';
+    if (!Number.isInteger(at) || at < 1 || at > REFERRAL_MILESTONE_MAX_AT) return null;
+    if (!Number.isInteger(creditMinor) || creditMinor < 0 || creditMinor > maxCreditMinor) return null;
+    if (creditMinor === 0 && !perk) return null;
+    out.push({ at, creditMinor, perk });
+  }
+  out.sort((a, b) => a.at - b.at);
+  if (out.some((entry, index) => index > 0 && entry.at === out[index - 1]!.at)) return null;
+  return out;
+}
+
 /** What a sharer was paid when the drive ended. */
 export interface ReferralPayout {
   userId: string;
@@ -80,6 +125,8 @@ export interface ReferralPayout {
   amountMinor: number;
   /** Brought the most and took the bonus. */
   top?: boolean;
+  /** Of `amountMinor`, what the goals reached paid them. */
+  goalsMinor?: number;
 }
 
 /** A drive, as stored on the post that runs it. */
@@ -100,6 +147,14 @@ export interface PostReferral {
   maxPerPerson: number;
   /** Extra credit for whoever brought the most. Zero for none. */
   topPrizeMinor: number;
+  /** Store credit each new buyer gets for joining through a link, in paise. Zero for none. */
+  welcomeMinor?: number;
+  /** Goals the whole drive works towards together, in order. */
+  milestones?: ReferralMilestone[];
+  /** When each goal was first reached, by index, so everybody is told once. */
+  reached?: (string | null)[];
+  /** New buyers who counted when it was paid: verified, the number goals were judged on. */
+  counted?: number | null;
   terms?: string | null;
   sharers: ReferralSharer[];
   joins: ReferralJoin[];
@@ -150,6 +205,15 @@ export interface ReferralView {
   mine: { in: boolean; joins: number; paidMinor: number | null } | null;
   /** Paid out: who got what. */
   payouts: { name: string; joins: number; amountMinor: number; top: boolean }[] | null;
+  /** What a new buyer gets for joining through a link. */
+  welcomeMinor: number;
+  /** The goals, and which are reached: live on the joins so far, final on the verified count once paid. */
+  goals: (ReferralMilestone & { reached: boolean })[];
+}
+
+/** How many new buyers the goals are judged on: everybody so far while it runs, the verified count once paid. */
+export function goalCount(referral: Pick<PostReferral, 'joins' | 'counted' | 'settledAt'>): number {
+  return referral.settledAt && typeof referral.counted === 'number' ? referral.counted : referral.joins.length;
 }
 
 /**

@@ -529,12 +529,23 @@ async function settleReferral(repository: Repo, post: Post, nowIso: string): Pro
   const people = await repository.listUsersByIds([...new Set(referral.joins.map((join) => join.userId))]);
   const verified = new Set(people.filter((person) => verifiedChecks(person).phone && !person.suspended).map((person) => person.id));
   const counted = { ...referral, joins: referral.joins.filter((join) => verified.has(join.userId)) };
+  // The goals are judged on the verified count: the same people who are paid for.
+  const reachedGoals = (referral.milestones ?? []).filter((goal) => counted.joins.length >= goal.at);
+  const goalsMinor = reachedGoals.reduce((sum, goal) => sum + goal.creditMinor, 0);
   const leaders = referralLeaders(counted);
+  // Everybody on the board brought at least one verified buyer, so every one of them shares in the goals.
   const payouts: ReferralPayout[] = leaders.map((row, index) => {
     const joins = Math.min(row.joins, referral.maxPerPerson);
     const top = index === 0 && referral.topPrizeMinor > 0;
-    return { userId: row.userId, name: row.name, joins, amountMinor: joins * referral.rewardMinor + (top ? referral.topPrizeMinor : 0), ...(top ? { top } : {}) };
+    return {
+      userId: row.userId, name: row.name, joins,
+      amountMinor: joins * referral.rewardMinor + (top ? referral.topPrizeMinor : 0) + goalsMinor,
+      ...(top ? { top } : {}),
+      ...(goalsMinor ? { goalsMinor } : {}),
+    };
   });
+  const goalWords = reachedGoals.length
+    ? ` and ${reachedGoals.length === 1 ? 'a goal' : `${reachedGoals.length} goals`} everyone reached together` : '';
   for (const payout of payouts) {
     if (payout.amountMinor <= 0) continue;
     const { credit } = await reward(repository, payout.userId, {
@@ -543,7 +554,7 @@ async function settleReferral(repository: Repo, post: Post, nowIso: string): Pro
         storeId: referral.storeId,
         storeName: referral.storeName,
         amountMinor: payout.amountMinor,
-        reason: `Brought ${payout.joins} ${payout.joins === 1 ? 'person' : 'people'} to ${referral.storeName}${payout.top ? ' - the most of anyone' : ''}`,
+        reason: `Brought ${payout.joins} ${payout.joins === 1 ? 'person' : 'people'} to ${referral.storeName}${payout.top ? ' - the most of anyone' : ''}${goalWords}`,
         link: linkOf(marked),
       },
     });
@@ -551,22 +562,82 @@ async function settleReferral(repository: Repo, post: Post, nowIso: string): Pro
       await notify(repository, [payout.userId], {
         kind: 'prize_won',
         title: `${rupees(payout.amountMinor)} store credit at ${referral.storeName} 📣`,
-        body: `For the ${payout.joins} ${payout.joins === 1 ? 'person' : 'people'} you brought${payout.top ? ', the most of anyone' : ''}. Spend it there at checkout.`,
+        body: `For the ${payout.joins} ${payout.joins === 1 ? 'person' : 'people'} you brought${payout.top ? ', the most of anyone' : ''}${goalWords}. Spend it there at checkout.`,
         link: linkOf(marked),
       });
     }
   }
+  // Every verified new buyer gets the shop's welcome credit, whoever brought them.
+  const welcome = referral.welcomeMinor ?? 0;
+  if (welcome > 0) {
+    for (const join of counted.joins) {
+      const { credit } = await reward(repository, join.userId, {
+        credit: {
+          id: `refw_${marked.id}_${join.userId}`,
+          storeId: referral.storeId,
+          storeName: referral.storeName,
+          amountMinor: welcome,
+          reason: `Welcome to ${referral.storeName}`,
+          link: linkOf(marked),
+        },
+      });
+      if (credit) {
+        await notify(repository, [join.userId], {
+          kind: 'prize_won',
+          title: `${rupees(welcome)} welcome credit at ${referral.storeName} 🎁`,
+          body: 'For joining through a friend’s link. Spend it there at checkout.',
+          link: linkOf(marked),
+        });
+      }
+    }
+  }
   await repository.mutatePost(marked.channelId, marked.id, (current) =>
-    (current.referral ? { ...current, referral: { ...current.referral, payouts } } : null));
-  const paid = payouts.reduce((sum, row) => sum + row.amountMinor, 0);
+    (current.referral ? { ...current, referral: { ...current.referral, payouts, counted: counted.joins.length } } : null));
+  const paid = payouts.reduce((sum, row) => sum + row.amountMinor, 0) + welcome * counted.joins.length;
   const shop = await repository.getUserById(referral.storeId);
+  const perks = reachedGoals.filter((goal) => goal.perk).map((goal) => goal.perk);
   await notify(repository, shop ? storeCrew(shop, 'posts') : [referral.storeId], {
     kind: 'prize_won',
     title: `Spread the word ended: ${counted.joins.length} new ${counted.joins.length === 1 ? 'buyer' : 'buyers'}`,
-    body: paid > 0
-      ? `${rupees(paid)} in store credit went to ${payouts.filter((row) => row.amountMinor > 0).length} sharers, spendable at your shop.`
-      : referral.joins.length > 0 ? 'Nobody who joined has verified a phone yet, so no credit was paid.' : 'Nobody joined through a link this time.',
+    body: [
+      paid > 0
+        ? `${rupees(paid)} in store credit went out, spendable at your shop.`
+        : referral.joins.length > 0 ? 'Nobody who joined has verified a phone yet, so no credit was paid.' : 'Nobody joined through a link this time.',
+      perks.length ? `Unlocked, for you to deliver: ${perks.join('; ')}.` : '',
+    ].filter(Boolean).join(' '),
     link: linkOf(marked),
+  });
+}
+
+/**
+ * Tell everyone in a drive that the goal they were working towards is reached.
+ * Called after a join is counted; each goal is stamped on the post first, so
+ * it is announced once however many joins land together.
+ */
+export async function announceGoals(repository: Repo, post: Post): Promise<void> {
+  const referral = post.referral;
+  if (!referral?.milestones?.length) return;
+  const count = referral.joins.length;
+  const due = referral.milestones.map((goal, index) => ({ goal, index }))
+    .filter(({ goal, index }) => count >= goal.at && !referral.reached?.[index]);
+  if (due.length === 0) return;
+  const stamp = new Date().toISOString();
+  const saved = await repository.mutatePost(post.channelId, post.id, (current) => {
+    const now = current.referral;
+    if (!now?.milestones) return null;
+    const reached = now.milestones.map((goal, index) => now.reached?.[index] ?? (now.joins.length >= goal.at ? stamp : null));
+    return reached.some((at, index) => at !== (now.reached?.[index] ?? null)) ? { ...current, referral: { ...now, reached } } : null;
+  });
+  const fresh = (saved?.referral?.milestones ?? []).filter((_, index) => saved?.referral?.reached?.[index] === stamp);
+  if (!saved?.referral || fresh.length === 0) return;
+  const top = fresh[fresh.length - 1]!;
+  const gift = [top.creditMinor ? `${rupees(top.creditMinor)} credit each` : '', top.perk].filter(Boolean).join(' + ');
+  const shop = await repository.getUserById(saved.referral.storeId);
+  await notify(repository, [...saved.referral.sharers.map((sharer) => sharer.userId), ...(shop ? storeCrew(shop, 'posts') : [])], {
+    kind: 'prize_won',
+    title: `Goal reached at ${saved.referral.storeName}: ${top.at} new buyers 🎯`,
+    body: `Unlocked: ${gift}. Confirmed when the timer ends, for everyone who brought someone.`,
+    link: linkOf(saved),
   });
 }
 
