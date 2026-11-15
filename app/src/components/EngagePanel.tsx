@@ -1,6 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import { SkelCards } from './PageSkeletons';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { useProLocked } from './Billing';
 import type { StoreAccess } from '@shared/stores';
 import { ApiRequestError, api, type PostCard } from '../api';
 import { SocialPostCard, postHref } from './SocialPost';
@@ -14,7 +15,7 @@ import { plural } from '../format';
 
 const PostStudio = lazy(() => import('./PostStudio').then((module) => ({ default: module.PostStudio })));
 
-const STARTS: { id: string; emoji: string; label: string; line: string; hue: string; mode: StudioMode; presets?: { stock?: boolean; prize?: boolean } }[] = [
+const STARTS: { id: string; emoji: string; label: string; line: string; hue: string; mode: StudioMode; presets?: { stock?: boolean; prize?: boolean }; pro?: boolean }[] = [
   { id: 'contest', emoji: '🏆', label: 'Photo competition', line: 'You set prizes; they or you pick.', hue: 'gold', mode: 'contest' },
   { id: 'guess', emoji: '🎯', label: 'Guess the price', line: 'Sealed till the reveal.', hue: 'violet', mode: 'guess' },
   { id: 'poll', emoji: '📊', label: 'Poll', line: 'Reward whoever picks the winner.', hue: 'aqua', mode: 'poll' },
@@ -24,7 +25,7 @@ const STARTS: { id: string; emoji: string; label: string; line: string; hue: str
   { id: 'question', emoji: '❓', label: 'Ask your buyers', line: 'One question, open answers.', hue: 'blue', mode: 'question' },
   { id: 'compare', emoji: '🎨', label: 'Before & after', line: 'A restore or a glow-up.', hue: 'pink', mode: 'compare' },
   { id: 'photo', emoji: '📸', label: 'Photo tag', line: 'New arrivals, every piece tagged.', hue: 'violet', mode: 'photo' },
-  { id: 'spread', emoji: '📣', label: 'Spread the word', line: 'Share your shop, win credit.', hue: 'gold', mode: 'spread' },
+  { id: 'spread', emoji: '📣', label: 'Spread the word', line: 'Share your shop, win credit.', hue: 'gold', mode: 'spread', pro: true },
 ];
 
 /**
@@ -36,6 +37,8 @@ export function EngagePanel({ store }: { store: StoreAccess }) {
   const [cards, setCards] = useState<PostCard[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [making, setMaking] = useState<(typeof STARTS)[number] | null>(null);
+  const spreadLocked = useProLocked('spread', store.ownerId) === true;
+  const navigate = useNavigate();
 
   const load = useCallback(async () => {
     try {
@@ -64,8 +67,10 @@ export function EngagePanel({ store }: { store: StoreAccess }) {
         <div className="sengage__starts">
           {STARTS.map((entry, index) => (
             <button key={entry.id} type="button" className={`sengage__start sengage__start--${entry.hue}`}
-              style={{ animationDelay: `${index * 35}ms` }} onClick={() => setMaking(entry)}>
+              style={{ animationDelay: `${index * 35}ms` }}
+              onClick={() => (entry.pro && spreadLocked ? navigate('/pro') : setMaking(entry))}>
               <span className="sengage__emoji" aria-hidden="true">{entry.emoji}</span>
+              {entry.pro && <span className="probadge sengage__pro">{spreadLocked ? '🔒 PRO' : 'PRO'}</span>}
               <strong>{entry.label}</strong>
               <span className="sengage__line">{entry.line}</span>
             </button>

@@ -64,10 +64,22 @@ const repository = await getRepository();
 const owner = await repository.getUserById(shop.id);
 const handle = owner.sellerProfile.username;
 
-const drive = (referral, body = 'Bring a friend - credit for every new buyer') =>
-  createPost(req({ headers: shop.headers, body: { body, storeId: shop.id, referral } }), ctx);
+const { forget } = await import(new URL('../api/dist/api/src/rate-limit.js', import.meta.url));
+// The shop posts a lot of drives here, faster than a real shop would: its posting limit is reset each time.
+const drive = async (referral, body = 'Bring a friend - credit for every new buyer') => {
+  await forget(shop.id, 'post');
+  return createPost(req({ headers: shop.headers, body: { body, storeId: shop.id, referral } }), ctx);
+};
 
 console.log('spread the word');
+
+await check('running one is Pro: refused without it, open with it', async () => {
+  const refused = await drive({ rewardMinor: 10000, maxPerPerson: 2, timing: 'now', hours: 24, target: { kind: 'shop' } });
+  assert.equal(refused.status, 402);
+  assert.equal(refused.jsonBody.error, 'pro_required');
+  const account = await repository.getUserById(shop.id);
+  await repository.updateUser({ ...account, pro: { until: new Date(Date.now() + 90 * 86_400_000).toISOString(), history: [] } });
+});
 
 let post;
 await check('a shop starts one: credit per new buyer, a cap, a bonus and a timer', async () => {

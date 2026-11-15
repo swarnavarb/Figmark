@@ -10383,3 +10383,6 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .spreadcard__goal { display: grid; gap: 4px; font-size: var(--t-xs); color: var(--text-dim); }
 .spreadcard__bar { display: block; height: 6px; border-radius: var(--r-pill); background: rgba(255, 255, 255, 0.08); overflow: hidden; }
 .spreadcard__bar > span { display: block; height: 100%; background: var(--grad-gold); transform-origin: left center; }
+
+/* The PRO tag on Spread the word where a shop starts one. */
+.spread-nudge__pro { margin-left: 6px; vertical-align: 1px; }

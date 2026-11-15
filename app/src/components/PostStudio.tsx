@@ -17,6 +17,7 @@ import { ErrorNotice, Modal, Thumb, leadPhoto } from './ui';
 import { Icon } from './Icon';
 import { PostPreview } from './PostPreview';
 import { useSession } from '../session';
+import { ProLock, useProLocked } from './Billing';
 import { PERK_IDEAS, REFERRAL_DEFAULT_PER_PERSON, REFERRAL_MAX_MILESTONES, REFERRAL_MAX_PER_PERSON, REFERRAL_PERK_MAX, TIMING_LABELS } from '@shared/referral';
 import type { SpreadAbout } from './SpreadKit';
 import type { Listing } from '@shared/models';
@@ -431,6 +432,8 @@ export function PostStudio({
     };
   }, [mode, storeId, asShop, drops, ownItems]);
 
+  // Running a drive is Pro: the studio shows the lock instead of the form.
+  const spreadLocked = useProLocked('spread', asShop ? storeId : null) === true;
   const pickedDrop = (drops ?? []).find((sale) => sale.id === saleId) ?? null;
   // Before and During only make sense for a drop that has not ended, and
   // Before only for one that has not started.
@@ -1112,7 +1115,8 @@ export function PostStudio({
             </>
           )}
 
-          {mode === 'spread' && (
+          {mode === 'spread' && spreadLocked && <ProLock feature="spread" />}
+          {mode === 'spread' && !spreadLocked && (
             <>
               <Choice label="What are people sharing" value={spreadOn} onChange={setSpreadOn}
                 options={[{ id: 'shop', label: '🏪 Your shop' }, { id: 'drop', label: '⚡ A live drop' }, { id: 'listing', label: '🏷️ An item' }]} />
@@ -1309,7 +1313,7 @@ export function PostStudio({
           <button type="button" className="btn btn--quiet pstudio__peek" onClick={() => setView(view === 'edit' ? 'preview' : 'edit')}>
             <Icon name={view === 'edit' ? 'eye' : 'compose'} size={15} /> {view === 'edit' ? 'Preview' : 'Edit'}
           </button>
-          <button type="button" className="btn pstudio__go" disabled={busy || draft.uploading}
+          <button type="button" className="btn pstudio__go" disabled={busy || draft.uploading || (mode === 'spread' && spreadLocked)}
             title={blocked ?? undefined} onClick={() => void submit()}>
             {busy ? 'Posting…' : mode === 'photo' ? (spots.length ? `Post flex · ${spots.length} tagged` : 'Post')
               : mode === 'compare' ? 'Post before & after' : mode === 'question' ? 'Ask'

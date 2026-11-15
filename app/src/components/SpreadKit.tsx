@@ -7,6 +7,7 @@ import { useNow } from '../clock';
 import { useSession } from '../session';
 import { Icon } from './Icon';
 import { useShareSheet, type ShareSpec } from './ShareKit';
+import { useProLocked } from './Billing';
 
 /*
  * Spread the word, wherever it shows: the post itself, a banner on the shop's
@@ -381,6 +382,7 @@ export function SpreadNudge({ storeId, storeName, about, compact = false }: {
   const [running, setRunning] = useState<ShopDrive | null>(null);
   const [checked, setChecked] = useState(0);
   const { open, sheet } = useShareSheet();
+  const locked = useProLocked('spread', storeId) === true;
 
   useEffect(() => {
     let live = true;
@@ -431,7 +433,7 @@ export function SpreadNudge({ storeId, storeName, about, compact = false }: {
         <div className="spread-nudge__head">
           <span className="spread-nudge__badge" aria-hidden="true">📣</span>
           <span className="spread-nudge__copy">
-            <span className="spread-nudge__eyebrow">Spread the word</span>
+            <span className="spread-nudge__eyebrow">Spread the word <span className="probadge spread-nudge__pro">PRO</span></span>
             <strong>{title}</strong>
           </span>
         </div>
@@ -441,9 +443,13 @@ export function SpreadNudge({ storeId, storeName, about, compact = false }: {
           <li><span>2</span> Buyers share their link</li>
           <li><span>3</span> New buyers join, they earn</li>
         </ol>
-        <button type="button" className="btn spread-nudge__go" onClick={() => setMaking(true)}>
-          <Icon name="megaphone" size={15} /> Start Spread the word
-        </button>
+        {locked ? (
+          <Link className="btn spread-nudge__go" to="/pro">🔒 Unlock with Pro</Link>
+        ) : (
+          <button type="button" className="btn spread-nudge__go" onClick={() => setMaking(true)}>
+            <Icon name="megaphone" size={15} /> Start Spread the word
+          </button>
+        )}
       </div>
       {making && (
         <SpreadStudio storeId={storeId} storeName={storeName} about={about}

@@ -55,6 +55,7 @@ import {
   type PostReferral, type ReferralTarget, type ReferralTiming, type ReferralView,
 } from '../../../shared/referral.js';
 import { finishesAt, firstDropAt } from './power-sale.js';
+import { proRefusal } from '../billing.js';
 import { ownPhotoName } from '../storage/index.js';
 import { likeness, storedFingerprint } from '../image-hash.js';
 import { pictureMatches } from '../photo-search.js';
@@ -2620,6 +2621,9 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
 
   let referral: PostReferral | null = null;
   if (body.referral && shop) {
+    // Running a drive is Pro; taking part in one is free for everybody.
+    const locked = await proRefusal(repository, shop.id, 'spread');
+    if (locked) return locked;
     const made = await referralFrom(body.referral, shop, repository);
     if ('refusal' in made) return made.refusal;
     if (poll || guess || contest || hotspots || debateIds || compare || question || vibe || body.listingId) {
