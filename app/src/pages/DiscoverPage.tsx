@@ -14,6 +14,7 @@ import { ApiRequestError, api, type DiscoverResponse, type FeedListing, type Pos
 import { ContentBadge, SocialPostCard, postHref } from '../components/SocialPost';
 import { VoiceProvider } from '../components/SocialVoice';
 import { FollowSuggestions } from '../components/FollowSuggestions';
+import { SpreadRow } from '../components/SpreadKit';
 import { Icon } from '../components/Icon';
 import { Spinner } from '../components/Spinner';
 import { useToast } from '../components/Feedback';
@@ -308,6 +309,7 @@ function DiscoverBody() {
 
   const [live, setLive] = useState<PostCard[]>([]);
   const [contests, setContests] = useState<PostCard[]>([]);
+  const [spreads, setSpreads] = useState<PostCard[]>([]);
   const [stream, setStream] = useState<Stream | null>(null);
   /** The endless stream, in the order the server gave it, and where to read on from. */
   const [flow, setFlow] = useState<FlowItem[]>([]);
@@ -369,6 +371,7 @@ function DiscoverBody() {
         setRails({ topics: page.topics ?? [], wants: page.wants ?? [], spotted: page.spotted ?? [] });
         setLive(page.live ?? []);
         setContests(page.contests ?? []);
+        setSpreads(page.spreads ?? []);
         setFinds(page.finds ?? []);
         setLeaning(page.leaning ?? []);
         setNext(page.next ?? null);
@@ -457,8 +460,8 @@ function DiscoverBody() {
   const lists = stream ?? EMPTY;
 
   const spots = useMemo(
-    () => spotlight(narrow(live), narrow(contests), { ...lists, flexes: narrow(lists.flexes), debates: narrow(lists.debates), rising: narrow(lists.rising) }, shownFinds),
-    [live, contests, lists, shownFinds, narrow],
+    () => spotlight(narrow(live), narrow(contests), narrow(spreads), { ...lists, flexes: narrow(lists.flexes), debates: narrow(lists.debates), rising: narrow(lists.rising) }, shownFinds),
+    [live, contests, spreads, lists, shownFinds, narrow],
   );
   const spotlit = useMemo(() => new Set(spots.filter((spot) => spot.postId).map((spot) => spot.postId!)), [spots]);
   const narrowed = Boolean(category || words.length);
@@ -494,7 +497,7 @@ function DiscoverBody() {
     <SocialPostCard key={card.post.id} card={card} promoted={promoted} inDiscover />
   ));
   const openContests = contests.filter((card) => card.post.contest && contestPhase(card.post.contest) !== 'ended');
-  const liveCount = live.length + openContests.filter((card) => !live.some((other) => other.post.id === card.post.id)).length;
+  const liveCount = live.length + [...openContests, ...spreads].filter((card) => !live.some((other) => other.post.id === card.post.id)).length;
   const paged = lens === 'all' || lens === 'debates' || lens === 'shelves';
   const hasMore = lens === 'all' ? shown < flowShown.length || cursor !== null : next !== null;
   const guestLeft = !user && lens === 'all' && cursor !== null ? Math.max(0, flowShown.length - shown) : null;
@@ -618,6 +621,12 @@ function DiscoverBody() {
       ) : lens === 'all' ? (
         <>
           {spots.length > 0 && !words.length && <SpotlightDeck spots={spots} />}
+          {spreads.length > 0 && !narrowed && (
+            <>
+              <h2 className="discsection"><Icon name="megaphone" size={15} /> Earn store credit</h2>
+              <SpreadRow cards={spreads} />
+            </>
+          )}
           {rails.topics.length > 0 && !narrowed && (
             <nav className="distopics" aria-label="Topics">
               {rails.topics.slice(0, TOPICS_INLINE).map((topic) => (
@@ -677,7 +686,7 @@ function DiscoverBody() {
       ) : lens === 'week' ? (
         <WeeklyBest />
       ) : lens === 'live' ? (
-        <LiveView live={live} contests={contests} posts={posts} />
+        <LiveView live={live} contests={contests} spreads={spreads} posts={posts} />
       ) : lens === 'debates' ? (
         lists.debates.length || lists.threads.length ? (
           <div className="discover__stream">
@@ -1018,7 +1027,7 @@ const SOON_HOURS = 6;
  * (closing soonest first), a competition, the most loved shelf, the hottest
  * debate, a find, something rising - then round again. No request of its own.
  */
-function spotlight(live: PostCard[], contests: PostCard[], stream: Stream, finds: Find[]): Spot[] {
+function spotlight(live: PostCard[], contests: PostCard[], spreads: PostCard[], stream: Stream, finds: Find[]): Spot[] {
   const post = (card: PostCard, kind: string, icon: IconName, tone: string, cta: string, line: string | null = null): Spot => ({
     id: `p${card.post.id}`,
     postId: card.post.id,
@@ -1040,6 +1049,8 @@ function spotlight(live: PostCard[], contests: PostCard[], stream: Stream, finds
   });
   const fromContests = contests.filter((card) => card.post.contest && contestPhase(card.post.contest) !== 'ended')
     .map((card) => post(card, 'Competition', 'trophy', 'gold', contestPhase(card.post.contest!) === 'entries' ? 'Enter' : 'Vote', prizeOf(card)));
+  const fromSpreads = spreads.filter((card) => !live.some((other) => other.post.id === card.post.id))
+    .map((card) => post(card, 'Spread the word', 'megaphone', 'gold', 'Get my link', spreadLine(card)));
   const fromFlexes = stream.flexes.map((card) => post(card, 'Shelf', 'camera', 'violet', 'See the shelf'));
   const fromDebates = stream.debates.map((card) => post(card, 'Debate', 'forum', 'pink', 'Pick a side'));
   const fromRising = stream.rising.map((card) => post(card, 'Rising', 'rising', 'aqua', 'Open'));
@@ -1057,7 +1068,7 @@ function spotlight(live: PostCard[], contests: PostCard[], stream: Stream, finds
     cta: 'View item',
     tone: 'coral',
   }));
-  const queues = [fromLive, fromContests, fromFlexes, fromDebates, fromFinds, fromRising];
+  const queues = [fromLive, fromContests, fromSpreads, fromFlexes, fromDebates, fromFinds, fromRising];
   const out: Spot[] = [];
   const seen = new Set<string>();
   while (out.length < SPOTS_MAX && queues.some((queue) => queue.length)) {
@@ -1212,6 +1223,7 @@ function liveKind(card: PostCard): { icon: IconName; label: string; cta: string;
   const { post, social } = card;
   if (post.contest) return { icon: 'trophy', label: 'Competition', cta: contestPhase(post.contest) === 'entries' ? 'Enter' : 'Vote', tone: 'gold' };
   if (social.guess) return { icon: 'target', label: 'Guess the price', cta: 'Guess', tone: 'violet' };
+  if (social.referral) return { icon: 'megaphone', label: 'Spread the word', cta: 'Get my link', tone: 'gold' };
   if (post.debate) return { icon: 'forum', label: 'Debate', cta: 'Pick a side', tone: 'pink' };
   if (social.poll?.style === 'rating') return { icon: 'star', label: 'Rate it', cta: 'Rate', tone: 'gold' };
   return { icon: 'poll', label: social.poll?.stock ? 'Stock poll' : 'Poll', cta: 'Vote', tone: 'aqua' };
@@ -1222,7 +1234,7 @@ function closesAt(card: PostCard): number | null {
   const { post, social } = card;
   const at = post.contest
     ? (contestPhase(post.contest) === 'entries' ? post.contest.entriesCloseAt : post.contest.endsAt)
-    : social.guess?.revealAt ?? social.poll?.closesAt ?? null;
+    : social.guess?.revealAt ?? social.referral?.endsAt ?? social.poll?.closesAt ?? null;
   if (!at) return null;
   const time = Date.parse(at);
   return time > Date.now() ? time : null;
@@ -1244,9 +1256,16 @@ function countOf(card: PostCard): string | null {
     return `${entries} ${entries === 1 ? 'entry' : 'entries'}`;
   }
   if (card.social.guess) return `${card.social.guess.count} guess${card.social.guess.count === 1 ? '' : 'es'}`;
+  if (card.social.referral) return `${card.social.referral.joined} joined · ${card.social.referral.sharers} sharing`;
   if (card.social.poll) return `${card.social.poll.total} vote${card.social.poll.total === 1 ? '' : 's'}`;
   const reactions = card.social.reactions.total;
   return reactions ? `${reactions} reaction${reactions === 1 ? '' : 's'}` : null;
+}
+
+/** What a Spread the word pays, said short. */
+function spreadLine(card: PostCard): string | null {
+  const referral = card.social.referral;
+  return referral ? `Earn ${formatMoney(referral.rewardMinor, 'INR')} credit per friend · ${referral.storeName}` : null;
 }
 
 /** What a competition gives its winner, said short. */
@@ -1273,9 +1292,10 @@ function pictures(card: PostCard): string[] {
  * competitions shops are running, then every other open poll, guess and
  * debate, and last the competitions that just finished.
  */
-function LiveView({ live, contests, posts }: {
+function LiveView({ live, contests, spreads, posts }: {
   live: PostCard[];
   contests: PostCard[];
+  spreads: PostCard[];
   posts: (cards: PostCard[]) => ReactNode;
 }) {
   const now = Date.now();
@@ -1283,12 +1303,13 @@ function LiveView({ live, contests, posts }: {
   const open = contests.filter((card) => card.post.contest && contestPhase(card.post.contest) !== 'ended');
   const ended = contests.filter((card) => card.post.contest && contestPhase(card.post.contest) === 'ended');
   const all = [...new Map([...live, ...open].map((card) => [card.post.id, card])).values()];
-  const soon = all.filter((card) => (closesAt(card) ?? Infinity) < soonCut)
+  // Drives have a row of their own, below.
+  const soon = all.filter((card) => !card.social.referral && (closesAt(card) ?? Infinity) < soonCut)
     .sort((a, b) => (closesAt(a) ?? 0) - (closesAt(b) ?? 0));
   const soonIds = new Set(soon.map((card) => card.post.id));
   const competitions = open.filter((card) => !soonIds.has(card.post.id));
-  const rest = live.filter((card) => !soonIds.has(card.post.id) && !card.post.contest);
-  if (all.length === 0 && ended.length === 0) {
+  const rest = live.filter((card) => !soonIds.has(card.post.id) && !card.post.contest && !card.social.referral);
+  if (all.length === 0 && ended.length === 0 && spreads.length === 0) {
     return (
       <EmptyState title="You're all caught up">
         Every open poll, guess and competition here has your vote. Start one with the + below.
@@ -1301,6 +1322,12 @@ function LiveView({ live, contests, posts }: {
         <>
           <h2 className="discsection discsection--soon"><span className="dischero__pulse" aria-hidden="true" /> Closing soon</h2>
           {posts(soon)}
+        </>
+      )}
+      {spreads.length > 0 && (
+        <>
+          <h2 className="discsection" id="spread"><Icon name="megaphone" size={15} /> Earn store credit</h2>
+          <SpreadRow cards={spreads} />
         </>
       )}
       {competitions.length > 0 && (

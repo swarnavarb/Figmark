@@ -135,6 +135,11 @@ export function SpreadPlay({ card, disabled, onCard }: { card: PostCard; disable
         </div>
       )}
       {!ended && !user && <p className="faint spread__small">Sign in to get your own link.</p>}
+      {!ended && disabled && user && (
+        <Link className="btn btn--sm spread__go" to={`/social/p/${encodeURIComponent(card.post.channelId)}/${encodeURIComponent(card.post.id)}`}>
+          <Icon name="share" size={14} /> Open it to get your link
+        </Link>
+      )}
       {error && <p className="spread__error" role="alert">{error}</p>}
 
       <div className="spread__stats">
@@ -295,5 +300,40 @@ export function SpreadNudge({ storeId, storeName, about, compact = false }: {
         </Suspense>
       )}
     </>
+  );
+}
+
+/**
+ * Discover's "Earn store credit" row: every drive running or about to, as a
+ * small card - the shop, what it pays per friend, the timer, how many joined.
+ * Tapping one opens the post, where the link is.
+ */
+export function SpreadRow({ cards }: { cards: PostCard[] }) {
+  return (
+    <div className="spreadrow">
+      {cards.map((card, index) => {
+        const referral = card.social.referral;
+        if (!referral) return null;
+        const photo = card.post.photoUrls?.[0] ?? card.post.photoUrl ?? null;
+        return (
+          <Link key={card.post.id} to={`/social/p/${encodeURIComponent(card.post.channelId)}/${encodeURIComponent(card.post.id)}`} className="spreadcard" style={{ animationDelay: `${index * 40}ms` }}>
+            <span className="spreadcard__top">
+              {photo ? <img src={photo} alt="" loading="lazy" /> : <span className="spreadcard__emoji" aria-hidden="true">📣</span>}
+              <DriveClock referral={referral} />
+            </span>
+            <span className="spreadcard__body">
+              <span className="spreadcard__shop">{referral.storeName}</span>
+              <span className="spreadcard__pay"><strong>{formatMoney(referral.rewardMinor, 'INR')}</strong> per friend you bring</span>
+              <span className="faint">
+                {referral.target.kind === 'drop' ? `⚡ ${referral.target.name}` : referral.target.kind === 'listing' ? referral.target.title : 'The whole shop'}
+              </span>
+              <span className="spreadcard__meta">
+                {referral.joined} joined · {referral.sharers} sharing{referral.mine?.in ? ' · you’re in' : ''}
+              </span>
+            </span>
+          </Link>
+        );
+      })}
+    </div>
   );
 }

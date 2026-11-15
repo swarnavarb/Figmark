@@ -764,6 +764,25 @@ function liveFor(posts: readonly Post[], userId: string | null, now: number, sco
     .slice(0, LIVE_SIZE);
 }
 
+/** How many Spread the word drives Discover's row carries. */
+const SPREADS_SHOWN = 12;
+
+/**
+ * Spread the word drives running or about to, for Discover's "Earn store
+ * credit" row: running before upcoming, then the most credit per new buyer,
+ * then the soonest to end. Shown whether or not the reader has taken part -
+ * the row is where they come back to share their link again.
+ */
+function spreadsOf(posts: readonly Post[], now: number): Post[] {
+  const phaseRank = (post: Post) => (referralPhase(post.referral!, now) === 'open' ? 0 : 1);
+  return posts
+    .filter((post) => post.referral && referralPhase(post.referral, now) !== 'ended')
+    .sort((a, b) => phaseRank(a) - phaseRank(b)
+      || b.referral!.rewardMinor - a.referral!.rewardMinor
+      || a.referral!.endsAt.localeCompare(b.referral!.endsAt))
+    .slice(0, SPREADS_SHOWN);
+}
+
 /** Competitions running or just finished, open ones first, those closing soonest first. */
 function contestsOf(posts: readonly Post[], now: number): Post[] {
   const open = (post: Post) => contestPhase(post.contest!, now) !== 'ended';
@@ -1492,11 +1511,12 @@ async function discover(request: HttpRequest, _context: InvocationContext) {
   // The Live strip and the competitions row ride on the first page.
   const live = page === 0 ? liveFor(open, user?.id ?? null, now, (post) => score.get(post.id) ?? 0) : [];
   const contests = page === 0 ? contestsOf(open, now) : [];
+  const spreads = page === 0 ? spreadsOf(open, now) : [];
   const listed = [...debates, ...threads, ...flexes, ...rising];
   const listedIds = new Set(listed.map((post) => post.id));
   // With both asked for at once, the stream's page shares the one decorate.
   const streamFirst = wantStream ? streamPosts : [];
-  const extra = [...new Map([...live, ...contests, ...streamFirst].filter((post) => !listedIds.has(post.id)).map((post) => [post.id, post])).values()];
+  const extra = [...new Map([...live, ...contests, ...spreads, ...streamFirst].filter((post) => !listedIds.has(post.id)).map((post) => [post.id, post])).values()];
   const cards = await decorate([...listed, ...extra], repository, actor);
   const byCard = new Map(cards.map((card) => [card.post.id, card]));
   const pick = (posts: Post[]) => posts.map((post) => byCard.get(post.id)).filter((card): card is PostCard => Boolean(card));
@@ -1510,7 +1530,7 @@ async function discover(request: HttpRequest, _context: InvocationContext) {
       ]).then(([wants, spotted, found]) => ({ topics: topicsOf(open, now), wants, spotted, ...found }))
     : {};
   return json(200, {
-    ...(page === 0 ? { live: pick(live), contests: pick(contests) } : {}),
+    ...(page === 0 ? { live: pick(live), contests: pick(contests), spreads: pick(spreads) } : {}),
     debates: pick(debates),
     threads: pick(threads),
     flexes: pick(flexes),
@@ -1576,7 +1596,7 @@ function explained(
     const reason = whyOf({
       endsInMs: until !== null && Number.isFinite(until) ? until - context.now : null,
       live,
-      play: !live ? null : post.contest ? 'contest' : post.guess ? 'guess' : 'poll',
+      play: !live ? null : post.contest ? 'contest' : post.guess ? 'guess' : post.referral ? 'spread' : 'poll',
       followedActed: card.followedActed?.count ?? 0,
       forumJoined: post.channel === 'forum' && context.reader.forums.has(post.channelId),
       contested: contestedness(post),
@@ -1586,7 +1606,7 @@ function explained(
       replay: context.replay,
       left: card.listing && card.listing.buyable !== false ? card.listing.left ?? null : null,
       fill: fill ? { joined: fill.joined, total: fill.total } : null,
-      prize: post.contest?.prizes.length ? 'contest' : post.debate?.prize ? 'debate' : post.poll?.reward ? 'reward' : null,
+      prize: post.contest?.prizes.length ? 'contest' : post.debate?.prize ? 'debate' : post.poll?.reward ? 'reward' : post.referral ? 'spread' : null,
       bought: post.buyCount ?? 0,
       shared: post.shareCount ?? 0,
       comments: post.comments?.length ?? post.replyCount,

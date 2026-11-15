@@ -1518,6 +1518,8 @@ export interface DiscoverResponse {
   live?: PostCard[];
   /** Competitions running or just finished. First page only. */
   contests?: PostCard[];
+  /** Spread the word drives running or about to: the "Earn store credit" row. First page only. */
+  spreads?: PostCard[];
   debates: PostCard[];
   threads: PostCard[];
   flexes: PostCard[];

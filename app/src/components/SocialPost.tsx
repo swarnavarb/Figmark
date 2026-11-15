@@ -28,7 +28,8 @@ import { OpeningCard } from './Showcase';
 import { useToast } from './Feedback';
 import { PhotoSales, type PhotoPoster } from './PhotoSales';
 import { ContestPlay, GuessPlay, PollPlay, TeamChip } from './PostPlay';
-import { SpreadPlay } from './SpreadKit';
+import { SpreadPlay, driveShareSpec } from './SpreadKit';
+import { linkFor } from './ShareKit';
 import { markOpened, useSeen } from '../seen';
 import { HASHTAG, MENTION } from '@shared/feed';
 import { tagKey, tagSlug } from '@shared/shop-tags';
@@ -1701,6 +1702,20 @@ function PostShareSheet({ card, onClose, onShared }: {
   // A freight or art store has no wall to repost onto: it shares the link.
   const canRepost = (target.reach ?? 'feed') === 'feed' && !voice.storeId?.includes(':');
   const canNative = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+  const { user } = useSession();
+  // A Spread the word goes out of the app on the sharer's own link, so whoever
+  // signs up through it counts for them.
+  const owner = card.original ?? card;
+  const drive = owner.social.referral && owner.social.referral.phase !== 'ended' ? owner.social.referral : null;
+
+  /** This person's link to the drive, taking part first when they have not yet. */
+  async function driveUrl(): Promise<string> {
+    if (!drive) return `${window.location.origin}${shareHref(target)}`;
+    if (user && !owner.social.host && !drive.mine?.in) {
+      await api.joinSpread(target.channelId, target.id).catch(() => undefined);
+    }
+    return linkFor(driveShareSpec(drive, target.channelId, target.id, target.body).link, user?.id ?? null);
+  }
 
   async function count(mode: 'repost' | 'link', body?: string) {
     const result = await api.sharePost(target.channelId, target.id, mode, body, voice.storeId);
@@ -1724,10 +1739,13 @@ function PostShareSheet({ card, onClose, onShared }: {
 
   async function link(native: boolean) {
     setError(null);
-    const url = `${window.location.origin}${shareHref(target)}`;
     try {
+      const url = await driveUrl();
       if (native) {
         await navigator.share({ title: `${target.authorName} on Figmark`, text: target.body.slice(0, 120), url });
+      } else if (drive) {
+        await navigator.clipboard.writeText(url)
+          .catch(() => askText({ title: 'Copy your link', label: 'Link', initial: url, action: 'Done' }));
       } else {
         await copyLink(target);
       }
@@ -1741,6 +1759,11 @@ function PostShareSheet({ card, onClose, onShared }: {
   return (
     <Modal title="Share post" onClose={onClose}>
       <div className="sharesheet">
+        {drive && (
+          <p className="sharesheet__drive">
+            📣 <b>Your link counts.</b> Copy it or send it anywhere: you earn {formatMoney(drive.rewardMinor, 'INR')} store credit at {drive.storeName} for every new buyer who joins through it before the timer runs out.
+          </p>
+        )}
         {canRepost && (
           <div className="sharesheet__repost">
             <textarea rows={2} value={thought} maxLength={2000}

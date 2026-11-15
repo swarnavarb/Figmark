@@ -57,7 +57,8 @@ export interface ShareSpec {
 export { inviteCodeFor } from './inviteCode';
 import { inviteCodeFor } from './inviteCode';
 
-async function linkFor(link: ShareLink, userId: string | null): Promise<string> {
+/** The full address a share link opens, with the sharer's invite (and affiliate or drive) on it. */
+export async function linkFor(link: ShareLink, userId: string | null): Promise<string> {
   const origin = window.location.origin;
   const code = await inviteCodeFor(userId);
   const withInvite = (path: string, extra: Record<string, string | undefined> = {}) => {

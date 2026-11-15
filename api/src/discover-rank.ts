@@ -501,7 +501,7 @@ export interface WhyFacts {
   endsInMs: number | null;
   live: boolean;
   /** What is open on it, when something is: a competition, a guess, or a poll. */
-  play: 'contest' | 'guess' | 'poll' | null;
+  play: 'contest' | 'guess' | 'poll' | 'spread' | null;
   /** People they follow who took part. */
   followedActed: number;
   forumJoined: boolean;
@@ -516,7 +516,7 @@ export interface WhyFacts {
   /** A group pre-order's fill. */
   fill: { joined: number; total: number } | null;
   /** What can be won by taking part while it is open. */
-  prize: 'contest' | 'debate' | 'reward' | null;
+  prize: 'contest' | 'debate' | 'reward' | 'spread' | null;
   /** Times the item was bought from this post. */
   bought: number;
   /** Times it was passed on. */
@@ -572,6 +572,7 @@ export function whyOf(facts: WhyFacts): DiscoverWhy | null {
   if (facts.live && facts.prize === 'contest') return { kind: 'prize', label: 'Prizes to win' };
   if (facts.live && facts.prize === 'debate') return { kind: 'prize', label: 'Prize for the best argument' };
   if (facts.live && facts.prize === 'reward') return { kind: 'prize', label: 'Voters can win store credit' };
+  if (facts.live && facts.prize === 'spread') return { kind: 'prize', label: 'Bring a friend, earn store credit' };
   if (facts.replay) return { kind: 'popular', label: 'Popular earlier' };
   if (facts.contested >= 0.5) return { kind: 'contested', label: 'Too close to call' };
   if (facts.velocity >= 1) return { kind: 'taking-off', label: 'Taking off right now' };
@@ -582,7 +583,7 @@ export function whyOf(facts: WhyFacts): DiscoverWhy | null {
   if (facts.comments >= W.comments) return { kind: 'lively', label: `${facts.comments} comments and counting` };
   if (facts.shared >= W.shared) return { kind: 'shared', label: `Shared ${facts.shared} times` };
   if (facts.live) {
-    return { kind: 'live', label: facts.play === 'contest' ? 'Competition open' : facts.play === 'guess' ? 'Guess the price' : 'Open to vote' };
+    return { kind: 'live', label: facts.play === 'contest' ? 'Competition open' : facts.play === 'guess' ? 'Guess the price' : facts.play === 'spread' ? 'Spread the word' : 'Open to vote' };
   }
   if (facts.ageMs >= 0 && facts.ageMs < W.freshMs) return { kind: 'fresh', label: 'Just posted' };
   if (facts.explore) return { kind: 'explore', label: 'Something different' };

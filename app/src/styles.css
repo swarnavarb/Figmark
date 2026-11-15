@@ -10249,3 +10249,37 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
   .spread-nudge { grid-template-columns: auto minmax(0, 1fr); }
   .spread-nudge__go { grid-column: 1 / -1; justify-self: stretch; }
 }
+
+/* Discover's "Earn store credit" row (SpreadRow). */
+.spreadrow {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(200px, 62%); gap: var(--s3);
+  overflow-x: auto; scroll-snap-type: x mandatory; padding: 2px 0 var(--s3); margin-bottom: var(--s3);
+  scrollbar-width: none;
+}
+.spreadrow::-webkit-scrollbar { display: none; }
+@media (min-width: 720px) { .spreadrow { grid-auto-columns: 240px; } }
+.spreadcard {
+  display: grid; scroll-snap-align: start; overflow: hidden; border-radius: var(--r-lg);
+  border: 1px solid rgba(251, 191, 36, 0.35); background: var(--surface-2); color: var(--text); text-decoration: none;
+  animation: spreadcard-in 260ms var(--ease-out) both;
+}
+@keyframes spreadcard-in { from { opacity: 0; transform: translateY(6px); } }
+.spreadcard__top {
+  position: relative; display: grid; place-items: center; height: 96px;
+  background: radial-gradient(120% 120% at 100% 0%, var(--warn-soft), transparent 70%), var(--surface);
+}
+.spreadcard__top img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.spreadcard__top .spread__clock { position: absolute; top: 8px; right: 8px; }
+.spreadcard__emoji { font-size: calc(36px * var(--text-scale)); }
+.spreadcard__body { display: grid; gap: 3px; padding: 10px 12px 12px; min-width: 0; }
+.spreadcard__shop { font-size: var(--t-xs); font-weight: var(--w-bold); color: var(--warn); text-transform: uppercase; letter-spacing: 0.06em; }
+.spreadcard__pay { font-size: var(--t-sm); }
+.spreadcard__pay strong { font: var(--w-bold) var(--t-lg)/1.1 var(--display); }
+.spreadcard__body .faint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.spreadcard__meta { font-size: var(--t-xs); color: var(--text-dim); }
+
+/* The post share sheet's note on a Spread the word: the links in it are the sharer's own. */
+.sharesheet__drive {
+  margin: 0 0 var(--s3); padding: var(--s2) var(--s3); border-radius: var(--r-md); font-size: var(--t-sm); line-height: 1.5;
+  background: linear-gradient(115deg, var(--warn-soft), transparent 80%); box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.3);
+}

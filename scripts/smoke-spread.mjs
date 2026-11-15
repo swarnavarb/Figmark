@@ -19,7 +19,7 @@ const { verifiedSignup } = await import('./verified-signup.mjs');
 const signup = verifiedSignup(rawSignup);
 const { myInviteRoute: myInvite, openInviteRoute: openInvite } = await import(new URL('share-routes.js', fns));
 const {
-  createPostRoute: createPost, joinSpreadRoute: joinSpread, shopSpreadRoute: shopSpread, readPostRoute: readPost,
+  createPostRoute: createPost, joinSpreadRoute: joinSpread, shopSpreadRoute: shopSpread, readPostRoute: readPost, discoverRoute: discover,
 } = await import(new URL('social-routes.js', fns));
 await useFixtures();
 const { getRepository } = await import(new URL('../api/dist/api/src/data/index.js', import.meta.url));
@@ -130,6 +130,19 @@ await check('somebody takes part and gets their link; the shop cannot win its ow
   code = (await myInvite(req({ headers: sharer.headers }), ctx)).jsonBody.code;
   const running = (await shopSpread(req({ params: { id: shop.id } }), ctx)).jsonBody.drive;
   assert.equal(running.postId, post.id, 'the shop page knows it is running one');
+});
+
+await check('Discover shows it in its own row, with a reason to take part', async () => {
+  const reader = await newPerson('Discover Dee');
+  const lists = (await discover(req({ headers: reader.headers, query: { lists: '1' } }), ctx)).jsonBody;
+  const card = lists.spreads.find((entry) => entry.post.id === post.id);
+  assert.ok(card, 'in the Earn store credit row');
+  assert.equal(card.social.referral.rewardMinor, 10000);
+  const guest = (await discover(req({ query: { lists: '1' } }), ctx)).jsonBody;
+  assert.ok(guest.spreads.some((entry) => entry.post.id === post.id), 'signed out too');
+  const stream = (await discover(req({ headers: reader.headers, query: { stream: '1' } }), ctx)).jsonBody.stream;
+  const inStream = stream.find((entry) => entry.post.id === post.id);
+  if (inStream) assert.ok(['Bring a friend, earn store credit', 'Spread the word'].includes(inStream.why?.label) || inStream.why?.kind === 'ending' || inStream.why?.kind === 'followed');
 });
 
 const viaLink = async (name, verified = true) => {
