@@ -1,4 +1,5 @@
-import type { PollStyle } from '@shared/social';
+import type { PollStyle, PostHotspot } from '@shared/social';
+import { FlexShelf } from './FlexShelf';
 import { PLACE_MEDALS } from '@shared/play';
 import { formatMoney } from '../format';
 import type { StudioMode } from './PostStudio';
@@ -10,6 +11,8 @@ export interface PreviewDraft {
   asStore: boolean;
   text: string;
   photos: string[];
+  /** Photo tags: pieces tagged on the photos. */
+  spots?: PostHotspot[];
   /** Polls and debates. */
   style?: PollStyle;
   answers?: { label: string; photo: string | null }[];
@@ -27,7 +30,7 @@ export interface PreviewDraft {
 }
 
 const KIND: Record<StudioMode, { emoji: string; label: string }> = {
-  photo: { emoji: '📸', label: 'Photo' },
+  photo: { emoji: '📸', label: 'Photo tag' },
   compare: { emoji: '🎨', label: 'Before & after' },
   question: { emoji: '❓', label: 'Question' },
   poll: { emoji: '📊', label: 'Poll' },
@@ -80,7 +83,11 @@ export function PostPreview({ draft }: { draft: PreviewDraft }) {
           </div>
         )}
 
-        {(draft.mode === 'photo' || draft.mode === 'question' || draft.mode === 'contest' || (voting && face === 'rating')) && lead && (
+        {draft.mode === 'photo' && lead && (draft.spots?.length ?? 0) > 0 && (
+          <FlexShelf photos={draft.photos} hotspots={draft.spots!} alt="Your photo" onOpen={() => {}} />
+        )}
+
+        {((draft.mode === 'photo' && !draft.spots?.length) || draft.mode === 'question' || draft.mode === 'contest' || (voting && face === 'rating')) && lead && (
           <div className={`ppreview__photos ppreview__photos--${Math.min(draft.photos.length, 4)}`}>
             {draft.photos.slice(0, draft.mode === 'photo' || draft.mode === 'question' ? 4 : 1).map((url) => <img key={url} src={url} alt="" />)}
           </div>

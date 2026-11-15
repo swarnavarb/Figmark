@@ -22,16 +22,23 @@ export function useDraftUploads() {
   }, []);
 
   return {
-    /** Upload, and hold the photo as unsaved. */
-    async upload(dataUrl: string) {
-      const stored = await api.uploadPhoto(dataUrl);
+    /**
+     * Upload, and hold the photo as unsaved. `page` is a profile or shop
+     * picture, which any signed-in account may upload before verifying.
+     */
+    async upload(dataUrl: string, kind: 'photo' | 'page' = 'photo') {
+      const stored = kind === 'page' ? await api.uploadStorefrontPhoto(dataUrl) : await api.uploadPhoto(dataUrl);
       holdUpload(stored.url, owner.current);
       return stored;
     },
-    /** A photo taken out again before saving: deleted now. */
+    /**
+     * A photo taken out again before saving: deleted now. Only one this form
+     * uploaded and has not saved - a picture already on the page is left be.
+     */
     discard(url: string) {
-      releaseUploads(owner.current, url);
-      void api.discardPhoto(url);
+      for (const held of releaseUploads(owner.current, url)) void api.discardPhoto(held);
     },
   };
 }
+
+export type DraftUploads = ReturnType<typeof useDraftUploads>;

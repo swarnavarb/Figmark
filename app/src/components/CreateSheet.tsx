@@ -37,7 +37,7 @@ interface Action {
 
 /** What a person can put up. */
 const YOU: Action[] = [
-  { id: 'photo', emoji: '📸', title: 'Photo or flex', line: 'Tag every piece if you like.', studio: 'photo', hue: 'violet' },
+  { id: 'photo', emoji: '📸', title: 'Photo tag', line: 'Share a photo, tag every piece.', studio: 'photo', hue: 'violet' },
   { id: 'poll', emoji: '📊', title: 'Poll', line: 'Text, photos, versus or stars.', studio: 'poll', hue: 'aqua' },
   { id: 'debate', emoji: '⚔️', title: 'Debate', line: 'Two sides. Pick yours.', studio: 'debate', hue: 'pink' },
   { id: 'question', emoji: '❓', title: 'Ask a question', line: 'Legit? Bootleg? What is it?', studio: 'question', hue: 'blue' },
@@ -53,7 +53,7 @@ function serviceActions(store: ServiceStoreRole): { label: string; actions: Acti
     {
       label: 'Post',
       actions: [
-        { id: 'vphoto', emoji: '📸', title: 'Photo post', line: forwarder ? 'A shipment landing, a full warehouse, a new route.' : 'A finished piece, work in progress.', studio: 'photo', hue: 'violet' },
+        { id: 'vphoto', emoji: '📸', title: 'Photo tag', line: forwarder ? 'A shipment landing, a full warehouse, a new route.' : 'A finished piece, work in progress.', studio: 'photo', hue: 'violet' },
         { id: 'vcompare', emoji: '🎨', title: 'Before & after', line: 'Two photos, side by side.', studio: 'compare', hue: 'pink' },
         { id: 'vpoll', emoji: '📊', title: 'Poll', line: forwarder ? 'Which route should we open next?' : 'Which piece should we paint next?', studio: 'poll', hue: 'aqua' },
         { id: 'vannounce', emoji: '📣', title: 'Message your channel', line: 'Cut-offs, delays, news for followers.', to: () => `/services/${store.kind}/${store.slug}?tab=channel`, hue: 'coral' },
@@ -103,7 +103,7 @@ const STORE: { label: string; actions: Action[] }[] = [
   {
     label: 'Show off',
     actions: [
-      { id: 'sphoto', emoji: '📸', title: 'Photo post', line: 'New arrivals, a full shelf, an unboxing.', studio: 'photo', hue: 'violet' },
+      { id: 'sphoto', emoji: '📸', title: 'Photo tag', line: 'New arrivals, a full shelf, an unboxing.', studio: 'photo', hue: 'violet' },
       { id: 'scompare', emoji: '🎨', title: 'Before & after', line: 'A restore, a repaint, a glow-up.', studio: 'compare', hue: 'pink' },
     ],
   },

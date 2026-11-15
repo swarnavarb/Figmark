@@ -89,6 +89,7 @@ import { useSession } from '../session';
 import { Svg } from '../components/ListingBlocks';
 import { CalcIcon } from '../components/CalcIcon';
 import { PictureField, TagInput } from '../components/PageFields';
+import { useDraftUploads } from '../draft-uploads';
 import { MoreMenu } from '../components/MoreMenu';
 import { EarnPill, earnOf } from '../components/Affiliate';
 import { SHOP_STATUS_EVENT, ShopStatusSwitch } from '../components/ShopStatusSwitch';
@@ -980,6 +981,8 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
   const [flash, setFlash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [step, setStep] = useState<ShopStep>('name');
+  /** Pictures picked here and not saved are deleted when this closes. */
+  const pictures = useDraftUploads();
   /** Which starter description this sign-up got. */
   const [bioPick] = useState(() => Math.floor(Math.random() * SHOP_BIOS.length));
   /** The furthest step reached, so the timeline can say what is done. */
@@ -1139,10 +1142,10 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
 
   const photoFields = (
     <>
-      <PictureField label="Shop photo" shape="square" value={draft.photoUrl ?? ''}
+      <PictureField uploads={pictures} label="Shop photo" shape="square" value={draft.photoUrl ?? ''}
         onChange={(url) => set('photoUrl', url)}
         hint="Your logo, or a photo of your shelf. Square works best." />
-      <PictureField label="Banner" shape="wide" value={draft.coverUrl ?? ''}
+      <PictureField uploads={pictures} label="Banner" shape="wide" value={draft.coverUrl ?? ''}
         onChange={(url) => set('coverUrl', url)}
         hint="The wide band behind your shop's name." />
     </>
@@ -1193,7 +1196,7 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
           onChange={(e) => setPayment('upiId', e.target.value)}
           placeholder="yourshop@okhdfcbank" />
       </label>
-      <PictureField label="UPI QR code" shape="qr" value={draft.payment?.qrUrl ?? ''}
+      <PictureField uploads={pictures} label="UPI QR code" shape="qr" value={draft.payment?.qrUrl ?? ''}
         onChange={(url) => setPayment('qrUrl', url)}
         hint="A screenshot of the QR from your UPI app. Buyers scan it at checkout." />
       <div className="field-row">

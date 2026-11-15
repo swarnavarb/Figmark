@@ -55,7 +55,7 @@ type Posted = (post: Pick<Post, 'channelId' | 'id'>) => void;
 export type StudioMode = 'photo' | 'compare' | 'question' | 'poll' | 'debate' | 'guess' | 'contest';
 
 const MODES: { id: StudioMode; emoji: string; label: string; hue: string; title: string; line: string }[] = [
-  { id: 'photo', emoji: '📸', label: 'Photo', hue: 'violet', title: 'Show it off', line: 'Photos, with every piece tagged if you like.' },
+  { id: 'photo', emoji: '📸', label: 'Photo tag', hue: 'violet', title: 'Tag what’s in the shot', line: 'Photos, with every piece tagged if you like.' },
   { id: 'compare', emoji: '🎨', label: 'Before/after', hue: 'pink', title: 'Before & after', line: 'People drag a line from one photo to the other.' },
   { id: 'question', emoji: '❓', label: 'Question', hue: 'blue', title: 'Ask the crowd', line: 'Legit or bootleg? What is it? Answers land below.' },
   { id: 'poll', emoji: '📊', label: 'Poll', hue: 'aqua', title: 'Put it to a vote', line: 'Text, photos, versus or a star rating.' },
@@ -723,7 +723,7 @@ export function PostStudio({
   return (
     <Modal title={heading} onClose={onClose} layout="panel">
       <div className="pstudio">
-        {modes.length > 1 && (
+        {modes.length > 1 && view === 'edit' && (
           <div className="pstudio__modes" role="tablist" aria-label="Kind of post">
             {modes.map((entry) => (
               <button key={entry.id} type="button" role="tab" aria-selected={mode === entry.id}
@@ -734,6 +734,7 @@ export function PostStudio({
           </div>
         )}
 
+        {view === 'edit' && (
         <div className={`pstudio__hero pstudio__hero--${meta.hue}`} key={`hero-${mode}`}>
           <span className="pstudio__heroemoji" aria-hidden="true">{meta.emoji}</span>
           <span className="pstudio__herocopy">
@@ -741,6 +742,7 @@ export function PostStudio({
             <span>{meta.line}</span>
           </span>
         </div>
+        )}
 
         <div className="pstudio__view" role="tablist" aria-label="Edit or preview">
           {(['edit', 'preview'] as const).map((entry) => (
@@ -755,7 +757,7 @@ export function PostStudio({
         {view === 'preview' && (
           <div className="pstudio__preview">
             <PostPreview draft={{
-              mode, text, photos, style, answers, blur,
+              mode, text, photos, style, answers, blur, spots,
               author: asShop || asService ? storeName ?? 'Your store' : figmark ? 'Figmark' : user?.displayName ?? 'You',
               asStore: asShop || asService,
               closesLabel: closes ? label(CLOSES, closes) : null,

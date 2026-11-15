@@ -8934,7 +8934,7 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 /* You and your store: a two-way switch whose highlight slides to the side you pick. */
 .csheet__sides {
   position: relative; display: grid; grid-template-columns: 1fr 1fr;
-  justify-self: start; width: min(280px, 100%);
+  align-self: center; width: min(280px, 100%);
   padding: 3px; border-radius: var(--r-pill); background: var(--surface-2); border: 1px solid var(--border);
 }
 .csheet__side {
@@ -8953,7 +8953,7 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .csheet__thumb--store { transform: translateX(100%); background: var(--grad-gold); }
 /* Which store: one row that scrolls sideways, never cut top or bottom. */
 .csheet__stores {
-  display: flex; gap: 6px;
+  display: flex; gap: 6px; justify-content: safe center;
   overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
   margin: -4px calc(var(--s4) * -1) 0; padding: 3px var(--s4) 4px;
   overscroll-behavior-x: contain;
@@ -9162,6 +9162,11 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
   margin: 0; padding-inline: var(--s4); color: var(--text-dim); font-size: var(--t-xs); font-weight: var(--w-semi);
 }
 .flexshelf__legend .hotchip { cursor: default; }
+/* The studio's preview draws the same tagged photo, kept inside its card. */
+.ppreview .flexshelf { margin-inline: 0; }
+.ppreview .flexshelf__frame { border-radius: 14px; }
+.ppreview .flexshelf__frame > img { height: auto; max-height: 56vh; object-fit: contain; border-radius: 14px; }
+.ppreview .flexshelf__legend { padding-inline: 0; }
 @keyframes hotdot-pulse {
   0% { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5), 0 0 0 0 rgba(255, 255, 255, 0.55); }
   70% { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5), 0 0 0 10px rgba(255, 255, 255, 0); }

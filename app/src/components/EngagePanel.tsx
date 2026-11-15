@@ -23,7 +23,7 @@ const STARTS: { id: string; emoji: string; label: string; line: string; hue: str
   { id: 'versus', emoji: '⚔️', label: 'Debate', line: 'Two sides, no prize.', hue: 'coral', mode: 'debate' },
   { id: 'question', emoji: '❓', label: 'Ask your buyers', line: 'One question, open answers.', hue: 'blue', mode: 'question' },
   { id: 'compare', emoji: '🎨', label: 'Before & after', line: 'A restore or a glow-up.', hue: 'pink', mode: 'compare' },
-  { id: 'photo', emoji: '📸', label: 'Photo post', line: 'New arrivals, a full shelf.', hue: 'violet', mode: 'photo' },
+  { id: 'photo', emoji: '📸', label: 'Photo tag', line: 'New arrivals, every piece tagged.', hue: 'violet', mode: 'photo' },
 ];
 
 /**
