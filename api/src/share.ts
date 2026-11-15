@@ -2,6 +2,9 @@ import { createHash, randomBytes, randomInt } from 'node:crypto';
 import type { HttpRequest } from '@azure/functions';
 import type { ShareEvent, ShareKind, ShareOpen, User } from '../../shared/models.js';
 import { tidyGrowth } from '../../shared/store-growth.js';
+import { REFERRAL_MAX_JOINS, REFERRAL_MAX_SHARERS, parseDriveTag, referralPhase } from '../../shared/referral.js';
+import { accessFor } from '../../shared/stores.js';
+import { notify } from './functions/notify.js';
 import type { getRepository } from './data/index.js';
 
 type Repo = Awaited<ReturnType<typeof getRepository>>;
@@ -199,9 +202,19 @@ export async function resolveInvite(repository: Repo, code: string): Promise<Use
   return user && !user.suspended ? user : null;
 }
 
-/** The cookie that carries an invite to sign-up. `seller` marks an invite to open a shop. */
-export function inviteCookie(code: string, seller: boolean): string {
-  return cookie(INVITE_COOKIE, seller ? `${code}~s` : code, COOKIE_DAYS);
+/**
+ * The cookie that carries an invite to sign-up. `seller` marks an invite to
+ * open a shop; `drive` the Spread the word post the link came from, as its
+ * `driveTag`.
+ */
+export function inviteCookie(code: string, seller: boolean, drive: string | null = null): string {
+  const value = drive ? `${code}~${seller ? 's' : ''}~${drive}` : seller ? `${code}~s` : code;
+  return cookie(INVITE_COOKIE, value, COOKIE_DAYS);
+}
+
+/** The drive an invite cookie carries, if any. */
+export function heldDrive(request: HttpRequest): string | null {
+  return readCookie(request, INVITE_COOKIE)?.split('~')[2] || null;
 }
 
 /**
@@ -213,18 +226,56 @@ export function inviteCookie(code: string, seller: boolean): string {
 export async function claimInvite(repository: Repo, request: HttpRequest, userId: string): Promise<void> {
   const held = readCookie(request, INVITE_COOKIE);
   if (!held) return;
-  const [code = '', flag] = held.split('~');
+  const [code = '', flag, drive] = held.split('~');
   const user = await repository.getUserById(userId);
   if (!user || user.invitedBy) return;
   if (Date.now() - Date.parse(user.createdAt) > 60 * 60 * 1000) return;
   const inviter = await resolveInvite(repository, code);
   if (!inviter || inviter.id === user.id) return;
   const at = new Date().toISOString();
-  user.invitedBy = { userId: inviter.id, at, asSeller: flag === 's' };
+  const tag = parseDriveTag(drive);
+  user.invitedBy = { userId: inviter.id, at, asSeller: flag === 's', ...(tag ? { drive: tag } : {}) };
   await repository.updateUser(user);
   if (!(inviter.invitees ?? []).some((entry) => entry.userId === user.id)) {
     inviter.invitees = [...(inviter.invitees ?? []), { userId: user.id, at }].slice(-INVITEES_KEPT);
     await repository.updateUser(inviter);
+  }
+  if (tag) await countDriveJoin(repository, tag, inviter, user.id, at);
+}
+
+/**
+ * A new account that came through a Spread the word link counts for whoever
+ * shared it - while the drive is open, and never for the shop's own people,
+ * who cannot win their own shop's credit. Whether it is paid for is decided
+ * when the drive ends (see `settleReferral`).
+ */
+async function countDriveJoin(
+  repository: Repo, tag: { channelId: string; postId: string }, sharer: User, newUserId: string, at: string,
+): Promise<void> {
+  try {
+    const post = await repository.getPost(tag.channelId, tag.postId);
+    const referral = post?.referral;
+    if (!post || !referral || referralPhase(referral) !== 'open') return;
+    const shop = await repository.getUserById(referral.storeId);
+    if (!shop || shop.id === sharer.id || accessFor(shop, sharer.id)) return;
+    const saved = await repository.mutatePost(post.channelId, post.id, (current) => {
+      const now = current.referral;
+      if (!now || referralPhase(now) !== 'open' || now.joins.some((join) => join.userId === newUserId)) return null;
+      if (now.joins.length >= REFERRAL_MAX_JOINS) return null;
+      const sharers = now.sharers.some((entry) => entry.userId === sharer.id) || now.sharers.length >= REFERRAL_MAX_SHARERS
+        ? now.sharers : [...now.sharers, { userId: sharer.id, name: sharer.displayName, at }];
+      return { ...current, referral: { ...now, sharers, joins: [...now.joins, { userId: newUserId, sharerId: sharer.id, at }] } };
+    });
+    if (!saved?.referral?.joins.some((join) => join.userId === newUserId)) return;
+    const brought = saved.referral.joins.filter((join) => join.sharerId === sharer.id).length;
+    await notify(repository, [sharer.id], {
+      kind: 'store_gift',
+      title: `Someone joined through your link 📣`,
+      body: `${brought} so far for ${saved.referral.storeName}. Each counts once they verify their phone; credit lands when the timer ends.`,
+      link: `/social/p/${encodeURIComponent(saved.channelId)}/${encodeURIComponent(saved.id)}`,
+    });
+  } catch {
+    // A missed count is better than a sign-up that fails.
   }
 }
 

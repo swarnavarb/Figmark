@@ -27,10 +27,13 @@ import { renderMoment, themeOf, type Moment, type MomentBadge } from './momentCa
  * reaches - and whatever they buy - counts for them.
  */
 
-/** Where the link should lead. */
+/**
+ * Where the link should lead. `drive` is a running Spread the word (its
+ * `driveTag`): a new account made through the link counts toward it.
+ */
 export type ShareLink =
-  | { to: 'item'; listingId: string; moment?: ShareKind; affiliate?: boolean; own?: boolean }
-  | { to: 'page'; handle: string }
+  | { to: 'item'; listingId: string; moment?: ShareKind; affiliate?: boolean; own?: boolean; drive?: string }
+  | { to: 'page'; handle: string; drive?: string }
   | { to: 'invite'; seller?: boolean };
 
 export interface ShareSpec {
@@ -68,7 +71,8 @@ async function linkFor(link: ShareLink, userId: string | null): Promise<string> 
   if (link.to === 'item') {
     // An item that pays whoever shares it goes out on the sharer's own
     // affiliate link: the same preview, and a sale through it earns.
-    if (link.affiliate && userId && !link.own) {
+    // A drive counts sign-ups through the invite, so a drive link stays one.
+    if (link.affiliate && userId && !link.own && !link.drive) {
       try {
         const { path } = await api.affiliateLink(link.listingId);
         return `${origin}${path}${link.moment ? `?m=${link.moment}` : ''}`;
@@ -76,9 +80,9 @@ async function linkFor(link: ShareLink, userId: string | null): Promise<string> 
         // Fall through to the plain link.
       }
     }
-    return withInvite(`/s/l/${encodeURIComponent(link.listingId)}`, { m: link.moment });
+    return withInvite(`/s/l/${encodeURIComponent(link.listingId)}`, { m: link.moment, d: link.drive });
   }
-  if (link.to === 'page') return withInvite(`/s/p/${encodeURIComponent(link.handle)}`);
+  if (link.to === 'page') return withInvite(`/s/p/${encodeURIComponent(link.handle)}`, { d: link.drive });
   if (!code) return origin;
   return `${origin}/i/${code}${link.seller ? '?as=seller' : ''}`;
 }

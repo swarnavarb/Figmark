@@ -230,7 +230,7 @@ export function closestGuess(guess: Pick<PostGuess, 'answerMinor' | 'guesses'>) 
  * What a game is still waiting on people to do: enter a competition, vote,
  * or guess. Each gets one "ending soon" reminder, stamped on the post.
  */
-export type GameStage = 'entries' | 'votes' | 'guesses';
+export type GameStage = 'entries' | 'votes' | 'guesses' | 'shares';
 
 /** How close to the deadline the reminder goes out, and how long a stage must have run first. */
 export const LAST_CALL_MS = 6 * 3_600_000;

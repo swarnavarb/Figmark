@@ -7,6 +7,8 @@ import { actorName, possessive } from '../../shared/notifications.js';
 import { rupees } from '../../shared/payments.js';
 import { monthKey } from '../../shared/quest.js';
 import { percentages } from '../../shared/social.js';
+import { referralLeaders, type ReferralPayout } from '../../shared/referral.js';
+import { verifiedChecks } from '../../shared/verification.js';
 import type { getRepository } from './data/index.js';
 import { notify, storeCrew } from './functions/notify.js';
 
@@ -421,7 +423,8 @@ export async function gameAudience(repository: Repo, shopId: string): Promise<{ 
 
 /** "a photo competition: Best shelf" - what a game is, for a notice. */
 export function gameWhat(post: Post): string {
-  return post.contest ? `a photo competition: ${post.contest.title}`
+  return post.referral ? 'a Spread the word'
+    : post.contest ? `a photo competition: ${post.contest.title}`
     : post.guess ? 'a guess-the-price'
       : post.debate ? 'a debate'
         : post.poll?.stock ? 'a poll on what to stock next' : 'a poll';
@@ -446,6 +449,10 @@ export function lastCallDue(post: Post, now: number): { stage: GameStage; closes
     if (phase === 'voting') return due('votes', Date.parse(contest.entriesCloseAt), Date.parse(contest.endsAt));
     return null;
   }
+  if (post.referral) {
+    const referral = post.referral;
+    return referral.settledAt ? null : due('shares', Math.max(created, Date.parse(referral.startsAt)), Date.parse(referral.endsAt));
+  }
   if (post.guess) return post.guess.revealedAt ? null : due('guesses', created, Date.parse(post.guess.revealAt));
   if (post.poll?.closesAt) return due('votes', created, Date.parse(post.poll.closesAt));
   return null;
@@ -455,6 +462,8 @@ export function lastCallDue(post: Post, now: number): { stage: GameStage; closes
 function doneFor(post: Post, stage: GameStage): Set<string> {
   if (stage === 'entries') return new Set((post.contest?.entries ?? []).map((entry) => entry.userId));
   if (stage === 'guesses') return new Set((post.guess?.guesses ?? []).map((entry) => entry.userId));
+  // Anybody can still bring somebody: the reminder goes to everyone who heard it start.
+  if (stage === 'shares') return new Set<string>();
   return new Set((post.poll?.options ?? []).flatMap((option) => option.voterIds));
 }
 
@@ -482,7 +491,7 @@ async function lastCall(repository: Repo, post: Post, now: number): Promise<void
   const left = audience.filter((id) => !done.has(id) && id !== marked.authorId);
   if (left.length === 0) return;
   const name = actorName(shopName ?? marked.authorName);
-  const verb = due.stage === 'entries' ? 'enter' : due.stage === 'guesses' ? 'guess' : 'vote';
+  const verb = due.stage === 'entries' ? 'enter' : due.stage === 'guesses' ? 'guess' : due.stage === 'shares' ? 'bring a friend' : 'vote';
   const what = gameWhat(marked);
   await notify(repository, left, {
     kind: 'game_ending',
@@ -497,6 +506,70 @@ async function lastCall(repository: Repo, post: Post, now: number): Promise<void
   }, { pushLater: left.length > 1 });
 }
 
+/* ── Spread the word ────────────────────────────────────────────────────── */
+
+/**
+ * Pay a drive whose timer has run out.
+ *
+ * Each person somebody brought counts once they have verified a phone - an
+ * email address costs nothing to make, a WhatsApp number does - and each
+ * sharer is paid for at most the shop's cap. Whoever brought the most
+ * counted people takes the bonus, if there is one; a tie goes to whoever got
+ * there first. Marked settled on the post first, so two readers pay it once;
+ * every credit's id is made from the post and the person, so a retry after a
+ * failure part-way pays nobody twice.
+ */
+async function settleReferral(repository: Repo, post: Post, nowIso: string): Promise<void> {
+  const marked = await repository.mutatePost(post.channelId, post.id, (current) =>
+    (current.referral && !current.referral.settledAt && current.referral.endsAt < nowIso
+      ? { ...current, referral: { ...current.referral, settledAt: nowIso } }
+      : null));
+  if (marked?.referral?.settledAt !== nowIso) return;
+  const referral = marked.referral;
+  const people = await repository.listUsersByIds([...new Set(referral.joins.map((join) => join.userId))]);
+  const verified = new Set(people.filter((person) => verifiedChecks(person).phone && !person.suspended).map((person) => person.id));
+  const counted = { ...referral, joins: referral.joins.filter((join) => verified.has(join.userId)) };
+  const leaders = referralLeaders(counted);
+  const payouts: ReferralPayout[] = leaders.map((row, index) => {
+    const joins = Math.min(row.joins, referral.maxPerPerson);
+    const top = index === 0 && referral.topPrizeMinor > 0;
+    return { userId: row.userId, name: row.name, joins, amountMinor: joins * referral.rewardMinor + (top ? referral.topPrizeMinor : 0), ...(top ? { top } : {}) };
+  });
+  for (const payout of payouts) {
+    if (payout.amountMinor <= 0) continue;
+    const { credit } = await reward(repository, payout.userId, {
+      credit: {
+        id: `ref_${marked.id}_${payout.userId}`,
+        storeId: referral.storeId,
+        storeName: referral.storeName,
+        amountMinor: payout.amountMinor,
+        reason: `Brought ${payout.joins} ${payout.joins === 1 ? 'person' : 'people'} to ${referral.storeName}${payout.top ? ' - the most of anyone' : ''}`,
+        link: linkOf(marked),
+      },
+    });
+    if (credit) {
+      await notify(repository, [payout.userId], {
+        kind: 'prize_won',
+        title: `${rupees(payout.amountMinor)} store credit at ${referral.storeName} 📣`,
+        body: `For the ${payout.joins} ${payout.joins === 1 ? 'person' : 'people'} you brought${payout.top ? ', the most of anyone' : ''}. Spend it there at checkout.`,
+        link: linkOf(marked),
+      });
+    }
+  }
+  await repository.mutatePost(marked.channelId, marked.id, (current) =>
+    (current.referral ? { ...current, referral: { ...current.referral, payouts } } : null));
+  const paid = payouts.reduce((sum, row) => sum + row.amountMinor, 0);
+  const shop = await repository.getUserById(referral.storeId);
+  await notify(repository, shop ? storeCrew(shop, 'posts') : [referral.storeId], {
+    kind: 'prize_won',
+    title: `Spread the word ended: ${counted.joins.length} new ${counted.joins.length === 1 ? 'buyer' : 'buyers'}`,
+    body: paid > 0
+      ? `${rupees(paid)} in store credit went to ${payouts.filter((row) => row.amountMinor > 0).length} sharers, spendable at your shop.`
+      : referral.joins.length > 0 ? 'Nobody who joined has verified a phone yet, so no credit was paid.' : 'Nobody joined through a link this time.',
+    link: linkOf(marked),
+  });
+}
+
 /* ── On the way past ────────────────────────────────────────────────────── */
 
 /** How many games one read settles at most, so a feed load never turns into a batch job. */
@@ -509,6 +582,7 @@ export function isDue(post: Post, now: number): boolean {
   if (post.debate && pollClosed && !post.resultsSentAt) return true;
   if (post.poll?.reward && pollClosed && !post.poll.reward.paidAt) return true;
   if (post.guess && !post.guess.revealedAt && post.guess.revealAt < nowIso) return true;
+  if (post.referral && !post.referral.settledAt && post.referral.endsAt < nowIso) return true;
   if (lastCallDue(post, now)) return true;
   const contest = post.contest;
   if (contest && !contest.settledAt) {
@@ -534,6 +608,7 @@ export async function settlePlay(recent: readonly Post[], repository: Repo): Pro
     if (post.poll?.reward && pollClosed && !post.poll.reward.paidAt) await payVoters(repository, post, nowIso);
     if (post.guess && !post.guess.revealedAt && post.guess.revealAt < nowIso) await revealGuess(repository, post, nowIso);
     if (post.contest && !post.contest.settledAt) await settleContest(repository, post, now);
+    if (post.referral && !post.referral.settledAt && post.referral.endsAt < nowIso) await settleReferral(repository, post, nowIso);
     if (lastCallDue(post, now)) await lastCall(repository, post, now);
   }
   return touched;

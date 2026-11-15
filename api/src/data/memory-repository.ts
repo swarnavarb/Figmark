@@ -1205,6 +1205,7 @@ export class MemoryRepository implements Repository {
     return [...this.posts.values()].filter((post) =>
       (post.contest && !post.contest.settledAt)
       || (post.guess && !post.guess.revealedAt)
+      || (post.referral && !post.referral.settledAt)
       || (post.poll?.closesAt && (post.poll.closesAt >= nowIso
         || (post.debate && !post.resultsSentAt)
         || (post.poll.reward && !post.poll.reward.paidAt))),

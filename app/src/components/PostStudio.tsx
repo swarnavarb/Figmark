@@ -17,6 +17,10 @@ import { ErrorNotice, Modal, Thumb, leadPhoto } from './ui';
 import { Icon } from './Icon';
 import { PostPreview } from './PostPreview';
 import { useSession } from '../session';
+import { REFERRAL_DEFAULT_PER_PERSON, REFERRAL_MAX_PER_PERSON, TIMING_LABELS } from '@shared/referral';
+import type { SpreadAbout } from './SpreadKit';
+import type { Listing } from '@shared/models';
+import type { PowerSaleView } from '../api';
 import '../styles/PostStudio.css';
 
 /**
@@ -52,7 +56,7 @@ function rememberTerms(storeId: string | null, terms: string) {
 
 type Posted = (post: Pick<Post, 'channelId' | 'id'>) => void;
 
-export type StudioMode = 'photo' | 'compare' | 'question' | 'poll' | 'debate' | 'guess' | 'contest';
+export type StudioMode = 'photo' | 'compare' | 'question' | 'poll' | 'debate' | 'guess' | 'contest' | 'spread';
 
 const MODES: { id: StudioMode; emoji: string; label: string; hue: string; title: string; line: string }[] = [
   { id: 'photo', emoji: '📸', label: 'Photo tag', hue: 'violet', title: 'Tag what’s in the shot', line: 'Photos, with every piece tagged if you like.' },
@@ -62,6 +66,15 @@ const MODES: { id: StudioMode; emoji: string; label: string; hue: string; title:
   { id: 'debate', emoji: '⚔️', label: 'Debate', hue: 'coral', title: 'Pick a side', line: 'Two sides. Arguments land on the side they back.' },
   { id: 'guess', emoji: '🎯', label: 'Guess', hue: 'gold', title: 'Guess the price', line: 'Sealed until the reveal. Closest wins.' },
   { id: 'contest', emoji: '🏆', label: 'Competition', hue: 'lime', title: 'Run a competition', line: 'Entries, then a vote or your pick. You set the prizes.' },
+  { id: 'spread', emoji: '📣', label: 'Spread', hue: 'gold', title: 'Spread the word', line: 'Credit for every new buyer people bring from outside Figmark.' },
+];
+
+/** How long a drive that is not tied to a drop's own times runs. */
+const DRIVE_HOURS: { hours: number; label: string }[] = [
+  { hours: 6, label: '6 hours' },
+  { hours: 24, label: '1 day' },
+  { hours: 72, label: '3 days' },
+  { hours: 168, label: '1 week' },
 ];
 
 const STYLES: { id: PollStyle; label: string; line: string }[] = [
@@ -299,8 +312,12 @@ export function PostStudio({
   mode: start, storeId = null, storeName = null, forumId = null, figmark = false, presets = {}, onClose, onPosted,
 }: {
   mode: StudioMode;
-  /** Switches already on, for the shortcuts that name them: "What should we stock next?", "Debate with a prize". */
-  presets?: { stock?: boolean; prize?: boolean };
+  /**
+   * Switches already on, for the shortcuts that name them: "What should we
+   * stock next?", "Debate with a prize" - and what a Spread the word started
+   * from a live drop or an item is about.
+   */
+  presets?: { stock?: boolean; prize?: boolean; spread?: SpreadAbout };
   /** Said as this shop; null for the person. */
   storeId?: string | null;
   storeName?: string | null;
@@ -315,7 +332,7 @@ export function PostStudio({
   // runs none of a shop's games: no prizes, no guesses, no competitions.
   const asService = Boolean(storeId?.includes(':'));
   const asShop = Boolean(storeId) && !forumId && !asService;
-  const [mode, setMode] = useState<StudioMode>(figmark ? 'contest' : (start === 'contest' || start === 'guess') && !asShop ? 'photo' : start);
+  const [mode, setMode] = useState<StudioMode>(figmark ? 'contest' : (start === 'contest' || start === 'guess' || start === 'spread') && !asShop ? 'photo' : start);
   const draft = useDraftPhotos();
   const { photos } = draft;
   const [text, setText] = useState('');
@@ -376,6 +393,45 @@ export function PostStudio({
   const [votingHours, setVotingHours] = useState(72);
   const [judging, setJudging] = useState<ContestJudging>('audience');
   const [prizes, setPrizes] = useState<{ amount: string; note: string }[]>([{ amount: '', note: '' }]);
+
+  // Spread the word
+  const about = presets.spread ?? null;
+  const [spreadOn, setSpreadOn] = useState<'shop' | 'drop' | 'listing'>(about?.kind ?? 'shop');
+  const [saleId, setSaleId] = useState<string>(about?.kind === 'drop' ? about.saleId : '');
+  const [timing, setTiming] = useState<'before' | 'during' | 'after'>(about?.kind === 'drop' ? about.timing : 'before');
+  const [spreadItem, setSpreadItem] = useState<string>(about?.kind === 'listing' ? about.listingId : '');
+  const [driveHours, setDriveHours] = useState(72);
+  const [perJoin, setPerJoin] = useState('100');
+  const [perPerson, setPerPerson] = useState(String(REFERRAL_DEFAULT_PER_PERSON));
+  const [topOn, setTopOn] = useState(false);
+  const [topPrize, setTopPrize] = useState('500');
+  const [drops, setDrops] = useState<PowerSaleView[] | null>(null);
+  const [ownItems, setOwnItems] = useState<Listing[] | null>(null);
+
+  useEffect(() => {
+    if (mode !== 'spread' || !storeId || !asShop) return;
+    let live = true;
+    if (!drops) {
+      api.powerSales(storeId).then((result) => live && setDrops(result.sales.filter((sale) => sale.status === 'scheduled' || sale.status === 'running' || sale.status === 'done')))
+        .catch(() => live && setDrops([]));
+    }
+    if (!ownItems) {
+      api.myListings(storeId).then((result) => live && setOwnItems(result.listings.filter((listing) => listing.status === 'active' && !listing.privateFor)))
+        .catch(() => live && setOwnItems([]));
+    }
+    return () => {
+      live = false;
+    };
+  }, [mode, storeId, asShop, drops, ownItems]);
+
+  const pickedDrop = (drops ?? []).find((sale) => sale.id === saleId) ?? null;
+  // Before and During only make sense for a drop that has not ended, and
+  // Before only for one that has not started.
+  const dropDone = pickedDrop?.status === 'done';
+  useEffect(() => {
+    if (pickedDrop?.status === 'done') setTiming('after');
+    else if (pickedDrop?.status === 'running') setTiming((now) => (now === 'before' ? 'during' : now));
+  }, [pickedDrop?.status]);
 
   const voting = mode === 'poll' || mode === 'debate';
   const faceOf: PollStyle = mode === 'debate' ? 'versus' : style;
@@ -487,6 +543,18 @@ export function PostStudio({
     if (mode === 'photo') return photos.length === 0 && words.length < 2 ? 'Add a photo or say something' : null;
     if (mode === 'compare') return photos.length !== 2 ? 'Add both photos: before, then after' : null;
     if (mode === 'question') return words.length < 5 ? 'Ask the question' : null;
+    if (mode === 'spread') {
+      if (words.length < 2) return 'Say what people are sharing';
+      if (!paise(perJoin)) return 'Set the credit per new buyer';
+      if ((paise(perJoin) ?? 0) > PRIZE_MAX_MINOR || (topOn && (paise(topPrize) ?? 0) > PRIZE_MAX_MINOR)) return `A prize is up to ${formatMoney(PRIZE_MAX_MINOR, 'INR')}`;
+      const most = Number(perPerson);
+      if (!Number.isInteger(most) || most < 1 || most > REFERRAL_MAX_PER_PERSON) return `Pay each person for 1 to ${REFERRAL_MAX_PER_PERSON} people`;
+      if (topOn && !paise(topPrize)) return 'Set the bonus, or turn it off';
+      if (spreadOn === 'drop' && !pickedDrop) return 'Pick the live drop';
+      if (spreadOn === 'drop' && dropDone && timing !== 'after') return 'That drop has ended: pick After';
+      if (spreadOn === 'listing' && !spreadItem) return 'Pick the item';
+      return null;
+    }
     if (voting) {
       if (words.length < 2) return 'Ask the question';
       if (faceOf === 'rating') return photos.length === 0 ? 'Add the photo to rate' : null;
@@ -547,6 +615,20 @@ export function PostStudio({
       };
     } else if (mode === 'question') {
       body = { ...base, photoUrls: photos, question: true };
+    } else if (mode === 'spread') {
+      const onDrop = spreadOn === 'drop';
+      body = {
+        ...base, photoUrls: photos.slice(0, 1),
+        referral: {
+          rewardMinor: paise(perJoin)!,
+          maxPerPerson: Number(perPerson),
+          topPrizeMinor: topOn ? paise(topPrize) ?? 0 : 0,
+          timing: onDrop ? timing : 'now',
+          ...(!onDrop || timing === 'after' ? { hours: driveHours } : {}),
+          target: onDrop ? { kind: 'drop', saleId } : spreadOn === 'listing' ? { kind: 'listing', listingId: spreadItem } : { kind: 'shop' },
+          terms: tc,
+        },
+      };
     } else if (voting) {
       const options = faceOf === 'rating' ? ['1', '2', '3', '4', '5']
         : answers.map((entry) => ({ label: entry.label.trim(), photoUrl: entry.photo, listingId: entry.item?.id ?? null }));
@@ -605,23 +687,25 @@ export function PostStudio({
   const maxPhotos = mode === 'photo' ? (fromCollection ? SHELF_TOUR_MAX : 4)
     : mode === 'compare' ? 2 : mode === 'guess' || mode === 'question' ? 4 : 1;
   const needsPostPhotos = mode === 'photo' || mode === 'compare' || mode === 'question' || mode === 'guess'
-    || mode === 'contest' || (voting && faceOf === 'rating');
+    || mode === 'contest' || mode === 'spread' || (voting && faceOf === 'rating');
   const modes = figmark ? MODES.filter((entry) => entry.id === 'contest')
-    : MODES.filter((entry) => ((entry.id !== 'contest' && entry.id !== 'guess') || asShop) && !(asService && entry.id === 'debate'));
+    : MODES.filter((entry) => ((entry.id !== 'contest' && entry.id !== 'guess' && entry.id !== 'spread') || asShop) && !(asService && entry.id === 'debate'));
   const heading = figmark ? '🌟 Weekly theme challenge'
     : asShop || asService ? `Post as ${storeName ?? 'your store'}` : 'Create a post';
   const blocked = missing();
   const meta = MODES.find((entry) => entry.id === mode) ?? MODES[0]!;
   const contestPrized = mode === 'contest' && !figmark && prizes.some((entry) => paise(entry.amount) || entry.note.trim());
   // Whether anything on this post is a prize, so its terms go with it.
-  const prizeUsed = asShop && ((voting && rewardOn) || (mode === 'debate' && prizeOn) || (mode === 'guess' && guessPrizeOn) || contestPrized);
+  const prizeUsed = asShop && ((voting && rewardOn) || (mode === 'debate' && prizeOn) || (mode === 'guess' && guessPrizeOn) || contestPrized || mode === 'spread');
   const label = (list: { hours: number; label: string }[], hours: number) => list.find((entry) => entry.hours === hours)?.label ?? null;
   const prizeLine = !asShop ? null
     : mode === 'debate' && prizeOn && paise(prize) ? `${formatMoney(paise(prize)!, 'INR')} store credit for the best argument · ${judge === 'store' ? 'the shop picks' : 'most liked wins'}`
       : voting && rewardOn && paise(reward) ? `${formatMoney(paise(reward)!, 'INR')} credit for the winning side · first ${rewardCap || 1}`
         : mode === 'guess' && guessPrizeOn && paise(guessPrize)
           ? `${formatMoney(paise(guessPrize)!, 'INR')} store credit · ${guessJudge === 'store' ? 'the shop picks a winner' : Number(guessWinners) > 1 ? `the ${guessWinners} closest win` : 'the closest wins'}`
-          : null;
+          : mode === 'spread' && paise(perJoin)
+            ? `📣 ${formatMoney(paise(perJoin)!, 'INR')} store credit for every new buyer you bring · up to ${perPerson || 1} each`
+            : null;
 
   const photoStrip = (
     <>
@@ -631,12 +715,13 @@ export function PostStudio({
           <strong>{draft.uploading ? 'Uploading…' : mode === 'photo' ? 'Add photos'
             : mode === 'compare' ? `Add the ${COMPARE_DEFAULTS[compareKind][0].toLowerCase()} photo, then the ${COMPARE_DEFAULTS[compareKind][1].toLowerCase()}`
               : mode === 'question' ? 'Add a photo (optional)'
-                : mode === 'contest' ? 'Add a cover photo' : 'Add the photo'}</strong>
+                : mode === 'contest' || mode === 'spread' ? 'Add a cover photo' : 'Add the photo'}</strong>
           <span className="faint">
             {mode === 'compare' ? 'Readers drag a line across to see one become the other.'
               : mode === 'question' ? 'What is this? Is it legit? A photo helps people answer.'
               : mode === 'photo' ? 'Tap a piece in a photo to tag it — that makes it a collection flex.'
               : mode === 'contest' ? 'Optional. A good example of what you want to see.'
+              : mode === 'spread' ? 'Optional. The drop, the item or the shop people are sharing.'
                 : mode === 'guess' ? 'What people are pricing.' : 'Everybody rates this one.'}
           </span>
         </button>
@@ -782,7 +867,8 @@ export function PostStudio({
 
           <label className="field">
             <span>
-              {voting || mode === 'question' ? 'The question' : mode === 'guess' ? 'What are people guessing?' : mode === 'contest' ? 'What to enter, and the rules' : 'Say something'}
+              {voting || mode === 'question' ? 'The question' : mode === 'guess' ? 'What are people guessing?' : mode === 'contest' ? 'What to enter, and the rules'
+                : mode === 'spread' ? 'What to tell people' : 'Say something'}
               {mode === 'photo' && <span className="faint"> (optional with a photo)</span>}
             </span>
             <textarea value={text} rows={mode === 'contest' ? 3 : 2}
@@ -790,6 +876,7 @@ export function PostStudio({
               onChange={(event) => setText(event.target.value)}
               placeholder={voting ? (mode === 'debate' ? 'Original or reissue: which is better?' : 'Which should I paint next?')
                 : mode === 'guess' ? 'Guess the launch price for xyz action figure?'
+                  : mode === 'spread' ? 'Bring a friend to Saturday’s drop - every new buyer you bring earns you credit here.'
                   : mode === 'contest' ? 'One photo of a figure you painted yourself. Judged on finish and creativity.'
                     : mode === 'question' ? 'Is this box a bootleg? The seal looks off to me.'
                       : mode === 'compare' ? 'Six hours of repaint later…'
@@ -997,6 +1084,77 @@ export function PostStudio({
             </>
           )}
 
+          {mode === 'spread' && (
+            <>
+              <Choice label="What are people sharing" value={spreadOn} onChange={setSpreadOn}
+                options={[{ id: 'shop', label: '🏪 Your shop' }, { id: 'drop', label: '⚡ A live drop' }, { id: 'listing', label: '🏷️ An item' }]} />
+              {spreadOn === 'drop' && (
+                drops === null ? <p className="faint">Loading your live drops…</p>
+                  : drops.length === 0 ? <p className="pstudio__note"><Icon name="bolt" size={14} /> No live drops coming up. Plan one first, then spread the word about it.</p>
+                    : (
+                      <>
+                        <label className="field">
+                          <span>The drop</span>
+                          <select value={saleId} onChange={(event) => setSaleId(event.target.value)}>
+                            <option value="">Pick a live drop</option>
+                            {drops.map((sale) => (
+                              <option key={sale.id} value={sale.id}>
+                                {sale.name} · {sale.status === 'running' ? 'running now' : sale.status === 'done' ? 'ended' : new Date(sale.openingAt).toLocaleString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <Choice label="When it runs" value={timing} onChange={setTiming}
+                          options={(['before', 'during', 'after'] as const)
+                            .filter((entry) => !(dropDone && entry !== 'after') && !(pickedDrop?.status === 'running' && entry === 'before'))
+                            .map((entry) => ({ id: entry, label: TIMING_LABELS[entry] }))} />
+                        <p className="faint pstudio__cost">
+                          {timing === 'before' ? 'From now until the first item goes out - fill the room before it starts.'
+                            : timing === 'during' ? 'From the first item until the last one goes public.'
+                              : 'From when the drop ends, for as long as you pick below.'}
+                        </p>
+                      </>
+                    )
+              )}
+              {spreadOn === 'listing' && (
+                <label className="field">
+                  <span>The item</span>
+                  <select value={spreadItem} onChange={(event) => setSpreadItem(event.target.value)}>
+                    <option value="">{ownItems === null ? 'Loading your items…' : ownItems.length ? 'Pick an item' : 'Nothing up for sale'}</option>
+                    {(ownItems ?? []).map((listing) => <option key={listing.id} value={listing.id}>{listing.title}</option>)}
+                  </select>
+                </label>
+              )}
+              {(spreadOn !== 'drop' || timing === 'after') && (
+                <Choice label="Runs for" value={driveHours} onChange={setDriveHours}
+                  options={DRIVE_HOURS.map((entry) => ({ id: entry.hours, label: entry.label }))} />
+              )}
+              <div className="pstudio__store">
+                <p className="pstudio__storehead"><Icon name="spark" size={13} /> As {storeName ?? 'your store'}</p>
+                <div className="pstudio__pair">
+                  <Rupees label="Credit per new buyer" value={perJoin} onChange={setPerJoin} placeholder="100" />
+                  <label className="field">
+                    <span>Most people per sharer</span>
+                    <input inputMode="numeric" value={perPerson} onChange={(event) => setPerPerson(event.target.value.replace(/\D/g, '').slice(0, 2))} />
+                  </label>
+                </div>
+                <Toggle on={topOn} onChange={setTopOn} title="Bonus for whoever brings the most"
+                  line="Paid on top, when the timer ends.">
+                  <Rupees label="Bonus" value={topPrize} onChange={setTopPrize} placeholder="500" />
+                </Toggle>
+                {paise(perJoin) && (
+                  <p className="faint pstudio__cost">
+                    At most {formatMoney(paise(perJoin)! * Math.max(1, Number(perPerson) || 1), 'INR')} per sharer{topOn && paise(topPrize) ? `, plus ${formatMoney(paise(topPrize)!, 'INR')} once` : ''}, spent at your shop only.
+                  </p>
+                )}
+                <TermsField value={terms} onChange={setTerms} />
+              </div>
+              <p className="pstudio__note">
+                <Icon name="share" size={14} /> Everyone gets their own link for WhatsApp, Instagram and anywhere else. A brand-new account made through it while the timer runs counts once it verifies a phone. Followers hear it started.
+              </p>
+            </>
+          )}
+
           {mode === 'contest' && (
             <>
               <Choice label="Entries open for" value={entriesHours} onChange={setEntriesHours}
@@ -1056,7 +1214,7 @@ export function PostStudio({
             </>
           )}
 
-          {mode !== 'contest' && (
+          {mode !== 'contest' && mode !== 'spread' && (
             <Choice label="Blur until tapped" value={blur ?? 'none'} onChange={(value) => setBlur(value === 'none' ? null : value as PostBlur)}
               options={[{ id: 'none', label: 'No' }, ...POST_BLURS.map((kind) => ({ id: kind, label: BLUR_LABELS[kind] }))]} />
           )}
@@ -1077,7 +1235,7 @@ export function PostStudio({
             {busy ? 'Posting…' : mode === 'photo' ? (spots.length ? `Post flex · ${spots.length} tagged` : 'Post')
               : mode === 'compare' ? 'Post before & after' : mode === 'question' ? 'Ask'
               : mode === 'debate' ? 'Start the debate' : mode === 'poll' ? 'Start the poll'
-                : mode === 'guess' ? 'Start guessing' : 'Launch competition'}
+                : mode === 'guess' ? 'Start guessing' : mode === 'spread' ? 'Start spreading' : 'Launch competition'}
           </button>
         </div>
       </div>

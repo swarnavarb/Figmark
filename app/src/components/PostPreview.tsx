@@ -37,6 +37,7 @@ const KIND: Record<StudioMode, { emoji: string; label: string }> = {
   debate: { emoji: '⚔️', label: 'Debate' },
   guess: { emoji: '🎯', label: 'Guess the price' },
   contest: { emoji: '🏆', label: 'Competition' },
+  spread: { emoji: '📣', label: 'Spread the word' },
 };
 
 /**
@@ -87,7 +88,7 @@ export function PostPreview({ draft }: { draft: PreviewDraft }) {
           <FlexShelf photos={draft.photos} hotspots={draft.spots!} alt="Your photo" onOpen={() => {}} />
         )}
 
-        {((draft.mode === 'photo' && !draft.spots?.length) || draft.mode === 'question' || draft.mode === 'contest' || (voting && face === 'rating')) && lead && (
+        {((draft.mode === 'photo' && !draft.spots?.length) || draft.mode === 'question' || draft.mode === 'contest' || draft.mode === 'spread' || (voting && face === 'rating')) && lead && (
           <div className={`ppreview__photos ppreview__photos--${Math.min(draft.photos.length, 4)}`}>
             {draft.photos.slice(0, draft.mode === 'photo' || draft.mode === 'question' ? 4 : 1).map((url) => <img key={url} src={url} alt="" />)}
           </div>
@@ -143,7 +144,10 @@ export function PostPreview({ draft }: { draft: PreviewDraft }) {
         </ul>
       )}
 
-      {draft.prizeLine && <p className="ppreview__prize">🎁 {draft.prizeLine}</p>}
+      {draft.mode === 'spread' && (
+        <p className="ppreview__spread"><span aria-hidden="true">📣</span> Get my link · a timer · who has brought the most</p>
+      )}
+      {draft.prizeLine && <p className="ppreview__prize">{draft.mode === 'spread' ? '' : '🎁 '}{draft.prizeLine}</p>}
       {draft.terms && (
         <details className="pterms" open>
           <summary>Prize T&amp;C</summary>

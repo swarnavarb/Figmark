@@ -186,6 +186,17 @@ async function listingMeta(
   return { title, description: parts.join(' · '), image: listingCardUrl(origin, listing, seller, offMinor, code), large: true, fallback, ...CARD_TAGS };
 }
 
+/** The sharer's invite, and the Spread the word drive it counts for, carried on to the page. */
+function carried(url: URL): string {
+  const query = new URLSearchParams();
+  for (const key of ['i', 'd']) {
+    const value = url.searchParams.get(key);
+    if (value) query.set(key, value);
+  }
+  const suffix = query.toString();
+  return suffix ? `?${suffix}` : '';
+}
+
 async function metaFor(repository: Repo, origin: string, url: URL): Promise<Meta> {
   const segments = url.pathname.split('/').filter(Boolean).map((part) => decodeURIComponent(part));
   const sharerOf = async () => {
@@ -229,15 +240,13 @@ async function metaFor(repository: Repo, origin: string, url: URL): Promise<Meta
   if (kind === 's' && first === 'l' && second) {
     const listing = await repository.getListing(second);
     if (!listing || listing.privateFor) return fallbackMeta;
-    const invite = url.searchParams.get('i');
-    const back = `/listing/${encodeURIComponent(listing.id)}${invite ? `?i=${encodeURIComponent(invite)}` : ''}`;
+    const back = `/listing/${encodeURIComponent(listing.id)}${carried(url)}`;
     return listingMeta(repository, origin, listing, await sharerOf(), url.searchParams.get('m'), back);
   }
   if (kind === 's' && first === 'p' && second) {
     const found = await repository.getByHandle(second);
     if (!found) return fallbackMeta;
-    const invite = url.searchParams.get('i');
-    const back = `/${encodeURIComponent(second)}${invite ? `?i=${encodeURIComponent(invite)}` : ''}`;
+    const back = `/${encodeURIComponent(second)}${carried(url)}`;
     const { user, isStore } = found;
     if (isStore && user.sellerProfile) {
       const shop = user.sellerProfile;

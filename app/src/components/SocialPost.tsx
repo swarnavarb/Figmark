@@ -28,6 +28,7 @@ import { OpeningCard } from './Showcase';
 import { useToast } from './Feedback';
 import { PhotoSales, type PhotoPoster } from './PhotoSales';
 import { ContestPlay, GuessPlay, PollPlay, TeamChip } from './PostPlay';
+import { SpreadPlay } from './SpreadKit';
 import { markOpened, useSeen } from '../seen';
 import { HASHTAG, MENTION } from '@shared/feed';
 import { tagKey, tagSlug } from '@shared/shop-tags';
@@ -780,6 +781,7 @@ export function SocialPostCard({
             )}
             {social.poll && <PollPlay card={card} photos={photos} disabled={nested || !user} vote={vote} />}
             {social.guess && <GuessPlay card={card} disabled={nested || !user} onCard={setCard} />}
+            {social.referral && <SpreadPlay card={card} disabled={nested} onCard={setCard} />}
           </>
         );
       })()}

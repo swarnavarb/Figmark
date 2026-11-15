@@ -1233,6 +1233,7 @@ export class CosmosRepository implements Repository {
       query: 'SELECT * FROM c WHERE'
         + ' (IS_OBJECT(c.contest) AND NOT IS_STRING(c.contest.settledAt))'
         + ' OR (IS_OBJECT(c.guess) AND NOT IS_STRING(c.guess.revealedAt))'
+        + ' OR (IS_OBJECT(c.referral) AND NOT IS_STRING(c.referral.settledAt))'
         + ' OR (IS_STRING(c.poll.closesAt) AND (c.poll.closesAt >= @now'
         + ' OR (IS_OBJECT(c.debate) AND NOT IS_STRING(c.resultsSentAt))'
         + ' OR (IS_OBJECT(c.poll.reward) AND NOT IS_STRING(c.poll.reward.paidAt))))'

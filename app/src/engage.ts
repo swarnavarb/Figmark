@@ -26,5 +26,6 @@ export const isOpen = (card: PostCard) => {
   const { post, social } = card;
   if (post.contest) return contestPhase(post.contest) !== 'ended';
   if (social.guess) return !social.guess.revealed;
+  if (social.referral) return social.referral.phase !== 'ended';
   return Boolean(social.poll && !social.poll.closed);
 };

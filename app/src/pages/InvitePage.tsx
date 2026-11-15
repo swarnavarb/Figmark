@@ -116,10 +116,19 @@ const SELLER_REASONS = [
   { icon: '🚀', title: 'Growth quests with real reach', text: 'Share your shop, earn Spotlights, land at the top of the feed.' },
 ];
 
-/** The invite, carried on for the shell to count; the moment hint was only for the preview. */
+/**
+ * The invite, and the Spread the word drive it counts for, carried on for the
+ * shell to count; the moment hint was only for the preview.
+ */
 function inviteOnly(search: string): string {
-  const code = new URLSearchParams(search).get('i');
-  return code ? `?i=${encodeURIComponent(code)}` : '';
+  const given = new URLSearchParams(search);
+  const kept = new URLSearchParams();
+  for (const key of ['i', 'd']) {
+    const value = given.get(key);
+    if (value && (key === 'i' || given.get('i'))) kept.set(key, value);
+  }
+  const suffix = kept.toString();
+  return suffix ? `?${suffix}` : '';
 }
 
 /** `/s/l/<id>`: a shared item, opened inside the app. */

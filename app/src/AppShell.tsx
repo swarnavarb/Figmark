@@ -434,9 +434,10 @@ function useInviteParam() {
     const page = item ? { t: 'item' as const, id: decodeURIComponent(item[1]!) }
       : handle ? { t: 'profile' as const, id: handle[1]! }
         : null;
-    void api.openInvite(code, page).catch(() => undefined);
+    void api.openInvite(code, page, false, params.get('d')).catch(() => undefined);
     const rest = new URLSearchParams(params);
     rest.delete('i');
+    rest.delete('d');
     const suffix = rest.toString();
     navigate(`${pathname}${suffix ? `?${suffix}` : ''}`, { replace: true, state });
     // Only the code arriving somewhere it can be counted is an event.

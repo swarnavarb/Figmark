@@ -35,6 +35,7 @@ import { ShippingLine } from '../components/Offers';
 import { AFFILIATE_PARAM } from '@shared/affiliate';
 import { shopBadge, useShareSheet, type ShareSpec } from '../components/ShareKit';
 import { themeOf } from '../components/momentCard';
+import { ShopDriveBanner, SpreadNudge } from '../components/SpreadKit';
 import '../styles/ListingPage.css';
 
 /** What each verification tier means, in a line. */
@@ -430,6 +431,11 @@ export function ListingPage() {
                 onShare={() => shareSheet.open(shareSpec)} />
             )}
             {shareSheet.sheet}
+            {/* A Spread the word: the shop starts one about this item; a visitor joins the one running. */}
+            {!listing.privateFor && listing.status === 'active' && (data.isOwn ? (
+              <SpreadNudge compact storeId={listing.sellerId} storeName={seller?.storefrontName ?? 'your shop'}
+                about={{ kind: 'listing', listingId: listing.id, title: listing.title }} />
+            ) : <ShopDriveBanner shopId={listing.sellerId} isMe={false} />)}
             {live && (
               <SuccessMoment title={live.first ? 'Your first item is live!' : "It's live!"} confetti={live.first}
                 detail={listing.title}

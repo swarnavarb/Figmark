@@ -1692,7 +1692,7 @@ function MyItems({ store }: { store: StoreAccess }) {
       )}
 
       {shelf === 'drops' ? (
-        <Later><PowerSalePanel storeId={store.ownerId} startWith={saleCalcs} /></Later>
+        <Later><PowerSalePanel storeId={store.ownerId} storeName={store.name} startWith={saleCalcs} /></Later>
       ) : shelf === 'drafts' ? (
         !drafts ? <SkelCards n={2} h={72} /> : shownDrafts.length + unpublished.length === 0 ? (
           <EmptyState title={query ? 'No draft matches that' : 'No drafts'}>
