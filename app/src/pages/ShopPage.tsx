@@ -384,7 +384,7 @@ function ShopConsole({ store, onChanged }: { store: StoreAccess; onChanged: () =
       // A sub-view belongs to the tab it was opened in, and so does an order
       // waiting to be filed into a lot about to be opened, an open lot, and
       // a list's search and filters.
-      for (const key of ['view', 'file', 'lot', 'show', 'state', 'customer', 'edit', 'shelf', 'find', 'q', 'sort']) copy.delete(key);
+      for (const key of ['view', 'file', 'lot', 'show', 'state', 'customer', 'edit', 'shelf', 'find', 'q', 'sort', 'focus']) copy.delete(key);
       for (const [key, value] of Object.entries(extra)) copy.set(key, value);
       return copy;
     }, { replace: true });
@@ -733,10 +733,10 @@ function ShopFigures({ store, group, data, failed, onGo }: {
   } else if (group === 'settings' && data?.shop) {
     const it = data.shop;
     const setup = [
-      { done: it.setup.photo, label: 'Shop photo' },
-      { done: it.setup.cover, label: 'Cover' },
-      { done: it.setup.bio, label: 'Bio' },
-      { done: it.setup.payment, label: 'Payment details' },
+      { done: it.setup.photo, label: 'Shop photo', focus: 'photos' },
+      { done: it.setup.cover, label: 'Cover', focus: 'photos' },
+      { done: it.setup.bio, label: 'Bio', focus: 'about' },
+      { done: it.setup.payment, label: 'Payment details', focus: 'paid' },
     ];
     const ready = setup.filter((step) => step.done).length;
     tiles = [
@@ -746,7 +746,9 @@ function ShopFigures({ store, group, data, failed, onGo }: {
       { label: 'Set up', value: `${ready}/${setup.length}`, go: () => onGo('storefront') },
     ];
     note = ready < setup.length ? setup.filter((step) => !step.done).map((step) => (
-      <span key={step.label} className="sdash__step"><Icon name="plus" size={12} /> {step.label}</span>
+      <button key={step.label} type="button" className="sdash__step" onClick={() => onGo('storefront', { focus: step.focus })}>
+        <Icon name="plus" size={12} /> {step.label}
+      </button>
     )) : null;
   }
 
@@ -997,6 +999,20 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
   // Edit shop (from the shop's page) lands on these settings, scrolled to
   // rather than left under the Sell home - once the form is in, so the page
   // is tall enough to scroll that far.
+  // A "+ Cover" or "+ Bio" from the figures above lands on its own section.
+  const focus = new URLSearchParams(location.search).get('focus');
+  useEffect(() => {
+    if (wizard || !loaded || !focus) return;
+    const node = document.getElementById(`sfsec-${focus}`);
+    if (!node) return;
+    requestAnimationFrame(() => {
+      node.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      node.classList.remove('is-flash');
+      void node.offsetWidth;
+      node.classList.add('is-flash');
+    });
+  }, [wizard, loaded, focus, location.key]);
+
   useEffect(() => {
     if (wizard || !loaded || location.hash !== '#settings') return;
     requestAnimationFrame(() => document.getElementById('settings')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
@@ -1275,16 +1291,16 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
     return (
       <div className="sfset">
         <form className="sfset__form" onSubmit={(event: FormEvent) => { event.preventDefault(); void save(); }}>
-          <SettingsSection title="Name" note="How buyers find and follow you.">
+          <SettingsSection id="name" title="Name" note="How buyers find and follow you.">
             {nameFields}
           </SettingsSection>
-          <SettingsSection title="Photos" note="Your shop photo and the banner behind it.">
+          <SettingsSection id="photos" title="Photos" note="Your shop photo and the banner behind it.">
             {photoFields}
           </SettingsSection>
-          <SettingsSection title="About" note="What you sell, in a few lines and tags.">
+          <SettingsSection id="about" title="About" note="What you sell, in a few lines and tags.">
             {aboutFields}
           </SettingsSection>
-          <SettingsSection title="Getting paid" note="Only shown to a buyer paying you directly.">
+          <SettingsSection id="paid" title="Getting paid" note="Only shown to a buyer paying you directly.">
             {paymentFields}
           </SettingsSection>
 
@@ -1414,9 +1430,9 @@ function StorefrontEditor({ onSaved, wizard = false }: { onSaved?: () => void; w
 }
 
 /** One titled block of Shop settings: a quiet heading, then its fields. */
-function SettingsSection({ title, note, children }: { title: string; note: string; children: ReactNode }) {
+function SettingsSection({ id, title, note, children }: { id?: string; title: string; note: string; children: ReactNode }) {
   return (
-    <section className="sfsec">
+    <section className="sfsec" id={id ? `sfsec-${id}` : undefined}>
       <header className="sfsec__head">
         <h3 className="sfsec__title">{title}</h3>
         <p className="sfsec__note">{note}</p>
@@ -3119,12 +3135,13 @@ function TemplatesPanel({ store }: { store: StoreAccess }) {
     <div className="stack">
       {error && <ErrorNotice message={error} />}
       <p className="muted" style={{ margin: 0 }}>
-        Pick one when you list an item or build a live drop - it fills in the category, its details, tags,
-        description, delivery time and terms. Everything stays editable.
+        Quick fill template helps you to list an item or setup a live drop instantly - you create and save the
+        recurring texts to fill in the category, its details, tags, description, delivery time, terms, etc.
+        Everything stays editable.
       </p>
       <button type="button" className="btn" style={{ justifySelf: 'start' }}
         onClick={() => setEditing('new')}>
-        <Icon name="plus" size={15} /> New quick fill
+        <Icon name="plus" size={15} /> Add Template
       </button>
 
       {templates.length === 0 ? (
@@ -5592,7 +5609,7 @@ function People({ store, onChanged }: { store: StoreAccess; onChanged: () => voi
       <section className="sfsec">
         <header className="sfsec__head">
           <h3 className="sfsec__title">Add someone</h3>
-          <p className="sfsec__note">They need a Figmark account already. Use the email or phone they signed up with.</p>
+          <p className="sfsec__note">Type @ and their username. They need a Figmark account already.</p>
         </header>
         <form className="sfsec__body" onSubmit={(event: FormEvent) => {
           event.preventDefault();
@@ -5602,11 +5619,7 @@ function People({ store, onChanged }: { store: StoreAccess; onChanged: () => voi
             'Added to the shop.',
           ).then((ok) => { if (ok) setIdentifier(''); });
         }}>
-          <label className="field">
-            <span>Email or phone</span>
-            <input value={identifier} onChange={(e) => setIdentifier(e.target.value)}
-              placeholder="them@example.com" autoCapitalize="off" autoCorrect="off" spellCheck={false} />
-          </label>
+          <PersonPicker value={identifier} onChange={setIdentifier} />
 
           <div className="field" role="group" aria-labelledby="crewset-rights">
             <span id="crewset-rights">What they may do</span>
@@ -5635,6 +5648,74 @@ function People({ store, onChanged }: { store: StoreAccess; onChanged: () => voi
           {error && <ErrorNotice message={error} />}
         </form>
       </section>
+    </div>
+  );
+}
+
+/**
+ * Who to add, found by @username as it is typed. People only: a shop's handle
+ * is not somebody who can be handed rights. An email or phone still works.
+ */
+function PersonPicker({ value, onChange }: { value: string; onChange: (next: string) => void }) {
+  const [matches, setMatches] = useState<{ id: string; name: string; handle: string }[]>([]);
+  const [at, setAt] = useState(0);
+  const [open, setOpen] = useState(false);
+  const query = /^@([a-z0-9][a-z0-9_.]{0,29})$/i.exec(value.trim())?.[1] ?? null;
+
+  useEffect(() => {
+    if (!query) { setMatches([]); return; }
+    let live = true;
+    const timer = window.setTimeout(() => {
+      api.socialSearch(query).then((found) => {
+        if (!live) return;
+        const word = query.toLowerCase();
+        setMatches(found.people
+          .filter((row): row is typeof row & { handle: string } => Boolean(row.handle))
+          .map((row) => ({ id: row.id, name: row.name, handle: row.handle }))
+          .sort((a, b) => Number(!a.handle.toLowerCase().startsWith(word)) - Number(!b.handle.toLowerCase().startsWith(word)))
+          .slice(0, 6));
+        setAt(0);
+      }).catch(() => live && setMatches([]));
+    }, 160);
+    return () => { live = false; window.clearTimeout(timer); };
+  }, [query]);
+
+  // Picked already: nothing left to suggest.
+  const exact = matches.length === 1 && `@${matches[0]!.handle}`.toLowerCase() === value.trim().toLowerCase();
+  const shown = open && query !== null && matches.length > 0 && !exact;
+  const pick = (handle: string) => { onChange(`@${handle}`); setOpen(false); };
+
+  return (
+    <div className="field crewpick">
+      <label htmlFor="crewpick-input">Who</label>
+      <input id="crewpick-input" value={value} placeholder="@username"
+        autoCapitalize="off" autoCorrect="off" spellCheck={false} autoComplete="off"
+        role="combobox" aria-expanded={shown} aria-controls="crewpick-list" aria-autocomplete="list"
+        onFocus={() => setOpen(true)} onBlur={() => window.setTimeout(() => setOpen(false), 150)}
+        onChange={(e) => { onChange(e.target.value); setOpen(true); }}
+        onKeyDown={(e) => {
+          if (!shown) return;
+          if (e.key === 'ArrowDown') { e.preventDefault(); setAt((at + 1) % matches.length); }
+          else if (e.key === 'ArrowUp') { e.preventDefault(); setAt((at - 1 + matches.length) % matches.length); }
+          else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); pick(matches[at]!.handle); }
+          else if (e.key === 'Escape') setOpen(false);
+        }} />
+      {shown && (
+        <ul id="crewpick-list" className="crewpick__list" role="listbox">
+          {matches.map((match, index) => (
+            <li key={match.id} role="option" aria-selected={index === at}
+              className={`crewpick__row${index === at ? ' is-on' : ''}`}
+              onMouseDown={(e) => { e.preventDefault(); pick(match.handle); }}>
+              <Avatar name={match.name} size={30} />
+              <span className="crewpick__who">
+                <b>{match.name}</b>
+                <span>@{match.handle}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <span className="field__hint">Or the email or phone they signed up with.</span>
     </div>
   );
 }

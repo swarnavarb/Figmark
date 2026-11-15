@@ -876,10 +876,20 @@ async function updateManagers(request: HttpRequest, _context: InvocationContext)
   }
 
   const identifier = body.identifier?.trim();
-  if (!identifier) return error(400, 'invalid_manager', 'Name the person by email or phone.');
+  if (!identifier) return error(400, 'invalid_manager', 'Name the person by @username, email or phone.');
 
-  const member = await repository.getUserByIdentifier(identifier);
-  if (!member) return error(404, 'not_found', 'Nobody here with that email or phone.');
+  // An @username names a person by their own handle; a shop's handle is not
+  // somebody who can be handed rights.
+  let member: Awaited<ReturnType<typeof repository.getUserById>>;
+  if (identifier.startsWith('@')) {
+    const found = await repository.getByHandle(identifier.slice(1).toLowerCase());
+    if (found?.isStore) return error(400, 'invalid_manager', `@${identifier.slice(1)} is a shop. Add the person behind it by their own username.`);
+    member = found?.user ?? null;
+    if (!member) return error(404, 'not_found', `Nobody here is ${identifier}.`);
+  } else {
+    member = await repository.getUserByIdentifier(identifier) ?? await repository.getUserById(identifier);
+    if (!member) return error(404, 'not_found', 'Nobody here with that email or phone.');
+  }
   if (member.id === owner.id) {
     return error(400, 'invalid_manager', 'The owner already administers this store.');
   }

@@ -1055,7 +1055,12 @@ button.statuspill:hover { border-color: var(--border-strong); color: var(--text)
 .sdash__note { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin: 0; font-size: var(--t-xs); color: var(--text-faint); }
 .sdash__note span { display: inline-flex; align-items: center; gap: var(--s1); min-width: 0; }
 .sdash__best b { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 22ch; }
-.sdash__step { padding: 2px var(--s2); border-radius: var(--r-pill); border: 1px dashed var(--border-strong); }
+.sdash__step {
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px var(--s2); border-radius: var(--r-pill);
+  border: 1px dashed var(--border-strong); background: none; font: inherit; color: inherit; cursor: pointer;
+  transition: border-color var(--dur-2) var(--ease), color var(--dur-2) var(--ease);
+}
+.sdash__step:hover { border-color: var(--accent); color: var(--text); }
 .sdash__line { display: block; width: 100%; height: 36px; }
 .sdash__area { fill: var(--violet-soft); }
 .sdash__stroke { fill: none; stroke: var(--violet-text); stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
@@ -1235,3 +1240,23 @@ button.statuspill:hover { border-color: var(--border-strong); color: var(--text)
   .sfset__bar, .crewset__pick, .crewset__tick, .crewset__remove { transition: none; }
   .crewset__pick:active { transform: none; }
 }
+
+/* Landed on from a "+ Cover" chip: the section says it is the one. */
+.sfsec { scroll-margin-top: calc(var(--nav-h, 64px) + var(--s4)); }
+.sfsec.is-flash .sfsec__title { animation: sfsec-flash 1.4s var(--ease); }
+@keyframes sfsec-flash { 0%, 60% { color: var(--accent-text, var(--accent)); } }
+
+/* Who to add: @username with people suggested under it. */
+.crewpick { position: relative; }
+.crewpick__list {
+  position: absolute; top: calc(100% - 18px); left: 0; right: 0; z-index: 20;
+  list-style: none; margin: 0; padding: var(--s1); display: grid;
+  border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, .35);
+}
+.crewpick__row { display: flex; align-items: center; gap: var(--s3); padding: var(--s2); border-radius: var(--r-sm); cursor: pointer; }
+.crewpick__row.is-on, .crewpick__row:hover { background: var(--surface-2); }
+.crewpick__who { display: grid; min-width: 0; font-size: var(--t-sm); }
+.crewpick__who b { font-weight: var(--w-semi); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crewpick__who span { font-size: var(--t-xs); color: var(--text-faint); }
+@media (prefers-reduced-motion: reduce) { .sfsec.is-flash .sfsec__title { animation: none; } }
