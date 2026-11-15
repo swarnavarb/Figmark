@@ -25,6 +25,16 @@ import { sweepExpiredQuotes } from './functions/service-work-routes.js';
 import { refreshAllSellerStats } from './seller-stats.js';
 import { sweepFees } from './billing.js';
 import { refreshBoards } from './functions/board-routes.js';
+import { getPhotoStore } from './storage/index.js';
+import { deleteUnused } from './storage/unused.js';
+
+/**
+ * How old an unsaved photo must be before the nightly sweep deletes it. Forms
+ * delete their own unsaved photos when they close; this collects what a closed
+ * tab or a dropped connection left. Three days, because a listing started
+ * before its seller was verified waits in the browser while they verify.
+ */
+const UNSAVED_PHOTO_GRACE_HOURS = 72;
 
 /** Run one clock; a failure is logged and the rest still run. */
 async function run(
@@ -72,6 +82,11 @@ app.timer('clock', {
     /* Platform fees, once a day just after midnight India time: lock what is overdue, open what was paid, remind what is due soon. */
     if (at.getUTCHours() === 18 && at.getUTCMinutes() >= 35 && at.getUTCMinutes() < 40) {
       await run(context, 'fee-clock', () => sweepFees(repository), (n) => `locked or opened ${n} account(s)`);
+    }
+    /* Photos uploaded and never saved - no record anywhere names them - once a day, at a quiet hour in India. */
+    if (at.getUTCHours() === 21 && at.getUTCMinutes() >= 10 && at.getUTCMinutes() < 15) {
+      await run(context, 'photo-sweep', async () => (await deleteUnused(await getPhotoStore(), repository, UNSAVED_PHOTO_GRACE_HOURS)).deleted,
+        (n) => `deleted ${n} unsaved photo(s)`);
     }
   },
 });

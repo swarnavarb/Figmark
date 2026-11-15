@@ -922,7 +922,7 @@ code, kbd, samp, pre {
   display: flex;
   gap: var(--s2);
   align-items: center;
-  overflow-x: auto;
+  overflow-x: auto; overflow-y: hidden;
   margin: 0 calc(var(--page-pad) * -1);
   padding: 2px var(--page-pad);
   scrollbar-width: none;
@@ -1041,7 +1041,7 @@ code, kbd, samp, pre {
 
 /* ── Stage timeline ────────────────────────────────────────────────────── */
 
-.track { display: flex; gap: 3px; margin: 0; padding: 0; list-style: none; overflow-x: auto; }
+.track { display: flex; gap: 3px; margin: 0; padding: 0; list-style: none; overflow-x: auto; overflow-y: hidden; }
 
 /* Uniform step-state mark: a tick once a step is done, a small spinner while
    it is the one under way - the same two glyphs wherever a journey is drawn
@@ -1512,7 +1512,7 @@ summary::-webkit-details-marker { display: none; }
 
 /* ── Tables ────────────────────────────────────────────────────────────── */
 
-.table-scroll { overflow-x: auto; }
+.table-scroll { overflow-x: auto; overflow-y: hidden; }
 .table { width: 100%; border-collapse: collapse; font-size: var(--t-sm); }
 .table th, .table td { padding: 11px 14px; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--border); }
 .table th { font-size: var(--t-xs); text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-faint); font-weight: var(--w-semi); }
@@ -1625,7 +1625,7 @@ summary::-webkit-details-marker { display: none; }
      defeats the point of a browsable grid. */
   .chips {
     flex-wrap: nowrap;
-    overflow-x: auto;
+    overflow-x: auto; overflow-y: hidden;
     scrollbar-width: none;
     padding-bottom: 2px;
     /* Bleed to the screen edges so the row reads as scrollable. */
@@ -1937,6 +1937,10 @@ summary::-webkit-details-marker { display: none; }
   margin: 0 calc(var(--page-pad) * -1) 18px;
   padding: 2px var(--page-pad);
   scrollbar-width: none;
+  /* Sideways only: overflow-x alone makes the row a vertical scroller too,
+     and a chip's badge or shadow would let it nudge up and down. */
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
 }
 .sections::-webkit-scrollbar { display: none; }
 .sections .chip { flex: none; }
@@ -2363,7 +2367,7 @@ summary::-webkit-details-marker { display: none; }
 .bell__glyph--drops { background: var(--violet-soft); color: var(--violet-text); }
 /* One row of filters, scrolled sideways rather than wrapped. */
 .bell__filters {
-  display: flex; gap: 6px; padding: var(--s2) var(--s3); overflow-x: auto; scrollbar-width: none;
+  display: flex; gap: 6px; padding: var(--s2) var(--s3); overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
   border-bottom: 1px solid var(--border);
 }
 .bell__filters::-webkit-scrollbar { display: none; }
@@ -3649,7 +3653,7 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 }
 
 .reactors__tabs {
-  display: flex; gap: var(--s1); overflow-x: auto; margin-bottom: 10px;
+  display: flex; gap: var(--s1); overflow-x: auto; overflow-y: hidden; margin-bottom: 10px;
   border-bottom: 1px solid var(--border); scrollbar-width: none;
 }
 .reactors__tab {
@@ -3680,7 +3684,7 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 .spost--nested .carousel { margin-inline: 0; border-radius: var(--r-md); }
 .carousel__track {
   display: flex;
-  overflow-x: auto; overscroll-behavior-x: contain;
+  overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain;
   scroll-snap-type: x mandatory; scrollbar-width: none;
 }
 .carousel__track::-webkit-scrollbar { display: none; }
@@ -4011,7 +4015,7 @@ a.psheet__row:hover { background: var(--surface-hover); }
 .writer__tool--vibe svg { color: var(--pink-text); }
 .writer__left.is-low { color: var(--warn); }
 
-.writer__photos { display: flex; gap: var(--s2); overflow-x: auto; padding-bottom: 2px; }
+.writer__photos { display: flex; gap: var(--s2); overflow-x: auto; overflow-y: hidden; padding-bottom: 2px; }
 .writer__photo {
   position: relative; flex: 0 0 auto; width: 92px; height: 92px;
   border-radius: var(--r-md); overflow: hidden; background: var(--surface-2);
@@ -4729,7 +4733,8 @@ a.psheet__row:hover { background: var(--surface-hover); }
 }
 
 /* ── The composer: a line forever running round it ─────────────────────── */
-.social .writer::before {
+.social .writer::before,
+.csheet__quick .writer::before {
   content: '';
   position: absolute; inset: 0; z-index: -1;
   padding: 2px;
@@ -4754,7 +4759,7 @@ a.psheet__row:hover { background: var(--surface-hover); }
 :root[data-bars='hidden'] .tabbar { transform: translateY(calc(100% + var(--tabbar-gap) + 24px)); }
 
 @media (prefers-reduced-motion: reduce) {
-  .social .writer::before { animation: none; }
+  .social .writer::before, .csheet__quick .writer::before { animation: none; }
   .nav, .tabbar { transition: none; }
 }
 
@@ -4855,7 +4860,7 @@ a.psheet__row:hover { background: var(--surface-hover); }
 .chdiscover {
   display: flex; gap: 10px;
   margin: 0 calc(-1 * var(--page-pad)); padding: 2px var(--page-pad) 6px;
-  overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none;
+  overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; scrollbar-width: none;
 }
 .chdiscover::-webkit-scrollbar { display: none; }
 .chcard {
@@ -4934,7 +4939,7 @@ a.psheet__row:hover { background: var(--surface-hover); }
 
 .chtabs {
   display: flex; gap: 6px; margin-bottom: var(--s3);
-  overflow-x: auto; scrollbar-width: none;
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
 }
 .chtabs::-webkit-scrollbar { display: none; }
 .chtabs__tab {
@@ -5281,7 +5286,7 @@ body.is-locked { overflow: hidden; }
 }
 .soccompact__tabs {
   flex: 1; min-width: 0; display: flex; gap: 5px;
-  overflow-x: auto; scrollbar-width: none;
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
 }
 .soccompact__tabs::-webkit-scrollbar { display: none; }
 .soctab--sm { padding: 6px 11px; font-size: var(--t-xs); gap: 5px; }
@@ -6693,7 +6698,7 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
   opacity: 0; transform: scale(0.8); transition: opacity var(--dur-2) var(--spring), transform var(--dur-2) var(--bounce);
 }
 .gallery__stage:hover .gallery__zoom, .gallery__stage:focus-visible .gallery__zoom { opacity: 1; transform: none; }
-.gallery__strip { display: flex; gap: var(--s2); overflow-x: auto; padding: 3px; scrollbar-width: none; }
+.gallery__strip { display: flex; gap: var(--s2); overflow-x: auto; overflow-y: hidden; padding: 3px; scrollbar-width: none; }
 .gallery__thumb {
   flex: 0 0 68px; height: 68px; padding: 0; border: 2px solid transparent; border-radius: var(--r-md); overflow: hidden; cursor: pointer;
   opacity: 0.55; background: var(--surface-2);
@@ -7604,7 +7609,7 @@ a.ocust__name:hover { color: var(--accent-text); }
 .stage__live { display: inline-flex; align-items: center; gap: 5px; color: var(--coral-pale); font-weight: var(--w-bold); letter-spacing: 0.06em; text-transform: uppercase; }
 .stage__row {
   position: relative; z-index: 2; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(228px, 72%);
-  gap: 10px; overflow-x: auto; padding: var(--s1) 30px 8px; scroll-snap-type: x mandatory; scroll-padding-inline: 30px; scrollbar-width: none;
+  gap: 10px; overflow-x: auto; overflow-y: hidden; padding: var(--s1) 30px 8px; scroll-snap-type: x mandatory; scroll-padding-inline: 30px; scrollbar-width: none;
 }
 .stage__row::-webkit-scrollbar { display: none; }
 @media (min-width: 720px) { .stage__row { grid-auto-columns: 264px; } }
@@ -7876,7 +7881,7 @@ a.ocust__name:hover { color: var(--accent-text); }
   /* Still, the belt is a row the finger scrolls: sideways panning has to be
      allowed again (the moving belt takes only vertical, to drag it itself). */
   .belt {
-    overflow-x: auto; cursor: auto; touch-action: pan-x pan-y; user-select: auto; -webkit-user-select: auto;
+    overflow-x: auto; overflow-y: hidden; cursor: auto; touch-action: pan-x pan-y; user-select: auto; -webkit-user-select: auto;
     overscroll-behavior-x: contain; scrollbar-width: none; -webkit-overflow-scrolling: touch;
   }
   .belt::-webkit-scrollbar { display: none; }
@@ -7991,7 +7996,7 @@ a.ocust__name:hover { color: var(--accent-text); }
 .ms-strip__head > span:first-child { display: grid; }
 .ms-strip__title { font-family: var(--display); font-size: var(--t-lg); font-weight: var(--w-bold); letter-spacing: -0.02em; }
 .ms-strip__go { display: inline-flex; align-items: center; gap: var(--s1); color: var(--accent-text); font-size: var(--t-sm); font-weight: var(--w-semi); }
-.ms-strip__row { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+.ms-strip__row { display: flex; gap: 10px; overflow-x: auto; overflow-y: hidden; padding-bottom: 2px; scrollbar-width: none; }
 .ms-strip__row::-webkit-scrollbar { display: none; }
 .ms-tile {
   position: relative; flex: 0 0 150px; display: grid; gap: 6px; justify-items: start; padding: var(--s3);
@@ -8871,7 +8876,8 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 
 /* ── Create sheet ──────────────────────────────────────────────────────── */
 
-/* What the + opens: a glass sheet up from the bottom, four ways to post. */
+/* What the + opens: a glass sheet up from the bottom, every way to post as
+   tiles that pop in, wiggle on hover and squash when pressed. */
 .csheet {
   position: fixed; inset: 0; z-index: var(--z-sheet);
   display: flex; align-items: flex-end; justify-content: center;
@@ -8881,92 +8887,161 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
   animation: csheet-fade var(--dur-2) var(--ease) both;
 }
 .csheet__box {
-  width: 100%; max-width: 560px; max-height: 92vh;
+  position: relative; overflow: hidden;
+  width: 100%; max-width: 560px; max-height: 92vh; max-height: 92dvh;
   display: flex; flex-direction: column; gap: var(--s3);
-  padding: var(--s2) var(--s4) calc(var(--s4) + env(safe-area-inset-bottom, 0px));
+  padding: var(--s2) var(--s4) calc(var(--s3) + env(safe-area-inset-bottom, 0px));
   border: 1px solid var(--border-strong); border-bottom: 0;
-  border-radius: 22px 22px 0 0;
-  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  border-radius: 26px 26px 0 0;
+  background:
+    radial-gradient(90% 50% at 100% 0%, rgba(236, 72, 153, 0.16), transparent 70%),
+    radial-gradient(80% 45% at 0% 0%, rgba(124, 58, 237, 0.2), transparent 70%),
+    color-mix(in srgb, var(--surface) 82%, transparent);
   backdrop-filter: blur(24px) saturate(1.6);
   -webkit-backdrop-filter: blur(24px) saturate(1.6);
-  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  animation: csheet-up 320ms var(--ease) both;
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  animation: csheet-up 460ms cubic-bezier(0.32, 1.25, 0.5, 1) both;
 }
+/* Everything above the list keeps its height: only the list gives way. */
+.csheet__box > *:not(.csheet__list) { flex: none; }
 .csheet__grip {
-  align-self: center; flex: none;
+  align-self: center;
   width: 38px; height: 4px; border-radius: var(--r-pill);
   background: var(--border-strong);
 }
+.csheet__head { display: grid; gap: 2px; }
 .csheet__title {
   margin: 2px 0 0;
   font-family: var(--display); font-size: var(--t-lg); font-weight: var(--w-bold);
   letter-spacing: -0.01em;
 }
+.csheet__spark { display: inline-block; margin-left: 6px; animation: csheet-twinkle 2.6s ease-in-out 500ms infinite; }
+.csheet__sub { margin: 0; font-size: var(--t-sm); color: var(--text-dim); animation: csheet-sub 300ms var(--ease-out) both; }
+.csheet__sub strong { color: var(--text); font-weight: var(--w-semi); }
 .csheet__list {
   display: flex; flex-direction: column; gap: var(--s4); flex: 1 1 auto;
-  min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin: 0 -4px; padding: 0 var(--s1) 2px;
+  min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain;
+  margin: 0 calc(var(--s4) * -1); padding: 2px var(--s4) var(--s4);
+  /* The last row fades under the Cancel button: there is more below. */
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 22px), transparent);
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 22px), transparent);
 }
-/* Rows never shrink to fit: a long line wraps and the row grows with it. */
-.csheet__group { display: grid; gap: var(--s2); flex: none; }
-@media (min-width: 640px) { .csheet__group { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.csheet__group { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; flex: none; }
 .csheet__label {
   grid-column: 1 / -1; margin: 0 0 -2px var(--s1);
   font-size: var(--t-xs); font-weight: var(--w-semi); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-faint);
 }
-.csheet__pro { margin-left: var(--s2); }
 /* You and your store: a two-way switch whose highlight slides to the side you pick. */
 .csheet__sides {
   position: relative; display: grid; grid-template-columns: 1fr 1fr;
-  padding: var(--s1); border-radius: var(--r-pill); background: var(--surface-2); border: 1px solid var(--border);
+  align-self: center; width: min(280px, 100%);
+  padding: 3px; border-radius: var(--r-pill); background: var(--surface-2); border: 1px solid var(--border);
 }
 .csheet__side {
-  position: relative; z-index: 1; min-height: 38px; min-width: 0; padding: 0 var(--s3);
+  position: relative; z-index: 1; min-height: 30px; min-width: 0; padding: 0 var(--s2);
   border: 0; border-radius: var(--r-pill); background: none; color: var(--text-dim);
-  font: inherit; font-weight: var(--w-semi); font-size: var(--t-sm);
+  font: inherit; font-weight: var(--w-semi); font-size: var(--t-xs);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
   transition: color var(--dur-1) ease;
 }
 .csheet__side.is-on { color: #fff; }
 .csheet__thumb {
-  position: absolute; top: 4px; bottom: 4px; left: 4px; width: calc(50% - 4px);
+  position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px);
   border-radius: var(--r-pill); background: var(--grad-hero); box-shadow: var(--shadow-violet);
-  transition: transform var(--dur-2) var(--ease-out);
+  transition: transform 420ms cubic-bezier(0.34, 1.4, 0.64, 1), background var(--dur-2) ease;
 }
 .csheet__thumb--store { transform: translateX(100%); background: var(--grad-gold); }
-.csheet__stores { margin: 0; }
+/* Which store: one row that scrolls sideways, never cut top or bottom. */
+.csheet__stores {
+  display: flex; gap: 6px; justify-content: safe center;
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+  margin: -4px calc(var(--s4) * -1) 0; padding: 3px var(--s4) 4px;
+  overscroll-behavior-x: contain;
+}
+.csheet__stores::-webkit-scrollbar { display: none; }
+.csheet__store {
+  flex: none; display: inline-flex; align-items: center; gap: 6px;
+  max-width: 180px; min-height: 28px; padding: 0 10px; gap: 5px;
+  border-radius: var(--r-pill); border: 1px solid var(--border-strong); background: var(--surface-2);
+  color: var(--text-dim); font: inherit; font-size: var(--t-xs); font-weight: var(--w-semi); line-height: 1.2; cursor: pointer;
+  transition: color var(--dur-1) ease, border-color var(--dur-1) ease, background var(--dur-1) ease, transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.csheet__storename { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.csheet__store.is-on { color: #fff; border-color: transparent; background: var(--grad-hero); box-shadow: var(--shadow-violet); transform: scale(1.03); }
+.csheet__store:active { transform: scale(0.95); }
 /* The quick post sits on the sheet like one more row, not a card on a card. */
-.csheet__quick { flex: none; }
-.csheet__quick .writer { background: color-mix(in srgb, var(--surface-2) 70%, transparent); }
-.csheet__item {
-  display: grid; grid-template-columns: 44px minmax(0, 1fr) 16px; align-items: center; gap: 14px;
-  min-height: 68px; height: auto; padding: var(--s3) 14px;
-  /* Each row arrives a beat after the one above: the list reads in order. */
-  animation: csheet-item 260ms var(--ease-out) both;
-  border: 1px solid var(--border); border-radius: var(--r-lg);
+.csheet__quick { flex: none; animation: csheet-sub 300ms var(--ease-out) both; }
+.csheet__quick .writer {
+  isolation: isolate; border-color: transparent;
   background: color-mix(in srgb, var(--surface-2) 70%, transparent);
-  color: var(--text); font: inherit; text-align: left; cursor: pointer;
-  transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
 }
-.csheet__item:hover, .csheet__item:focus-visible { border-color: var(--accent-line); background: var(--surface-hover); outline: none; }
-.csheet__item:active { transform: scale(0.985); }
+
+/* A tile: a coloured blob with the emoji, the name, one short line. */
+.csheet__tile {
+  --tile: var(--violet); --tile-soft: var(--violet-soft); --tile-line: var(--violet-line);
+  position: relative; isolation: isolate; overflow: hidden;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 3px;
+  min-width: 0; padding: 12px 6px 11px;
+  border: 1px solid var(--border); border-radius: 20px;
+  background:
+    radial-gradient(110% 80% at 50% 0%, color-mix(in srgb, var(--tile) 22%, transparent), transparent 62%),
+    color-mix(in srgb, var(--surface-2) 72%, transparent);
+  color: var(--text); font: inherit; text-align: center; cursor: pointer;
+  animation: csheet-pop 520ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  transition: border-color var(--dur-1) ease, transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow var(--dur-2) ease;
+  -webkit-tap-highlight-color: transparent;
+}
+/* A sheen that sweeps across on hover or focus. */
+.csheet__tile::after {
+  content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: linear-gradient(110deg, transparent 35%, rgba(255, 255, 255, 0.12) 50%, transparent 65%);
+  transform: translateX(-110%);
+}
+.csheet__tile:focus-visible { outline: none; }
+.csheet__tile:focus-visible, .csheet__tile:active { border-color: var(--tile-line); }
+.csheet__tile:focus-visible::after { animation: csheet-sheen 700ms ease both; }
+.csheet__tile:focus-visible .csheet__emoji > span { animation: csheet-wiggle 560ms ease both; }
+.csheet__tile:active { transform: scale(0.94); }
+@media (hover: hover) and (pointer: fine) {
+  .csheet__tile:hover {
+    border-color: var(--tile-line); transform: translateY(-3px);
+    box-shadow: 0 10px 26px -10px color-mix(in srgb, var(--tile) 70%, transparent);
+  }
+  .csheet__tile:hover::after { animation: csheet-sheen 700ms ease both; }
+  .csheet__tile:hover .csheet__emoji > span { animation: csheet-wiggle 560ms ease both; }
+  .csheet__tile:active { transform: scale(0.95); }
+}
+.csheet__tile--aqua { --tile: var(--aqua); --tile-soft: var(--aqua-soft); --tile-line: var(--aqua-line); }
+.csheet__tile--coral { --tile: var(--coral); --tile-soft: var(--coral-soft); --tile-line: var(--coral-line); }
+.csheet__tile--pink { --tile: var(--pink); --tile-soft: var(--pink-soft); --tile-line: var(--pink-line); }
+.csheet__tile--blue { --tile: var(--blue); --tile-soft: var(--blue-soft); --tile-line: var(--blue-line); }
+.csheet__tile--lime { --tile: var(--lime); --tile-soft: var(--lime-soft); --tile-line: var(--lime-line); }
+.csheet__tile--gold { --tile: var(--gold); --tile-soft: var(--warn-soft); --tile-line: rgba(251, 191, 36, 0.45); }
+.csheet__tile--violet { --tile: var(--violet-lit); --tile-soft: var(--violet-soft); --tile-line: var(--violet-line); }
 .csheet__emoji {
-  display: grid; place-items: center;
-  width: 44px; height: 44px; border-radius: var(--r-md);
-  font-size: calc(22px * var(--text-scale)); line-height: 1;
-  background: var(--violet-soft); border: 1px solid var(--violet-line);
+  display: grid; place-items: center; flex: none;
+  width: 48px; height: 48px; margin-bottom: 5px; border-radius: 16px;
+  font-size: calc(24px * var(--text-scale)); line-height: 1;
+  background: var(--tile-soft); border: 1px solid var(--tile-line);
+  box-shadow: 0 6px 16px -8px var(--tile), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  animation: csheet-drop 620ms cubic-bezier(0.34, 1.7, 0.5, 1) both;
 }
-.csheet__item--aqua .csheet__emoji { background: var(--aqua-soft); border-color: var(--aqua-line); }
-.csheet__item--coral .csheet__emoji { background: var(--coral-soft); border-color: var(--coral-line); }
-.csheet__item--pink .csheet__emoji { background: var(--pink-soft); border-color: var(--pink-line); }
-.csheet__item--blue .csheet__emoji { background: var(--blue-soft); border-color: var(--blue-line); }
-.csheet__item--lime .csheet__emoji { background: var(--lime-soft); border-color: var(--lime-line); }
-.csheet__item--gold .csheet__emoji { background: var(--warn-soft); border-color: rgba(251, 191, 36, 0.45); }
-.csheet__item--violet .csheet__emoji { background: var(--violet-soft); border-color: var(--violet-line); }
-@keyframes csheet-item { from { opacity: 0; transform: translateY(8px); } }
-.csheet__text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.csheet__text strong { display: flex; align-items: center; font-size: var(--t-base); font-weight: var(--w-semi); line-height: 1.25; }
-.csheet__text > span { font-size: var(--t-sm); color: var(--text-dim); line-height: 1.35; }
-.csheet__chev { color: var(--text-faint); }
+.csheet__emoji > span { display: block; }
+.csheet__pro { position: absolute; top: 6px; right: 6px; padding: 1px 5px; font-size: var(--t-2xs); }
+.csheet__name { font-size: var(--t-xs); font-weight: var(--w-bold); line-height: 1.25; overflow-wrap: anywhere; }
+/* On a phone the tile is the emoji and its name; the line is still read out. */
+.csheet__line {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+@media (min-width: 480px) {
+  .csheet__tile { padding: 14px 10px 13px; }
+  .csheet__name { font-size: var(--t-sm); }
+  .csheet__line {
+    position: static; width: auto; height: auto; clip-path: none; white-space: normal;
+    font-size: var(--t-xs); color: var(--text-dim); line-height: 1.35;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+}
 .csheet__cancel {
   min-height: 46px; border: 0; border-radius: var(--r-md);
   background: none; color: var(--text-dim); font: inherit; font-weight: var(--w-semi); cursor: pointer;
@@ -8974,12 +9049,41 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .csheet__cancel:hover { color: var(--text); background: var(--surface-2); }
 @keyframes csheet-fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes csheet-up { from { transform: translateY(100%); } to { transform: none; } }
-@media (prefers-reduced-motion: reduce) {
-  .csheet, .csheet__box { animation: none; }
-  .csheet__item { animation: fade-in 160ms ease both; }
-  .csheet__thumb { transition: none; }
+@keyframes csheet-sub { from { opacity: 0; transform: translateY(4px); } }
+@keyframes csheet-pop { from { opacity: 0; transform: translateY(18px) scale(0.86) rotate(-3deg); } }
+@keyframes csheet-drop { from { opacity: 0; transform: translateY(-10px) scale(0.4) rotate(-25deg); } }
+@keyframes csheet-wiggle {
+  0% { transform: none; }
+  25% { transform: rotate(-14deg) scale(1.18); }
+  50% { transform: rotate(10deg) scale(1.18); }
+  75% { transform: rotate(-5deg) scale(1.08); }
+  100% { transform: none; }
 }
-@media (hover: none) { .csheet__item:hover { border-color: var(--border); background: color-mix(in srgb, var(--surface-2) 70%, transparent); } }
+@keyframes csheet-sheen { from { transform: translateX(-110%); } to { transform: translateX(110%); } }
+@keyframes csheet-twinkle {
+  0%, 70%, 100% { transform: none; opacity: 1; }
+  80% { transform: rotate(18deg) scale(1.3); }
+  90% { transform: rotate(-8deg) scale(0.9); opacity: 0.75; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .csheet, .csheet__box, .csheet__emoji, .csheet__spark, .csheet__sub, .csheet__quick { animation: none; }
+  .csheet__tile { animation: fade-in 160ms ease both; transition: border-color var(--dur-1) ease; }
+  .csheet__tile:hover, .csheet__tile:active { transform: none; }
+  .csheet__tile::after, .csheet__tile:hover::after, .csheet__tile:hover .csheet__emoji > span,
+  .csheet__tile:focus-visible::after, .csheet__tile:focus-visible .csheet__emoji > span { animation: none; }
+  .csheet__thumb, .csheet__store { transition: none; }
+}
+:where(:root[data-motion="reduced"]) :is(.csheet__emoji, .csheet__spark, .csheet__sub, .csheet__quick, .csheet__emoji > span) { animation: none !important; }
+:where(:root[data-motion="reduced"]) .csheet__tile::after { animation: none !important; }
+:where(:root[data-motion="reduced"]) .csheet__tile { animation: fade-in 160ms ease both; }
+
+/* A prize's terms: one quiet line until opened. */
+.pterms { margin-top: 6px; font-size: var(--t-xs); color: var(--text-dim); }
+.pterms summary { cursor: pointer; width: fit-content; font-weight: var(--w-semi); color: var(--text-faint); list-style: none; }
+.pterms summary::-webkit-details-marker { display: none; }
+.pterms summary::before { content: '›'; display: inline-block; margin-right: 6px; transition: transform var(--dur-1) var(--ease-out); }
+.pterms[open] summary::before { transform: rotate(90deg); }
+.pterms p { margin: 6px 0 0; padding: 8px 10px; border-radius: var(--r-md); background: var(--surface); white-space: pre-line; line-height: 1.45; }
 
 /* ── What a card is ────────────────────────────────────────────────────── */
 
@@ -9046,7 +9150,7 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 }
 .flexshelf__tip--left { left: auto; right: 18px; }
 .flexshelf__go { display: inline-flex; align-items: center; gap: var(--s1); color: var(--accent-text); font-weight: var(--w-semi); font-size: var(--t-xs); text-decoration: none; }
-.flexshelf__thumbs { display: flex; gap: 6px; padding-inline: var(--s4); overflow-x: auto; scrollbar-width: none; }
+.flexshelf__thumbs { display: flex; gap: 6px; padding-inline: var(--s4); overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 .flexshelf__thumb {
   flex: none; width: 52px; height: 52px; padding: 0; overflow: hidden;
   border-radius: var(--r-sm); border: 2px solid transparent; background: var(--surface-2); cursor: pointer; opacity: 0.6;
@@ -9058,6 +9162,11 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
   margin: 0; padding-inline: var(--s4); color: var(--text-dim); font-size: var(--t-xs); font-weight: var(--w-semi);
 }
 .flexshelf__legend .hotchip { cursor: default; }
+/* The studio's preview draws the same tagged photo, kept inside its card. */
+.ppreview .flexshelf { margin-inline: 0; }
+.ppreview .flexshelf__frame { border-radius: 14px; }
+.ppreview .flexshelf__frame > img { height: auto; max-height: 56vh; object-fit: contain; border-radius: 14px; }
+.ppreview .flexshelf__legend { padding-inline: 0; }
 @keyframes hotdot-pulse {
   0% { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5), 0 0 0 0 rgba(255, 255, 255, 0.55); }
   70% { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5), 0 0 0 10px rgba(255, 255, 255, 0); }
@@ -9461,7 +9570,7 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .actord__head h2 { margin: 0; font-size: var(--t-md); }
 .actord__all { font-size: var(--t-sm); font-weight: var(--w-semi); color: var(--accent-text); text-decoration: none; }
 .actord__row {
-  display: flex; gap: 8px; overflow-x: auto; scroll-snap-type: x mandatory;
+  display: flex; gap: 8px; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory;
   margin-inline: calc(-1 * var(--page-pad)); padding: 2px var(--page-pad) 4px;
   scrollbar-width: none; overscroll-behavior-x: contain;
 }
@@ -9642,7 +9751,7 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .svstrip__head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .svstrip__head h2 { margin: 0; font-size: var(--t-md); }
 .svstrip__row {
-  display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory;
+  display: flex; gap: 10px; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory;
   margin-inline: calc(-1 * var(--page-pad)); padding: 2px var(--page-pad) 6px;
   scrollbar-width: none; overscroll-behavior-x: contain;
 }
@@ -9886,7 +9995,7 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .winstrip { display: grid; gap: 6px; }
 .winstrip__label { display: flex; align-items: baseline; gap: var(--s2); font-size: var(--t-2xs); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.08em; }
 .winstrip__all { margin-left: auto; text-transform: none; letter-spacing: 0; font-size: var(--t-xs); }
-.winstrip__row { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 6px; scrollbar-width: thin; }
+.winstrip__row { display: flex; gap: 8px; overflow-x: auto; overflow-y: hidden; padding: 2px 2px 6px; scrollbar-width: thin; }
 .minimedal, .winchip {
   --metal-hi: #FFF3B0; --metal: #F5C542; --metal-lo: #A0700E; --glow: 245, 197, 66;
   flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; max-width: 220px;

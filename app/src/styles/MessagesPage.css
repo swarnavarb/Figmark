@@ -20,7 +20,7 @@
   background: var(--surface-2); border-left: 3px solid var(--pink);
 }
 .cbar__aboutbody { display: grid; min-width: 0; flex: 1; font-size: var(--t-xs); }
-.cbar__prompts { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+.cbar__prompts { display: flex; gap: 6px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; padding-bottom: 2px; }
 .dmactions { display: inline-flex; align-items: center; gap: 6px; }
 .chunread { display: flex; align-items: center; gap: 10px; margin: 14px 0 var(--s2); color: var(--accent-text); }
 .chunread::before, .chunread::after { content: ''; flex: 1; height: 1px; background: currentColor; opacity: 0.45; }
@@ -101,7 +101,7 @@
   background: var(--pink); color: var(--pink-ink); font-size: var(--t-lg); font-weight: var(--w-bold);
 }
 .dealpick__or { margin: 2px 0 0; font-size: var(--t-xs); color: var(--text-dim); text-align: center; }
-.dealpick__tabs { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.dealpick__tabs { display: flex; gap: 6px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 .dealpick__list { display: grid; gap: 6px; max-height: min(52vh, 440px); overflow-y: auto; margin: 0 -4px; padding: 0 var(--s1); }
 .dealpick__row {
   display: flex; align-items: center; gap: 10px; padding: var(--s2); border-radius: var(--r-md); cursor: pointer; text-align: left;
@@ -141,7 +141,7 @@
   background: var(--sx-grad); color: #fff; font-weight: 800; font-size: var(--t-xs); cursor: pointer;
 }
 .inbox__go:disabled { opacity: 0.45; cursor: default; }
-.inbox__boxes { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.inbox__boxes { display: flex; gap: 6px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 .chrow__to { color: var(--text-faint); font-size: var(--t-2xs); }
 .dmroom .chthread { align-content: end; }
 .cmsg__read { color: var(--sx-volt); letter-spacing: -0.12em; }

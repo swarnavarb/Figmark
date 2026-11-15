@@ -4,7 +4,7 @@
 .lotcost__money { display: flex; align-items: center; gap: 6px; }
 .lotcost__money input { width: 100%; min-width: 0; font-variant-numeric: tabular-nums; }
 .lotcost__split { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--t-base); color: var(--text-dim); }
-.lotcost__table { display: grid; gap: 2px; font-size: var(--t-sm); font-variant-numeric: tabular-nums; overflow-x: auto; }
+.lotcost__table { display: grid; gap: 2px; font-size: var(--t-sm); font-variant-numeric: tabular-nums; overflow-x: auto; overflow-y: hidden; }
 .lotcost__row {
   display: grid; grid-template-columns: minmax(120px, 2fr) repeat(4, minmax(64px, 1fr)); gap: 8px;
   align-items: center; padding: 8px 10px; border-radius: 8px; background: var(--surface-2);

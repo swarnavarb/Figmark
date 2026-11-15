@@ -6,7 +6,7 @@
 }
 .fsug__row {
   display: grid; grid-auto-flow: column; grid-auto-columns: minmax(150px, 160px); gap: 10px;
-  overflow-x: auto; scrollbar-width: none;
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
   margin-inline: calc(var(--page-pad) * -1); padding: 2px var(--page-pad) 6px;
   scroll-snap-type: x mandatory;
 }

@@ -4,8 +4,9 @@ import type { BlobEntry, PhotoScope, PhotoStore } from './types.js';
 /**
  * Finding the stored photos nothing uses any more.
  *
- * A photo is only ever deleted here, on an operator's say-so, and only after
- * checking every record. Deleting a blob when the thing it was uploaded for goes
+ * A photo is only ever deleted here - on an operator's say-so, or by the
+ * nightly sweep (clocks.ts) once it is days old - and only after checking
+ * every record. Deleting a blob when the thing it was uploaded for goes
  * would be wrong far more often than it sounds: a post that shares an item
  * reuses the item's photo, an order and a collection card keep their own copy
  * of the listing's, and a listing is expired rather than removed so its history

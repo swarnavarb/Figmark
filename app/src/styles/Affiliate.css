@@ -44,7 +44,7 @@
 .similar__titles { display: grid; }
 .similar__track {
   display: grid; grid-auto-flow: column; grid-auto-columns: minmax(168px, 200px); gap: var(--s3);
-  overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; padding: var(--s1) 2px 14px; scrollbar-width: thin;
+  overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; padding: var(--s1) 2px 14px; scrollbar-width: thin;
 }
 .simcard:hover { transform: translateY(-3px); box-shadow: inset 0 0 0 1px var(--accent-line, rgba(124, 58, 237, 0.4)), 0 10px 24px rgba(0, 0, 0, 0.35); }
 .simcard.is-affiliate { box-shadow: inset 0 0 0 1px var(--lime-line), 0 6px 18px rgba(163, 230, 53, 0.12); }

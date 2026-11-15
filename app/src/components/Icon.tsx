@@ -17,7 +17,7 @@ import type { ReactNode } from 'react';
  * glyphs that were already drawn this way.
  */
 export type IconName =
-  | 'search' | 'target' | 'compose' | 'heart' | 'plus' | 'back' | 'check' | 'close' | 'chevron'
+  | 'search' | 'eye' | 'target' | 'compose' | 'heart' | 'plus' | 'back' | 'check' | 'close' | 'chevron'
   | 'tag' | 'bolt' | 'lock' | 'bell' | 'message' | 'mail' | 'megaphone'
   | 'plane' | 'bank' | 'star' | 'grip' | 'up' | 'down' | 'left' | 'right'
   | 'box' | 'truck' | 'users' | 'spark' | 'forum' | 'send' | 'image' | 'camera'
@@ -34,6 +34,7 @@ const PATHS: Record<IconName, ReactNode> = {
   mute: (<><path d="M4 9.6h3.6L12.4 5.6v12.8L7.6 14.4H4Z" /><path d="m15.6 9.6 4.8 4.8M20.4 9.6l-4.8 4.8" /></>),
   // An eye with a stroke through it, for putting a post out of sight.
   hide: (<><path d="M2.8 12s3.4-6 9.2-6 9.2 6 9.2 6-3.4 6-9.2 6-9.2-6-9.2-6Z" /><circle cx="12" cy="12" r="2.6" /><path d="M4 20 20 4" /></>),
+  eye: (<><path d="M2.8 12s3.4-6 9.2-6 9.2 6 9.2 6-3.4 6-9.2 6-9.2-6-9.2-6Z" /><circle cx="12" cy="12" r="2.6" /></>),
   search: (<><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></>),
   heart: <path d="M12 20s-7-4.5-7-9a4 4 0 0 1 7-2.6A4 4 0 0 1 19 11c0 4.5-7 9-7 9Z" />,
   plus: <path d="M12 5v14M5 12h14" />,

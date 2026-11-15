@@ -122,7 +122,7 @@
 .dbench th, .dbench td, .dtable th, .dtable td { padding: 8px 6px; text-align: left; border-top: 1px solid var(--border); }
 .dbench thead th, .dtable thead th { border-top: 0; color: var(--text-dim); font-size: var(--t-xs); font-weight: var(--w-semi); }
 .dbench td, .dtable td { font-variant-numeric: tabular-nums; }
-.dtable-wrap { overflow-x: auto; margin-inline: calc(-1 * var(--s2)); padding-inline: var(--s2); }
+.dtable-wrap { overflow-x: auto; overflow-y: hidden; margin-inline: calc(-1 * var(--s2)); padding-inline: var(--s2); }
 .dtable { min-width: 520px; }
 .dtable tbody th { font-weight: var(--w-medium); }
 

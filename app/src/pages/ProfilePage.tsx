@@ -20,6 +20,7 @@ import { EarnPill, earnOf } from '../components/Affiliate';
 import { PushCard } from '../components/PushControls';
 import { TwoFactorSettings } from '../components/TwoFactor';
 import { PictureField, TagInput } from '../components/PageFields';
+import { useDraftUploads } from '../draft-uploads';
 import '../styles/ProfilePage.css';
 import { factsOf } from '@shared/catalog';
 
@@ -409,6 +410,8 @@ function MyPageSettings() {
   const [bio, setBio] = useState(user?.bio ?? '');
   const [photoUrl, setPhotoUrl] = useState(user?.photoUrl ?? '');
   const [coverUrl, setCoverUrl] = useState(user?.coverUrl ?? '');
+  /** Pictures picked here and not saved are deleted when this closes. */
+  const pictures = useDraftUploads();
   const [tags, setTags] = useState<string[]>(user?.tags ?? []);
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
@@ -441,10 +444,10 @@ function MyPageSettings() {
         )}
       </p>
 
-      <PictureField label="Profile photo" shape="square" value={photoUrl} onChange={setPhotoUrl}
+      <PictureField uploads={pictures} label="Profile photo" shape="square" value={photoUrl} onChange={setPhotoUrl}
         hint="A clear, square picture of you works best." />
 
-      <PictureField label="Cover photo" shape="wide" value={coverUrl} onChange={setCoverUrl}
+      <PictureField uploads={pictures} label="Cover photo" shape="wide" value={coverUrl} onChange={setCoverUrl}
         hint="The wide banner across the top of your page." />
 
       <label className="field">

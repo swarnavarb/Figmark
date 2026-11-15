@@ -328,10 +328,20 @@ async function payVoters(repository: Repo, post: Post, nowIso: string): Promise<
 async function revealGuess(repository: Repo, post: Post, nowIso: string): Promise<void> {
   const marked = await repository.mutatePost(post.channelId, post.id, (current) => {
     if (!current.guess || current.guess.revealedAt) return null;
-    const top = closestGuess(current.guess)[0];
+    const ranked = closestGuess(current.guess);
+    const top = ranked[0];
+    const prize = current.guess.prize;
+    // The closest are paid at the reveal; a shop that picks does so after.
+    const paid = prize && prize.judge === 'closest' && ranked.length
+      ? ranked.slice(0, prize.winners).map((entry) => ({ userId: entry.userId, name: entry.name, amountMinor: entry.amountMinor }))
+      : null;
     return {
       ...current,
-      guess: { ...current.guess, revealedAt: nowIso, winner: top ? { userId: top.userId, name: top.name, amountMinor: top.amountMinor } : null },
+      guess: {
+        ...current.guess, revealedAt: nowIso,
+        winner: top ? { userId: top.userId, name: top.name, amountMinor: top.amountMinor } : null,
+        ...(paid ? { winners: paid, paidAt: nowIso } : {}),
+      },
     };
   });
   const guess = marked?.guess;
@@ -341,18 +351,46 @@ async function revealGuess(repository: Repo, post: Post, nowIso: string): Promis
     await reward(repository, guess.winner.userId, {
       badge: { id: `bdg_${marked.id}_guess`, kind: 'guess_winner', detail: `Closest guess: ${gist(marked.body)}`, link },
     });
-    await notify(repository, [guess.winner.userId], {
-      kind: 'prize_won',
-      title: 'Your guess was the closest! 🎯',
-      body: `It was ${rupees(guess.answerMinor)}; you said ${rupees(guess.winner.amountMinor)}.`,
-      link,
-    });
+    if (!guess.prize) {
+      await notify(repository, [guess.winner.userId], {
+        kind: 'prize_won',
+        title: 'Your guess was the closest! 🎯',
+        body: `It was ${rupees(guess.answerMinor)}; you said ${rupees(guess.winner.amountMinor)}.`,
+        link,
+      });
+    }
   }
-  const rest = [...new Set(guess.guesses.map((entry) => entry.userId))].filter((id) => id !== guess.winner?.userId);
+  if (guess.paidAt === nowIso) await payGuess(repository, marked);
+  const told = new Set([...(guess.winners ?? []).map((entry) => entry.userId), ...(guess.prize ? [] : [guess.winner?.userId])]);
+  const rest = [...new Set(guess.guesses.map((entry) => entry.userId))].filter((id) => !told.has(id));
   await notify(repository, [...rest, marked.authorId], {
     kind: 'contest_update',
     title: `The price is out: ${rupees(guess.answerMinor)}`,
-    body: guess.winner ? `${guess.winner.name} got closest — ${gist(marked.body)}` : gist(marked.body),
+    body: guess.prize?.judge === 'store' && marked.authorId
+      ? `${gist(marked.body)} — the shop picks the winner next.`
+      : guess.winner ? `${guess.winner.name} got closest — ${gist(marked.body)}` : gist(marked.body),
+    link,
+  });
+}
+
+/** Pay a guess-the-price's prize to everybody it names: idempotent by id, like every payment here. */
+export async function payGuess(repository: Repo, post: Post): Promise<void> {
+  const guess = post.guess;
+  const prize = guess?.prize;
+  if (!guess || !prize || !guess.winners?.length) return;
+  const link = linkOf(post);
+  for (const [index, winner] of guess.winners.entries()) {
+    await reward(repository, winner.userId, {
+      credit: {
+        id: `prz_${post.id}_guess_${winner.userId}`, storeId: prize.storeId, storeName: prize.storeName, amountMinor: prize.amountMinor,
+        reason: `${prize.judge === 'store' ? 'Picked guess' : index === 0 ? 'Closest guess' : `#${index + 1} closest guess`}: ${gist(post.body)}`, link,
+      },
+    });
+  }
+  await notify(repository, guess.winners.map((winner) => winner.userId), {
+    kind: 'prize_won',
+    title: `You won ${rupees(prize.amountMinor)} from ${prize.storeName} 🎯`,
+    body: `It was ${rupees(guess.answerMinor)}. Store credit for your guess on "${gist(post.body)}" comes off your next order there.`,
     link,
   });
 }

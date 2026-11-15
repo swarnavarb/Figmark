@@ -153,6 +153,7 @@ export interface VoterReward {
   /** Set once paid, with how many it reached. */
   paidAt?: string | null;
   paidCount?: number;
+  terms?: string | null;
 }
 
 export interface StoredPoll {
@@ -230,6 +231,7 @@ export interface DebatePrize {
   amountMinor: number;
   /** The shop picks, or the most-liked argument wins when the debate closes. */
   judge: 'store' | 'likes';
+  terms?: string | null;
 }
 
 /**
@@ -329,7 +331,7 @@ export interface PollView {
   stock?: boolean;
   /** On a stock poll: the answers the shop has listed (null: one listed for the whole poll). */
   stocked?: (string | null)[];
-  reward?: { amountMinor: number; maxVoters: number; storeName: string; paidCount?: number | null } | null;
+  reward?: { amountMinor: number; maxVoters: number; storeName: string; paidCount?: number | null; terms?: string | null } | null;
 }
 
 /** The mean of a rating poll's stars, one decimal; null before anybody rated. */

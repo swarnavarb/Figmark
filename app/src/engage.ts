@@ -18,6 +18,7 @@ export function waitingOnShop(card: PostCard): string | null {
     if (owed.length) return `Hand over ${owed.length} prize${owed.length === 1 ? '' : 's'}`;
   }
   if (post.debate?.prize?.judge === 'store' && !post.debate.best && social.poll?.closed) return 'Pick the best argument';
+  if (social.guess?.prize?.judge === 'store' && social.guess.revealed && !social.guess.winners?.length && social.guess.count > 0) return 'Pick the winning guess';
   return null;
 }
 

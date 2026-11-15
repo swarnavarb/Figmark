@@ -13681,6 +13681,54 @@ await check('a guess-the-price keeps its answer sealed until the reveal, then na
   assert.ok((await myRewards(req({ headers: near.headers }), ctx)).jsonBody.badges.some((badge) => badge.kind === 'guess_winner'));
 });
 
+await check('a guess-the-price prize pays the closest few at the reveal, with its terms shown', async () => {
+  resetRateLimits();
+  const [a, b, c] = [await newBuyer('Guess A'), await newBuyer('Guess B'), await newBuyer('Guess C')];
+  const made = (await createPost(req({ headers: auth, body: {
+    body: 'Guess the launch price', storeId: 'usr_demo', photoUrls: ['/api/photos/guess.jpg'],
+    guess: { answerMinor: 100000, revealInHours: 24, prize: { amountMinor: 20000, judge: 'closest', winners: 2, terms: 'Valid 30 days.' } },
+  } }), ctx)).jsonBody.post;
+  const before = (await readPost(req({ headers: a.headers, params: on(made) }), ctx)).jsonBody.card.social.guess;
+  assert.equal(before.prize.winners, 2);
+  assert.equal(before.prize.terms, 'Valid 30 days.', 'the terms are shown with the prize');
+  await guessPrice(req({ headers: a.headers, params: on(made), body: { amountMinor: 99000 } }), ctx);
+  await guessPrice(req({ headers: b.headers, params: on(made), body: { amountMinor: 120000 } }), ctx);
+  await guessPrice(req({ headers: c.headers, params: on(made), body: { amountMinor: 500000 } }), ctx);
+  await backdate(made, (post) => ({ ...post, guess: { ...post.guess, revealAt: ago(1000) } }));
+  const out = (await readPost(req({ headers: c.headers, params: on(made) }), ctx)).jsonBody.card.social.guess;
+  assert.deepEqual(out.winners.map((winner) => winner.userId), [a.id, b.id], 'the two closest, closest first');
+  const credits = await Promise.all([a, b, c].map(async (who) => (await myRewards(req({ headers: who.headers }), ctx)).jsonBody.credits.length));
+  assert.deepEqual(credits, [1, 1, 0]);
+  const bad = await createPost(req({ headers: auth, body: {
+    body: 'Too many', storeId: 'usr_demo', guess: { answerMinor: 100000, revealInHours: 24, prize: { amountMinor: 100, judge: 'closest', winners: 11 } },
+  } }), ctx);
+  assert.equal(bad.status, 400, 'no more than ten winners');
+});
+
+await check('a guess-the-price the shop judges waits for its pick, then pays that one guess', async () => {
+  resetRateLimits();
+  const [near, liked] = [await newBuyer('Pick Near'), await newBuyer('Pick Liked')];
+  const made = (await createPost(req({ headers: auth, body: {
+    body: 'Guess and charm us', storeId: 'usr_demo', photoUrls: ['/api/photos/guess.jpg'],
+    guess: { answerMinor: 100000, revealInHours: 24, prize: { amountMinor: 30000, judge: 'store', winners: 5 } },
+  } }), ctx)).jsonBody.post;
+  await guessPrice(req({ headers: near.headers, params: on(made), body: { amountMinor: 100000 } }), ctx);
+  await guessPrice(req({ headers: liked.headers, params: on(made), body: { amountMinor: 80000 } }), ctx);
+  const early = await judgeGame(req({ headers: auth, params: on(made), body: { action: 'guess_winner', userId: liked.id } }), ctx);
+  assert.equal(early.status, 409, 'not before the price is out');
+  await backdate(made, (post) => ({ ...post, guess: { ...post.guess, revealAt: ago(1000) } }));
+  const revealed = (await readPost(req({ headers: auth, params: on(made) }), ctx)).jsonBody.card.social.guess;
+  assert.equal(revealed.prize.winners, 1, 'the shop picks one');
+  assert.equal(revealed.winners, null, 'nobody is paid until the shop picks');
+  const picked = await judgeGame(req({ headers: auth, params: on(made), body: { action: 'guess_winner', userId: liked.id } }), ctx);
+  assert.equal(picked.status, 200);
+  assert.equal(picked.jsonBody.card.social.guess.winners[0].userId, liked.id);
+  assert.equal((await myRewards(req({ headers: liked.headers }), ctx)).jsonBody.credits.length, 1);
+  assert.equal((await myRewards(req({ headers: near.headers }), ctx)).jsonBody.credits.length, 0);
+  const again = await judgeGame(req({ headers: auth, params: on(made), body: { action: 'guess_winner', userId: near.id } }), ctx);
+  assert.equal(again.status, 409, 'picked once');
+});
+
 await check('a store poll with a voter reward pays the winning side, up to its cap, once it closes', async () => {
   resetRateLimits();
   const fans = [await newBuyer('Fan One'), await newBuyer('Fan Two'), await newBuyer('Fan Three')];

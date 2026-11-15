@@ -50,7 +50,7 @@
 .qdrop__flip { width: 86px; height: 118px; flex: none; transform: rotate(-5deg); }
 .qdrop__blank { display: block; width: 100%; height: 100%; border-radius: var(--r-md); background: var(--surface-2); }
 .qdrop__face { display: grid; place-items: center; gap: 6px; width: 100%; height: 100%; border-radius: var(--r-md); background: linear-gradient(140deg, var(--violet), var(--pink)); color: #fff; }
-.qzones { display: flex; gap: var(--s3); overflow-x: auto; padding: 2px 2px var(--s1); scrollbar-width: none; }
+.qzones { display: flex; gap: var(--s3); overflow-x: auto; overflow-y: hidden; padding: 2px 2px var(--s1); scrollbar-width: none; }
 .qzones::-webkit-scrollbar { display: none; }
 .qzone {
   flex: none; width: 70px; display: grid; justify-items: center; gap: 6px;
@@ -136,7 +136,7 @@
 }
 .qkinds {
   position: relative; display: flex; gap: 2px; padding: var(--s1); width: fit-content; max-width: 100%;
-  overflow-x: auto; scrollbar-width: none;
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
   border-radius: var(--r-pill); background: rgba(8, 11, 22, 0.75);
   box-shadow: inset 0 0 0 1px var(--border), inset 0 2px 8px rgba(0, 0, 0, 0.45);
 }
@@ -213,7 +213,7 @@
 /* Edge to edge, not a box: the colour fades in and out at the top and bottom. */
 .qfeed { overflow-x: clip; }
 .rail__track {
-  position: relative; z-index: 1; display: flex; gap: 10px; overflow-x: auto; overscroll-behavior-x: contain;
+  position: relative; z-index: 1; display: flex; gap: 10px; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain;
   scroll-snap-type: x mandatory; scroll-padding: 0 16px; padding: var(--s1) var(--s4) 40px; margin-bottom: -34px; scrollbar-width: none;
 }
 .railitem:hover .railitem__photo { transform: translateY(-4px); }
@@ -483,7 +483,7 @@
 .qrecent__head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: var(--s2); }
 .qrecent__head h2 { margin: 0; font-size: var(--t-md); }
 .qrecent__clear { border: 0; background: none; color: var(--text-faint); font: inherit; font-size: var(--t-xs); cursor: pointer; }
-.qrecent__track { display: flex; gap: var(--s2); overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+.qrecent__track { display: flex; gap: var(--s2); overflow-x: auto; overflow-y: hidden; scrollbar-width: none; padding-bottom: 2px; }
 .qrecent__track::-webkit-scrollbar { display: none; }
 .qrecent__item {
   flex: none; width: 116px; display: grid; gap: 4px; color: var(--text); text-decoration: none; font-size: var(--t-xs);

@@ -37,10 +37,12 @@ interface Action {
 
 /** What a person can put up. */
 const YOU: Action[] = [
-  { id: 'photo', emoji: '📸', title: 'Photo or collection flex', line: 'Photos, with every piece tagged if you like.', studio: 'photo', hue: 'violet' },
-  { id: 'poll', emoji: '📊', title: 'Poll', line: 'Text, photos, versus or a star rating.', studio: 'poll', hue: 'aqua' },
-  { id: 'debate', emoji: '⚔️', title: 'Debate', line: 'Two sides. Arguments land on yours.', studio: 'debate', hue: 'pink' },
-  { id: 'iso', emoji: '🔎', title: 'Post a want', line: 'Say what you hunt. Sellers who stock it hear.', to: () => '/social?view=wanted&ask=1', hue: 'coral' },
+  { id: 'photo', emoji: '📸', title: 'Photo tag', line: 'Share a photo, tag every piece.', studio: 'photo', hue: 'violet' },
+  { id: 'poll', emoji: '📊', title: 'Poll', line: 'Text, photos, versus or stars.', studio: 'poll', hue: 'aqua' },
+  { id: 'debate', emoji: '⚔️', title: 'Debate', line: 'Two sides. Pick yours.', studio: 'debate', hue: 'pink' },
+  { id: 'question', emoji: '❓', title: 'Ask a question', line: 'Legit? Bootleg? What is it?', studio: 'question', hue: 'blue' },
+  { id: 'compare', emoji: '🎨', title: 'Before & after', line: 'Drag a line from one to the other.', studio: 'compare', hue: 'lime' },
+  { id: 'iso', emoji: '🔎', title: 'Post a want', line: 'Sellers who stock it hear.', to: () => '/social?view=wanted&ask=1', hue: 'coral' },
 ];
 
 /** What a freight forwarder or artist can put up: posts here, the rest from its dashboard. */
@@ -51,7 +53,7 @@ function serviceActions(store: ServiceStoreRole): { label: string; actions: Acti
     {
       label: 'Post',
       actions: [
-        { id: 'vphoto', emoji: '📸', title: 'Photo post', line: forwarder ? 'A shipment landing, a full warehouse, a new route.' : 'A finished piece, work in progress.', studio: 'photo', hue: 'violet' },
+        { id: 'vphoto', emoji: '📸', title: 'Photo tag', line: forwarder ? 'A shipment landing, a full warehouse, a new route.' : 'A finished piece, work in progress.', studio: 'photo', hue: 'violet' },
         { id: 'vcompare', emoji: '🎨', title: 'Before & after', line: 'Two photos, side by side.', studio: 'compare', hue: 'pink' },
         { id: 'vpoll', emoji: '📊', title: 'Poll', line: forwarder ? 'Which route should we open next?' : 'Which piece should we paint next?', studio: 'poll', hue: 'aqua' },
         { id: 'vannounce', emoji: '📣', title: 'Message your channel', line: 'Cut-offs, delays, news for followers.', to: () => `/services/${store.kind}/${store.slug}?tab=channel`, hue: 'coral' },
@@ -90,17 +92,25 @@ const STORE: { label: string; actions: Action[] }[] = [
   {
     label: 'Get people playing',
     actions: [
-      { id: 'contest', emoji: '🏆', title: 'Photo competition', line: 'You set prizes; the audience or you pick.', studio: 'contest', hue: 'lime' },
-      { id: 'sguess', emoji: '🎯', title: 'Guess the price', line: 'Sealed until the reveal. Closest wins.', studio: 'guess', hue: 'violet' },
-      { id: 'spoll', emoji: '📊', title: 'Store poll', line: 'Reward whoever picks the winner, if you like.', studio: 'poll', hue: 'aqua' },
-      { id: 'stock', emoji: '📦', title: 'What should we stock next?', line: 'Results land in your Store Console.', studio: 'poll', presets: { stock: true }, hue: 'lime' },
+      { id: 'contest', emoji: '🏆', title: 'Photo competition', line: 'You set prizes; they or you pick.', studio: 'contest', hue: 'gold' },
+      { id: 'sguess', emoji: '🎯', title: 'Guess the price', line: 'Sealed till the reveal. Closest wins.', studio: 'guess', hue: 'violet' },
+      { id: 'spoll', emoji: '📊', title: 'Store poll', line: 'Reward whoever picks the winner.', studio: 'poll', hue: 'aqua' },
+      { id: 'stock', emoji: '📦', title: 'Stock next?', line: 'Results land in your Store Console.', studio: 'poll', presets: { stock: true }, hue: 'lime' },
       { id: 'sdebate', emoji: '🎤', title: 'Debate with a prize', line: 'Store credit for the best argument.', studio: 'debate', presets: { prize: true }, hue: 'pink' },
+      { id: 'squestion', emoji: '❓', title: 'Ask your buyers', line: 'One question, open answers.', studio: 'question', hue: 'blue' },
+    ],
+  },
+  {
+    label: 'Show off',
+    actions: [
+      { id: 'sphoto', emoji: '📸', title: 'Photo tag', line: 'New arrivals, a full shelf, an unboxing.', studio: 'photo', hue: 'violet' },
+      { id: 'scompare', emoji: '🎨', title: 'Before & after', line: 'A restore, a repaint, a glow-up.', studio: 'compare', hue: 'pink' },
     ],
   },
 ];
 
 /** Each list's rows come in one after another, this far apart, so the eye reads them in order. */
-const STAGGER_MS = 35;
+const STAGGER_MS = 28;
 
 /**
  * What the + in the middle of the tab bar opens: every way to put something
@@ -209,11 +219,18 @@ export function CreateSheet({ onClose }: { onClose: () => void }) {
   };
   let order = 0;
 
+  const who = side === 'store' && seat ? seat.name : 'you';
+
   return createPortal(
     <div className="csheet" role="presentation" onClick={(event) => event.target === event.currentTarget && onClose()}>
       <div className="csheet__box" role="dialog" aria-modal="true" aria-labelledby="csheet-title">
         <span className="csheet__grip" aria-hidden="true" />
-        <h2 id="csheet-title" className="csheet__title">What would you like to make?</h2>
+        <div className="csheet__head">
+          <h2 id="csheet-title" className="csheet__title">
+            What would you like to make?<span className="csheet__spark" aria-hidden="true">✨</span>
+          </h2>
+          <p className="csheet__sub" key={who}>Posting as <strong>{who}</strong></p>
+        </div>
 
         {stores.length > 0 && (
           <div className="csheet__sides" role="tablist" aria-label="Post as">
@@ -230,11 +247,12 @@ export function CreateSheet({ onClose }: { onClose: () => void }) {
         )}
 
         {side === 'store' && stores.length > 1 && (
-          <div className="chips chips--tight csheet__stores" role="radiogroup" aria-label="Which store">
+          <div className="csheet__stores" role="radiogroup" aria-label="Which store">
             {stores.map((entry, index) => (
               <button key={entry.id} type="button" role="radio" aria-checked={index === storeAt}
-                className={`chip${index === storeAt ? ' is-on' : ''}`} onClick={() => setStoreAt(index)}>
-                {entry.service ? (entry.service.kind === 'forwarder' ? '✈️ ' : '🎨 ') : ''}{entry.name}
+                className={`csheet__store${index === storeAt ? ' is-on' : ''}`} onClick={() => setStoreAt(index)}>
+                <span aria-hidden="true">{entry.service ? (entry.service.kind === 'forwarder' ? '✈️' : '🎨') : '🏪'}</span>
+                <span className="csheet__storename">{entry.name}</span>
               </button>
             ))}
           </div>
@@ -255,17 +273,14 @@ export function CreateSheet({ onClose }: { onClose: () => void }) {
                 const at = order++;
                 return (
                   <button key={action.id} ref={at === 0 ? first : undefined} type="button"
-                    className={`csheet__item csheet__item--${action.hue}`} style={{ animationDelay: `${at * STAGGER_MS}ms` }}
+                    className={`csheet__tile csheet__tile--${action.hue}`} style={{ animationDelay: `${at * STAGGER_MS}ms` }}
                     onClick={() => pick(action, side === 'store' ? store : null)}>
-                    <span className="csheet__emoji" aria-hidden="true">{action.emoji}</span>
-                    <span className="csheet__text">
-                      <strong>{action.title}{action.pro && <span className="probadge csheet__pro">PRO</span>}</strong>
-                      <span>{action.line}</span>
+                    <span className="csheet__emoji" aria-hidden="true" style={{ animationDelay: `${120 + at * STAGGER_MS}ms` }}>
+                      <span>{action.emoji}</span>
                     </span>
-                    <svg className="csheet__chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
-                      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="m9 6 6 6-6 6" />
-                    </svg>
+                    {action.pro && <span className="probadge csheet__pro">PRO</span>}
+                    <strong className="csheet__name">{action.title}</strong>
+                    <span className="csheet__line">{action.line}</span>
                   </button>
                 );
               })}

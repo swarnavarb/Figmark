@@ -1,5 +1,6 @@
 import { useId, useState } from 'react';
 import { ApiRequestError, api } from '../api';
+import type { DraftUploads } from '../draft-uploads';
 import { shrink } from './PhotoManager';
 import { Icon } from './ui';
 import '../styles/PageFields.css';
@@ -10,13 +11,18 @@ import '../styles/PageFields.css';
  *
  * Shrunk on the phone first, so a 12 MB camera photo goes up as a few hundred
  * kilobytes, and shown back as it will look on the page.
+ *
+ * Give it the form's `uploads` and a picture that is changed, removed or
+ * never saved is deleted again rather than left in storage. The form owns
+ * them, not the field: a wizard drops this step long before it saves.
  */
-export function PictureField({ label, hint, value, onChange, shape }: {
+export function PictureField({ label, hint, value, onChange, shape, uploads }: {
   label: string;
   hint: string;
   value: string;
   onChange: (url: string) => void;
   shape: 'square' | 'wide' | 'qr';
+  uploads?: DraftUploads;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,7 +32,9 @@ export function PictureField({ label, hint, value, onChange, shape }: {
     setBusy(true);
     setError(null);
     try {
-      onChange((await api.uploadStorefrontPhoto(await shrink(file))).url);
+      const stored = uploads ? await uploads.upload(await shrink(file), 'page') : await api.uploadStorefrontPhoto(await shrink(file));
+      if (value) uploads?.discard(value);
+      onChange(stored.url);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That photo did not upload. Try another.');
     } finally {
@@ -48,7 +56,7 @@ export function PictureField({ label, hint, value, onChange, shape }: {
             {busy ? 'Uploading…' : value ? 'Change' : 'Upload photo'}
           </label>
           {value && !busy && (
-            <button type="button" className="btn btn--quiet btn--sm" onClick={() => onChange('')}>Remove</button>
+            <button type="button" className="btn btn--quiet btn--sm" onClick={() => { uploads?.discard(value); onChange(''); }}>Remove</button>
           )}
         </div>
       </div>

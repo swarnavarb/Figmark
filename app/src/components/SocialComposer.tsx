@@ -13,6 +13,7 @@ import { formatMoney } from '../format';
 import { useSession } from '../session';
 
 import '../styles/SocialComposer.css';
+import { useDraftUploads } from '../draft-uploads';
 
 /*
  * Polls are made in the studio - the same form the + opens - so a poll from
@@ -44,6 +45,7 @@ export function Composer({ onPosted, forum = null }: {
   /** Writing inside a forum: always as yourself, and optionally onto your feed too. */
   forum?: { id: string; name: string } | null;
 }) {
+  const uploads = useDraftUploads();
   const { user } = useSession();
   const { voice: chosen } = useVoice();
   // A forum is people only, so inside one you write as yourself whatever
@@ -134,7 +136,7 @@ export function Composer({ onPosted, forum = null }: {
     await Promise.all(chosen.map(async (file, index) => {
       const key = drafts[index]!.key;
       try {
-        const stored = await api.uploadPhoto(await shrink(file));
+        const stored = await uploads.upload(await shrink(file));
         setPhotos((list) => list.map((photo) => (photo.key === key ? { ...photo, url: stored.url } : photo)));
       } catch (err) {
         setPhotos((list) => list.map((photo) => (photo.key === key ? { ...photo, failed: true } : photo)));
@@ -323,7 +325,7 @@ export function Composer({ onPosted, forum = null }: {
               <button type="button" className="writer__unphoto" aria-label="Remove photo"
                 onClick={() => {
                   URL.revokeObjectURL(photo.preview);
-                  if (photo.url) void api.discardPhoto(photo.url);
+                  if (photo.url) uploads.discard(photo.url);
                   setPhotos((list) => list.filter((entry) => entry.key !== photo.key));
                 }}>
                 <Icon name="close" size={12} />

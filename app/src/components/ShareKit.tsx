@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { compressImage } from '../imageCompress';
 import type { ShareEvent, ShareKind } from '@shared/models';
 import { api } from '../api';
+import { useDraftUploads } from '../draft-uploads';
 import { useSession } from '../session';
 import { useToast } from './Feedback';
 import { useQuest } from './Quest';
@@ -124,6 +125,7 @@ function canShareFiles(): boolean {
 }
 
 export function ShareSheet({ spec, onClose }: { spec: ShareSpec; onClose: () => void }) {
+  const uploads = useDraftUploads();
   const { user } = useSession();
   const { view, refresh } = useQuest();
   const toast = useToast();
@@ -222,7 +224,7 @@ export function ShareSheet({ spec, onClose }: { spec: ShareSpec; onClose: () => 
   const uploaded = useRef<Promise<string> | null>(null);
   const upload = useCallback(() => {
     if (!picture) return Promise.resolve(null);
-    uploaded.current ??= compressImage(picture.blob).then((dataUrl) => api.uploadPhoto(dataUrl)).then((stored) => stored.url);
+    uploaded.current ??= compressImage(picture.blob).then((dataUrl) => uploads.upload(dataUrl)).then((stored) => stored.url);
     uploaded.current.catch(() => { uploaded.current = null; });
     return uploaded.current;
   }, [picture]);

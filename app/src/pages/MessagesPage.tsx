@@ -238,6 +238,14 @@ export function ThreadPage() {
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   /** Photos on their way: shown at once from the file, sent once they are up. */
   const [photos, setPhotos] = useState<DraftPhoto[]>([]);
+  // Photos picked and never sent go when the chat is left, not only when ✕ is tapped.
+  const photosNow = useRef(photos);
+  const sendingPhotos = useRef(false);
+  useEffect(() => { photosNow.current = photos; }, [photos]);
+  useEffect(() => () => {
+    if (sendingPhotos.current) return;
+    for (const photo of photosNow.current) if (photo.name) void api.discardChatPhoto(photo.name);
+  }, []);
   const fileInput = useRef<HTMLInputElement>(null);
   // Said through the app's one toast, like every other confirmation.
   const toast = useToast();
@@ -521,6 +529,7 @@ export function ThreadPage() {
       setBody('');
       setReplyTo(null);
     }
+    sendingPhotos.current = sendable.length > 0;
     try {
       await api.sendMessage(handle, text, data?.us.handle, undefined, quoted?.id, about?.id, sendable);
       if (!quick) setBody('');
@@ -539,6 +548,7 @@ export function ThreadPage() {
       haptic('error');
       setError(err instanceof ApiRequestError ? err.message : 'Could not send that.');
     } finally {
+      sendingPhotos.current = false;
       setBusy(false);
     }
   }

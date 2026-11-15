@@ -105,7 +105,7 @@
 .qrarities__list { display: inline-flex; gap: var(--s3); flex-wrap: wrap; }
 .qrarities__item { display: inline-flex; align-items: center; gap: var(--s1); }
 /* The switch between your own quests and a shop's. */
-.qsides { margin-left: auto; max-width: 100%; overflow-x: auto; padding: 3px; }
+.qsides { margin-left: auto; max-width: 100%; overflow-x: auto; overflow-y: hidden; padding: 3px; }
 /* Hobby leaderboards. */
 .qboards__mine { margin-bottom: var(--s2); }
 .qboards__add { border-style: dashed; }

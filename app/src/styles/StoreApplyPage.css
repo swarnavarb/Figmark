@@ -59,7 +59,7 @@
 .sa-head .muted { max-width: 620px; }
 .sa-decision { display: grid; gap: 6px; padding: 14px var(--s4); margin-bottom: var(--s4); border-radius: var(--r-lg); border: 1px solid var(--coral-line); background: var(--coral-soft); }
 .sa-decision--rejected { border-color: rgba(244, 63, 94, 0.4); background: var(--danger-soft); }
-.sa-steps { display: flex; gap: 6px; margin: 0 0 14px; padding: 0; list-style: none; overflow-x: auto; scrollbar-width: none; }
+.sa-steps { display: flex; gap: 6px; margin: 0 0 14px; padding: 0; list-style: none; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 .sa-step {
   display: inline-flex; align-items: center; gap: var(--s2); padding: 6px var(--s3) 6px 6px;
   border: 1px solid var(--border); border-radius: var(--r-pill); background: var(--surface);

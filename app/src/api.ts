@@ -241,14 +241,50 @@ export function warmReads(starts: (() => Promise<unknown>)[]): void {
  * bootstrap had answered, a second time on every signed-in load.
  */
 function record<T>(path: string, body: unknown): Promise<T> {
-  return send<T>(path, { method: 'POST', body: JSON.stringify(body) });
+  const text = JSON.stringify(body);
+  const sent = send<T>(path, { method: 'POST', body: text });
+  void sent.then(() => noteSaved(path, text), () => undefined);
+  return sent;
+}
+
+/* ── Photos uploaded and not yet saved ─────────────────────────────────── */
+
+/**
+ * Every photo uploaded by a form that has not been saved yet, by the form
+ * that owns it (see useDraftUploads). A write that names one - by its address
+ * or its blob name - saves it, wherever that write comes from; a form that
+ * closes with photos still here throws them away.
+ */
+const unsaved = new Map<string, symbol>();
+const photoNameOf = (url: string) => url.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(?:jpg|png|webp|gif)/i)?.[0] ?? url;
+
+/** A photo a form just uploaded, until something saves it. */
+export function holdUpload(url: string, owner: symbol) {
+  unsaved.set(url, owner);
+}
+/** The photos a form still holds unsaved, handed back and forgotten. */
+export function releaseUploads(owner: symbol, only?: string): string[] {
+  const out: string[] = [];
+  for (const [url, held] of unsaved) {
+    if (held === owner && (!only || only === url)) {
+      unsaved.delete(url);
+      out.push(url);
+    }
+  }
+  return out;
+}
+function noteSaved(path: string, body: BodyInit | null | undefined) {
+  if (!unsaved.size || typeof body !== 'string' || path.startsWith('/uploads')) return;
+  for (const url of [...unsaved.keys()]) if (body.includes(url) || body.includes(photoNameOf(url))) unsaved.delete(url);
 }
 
 function request<T>(path: string, init?: RequestInit): Promise<T> {
   const method = (init?.method ?? 'GET').toUpperCase();
   if (method !== 'GET') {
     forgetReads();
-    return send<T>(path, init);
+    const sent = send<T>(path, init);
+    void sent.then(() => noteSaved(path, init?.body), () => undefined);
+    return sent;
   }
   const waiting = primed.get(path);
   if (waiting) waiting.asked = true;
@@ -1439,16 +1475,19 @@ export interface NewPost {
   photoUrls?: string[];
   poll?: {
     options: (string | NewPollOption)[]; closesInHours?: number; style?: PollStyle;
-    stock?: boolean; reward?: { amountMinor: number; maxVoters: number } | null;
+    stock?: boolean; reward?: { amountMinor: number; maxVoters: number; terms?: string | null } | null;
   } | null;
   vibe?: Vibe | null;
   replyToId?: string; toWall?: boolean; alsoForumIds?: string[];
   flex?: { hotspots: PostHotspot[] } | null;
-  debate?: { listingIds?: [string | null, string | null]; prize?: { amountMinor: number; judge: 'store' | 'likes' } | null } | null;
-  guess?: { answerMinor: number; revealInHours: number; listingId?: string | null } | null;
+  debate?: { listingIds?: [string | null, string | null]; prize?: { amountMinor: number; judge: 'store' | 'likes'; terms?: string | null } | null } | null;
+  guess?: {
+    answerMinor: number; revealInHours: number; listingId?: string | null;
+    prize?: { amountMinor: number; judge: 'closest' | 'store'; winners: number; terms?: string | null } | null;
+  } | null;
   contest?: {
     title: string; rules: string; entriesHours: number; votingHours: number; judging: ContestJudging;
-    prizes: { amountMinor: number; note: string }[]; host?: 'store' | 'figmark';
+    prizes: { amountMinor: number; note: string }[]; host?: 'store' | 'figmark'; terms?: string | null;
   } | null;
   /** Blurred until tapped. */
   blur?: PostBlur | null;
@@ -3730,7 +3769,7 @@ export const api = {
   guessPrice: (channelId: string, id: string, amountMinor: number) =>
     post<{ guess: GuessView }>(`${postPath(channelId, id)}/guess`, { amountMinor }),
   /** The host's decisions: a shortlist, the winners, a debate's best argument, a prize handed over. */
-  judge: (channelId: string, id: string, body: { action: 'shortlist' | 'winners'; entryIds: string[] } | { action: 'best'; commentId: string } | { action: 'sent'; place: number }) =>
+  judge: (channelId: string, id: string, body: { action: 'shortlist' | 'winners'; entryIds: string[] } | { action: 'best'; commentId: string } | { action: 'sent'; place: number } | { action: 'guess_winner'; userId: string }) =>
     post<{ card: PostCard }>(`${postPath(channelId, id)}/judge`, body),
   myRewards: () => request<{ credits: StoreCredit[]; badges: Badge[] }>('/me/rewards'),
   /** A shop's polls, debates, guesses and competitions, for its Engage screen. */

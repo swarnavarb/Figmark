@@ -86,6 +86,7 @@ function PollFoot({ poll, children }: { poll: PollView; children?: ReactNode }) 
         </span>
       )}
       {poll.stock && <span className="pplay__chip pplay__chip--lime">📦 Helps decide what's stocked</span>}
+      {poll.reward?.terms && <PrizeTerms terms={poll.reward.terms} />}
       {children}
     </div>
   );
@@ -294,6 +295,7 @@ export function PollPlay({ card, photos, disabled, vote }: {
         <p className="pplay__prize">
           🎁 <strong>{formatMoney(post.debate.prize.amountMinor, 'INR')}</strong> store credit from {post.debate.prize.storeName} for the best argument
           <span className="faint"> · {post.debate.prize.judge === 'store' ? 'the shop picks' : 'most liked wins'}</span>
+          {post.debate.prize.terms && <PrizeTerms terms={post.debate.prize.terms} />}
         </p>
       )}
       {style === 'versus' ? (
@@ -547,6 +549,7 @@ export function ContestPlay({ card, disabled, vote, onCard }: {
           ))}
         </ul>
       )}
+      {contest.prizes.length > 0 && contest.terms && <PrizeTerms terms={contest.terms} />}
 
       {phase === 'entries' && (
         <>
@@ -601,10 +604,36 @@ export function ContestPlay({ card, disabled, vote, onCard }: {
 
 /* ── Guess the price ───────────────────────────────────────────────────── */
 
+/** A prize's terms, folded away until somebody asks. */
+export function PrizeTerms({ terms }: { terms: string }) {
+  return (
+    <details className="pterms">
+      <summary>Prize T&amp;C</summary>
+      <p>{terms}</p>
+    </details>
+  );
+}
+
 export function GuessPlay({ card, disabled, onCard }: { card: PostCard; disabled: boolean; onCard: (card: PostCard) => void }) {
   const guess = card.social.guess!;
   const [amount, setAmount] = useState('');
   const [busy, setBusy] = useState(false);
+  const [picking, setPicking] = useState<string | null>(null);
+  const prize = guess.prize ?? null;
+  // The shop that put up the prize and kept the pick, once the price is out.
+  const canPick = Boolean(card.social.host) && prize?.judge === 'store' && guess.revealed && !guess.winners?.length;
+
+  async function pickWinner(userId: string) {
+    setPicking(userId);
+    setError(null);
+    try {
+      onCard((await api.judge(card.post.channelId, card.post.id, { action: 'guess_winner', userId })).card);
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not pick that guess.');
+    } finally {
+      setPicking(null);
+    }
+  }
   const [error, setError] = useState<string | null>(null);
   const left = useLeft(guess.revealed ? null : guess.revealAt);
 
@@ -641,6 +670,16 @@ export function GuessPlay({ card, disabled, onCard }: { card: PostCard; disabled
         </span>
       </div>
 
+      {prize && (
+        <p className="pplay__prize">
+          🎁 <strong>{formatMoney(prize.amountMinor, 'INR')}</strong> store credit from {prize.storeName}
+          <span className="faint">
+            {' · '}{prize.judge === 'store' ? 'the shop picks a winner' : prize.winners > 1 ? `the ${prize.winners} closest win` : 'the closest wins'}
+          </span>
+          {prize.terms && <PrizeTerms terms={prize.terms} />}
+        </p>
+      )}
+
       {!guess.revealed && !disabled && !card.social.mine && (
         <form className="pguess__form" onSubmit={(event) => { event.preventDefault(); void send(); }}>
           <span className="pguess__box">
@@ -659,11 +698,27 @@ export function GuessPlay({ card, disabled, onCard }: { card: PostCard; disabled
       {guess.revealed && (
         <div className="pguess__result">
           {guess.winner && <p className="pplay__best"><span aria-hidden="true">🎯</span> Closest: <strong>{guess.winner.name}</strong> with {formatMoney(guess.winner.amountMinor, 'INR')}</p>}
+          {prize && guess.winners && guess.winners.length > 0 && (
+            <p className="pplay__best">
+              <span aria-hidden="true">🏆</span> {formatMoney(prize.amountMinor, 'INR')} credit to{' '}
+              <strong>{guess.winners.map((winner) => winner.name).join(', ')}</strong>
+            </p>
+          )}
+          {prize?.judge === 'store' && !guess.winners?.length && !canPick && <p className="faint">The shop is picking the winner.</p>}
           {off !== null && <p className="faint">You said {formatMoney(guess.mine!, 'INR')} — {off < 0.005 ? 'spot on!' : `${Math.round(off * 100)}% off`}</p>}
-          {guess.closest.length > 1 && (
+          {canPick && <p className="pguess__pickhint">Pick the winning guess — they get the prize.</p>}
+          {(guess.closest.length > 1 || canPick) && (
             <ol className="pguess__closest">
               {guess.closest.map((entry, index) => (
-                <li key={`${entry.name}-${index}`}><span>{PLACE_MEDALS[(index + 1) as 1 | 2 | 3]} {entry.name}</span><span className="faint">{formatMoney(entry.amountMinor, 'INR')}</span></li>
+                <li key={`${entry.userId ?? entry.name}-${index}`}>
+                  <span>{PLACE_MEDALS[(index + 1) as 1 | 2 | 3] ?? `${index + 1}.`} {entry.name}</span>
+                  <span className="faint">{formatMoney(entry.amountMinor, 'INR')}</span>
+                  {canPick && entry.userId && (
+                    <button type="button" className="btn btn--quiet btn--sm" disabled={picking !== null} onClick={() => void pickWinner(entry.userId!)}>
+                      {picking === entry.userId ? 'Picking…' : 'Pick'}
+                    </button>
+                  )}
+                </li>
               ))}
             </ol>
           )}

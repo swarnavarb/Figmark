@@ -127,7 +127,7 @@ button.sk-plan__pick { cursor: pointer; }
 .sk-folio__cell { position: relative; margin: 0; }
 .sk-folio__cell--hero { grid-column: span 2; grid-row: span 2; }
 /* A row to swipe through, on a store page: the work first, then the menu. */
-.sk-folio--strip { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; }
+.sk-folio--strip { display: flex; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; scrollbar-width: none; }
 .sk-folio--strip::-webkit-scrollbar { display: none; }
 .sk-folio--strip .sk-folio__cell { flex: 0 0 min(62%, 240px); scroll-snap-align: start; }
 .sk-money:focus-within { border-color: var(--accent-line); }

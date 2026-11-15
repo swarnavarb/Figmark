@@ -13,6 +13,7 @@ import { shrink } from '../components/PhotoManager';
 import { VoicePicker, useVoice } from '../components/SocialVoice';
 
 import { Select } from '../components/Select';
+import { useDraftUploads } from '../draft-uploads';
 
 /**
  * What people are looking for.
@@ -292,6 +293,7 @@ function WantBody({ want, onOpen }: { want: WantCard; onOpen: () => void }) {
 
 /** Saying what you are after. */
 function AskDialog({ onClose, onPosted }: { onClose: () => void; onPosted: () => Promise<void> }) {
+  const uploads = useDraftUploads();
   const toast = useToast();
   const [title, setTitle] = useState('');
   const [details, setDetails] = useState('');
@@ -310,7 +312,7 @@ function AskDialog({ onClose, onPosted }: { onClose: () => void; onPosted: () =>
     setUploading(true);
     try {
       for (const file of picked) {
-        const stored = await api.uploadPhoto(await shrink(file));
+        const stored = await uploads.upload(await shrink(file));
         setPhotos((all) => [...all, stored.url]);
       }
     } catch (err) {
@@ -354,7 +356,7 @@ function AskDialog({ onClose, onPosted }: { onClose: () => void; onPosted: () =>
           <span key={url} className="isophotos__tile">
             <img loading="lazy" decoding="async" src={url} alt="" />
             <button type="button" aria-label="Remove photo" onClick={() => {
-              void api.discardPhoto(url);
+              uploads.discard(url);
               setPhotos((all) => all.filter((entry) => entry !== url));
             }}>
               <Icon name="close" size={12} />
