@@ -380,17 +380,21 @@ export function SkelGrid({ n = 4 }: { n?: number }) {
 
 /* ── The pages ─────────────────────────────────────────────────────────── */
 
-const SHAPES = {
-  /* The Buy tab, top to bottom as FeedPage draws it: the loot of the day, the
-     Drops stage, the square category badges, how it is sold, the filter
-     pickers, then the catalogue under its heading. Its own spacing lives in
-     styles.css (.psk-feed), since FeedPage.css only arrives with the page. */
-  feed: () => (
-    <main className="page psk psk-feed">
+/**
+ * The shop's feed below its quest bar: the daily pick, the drops, the zones,
+ * the filters and the grid. The route's skeleton and the feed's own wait for
+ * its data both draw this, so one shape holds from the tap to the items.
+ * `daily: false` once the daily pick has drawn and only the rest is waiting.
+ */
+export function FeedSkeletonParts({ daily = true }: { daily?: boolean }) {
+  return (
+    <>
+      {daily && (
       <div className="psk-feed__daily">
         <S className="psk-feed__flip" w={86} h={118} r={12} />
         <span className="psk-lines" style={{ flex: 1, maxWidth: 420 }}><S w="62%" h={10} /><S w="78%" h={18} /><S w="54%" h={10} /><S w={112} h={34} r={10} /></span>
       </div>
+      )}
       <S className="psk-feed__stage" h={265} r={22} />
       <span className="psk-row psk-scroll psk-feed__zones">
         {Array.from({ length: 8 }, (_, i) => <span key={i} className="psk-feed__zone"><S w={58} h={58} r={18} /><S w={50} h={9} /></span>)}
@@ -399,6 +403,18 @@ const SHAPES = {
       <span className="psk-row psk-scroll psk-feed__filters"><S w={110} h={34} r={999} /><S w={112} h={34} r={999} /><S w={138} h={34} r={999} /><S w={150} h={34} r={999} /><S w={112} h={34} r={999} /></span>
       <span className="psk-row psk-row--between psk-feed__head"><h2 style={{ margin: 0, fontSize: 'var(--t-md)' }}>All loot</h2><S w={54} h={10} /></span>
       <Grid n={4} />
+    </>
+  );
+}
+
+const SHAPES = {
+  /* The Buy tab, top to bottom as FeedPage draws it: the loot of the day, the
+     Drops stage, the square category badges, how it is sold, the filter
+     pickers, then the catalogue under its heading. Its own spacing lives in
+     styles.css (.psk-feed), since FeedPage.css only arrives with the page. */
+  feed: () => (
+    <main className="page psk psk-feed">
+      <FeedSkeletonParts />
     </main>
   ),
   discover: () => (

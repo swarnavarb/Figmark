@@ -32,7 +32,7 @@ import {
 import { DropsStage, FillingBoxes, useDrops, useFillingLots } from '../components/Showcase';
 import { SkeletonGrid } from '../components/Feedback';
 import { ActiveOrders } from '../components/ActiveOrders';
-import { SkelBlock } from '../components/PageSkeletons';
+import { FeedSkeletonParts } from '../components/PageSkeletons';
 import { CollectorChip, Glyph, RarityRibbon, StoreChip, XpBar, useQuest } from '../components/Quest';
 import { EmptyState, ErrorNotice, Icon, LevelChip, Thumb, leadPhoto } from '../components/ui';
 import { useSave } from '../components/useSave';
@@ -351,7 +351,13 @@ export function FeedPage() {
     !browsing || drops !== null,
     answered || !loading,
   ]);
-  const pending = <><SkelBlock h={112} /><SkeletonGrid count={4} /></>;
+  /* The route's own feed skeleton, carried on: the same shape that showed
+     while the page's code loaded holds until its sections can draw. */
+  const pending = (daily: boolean) => (
+    <div className="psk-feed" role="status" aria-label="Loading the shop">
+      <FeedSkeletonParts daily={daily} />
+    </div>
+  );
 
   // The chosen badge in view: most categories sit past the edge on a phone.
   const zonesRef = useRef<HTMLDivElement>(null);
@@ -440,10 +446,10 @@ export function FeedPage() {
       {browsing && <ActiveOrders />}
 
       {/* Until a section can show, its place holds a skeleton and nothing below it draws. */}
-      {!showDaily && pending}
+      {!showDaily && pending(true)}
       {browsing && showDaily && <DailyDrop listings={rated} now={now} />}
       {/* Drops sit up top, before the catalogue: an event on now beats any one item. */}
-      {showDaily && !showDrops && pending}
+      {showDaily && !showDrops && pending(false)}
       {browsing && showDrops && <DropsStage drops={drops} />}
 
       {showDrops && (
