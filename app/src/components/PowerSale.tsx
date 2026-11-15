@@ -576,7 +576,7 @@ function PowerSaleBuilderOpen() {
       };
       await api.createPowerSale(draft);
       navigate(back);
-      toast('Power sale is live ⚡');
+      toast('Live drop scheduled ⚡ Spread the word below to fill the room.');
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not schedule that.');
     } finally {

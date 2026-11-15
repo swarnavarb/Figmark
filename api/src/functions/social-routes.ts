@@ -4227,13 +4227,13 @@ async function shopSpread(request: HttpRequest, _context: InvocationContext) {
   const shopId = request.params.id ?? '';
   const posts = await repository.listPosts(shopId, DRIVE_WINDOW);
   const now = Date.now();
-  const live = posts
+  const running = posts
     .filter((post) => post.referral && referralPhase(post.referral, now) !== 'ended' && post.referral.storeId === shopId)
-    .sort((a, b) => a.referral!.endsAt.localeCompare(b.referral!.endsAt))[0];
-  if (!live) return json(200, { drive: null });
-  return json(200, {
-    drive: { channelId: live.channelId, postId: live.id, body: live.body, referral: referralView(live.referral!, viewer?.id ?? '') },
-  });
+    .sort((a, b) => a.referral!.endsAt.localeCompare(b.referral!.endsAt))
+    .map((post) => ({ channelId: post.channelId, postId: post.id, body: post.body, referral: referralView(post.referral!, viewer?.id ?? '') }));
+  // `drive` is the one the shop's page leads with: one already counting before one still to start.
+  const lead = running.find((entry) => entry.referral.phase === 'open') ?? running[0] ?? null;
+  return json(200, { drive: lead, drives: running });
 }
 
 /**

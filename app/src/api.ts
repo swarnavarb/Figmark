@@ -3788,7 +3788,7 @@ export const api = {
   joinSpread: (channelId: string, id: string) =>
     post<{ card: PostCard }>(`/social/posts/${encodeURIComponent(channelId)}/${encodeURIComponent(id)}/spread`, {}),
   /** The Spread the word a shop is running or about to, if any. */
-  shopSpread: (shopId: string) => request<{ drive: ShopDrive | null }>(`/social/shops/${encodeURIComponent(shopId)}/spread`),
+  shopSpread: (shopId: string) => request<{ drive: ShopDrive | null; drives: ShopDrive[] }>(`/social/shops/${encodeURIComponent(shopId)}/spread`),
   guessPrice: (channelId: string, id: string, amountMinor: number) =>
     post<{ guess: GuessView }>(`${postPath(channelId, id)}/guess`, { amountMinor }),
   /** The host's decisions: a shortlist, the winners, a debate's best argument, a prize handed over. */

@@ -236,7 +236,7 @@
 .ppreview__stars { margin: 0; text-align: center; font-size: calc(30px * var(--text-scale)); letter-spacing: 6px; color: var(--warn); }
 .ppreview__prizes { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: var(--t-sm); }
 .ppreview__prizes li { display: flex; gap: 8px; padding: 6px 10px; border-radius: 10px; background: var(--warn-soft); }
-.ppreview__spread { margin: 0; font-size: var(--t-sm); color: var(--text-dim); }
+.ppreview__fakebtn { justify-self: start; pointer-events: none; }
 .ppreview__prize { margin: 0; padding: 8px 10px; border-radius: 12px; background: var(--warn-soft); border: 1px solid rgba(251, 191, 36, 0.4); font-size: var(--t-sm); }
 .ppreview__blurred { filter: blur(14px); }
 .ppreview__foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: var(--t-xs); color: var(--text-dim); }

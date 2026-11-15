@@ -31,7 +31,10 @@ function useCountdown(iso: string): string {
 
 /** What a drive points people at, in words. */
 function targetLine(referral: ReferralView): string {
-  if (referral.target.kind === 'drop') return `the ${referral.target.name} live drop`;
+  if (referral.target.kind === 'drop') {
+    const name = referral.target.name;
+    return /\bdrop\b/i.test(name) ? name : `the ${name} live drop`;
+  }
   if (referral.target.kind === 'listing') return referral.target.title;
   return referral.storeName;
 }
@@ -50,7 +53,8 @@ export function driveShareSpec(referral: ReferralView, channelId: string, postId
   return {
     kind: referral.target.kind === 'listing' ? 'item' : 'shop',
     moment: {
-      headline: referral.target.kind === 'drop' ? 'Live drop - join me' : 'You need to see this shop',
+      headline: referral.target.kind === 'drop' ? 'Live drop - join me'
+        : referral.target.kind === 'listing' ? 'You need to see this' : 'You need to see this shop',
       title: referral.target.kind === 'listing' ? referral.target.title : referral.storeName,
       detail: referral.target.kind === 'drop' ? `${referral.target.name} · ${referral.storeName}` : body.slice(0, 80) || null,
     },
@@ -251,9 +255,49 @@ export type SpreadAbout =
   | { kind: 'drop'; saleId: string; name: string; timing: Exclude<ReferralTiming, 'now'> }
   | { kind: 'listing'; listingId: string; title: string };
 
+/** The studio, opened over the page already pointed at what it is about. */
+export function SpreadStudio({ storeId, storeName, about, onClose, onPosted }: {
+  storeId: string;
+  storeName: string;
+  about: SpreadAbout;
+  onClose: () => void;
+  onPosted: (href: string) => void;
+}) {
+  return (
+    <Suspense fallback={null}>
+      <PostStudio mode="spread" storeId={storeId} storeName={storeName} presets={{ spread: about }}
+        onClose={onClose}
+        onPosted={(post) => onPosted(`/social/p/${encodeURIComponent(post.channelId)}/${encodeURIComponent(post.id)}`)} />
+    </Suspense>
+  );
+}
+
+/** Whether a running drive is about this drop or item, or the whole shop (which covers both). */
+function covers(drive: ShopDrive, about: SpreadAbout): boolean {
+  const target = drive.referral.target;
+  if (target.kind === 'shop') return true;
+  if (about.kind === 'drop') return target.kind === 'drop' && target.saleId === about.saleId;
+  return target.kind === 'listing' && target.listingId === about.listingId;
+}
+
+/** What the nudge says, for what it is about and when. */
+function pitch(about: SpreadAbout): { title: string; line: string } {
+  if (about.kind === 'listing') {
+    return { title: 'Get this in front of new buyers', line: 'Your buyers share their own link on WhatsApp and Instagram. You pay store credit only for brand-new buyers who join.' };
+  }
+  if (about.timing === 'before') {
+    return { title: `Fill the room before ${about.name} starts`, line: 'Pay store credit for every new buyer your followers bring before the first item drops.' };
+  }
+  if (about.timing === 'during') {
+    return { title: `Bring new buyers in while ${about.name} runs`, line: 'Every new buyer brought in while it is live earns whoever brought them store credit.' };
+  }
+  return { title: `Sell what is left of ${about.name}`, line: 'Pay store credit for new buyers brought in after the drop - they find what is still in the shop.' };
+}
+
 /**
- * The nudge a shop sees on a live drop or one of its items: start a Spread the
- * word about it, already pointed at it. Opens the studio over the page.
+ * The nudge a shop sees on a live drop or one of its items: start a Spread
+ * the word about it, already pointed at it. Once one is running - about this,
+ * or about the whole shop - it turns into the drive's live scoreboard instead.
  */
 export function SpreadNudge({ storeId, storeName, about, compact = false }: {
   storeId: string;
@@ -262,42 +306,79 @@ export function SpreadNudge({ storeId, storeName, about, compact = false }: {
   compact?: boolean;
 }) {
   const [making, setMaking] = useState(false);
-  const [done, setDone] = useState<string | null>(null);
-  const line = about.kind === 'drop'
-    ? about.timing === 'before' ? 'Fill the room before it starts: pay credit for every new buyer your followers bring.'
-      : about.timing === 'during' ? 'Pay credit for every new buyer brought in while it runs.'
-        : 'Sell what is left: pay credit for every new buyer brought in after it ends.'
-    : 'Pay credit to whoever brings a new buyer to this item.';
+  const [running, setRunning] = useState<ShopDrive | null>(null);
+  const [checked, setChecked] = useState(0);
+  const { open, sheet } = useShareSheet();
 
-  if (done) {
+  useEffect(() => {
+    let live = true;
+    api.shopSpread(storeId)
+      .then((result) => live && setRunning((result.drives ?? []).find((drive) => covers(drive, about)) ?? null))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `about` is a fresh object each render; what it names is in the key
+  }, [storeId, about.kind === 'drop' ? about.saleId : about.listingId, checked]);
+
+  if (running) {
+    const { referral } = running;
+    const href = `/social/p/${encodeURIComponent(running.channelId)}/${encodeURIComponent(running.postId)}`;
     return (
-      <div className={`spread-nudge is-done${compact ? ' spread-nudge--compact' : ''}`}>
-        <span aria-hidden="true">📣</span>
-        <span>Spread the word is up. <Link to={done}>See it</Link></span>
+      <div className={`spread-nudge spread-nudge--live${compact ? ' spread-nudge--compact' : ''}`}>
+        <div className="spread-nudge__head">
+          <span className="spread-nudge__badge" aria-hidden="true">📣</span>
+          <span className="spread-nudge__copy">
+            <span className="spread-nudge__eyebrow">Spread the word is on</span>
+            <strong>{formatMoney(referral.rewardMinor, 'INR')} per new buyer · {targetLine(referral)}</strong>
+          </span>
+        </div>
+        <div className="spread-nudge__stats">
+          <DriveClock referral={referral} />
+          <span><b>{referral.joined}</b> new buyers</span>
+          <span><b>{referral.sharers}</b> sharing</span>
+          {referral.leaders[0] && <span>🏆 <b>{referral.leaders[0].name}</b> leads</span>}
+        </div>
+        <div className="spread-nudge__acts">
+          <Link className="btn btn--sm spread-nudge__go" to={href}>See the board</Link>
+          <button type="button" className="btn btn--quiet btn--sm"
+            onClick={() => open(driveShareSpec(referral, running.channelId, running.postId, running.body))}>
+            <Icon name="share" size={14} /> Share it
+          </button>
+        </div>
+        {sheet}
       </div>
     );
   }
 
+  const { title, line } = pitch(about);
   return (
     <>
       <div className={`spread-nudge${compact ? ' spread-nudge--compact' : ''}`}>
-        <span className="spread-nudge__emoji" aria-hidden="true">📣</span>
-        <span className="spread-nudge__copy">
-          <strong>Get people talking outside Figmark</strong>
-          <span>{line}</span>
-        </span>
-        <button type="button" className="btn btn--sm spread-nudge__go" onClick={() => setMaking(true)}>Spread the word</button>
+        <div className="spread-nudge__head">
+          <span className="spread-nudge__badge" aria-hidden="true">📣</span>
+          <span className="spread-nudge__copy">
+            <span className="spread-nudge__eyebrow">Spread the word</span>
+            <strong>{title}</strong>
+          </span>
+        </div>
+        <p className="spread-nudge__line">{line}</p>
+        <ol className="spread-nudge__steps" aria-label="How it works">
+          <li><span>1</span> You set the credit</li>
+          <li><span>2</span> Buyers share their link</li>
+          <li><span>3</span> New buyers join, they earn</li>
+        </ol>
+        <button type="button" className="btn spread-nudge__go" onClick={() => setMaking(true)}>
+          <Icon name="megaphone" size={15} /> Start Spread the word
+        </button>
       </div>
       {making && (
-        <Suspense fallback={null}>
-          <PostStudio mode="spread" storeId={storeId} storeName={storeName}
-            presets={{ spread: about }}
-            onClose={() => setMaking(false)}
-            onPosted={(post) => {
-              setMaking(false);
-              setDone(`/social/p/${encodeURIComponent(post.channelId)}/${encodeURIComponent(post.id)}`);
-            }} />
-        </Suspense>
+        <SpreadStudio storeId={storeId} storeName={storeName} about={about}
+          onClose={() => setMaking(false)}
+          onPosted={() => {
+            setMaking(false);
+            setChecked((count) => count + 1);
+          }} />
       )}
     </>
   );
@@ -318,7 +399,12 @@ export function SpreadRow({ cards }: { cards: PostCard[] }) {
         return (
           <Link key={card.post.id} to={`/social/p/${encodeURIComponent(card.post.channelId)}/${encodeURIComponent(card.post.id)}`} className="spreadcard" style={{ animationDelay: `${index * 40}ms` }}>
             <span className="spreadcard__top">
-              {photo ? <img src={photo} alt="" loading="lazy" /> : <span className="spreadcard__emoji" aria-hidden="true">📣</span>}
+              {photo ? <img src={photo} alt="" loading="lazy" /> : (
+                <span className="spreadcard__art" aria-hidden="true">
+                  <span className="spreadcard__emoji">📣</span>
+                  <span className="spreadcard__tag">Bring a friend</span>
+                </span>
+              )}
               <DriveClock referral={referral} />
             </span>
             <span className="spreadcard__body">

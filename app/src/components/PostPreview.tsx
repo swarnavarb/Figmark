@@ -27,6 +27,8 @@ export interface PreviewDraft {
   terms?: string | null;
   revealLabel?: string | null;
   blur?: string | null;
+  /** Spread the word: what it pays, the cap and bonus, when it runs, and what it is about. */
+  spread?: { rewardMinor: number; perPerson: number; topMinor: number; when: string; about: string } | null;
 }
 
 const KIND: Record<StudioMode, { emoji: string; label: string }> = {
@@ -144,10 +146,25 @@ export function PostPreview({ draft }: { draft: PreviewDraft }) {
         </ul>
       )}
 
-      {draft.mode === 'spread' && (
-        <p className="ppreview__spread"><span aria-hidden="true">📣</span> Get my link · a timer · who has brought the most</p>
+      {draft.mode === 'spread' && draft.spread && (
+        // The same card the post shows, drawn from the draft.
+        <section className="spread" aria-label="Spread the word">
+          <div className="spread__head">
+            <span className="spread__kicker">📣 Spread the word</span>
+            <span className="spread__clock"><span className="spread__dot" aria-hidden="true" />{draft.spread.when}</span>
+          </div>
+          <p className="spread__offer">
+            <strong>{formatMoney(draft.spread.rewardMinor, 'INR')}</strong>
+            <span> store credit for every new buyer you bring to {draft.spread.about}</span>
+          </p>
+          <p className="spread__small faint">
+            Up to {draft.spread.perPerson} people each
+            {draft.spread.topMinor > 0 && <> · <b>+{formatMoney(draft.spread.topMinor, 'INR')}</b> for whoever brings the most</>}
+          </p>
+          <span className="btn spread__go ppreview__fakebtn" aria-hidden="true">Get my link</span>
+        </section>
       )}
-      {draft.prizeLine && <p className="ppreview__prize">{draft.mode === 'spread' ? '' : '🎁 '}{draft.prizeLine}</p>}
+      {draft.prizeLine && draft.mode !== 'spread' && <p className="ppreview__prize">🎁 {draft.prizeLine}</p>}
       {draft.terms && (
         <details className="pterms" open>
           <summary>Prize T&amp;C</summary>

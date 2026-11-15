@@ -852,6 +852,16 @@ export function PostStudio({
               prizeLine,
               terms: prizeUsed ? terms.trim() || null : null,
               revealLabel: label(PHASES, reveal),
+              spread: mode === 'spread' ? {
+                rewardMinor: paise(perJoin) ?? 0,
+                perPerson: Math.max(1, Number(perPerson) || 1),
+                topMinor: topOn ? paise(topPrize) ?? 0 : 0,
+                when: spreadOn === 'drop' && timing !== 'after' ? TIMING_LABELS[timing]
+                  : `${label(DRIVE_HOURS, driveHours) ?? ''} left`,
+                about: spreadOn === 'drop' ? (pickedDrop?.name ?? 'your live drop')
+                  : spreadOn === 'listing' ? ((ownItems ?? []).find((item) => item.id === spreadItem)?.title ?? 'this item')
+                    : (storeName ?? 'your shop'),
+              } : null,
             }} />
           </div>
         )}
