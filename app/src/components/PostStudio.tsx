@@ -723,7 +723,7 @@ export function PostStudio({
   return (
     <Modal title={heading} onClose={onClose} layout="panel">
       <div className="pstudio">
-        {modes.length > 1 && view === 'edit' && (
+        {modes.length > 1 && (
           <div className="pstudio__modes" role="tablist" aria-label="Kind of post">
             {modes.map((entry) => (
               <button key={entry.id} type="button" role="tab" aria-selected={mode === entry.id}
@@ -768,7 +768,6 @@ export function PostStudio({
               terms: prizeUsed ? terms.trim() || null : null,
               revealLabel: label(PHASES, reveal),
             }} />
-            {blocked && <p className="pstudio__still"><Icon name="target" size={14} /> Still to do: {blocked.toLowerCase()}</p>}
           </div>
         )}
 
