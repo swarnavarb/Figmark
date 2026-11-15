@@ -133,7 +133,7 @@
   display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: var(--r-pill);
   font-size: var(--t-xs); font-weight: var(--w-semi); background: var(--surface); box-shadow: inset 0 0 0 1px var(--border);
 }
-.pcontest__strip { display: flex; align-items: center; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.pcontest__strip { display: flex; align-items: center; gap: 6px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 .pcontest__strip img {
   flex: none; width: 64px; height: 64px; object-fit: cover; border-radius: var(--r-md);
   border: 2px solid var(--surface); animation: pplay-rise 260ms var(--ease-out) both;
@@ -239,3 +239,7 @@
   .pguess__answer { animation: fade-in 200ms ease both; }
   .pgrid__meter > span, .prate__track > span, .pgrid__pick, .prate__star, .pcontest__entry { transition: none; }
 }
+
+.pguess__closest li { align-items: center; }
+.pguess__closest li > span:first-child { flex: 1; min-width: 0; }
+.pguess__pickhint { margin: 0; font-size: var(--t-sm); font-weight: var(--w-semi); color: var(--warn); }

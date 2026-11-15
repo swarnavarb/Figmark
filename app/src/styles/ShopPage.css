@@ -290,7 +290,7 @@
   .instrend { grid-template-columns: minmax(0, 1fr); }
 }
 .inscard--loss { border-color: rgba(244, 63, 94, 0.45); }
-.coh__table { display: grid; gap: var(--s1); overflow-x: auto; }
+.coh__table { display: grid; gap: var(--s1); overflow-x: auto; overflow-y: hidden; }
 .coh__tr { display: grid; grid-template-columns: 1.3fr 0.8fr repeat(3, 1fr); gap: var(--s1); align-items: center; font-size: var(--t-sm); }
 .coh__tr--head { color: var(--text-faint); font-size: var(--t-xs); text-transform: uppercase; letter-spacing: 0.04em; }
 .coh__cell { padding: 6px var(--s1); border-radius: var(--r-sm); text-align: center; font-family: var(--mono); background: var(--surface-2, rgba(255, 255, 255, 0.03)); }
@@ -376,7 +376,7 @@
 .ocust__bar { grid-column: 1 / -1; height: 3px; margin-top: 2px; border-radius: var(--r-pill); background: rgba(255, 255, 255, 0.08); overflow: hidden; }
 .ocust__line {
   display: flex; gap: 6px; padding: var(--s2) var(--s3) 10px;
-  overflow-x: auto; scrollbar-width: none; cursor: pointer;
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none; cursor: pointer;
 }
 .ocust__line::-webkit-scrollbar { display: none; }
 .ocust__chip {
@@ -644,7 +644,7 @@ label.rdy__line { cursor: pointer; }
 .pbook__sheet { padding: 0; overflow: hidden; scroll-margin-top: calc(var(--nav-h, 56px) + 12px); }
 .pbook__who { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: var(--s3) 14px; border-bottom: 1px solid var(--border); }
 .pbook__whofacts { display: flex; align-items: center; gap: 10px; font-size: var(--t-xs); color: var(--text-dim); }
-.pbook__scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.pbook__scroll { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; }
 .pbook__table th, .pbook__table td { padding: var(--s1) 6px; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); white-space: nowrap; }
 .pbook__table th:last-child, .pbook__table td:last-child { border-right: 0; }
 .pbook__table th { font-size: var(--t-2xs); text-transform: uppercase; letter-spacing: 0.03em; line-height: 1.2; color: var(--text-faint); font-weight: var(--w-semi); text-align: right; background: var(--surface-2); }
@@ -810,7 +810,7 @@ label.rdy__line { cursor: pointer; }
 .lpulse__sum .is-due b { color: var(--warn); }
 .lpulse__strip {
   display: flex; gap: 6px; margin: 0; padding: 0 0 2px; list-style: none;
-  overflow-x: auto; scrollbar-width: none;
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
 }
 .lpulse__strip::-webkit-scrollbar { display: none; }
 .lpulse__chip b { font-family: var(--mono); color: var(--text-dim); }

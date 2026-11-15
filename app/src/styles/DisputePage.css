@@ -5,7 +5,7 @@
 .evidence__item { display: grid; gap: var(--s1); text-decoration: none; color: inherit; }
 .dthread__quote { margin: 0; padding: var(--s2) var(--s3); border-left: 3px solid var(--accent); color: var(--text); overflow-wrap: anywhere; }
 .drounds { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
-.dsteps { list-style: none; margin: 0 0 var(--s4); padding: 0; display: flex; align-items: center; gap: 0; overflow-x: auto; scrollbar-width: none; }
+.dsteps { list-style: none; margin: 0 0 var(--s4); padding: 0; display: flex; align-items: center; gap: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 .dsteps__step + .dsteps__step::before { content: ''; width: 18px; height: 2px; margin: 0 6px; background: var(--border-strong); border-radius: 2px; }
 .dsteps__dot {
   width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%;

@@ -7,15 +7,37 @@ import {
 } from '@shared/social';
 import type { CollectionItem } from '@shared/models';
 import {
-  CONTEST_MAX_PRIZES, CONTEST_RULES_MAX, CONTEST_TITLE_MAX, JUDGING_LABELS, PLACE_MEDALS, PRIZE_MAX_MINOR, PRIZE_NOTE_MAX,
-  type ContestJudging,
+  CONTEST_MAX_PRIZES, CONTEST_RULES_MAX, CONTEST_TITLE_MAX, GUESS_MAX_WINNERS, JUDGING_LABELS, PLACE_MEDALS, PRIZE_MAX_MINOR,
+  PRIZE_NOTE_MAX, PRIZE_TERMS_MAX, type ContestJudging,
 } from '@shared/play';
 import { ApiRequestError, api, type FeedListing, type NewPost } from '../api';
 import { formatMoney } from '../format';
 import { shrink } from './PhotoManager';
 import { ErrorNotice, Modal, Thumb, leadPhoto } from './ui';
 import { Icon } from './Icon';
+import { PostPreview } from './PostPreview';
+import { useSession } from '../session';
 import '../styles/PostStudio.css';
+
+/**
+ * A shop's prize terms carry over from its last post: most shops write them
+ * once. Kept per voice in this browser.
+ */
+const termsKey = (storeId: string | null) => `figmark:prize-terms:${storeId ?? 'me'}`;
+function lastTerms(storeId: string | null): string {
+  try {
+    return localStorage.getItem(termsKey(storeId)) ?? '';
+  } catch {
+    return '';
+  }
+}
+function rememberTerms(storeId: string | null, terms: string) {
+  try {
+    if (terms.trim()) localStorage.setItem(termsKey(storeId), terms.trim());
+  } catch {
+    /* A private window: typed again next time. */
+  }
+}
 
 /**
  * Every kind of post the + makes, in one form.
@@ -32,14 +54,14 @@ type Posted = (post: Pick<Post, 'channelId' | 'id'>) => void;
 
 export type StudioMode = 'photo' | 'compare' | 'question' | 'poll' | 'debate' | 'guess' | 'contest';
 
-const MODES: { id: StudioMode; emoji: string; label: string }[] = [
-  { id: 'photo', emoji: '📸', label: 'Photo' },
-  { id: 'compare', emoji: '🎨', label: 'Before/after' },
-  { id: 'question', emoji: '❓', label: 'Question' },
-  { id: 'poll', emoji: '📊', label: 'Poll' },
-  { id: 'debate', emoji: '⚔️', label: 'Debate' },
-  { id: 'guess', emoji: '🎯', label: 'Guess' },
-  { id: 'contest', emoji: '🏆', label: 'Competition' },
+const MODES: { id: StudioMode; emoji: string; label: string; hue: string; title: string; line: string }[] = [
+  { id: 'photo', emoji: '📸', label: 'Photo', hue: 'violet', title: 'Show it off', line: 'Photos, with every piece tagged if you like.' },
+  { id: 'compare', emoji: '🎨', label: 'Before/after', hue: 'pink', title: 'Before & after', line: 'People drag a line from one photo to the other.' },
+  { id: 'question', emoji: '❓', label: 'Question', hue: 'blue', title: 'Ask the crowd', line: 'Legit or bootleg? What is it? Answers land below.' },
+  { id: 'poll', emoji: '📊', label: 'Poll', hue: 'aqua', title: 'Put it to a vote', line: 'Text, photos, versus or a star rating.' },
+  { id: 'debate', emoji: '⚔️', label: 'Debate', hue: 'coral', title: 'Pick a side', line: 'Two sides. Arguments land on the side they back.' },
+  { id: 'guess', emoji: '🎯', label: 'Guess', hue: 'gold', title: 'Guess the price', line: 'Sealed until the reveal. Closest wins.' },
+  { id: 'contest', emoji: '🏆', label: 'Competition', hue: 'lime', title: 'Run a competition', line: 'Entries, then a vote or your pick. You set the prizes.' },
 ];
 
 const STYLES: { id: PollStyle; label: string; line: string }[] = [
@@ -262,6 +284,17 @@ function Rupees({ label, value, onChange, placeholder = '500' }: {
   );
 }
 
+/** A prize's terms and conditions: optional, the same text for every prize on the post. */
+function TermsField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="field pstudio__terms">
+      <span>Prize T&amp;C <span className="faint">(optional{value ? ', kept from your last post' : ''})</span></span>
+      <textarea rows={2} value={value} maxLength={PRIZE_TERMS_MAX} onChange={(event) => onChange(event.target.value)}
+        placeholder="Credit valid 30 days. One prize per person. Not exchangeable for cash." />
+    </label>
+  );
+}
+
 export function PostStudio({
   mode: start, storeId = null, storeName = null, forumId = null, figmark = false, presets = {}, onClose, onPosted,
 }: {
@@ -289,6 +322,9 @@ export function PostStudio({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const files = useRef<HTMLInputElement | null>(null);
+  const { user } = useSession();
+  const [view, setView] = useState<'edit' | 'preview'>('edit');
+  const [terms, setTerms] = useState(() => lastTerms(storeId));
 
   // Photo / flex
   const [at, setAt] = useState(0);
@@ -329,6 +365,10 @@ export function PostStudio({
   const [answerPrice, setAnswerPrice] = useState('');
   const [reveal, setReveal] = useState(72);
   const [guessItem, setGuessItem] = useState<Picked | null>(null);
+  const [guessPrizeOn, setGuessPrizeOn] = useState(false);
+  const [guessPrize, setGuessPrize] = useState('250');
+  const [guessJudge, setGuessJudge] = useState<'closest' | 'store'>('closest');
+  const [guessWinners, setGuessWinners] = useState('1');
 
   // Competition
   const [title, setTitle] = useState('');
@@ -463,7 +503,16 @@ export function PostStudio({
     }
     if (mode === 'guess') {
       if (words.length < 2) return 'Say what it is';
-      return (paise(answerPrice) ?? 0) < 100 ? 'Set the real price' : null;
+      if ((paise(answerPrice) ?? 0) < 100) return 'Set the real price';
+      if (guessPrizeOn) {
+        if (!paise(guessPrize)) return 'Set the prize';
+        if ((paise(guessPrize) ?? 0) > PRIZE_MAX_MINOR) return `A prize is up to ${formatMoney(PRIZE_MAX_MINOR, 'INR')}`;
+        const most = Number(guessWinners);
+        if (guessJudge === 'closest' && (!Number.isInteger(most) || most < 1 || most > GUESS_MAX_WINNERS)) {
+          return `Between 1 and ${GUESS_MAX_WINNERS} winners`;
+        }
+      }
+      return null;
     }
     if (!title.trim()) return 'Name the competition';
     if (words.length < 2) return 'Say what to enter';
@@ -480,6 +529,7 @@ export function PostStudio({
     setBusy(true);
     setError(null);
     const words = text.trim();
+    const tc = terms.trim() || null;
     const base: NewPost = {
       body: words,
       ...(storeId ? { storeId } : {}),
@@ -508,14 +558,22 @@ export function PostStudio({
           style: faceOf,
           closesInHours: closes || undefined,
           ...(asShop && stock && mode === 'poll' ? { stock: true } : {}),
-          ...(asShop && rewardOn ? { reward: { amountMinor: paise(reward)!, maxVoters: Math.max(1, Math.round(Number(rewardCap) || 1)) } } : {}),
+          ...(asShop && rewardOn ? { reward: { amountMinor: paise(reward)!, maxVoters: Math.max(1, Math.round(Number(rewardCap) || 1)), terms: tc } } : {}),
         },
         ...(mode === 'debate'
-          ? { debate: { ...(asShop && prizeOn ? { prize: { amountMinor: paise(prize)!, judge } } : {}) } }
+          ? { debate: { ...(asShop && prizeOn ? { prize: { amountMinor: paise(prize)!, judge, terms: tc } } : {}) } }
           : {}),
       };
     } else if (mode === 'guess') {
-      body = { ...base, photoUrls: photos, guess: { answerMinor: paise(answerPrice)!, revealInHours: reveal, listingId: guessItem?.id ?? null } };
+      body = {
+        ...base, photoUrls: photos,
+        guess: {
+          answerMinor: paise(answerPrice)!, revealInHours: reveal, listingId: guessItem?.id ?? null,
+          ...(asShop && guessPrizeOn
+            ? { prize: { amountMinor: paise(guessPrize)!, judge: guessJudge, winners: guessJudge === 'store' ? 1 : Number(guessWinners), terms: tc } }
+            : {}),
+        },
+      };
     } else {
       body = {
         ...base,
@@ -527,12 +585,13 @@ export function PostStudio({
           votingHours,
           judging: figmark ? 'audience' : judging,
           prizes: prizes.map((entry) => ({ amountMinor: figmark ? 0 : paise(entry.amount) ?? 0, note: entry.note.trim() })),
-          ...(figmark ? { host: 'figmark' as const } : {}),
+          ...(figmark ? { host: 'figmark' as const } : { terms: tc }),
         },
       };
     }
     try {
       const { post } = await api.createPost(body);
+      if (tc && prizeUsed) rememberTerms(storeId, tc);
       draft.keep([...(body.photoUrls ?? []), ...answers.map((entry) => entry.photo).filter((url): url is string => Boolean(url))]);
       onPosted(post);
     } catch (err) {
@@ -552,6 +611,17 @@ export function PostStudio({
   const heading = figmark ? '🌟 Weekly theme challenge'
     : asShop || asService ? `Post as ${storeName ?? 'your store'}` : 'Create a post';
   const blocked = missing();
+  const meta = MODES.find((entry) => entry.id === mode) ?? MODES[0]!;
+  const contestPrized = mode === 'contest' && !figmark && prizes.some((entry) => paise(entry.amount) || entry.note.trim());
+  // Whether anything on this post is a prize, so its terms go with it.
+  const prizeUsed = asShop && ((voting && rewardOn) || (mode === 'debate' && prizeOn) || (mode === 'guess' && guessPrizeOn) || contestPrized);
+  const label = (list: { hours: number; label: string }[], hours: number) => list.find((entry) => entry.hours === hours)?.label ?? null;
+  const prizeLine = !asShop ? null
+    : mode === 'debate' && prizeOn && paise(prize) ? `${formatMoney(paise(prize)!, 'INR')} store credit for the best argument · ${judge === 'store' ? 'the shop picks' : 'most liked wins'}`
+      : voting && rewardOn && paise(reward) ? `${formatMoney(paise(reward)!, 'INR')} credit for the winning side · first ${rewardCap || 1}`
+        : mode === 'guess' && guessPrizeOn && paise(guessPrize)
+          ? `${formatMoney(paise(guessPrize)!, 'INR')} store credit · ${guessJudge === 'store' ? 'the shop picks a winner' : Number(guessWinners) > 1 ? `the ${guessWinners} closest win` : 'the closest wins'}`
+          : null;
 
   const photoStrip = (
     <>
@@ -664,7 +734,43 @@ export function PostStudio({
           </div>
         )}
 
-        <div className="pstudio__body" key={mode}>
+        <div className={`pstudio__hero pstudio__hero--${meta.hue}`} key={`hero-${mode}`}>
+          <span className="pstudio__heroemoji" aria-hidden="true">{meta.emoji}</span>
+          <span className="pstudio__herocopy">
+            <strong>{figmark ? 'Weekly theme challenge' : meta.title}</strong>
+            <span>{meta.line}</span>
+          </span>
+        </div>
+
+        <div className="pstudio__view" role="tablist" aria-label="Edit or preview">
+          {(['edit', 'preview'] as const).map((entry) => (
+            <button key={entry} type="button" role="tab" aria-selected={view === entry}
+              className={`pstudio__viewbtn${view === entry ? ' is-on' : ''}`} onClick={() => setView(entry)}>
+              <Icon name={entry === 'edit' ? 'compose' : 'eye'} size={14} /> {entry === 'edit' ? 'Edit' : 'Preview'}
+            </button>
+          ))}
+          <span className={`pstudio__viewthumb pstudio__viewthumb--${view}`} aria-hidden="true" />
+        </div>
+
+        {view === 'preview' && (
+          <div className="pstudio__preview">
+            <PostPreview draft={{
+              mode, text, photos, style, answers, blur,
+              author: asShop || asService ? storeName ?? 'Your store' : figmark ? 'Figmark' : user?.displayName ?? 'You',
+              asStore: asShop || asService,
+              closesLabel: closes ? label(CLOSES, closes) : null,
+              compareLabels: [compareLabels[0] || COMPARE_DEFAULTS[compareKind][0], compareLabels[1] || COMPARE_DEFAULTS[compareKind][1]],
+              title,
+              prizes: prizes.map((entry) => ({ amountMinor: figmark ? 0 : paise(entry.amount) ?? 0, note: entry.note })),
+              prizeLine,
+              terms: prizeUsed ? terms.trim() || null : null,
+              revealLabel: label(PHASES, reveal),
+            }} />
+            {blocked && <p className="pstudio__still"><Icon name="target" size={14} /> Still to do: {blocked.toLowerCase()}</p>}
+          </div>
+        )}
+
+        <div className="pstudio__body" key={mode} hidden={view !== 'edit'}>
           {mode === 'contest' && (
             <label className="field">
               <span>Competition name</span>
@@ -682,7 +788,7 @@ export function PostStudio({
               maxLength={mode === 'contest' ? CONTEST_RULES_MAX : 2000}
               onChange={(event) => setText(event.target.value)}
               placeholder={voting ? (mode === 'debate' ? 'Original or reissue: which is better?' : 'Which should I paint next?')
-                : mode === 'guess' ? 'What did this 1/7 scale sell for in 2019?'
+                : mode === 'guess' ? 'Guess the launch price for xyz action figure?'
                   : mode === 'contest' ? 'One photo of a figure you painted yourself. Judged on finish and creativity.'
                     : mode === 'question' ? 'Is this box a bootleg? The seal looks off to me.'
                       : mode === 'compare' ? 'Six hours of repaint later…'
@@ -829,6 +935,7 @@ export function PostStudio({
                   <Rupees label="Store credit" value={prize} onChange={setPrize} />
                   <Choice label="Who decides" value={judge} onChange={setJudge}
                     options={[{ id: 'likes', label: 'Most liked' }, { id: 'store', label: 'You pick' }]} />
+                  <TermsField value={terms} onChange={setTerms} />
                 </Toggle>
               )}
               {mode === 'poll' && (
@@ -847,6 +954,7 @@ export function PostStudio({
                 {paise(reward) && Number(rewardCap) > 0 && (
                   <p className="faint pstudio__cost">At most {formatMoney(paise(reward)! * Number(rewardCap), 'INR')} in credit, spent at your shop.</p>
                 )}
+                {!(mode === 'debate' && prizeOn) && <TermsField value={terms} onChange={setTerms} />}
               </Toggle>
             </div>
           )}
@@ -860,6 +968,31 @@ export function PostStudio({
               </div>
               <ItemPicker value={guessItem} onChange={setGuessItem} label="The item, if it is on Figmark" />
               <p className="pstudio__note"><Icon name="lock" size={14} /> Nobody sees the price or anybody&apos;s guesses until the reveal. Closest wins a badge.</p>
+              {asShop && (
+                <div className="pstudio__store">
+                  <p className="pstudio__storehead"><Icon name="spark" size={13} /> As {storeName ?? 'your store'}</p>
+                  <Toggle on={guessPrizeOn} onChange={setGuessPrizeOn} title="Reward the closest guess"
+                    line="Store credit at your shop, paid when the price is out.">
+                    <Rupees label="Each winner gets" value={guessPrize} onChange={setGuessPrize} placeholder="250" />
+                    <Choice label="Who wins" value={guessJudge} onChange={setGuessJudge}
+                      options={[{ id: 'closest', label: '🎯 The closest' }, { id: 'store', label: '🏪 You pick one' }]} />
+                    {guessJudge === 'closest' ? (
+                      <label className="field">
+                        <span>How many winners <span className="faint">(closest first, up to {GUESS_MAX_WINNERS})</span></span>
+                        <input inputMode="numeric" value={guessWinners} onChange={(event) => setGuessWinners(event.target.value.replace(/\D/g, '').slice(0, 2))} />
+                      </label>
+                    ) : (
+                      <p className="faint pstudio__cost">Once the price is out you see the closest guesses and pick one.</p>
+                    )}
+                    {paise(guessPrize) && (
+                      <p className="faint pstudio__cost">
+                        At most {formatMoney(paise(guessPrize)! * (guessJudge === 'store' ? 1 : Math.max(1, Number(guessWinners) || 1)), 'INR')} in credit, spent at your shop.
+                      </p>
+                    )}
+                    <TermsField value={terms} onChange={setTerms} />
+                  </Toggle>
+                </div>
+              )}
             </>
           )}
 
@@ -915,6 +1048,7 @@ export function PostStudio({
                   </span>
                 )}
               </div>
+              {!figmark && contestPrized && <TermsField value={terms} onChange={setTerms} />}
               <p className="pstudio__note">
                 <Icon name="users" size={14} /> One photo each, from verified phones. Copied photos are turned away. Every winner gets a badge on their page.
               </p>
@@ -934,6 +1068,9 @@ export function PostStudio({
 
         <div className="pstudio__foot">
           <button type="button" className="btn btn--quiet" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn--quiet pstudio__peek" onClick={() => setView(view === 'edit' ? 'preview' : 'edit')}>
+            <Icon name={view === 'edit' ? 'eye' : 'compose'} size={15} /> {view === 'edit' ? 'Preview' : 'Edit'}
+          </button>
           <button type="button" className="btn pstudio__go" disabled={busy || draft.uploading}
             title={blocked ?? undefined} onClick={() => void submit()}>
             {busy ? 'Posting…' : mode === 'photo' ? (spots.length ? `Post flex · ${spots.length} tagged` : 'Post')

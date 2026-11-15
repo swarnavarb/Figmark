@@ -100,7 +100,7 @@
 .os-cover__figs { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s4); font-size: var(--t-sm); color: var(--text-dim); }
 .os-artists { display: flex; flex-wrap: wrap; gap: 6px; }
 .os-artist-chip { display: inline-flex; align-items: center; gap: 6px; padding: var(--s1) 10px var(--s1) var(--s1); border-radius: var(--r-pill); background: var(--surface-2); font-size: var(--t-xs); }
-.os-strip { display: flex; gap: var(--s2); overflow-x: auto; scrollbar-width: none; align-items: center; }
+.os-strip { display: flex; gap: var(--s2); overflow-x: auto; overflow-y: hidden; scrollbar-width: none; align-items: center; }
 .os-strip__pic { flex: 0 0 76px; width: 76px; }
 .os-flow { display: grid; grid-template-columns: repeat(7, 1fr); gap: var(--s1); margin: 0; padding: 0; list-style: none; }
 .os-quote { display: grid; gap: 2px; padding: var(--s3) 14px; border-radius: var(--r-md); background: var(--surface-2); }

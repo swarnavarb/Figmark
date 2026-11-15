@@ -33,6 +33,7 @@ import { OpeningCard } from './Showcase';
 /* What you have seen: see channelSeen.ts, kept apart so the header can read it without this screen. */
 export { forumHasNews, markSeen, seenMap, unreadOf } from './channelSeen';
 import { seenMap, markSeen, unreadOf } from './channelSeen';
+import { useDraftUploads } from '../draft-uploads';
 
 /* ── The list ──────────────────────────────────────────────────────────── */
 
@@ -755,6 +756,7 @@ function RoomComposer({ data, replyTo, onClearReply, onPosted }: {
   onClearReply: () => void;
   onPosted: () => void | Promise<void>;
 }) {
+  const uploads = useDraftUploads();
   const { voice } = useVoice();
   const { channel, shareable } = data;
   const isForum = channel.kind === 'forum';
@@ -817,7 +819,7 @@ function RoomComposer({ data, replyTo, onClearReply, onPosted }: {
     await Promise.all(chosen.map(async (file, index) => {
       const key = drafts[index]!.key;
       try {
-        const stored = await api.uploadPhoto(await shrink(file));
+        const stored = await uploads.upload(await shrink(file));
         setPhotos((all) => all.map((photo) => (photo.key === key ? { ...photo, url: stored.url } : photo)));
       } catch (err) {
         setPhotos((all) => all.map((photo) => (photo.key === key ? { ...photo, failed: true } : photo)));
@@ -878,7 +880,7 @@ function RoomComposer({ data, replyTo, onClearReply, onPosted }: {
               {!photo.url && !photo.failed && <span className="writer__spin" aria-label="Uploading" />}
               <button type="button" className="writer__unphoto" aria-label="Remove photo"
                 onClick={() => {
-                  if (photo.url) void api.discardPhoto(photo.url);
+                  if (photo.url) uploads.discard(photo.url);
                   setPhotos((all) => all.filter((entry) => entry.key !== photo.key));
                 }}>
                 <Icon name="close" size={12} />

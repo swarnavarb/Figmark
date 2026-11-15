@@ -922,7 +922,7 @@ code, kbd, samp, pre {
   display: flex;
   gap: var(--s2);
   align-items: center;
-  overflow-x: auto;
+  overflow-x: auto; overflow-y: hidden;
   margin: 0 calc(var(--page-pad) * -1);
   padding: 2px var(--page-pad);
   scrollbar-width: none;
@@ -1041,7 +1041,7 @@ code, kbd, samp, pre {
 
 /* ── Stage timeline ────────────────────────────────────────────────────── */
 
-.track { display: flex; gap: 3px; margin: 0; padding: 0; list-style: none; overflow-x: auto; }
+.track { display: flex; gap: 3px; margin: 0; padding: 0; list-style: none; overflow-x: auto; overflow-y: hidden; }
 
 /* Uniform step-state mark: a tick once a step is done, a small spinner while
    it is the one under way - the same two glyphs wherever a journey is drawn
@@ -1512,7 +1512,7 @@ summary::-webkit-details-marker { display: none; }
 
 /* ── Tables ────────────────────────────────────────────────────────────── */
 
-.table-scroll { overflow-x: auto; }
+.table-scroll { overflow-x: auto; overflow-y: hidden; }
 .table { width: 100%; border-collapse: collapse; font-size: var(--t-sm); }
 .table th, .table td { padding: 11px 14px; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--border); }
 .table th { font-size: var(--t-xs); text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-faint); font-weight: var(--w-semi); }
@@ -1625,7 +1625,7 @@ summary::-webkit-details-marker { display: none; }
      defeats the point of a browsable grid. */
   .chips {
     flex-wrap: nowrap;
-    overflow-x: auto;
+    overflow-x: auto; overflow-y: hidden;
     scrollbar-width: none;
     padding-bottom: 2px;
     /* Bleed to the screen edges so the row reads as scrollable. */
@@ -2367,7 +2367,7 @@ summary::-webkit-details-marker { display: none; }
 .bell__glyph--drops { background: var(--violet-soft); color: var(--violet-text); }
 /* One row of filters, scrolled sideways rather than wrapped. */
 .bell__filters {
-  display: flex; gap: 6px; padding: var(--s2) var(--s3); overflow-x: auto; scrollbar-width: none;
+  display: flex; gap: 6px; padding: var(--s2) var(--s3); overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
   border-bottom: 1px solid var(--border);
 }
 .bell__filters::-webkit-scrollbar { display: none; }
@@ -3653,7 +3653,7 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 }
 
 .reactors__tabs {
-  display: flex; gap: var(--s1); overflow-x: auto; margin-bottom: 10px;
+  display: flex; gap: var(--s1); overflow-x: auto; overflow-y: hidden; margin-bottom: 10px;
   border-bottom: 1px solid var(--border); scrollbar-width: none;
 }
 .reactors__tab {
@@ -3684,7 +3684,7 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 .spost--nested .carousel { margin-inline: 0; border-radius: var(--r-md); }
 .carousel__track {
   display: flex;
-  overflow-x: auto; overscroll-behavior-x: contain;
+  overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain;
   scroll-snap-type: x mandatory; scrollbar-width: none;
 }
 .carousel__track::-webkit-scrollbar { display: none; }
@@ -4015,7 +4015,7 @@ a.psheet__row:hover { background: var(--surface-hover); }
 .writer__tool--vibe svg { color: var(--pink-text); }
 .writer__left.is-low { color: var(--warn); }
 
-.writer__photos { display: flex; gap: var(--s2); overflow-x: auto; padding-bottom: 2px; }
+.writer__photos { display: flex; gap: var(--s2); overflow-x: auto; overflow-y: hidden; padding-bottom: 2px; }
 .writer__photo {
   position: relative; flex: 0 0 auto; width: 92px; height: 92px;
   border-radius: var(--r-md); overflow: hidden; background: var(--surface-2);
@@ -4733,7 +4733,8 @@ a.psheet__row:hover { background: var(--surface-hover); }
 }
 
 /* ── The composer: a line forever running round it ─────────────────────── */
-.social .writer::before {
+.social .writer::before,
+.csheet__quick .writer::before {
   content: '';
   position: absolute; inset: 0; z-index: -1;
   padding: 2px;
@@ -4758,7 +4759,7 @@ a.psheet__row:hover { background: var(--surface-hover); }
 :root[data-bars='hidden'] .tabbar { transform: translateY(calc(100% + var(--tabbar-gap) + 24px)); }
 
 @media (prefers-reduced-motion: reduce) {
-  .social .writer::before { animation: none; }
+  .social .writer::before, .csheet__quick .writer::before { animation: none; }
   .nav, .tabbar { transition: none; }
 }
 
@@ -4859,7 +4860,7 @@ a.psheet__row:hover { background: var(--surface-hover); }
 .chdiscover {
   display: flex; gap: 10px;
   margin: 0 calc(-1 * var(--page-pad)); padding: 2px var(--page-pad) 6px;
-  overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none;
+  overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; scrollbar-width: none;
 }
 .chdiscover::-webkit-scrollbar { display: none; }
 .chcard {
@@ -4938,7 +4939,7 @@ a.psheet__row:hover { background: var(--surface-hover); }
 
 .chtabs {
   display: flex; gap: 6px; margin-bottom: var(--s3);
-  overflow-x: auto; scrollbar-width: none;
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
 }
 .chtabs::-webkit-scrollbar { display: none; }
 .chtabs__tab {
@@ -5285,7 +5286,7 @@ body.is-locked { overflow: hidden; }
 }
 .soccompact__tabs {
   flex: 1; min-width: 0; display: flex; gap: 5px;
-  overflow-x: auto; scrollbar-width: none;
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
 }
 .soccompact__tabs::-webkit-scrollbar { display: none; }
 .soctab--sm { padding: 6px 11px; font-size: var(--t-xs); gap: 5px; }
@@ -6697,7 +6698,7 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
   opacity: 0; transform: scale(0.8); transition: opacity var(--dur-2) var(--spring), transform var(--dur-2) var(--bounce);
 }
 .gallery__stage:hover .gallery__zoom, .gallery__stage:focus-visible .gallery__zoom { opacity: 1; transform: none; }
-.gallery__strip { display: flex; gap: var(--s2); overflow-x: auto; padding: 3px; scrollbar-width: none; }
+.gallery__strip { display: flex; gap: var(--s2); overflow-x: auto; overflow-y: hidden; padding: 3px; scrollbar-width: none; }
 .gallery__thumb {
   flex: 0 0 68px; height: 68px; padding: 0; border: 2px solid transparent; border-radius: var(--r-md); overflow: hidden; cursor: pointer;
   opacity: 0.55; background: var(--surface-2);
@@ -7608,7 +7609,7 @@ a.ocust__name:hover { color: var(--accent-text); }
 .stage__live { display: inline-flex; align-items: center; gap: 5px; color: var(--coral-pale); font-weight: var(--w-bold); letter-spacing: 0.06em; text-transform: uppercase; }
 .stage__row {
   position: relative; z-index: 2; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(228px, 72%);
-  gap: 10px; overflow-x: auto; padding: var(--s1) 30px 8px; scroll-snap-type: x mandatory; scroll-padding-inline: 30px; scrollbar-width: none;
+  gap: 10px; overflow-x: auto; overflow-y: hidden; padding: var(--s1) 30px 8px; scroll-snap-type: x mandatory; scroll-padding-inline: 30px; scrollbar-width: none;
 }
 .stage__row::-webkit-scrollbar { display: none; }
 @media (min-width: 720px) { .stage__row { grid-auto-columns: 264px; } }
@@ -7880,7 +7881,7 @@ a.ocust__name:hover { color: var(--accent-text); }
   /* Still, the belt is a row the finger scrolls: sideways panning has to be
      allowed again (the moving belt takes only vertical, to drag it itself). */
   .belt {
-    overflow-x: auto; cursor: auto; touch-action: pan-x pan-y; user-select: auto; -webkit-user-select: auto;
+    overflow-x: auto; overflow-y: hidden; cursor: auto; touch-action: pan-x pan-y; user-select: auto; -webkit-user-select: auto;
     overscroll-behavior-x: contain; scrollbar-width: none; -webkit-overflow-scrolling: touch;
   }
   .belt::-webkit-scrollbar { display: none; }
@@ -7995,7 +7996,7 @@ a.ocust__name:hover { color: var(--accent-text); }
 .ms-strip__head > span:first-child { display: grid; }
 .ms-strip__title { font-family: var(--display); font-size: var(--t-lg); font-weight: var(--w-bold); letter-spacing: -0.02em; }
 .ms-strip__go { display: inline-flex; align-items: center; gap: var(--s1); color: var(--accent-text); font-size: var(--t-sm); font-weight: var(--w-semi); }
-.ms-strip__row { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+.ms-strip__row { display: flex; gap: 10px; overflow-x: auto; overflow-y: hidden; padding-bottom: 2px; scrollbar-width: none; }
 .ms-strip__row::-webkit-scrollbar { display: none; }
 .ms-tile {
   position: relative; flex: 0 0 150px; display: grid; gap: 6px; justify-items: start; padding: var(--s3);
@@ -8933,43 +8934,47 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 /* You and your store: a two-way switch whose highlight slides to the side you pick. */
 .csheet__sides {
   position: relative; display: grid; grid-template-columns: 1fr 1fr;
-  padding: var(--s1); border-radius: var(--r-pill); background: var(--surface-2); border: 1px solid var(--border);
+  justify-self: start; width: min(280px, 100%);
+  padding: 3px; border-radius: var(--r-pill); background: var(--surface-2); border: 1px solid var(--border);
 }
 .csheet__side {
-  position: relative; z-index: 1; min-height: 38px; min-width: 0; padding: 0 var(--s3);
+  position: relative; z-index: 1; min-height: 30px; min-width: 0; padding: 0 var(--s2);
   border: 0; border-radius: var(--r-pill); background: none; color: var(--text-dim);
-  font: inherit; font-weight: var(--w-semi); font-size: var(--t-sm);
+  font: inherit; font-weight: var(--w-semi); font-size: var(--t-xs);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
   transition: color var(--dur-1) ease;
 }
 .csheet__side.is-on { color: #fff; }
 .csheet__thumb {
-  position: absolute; top: 4px; bottom: 4px; left: 4px; width: calc(50% - 4px);
+  position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px);
   border-radius: var(--r-pill); background: var(--grad-hero); box-shadow: var(--shadow-violet);
   transition: transform 420ms cubic-bezier(0.34, 1.4, 0.64, 1), background var(--dur-2) ease;
 }
 .csheet__thumb--store { transform: translateX(100%); background: var(--grad-gold); }
 /* Which store: one row that scrolls sideways, never cut top or bottom. */
 .csheet__stores {
-  display: flex; gap: var(--s2);
+  display: flex; gap: 6px;
   overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
-  margin: 0 calc(var(--s4) * -1); padding: 4px var(--s4) 6px;
+  margin: -4px calc(var(--s4) * -1) 0; padding: 3px var(--s4) 4px;
   overscroll-behavior-x: contain;
 }
 .csheet__stores::-webkit-scrollbar { display: none; }
 .csheet__store {
   flex: none; display: inline-flex; align-items: center; gap: 6px;
-  max-width: 220px; min-height: 36px; padding: 0 14px;
+  max-width: 180px; min-height: 28px; padding: 0 10px; gap: 5px;
   border-radius: var(--r-pill); border: 1px solid var(--border-strong); background: var(--surface-2);
-  color: var(--text-dim); font: inherit; font-size: var(--t-sm); font-weight: var(--w-semi); line-height: 1.2; cursor: pointer;
+  color: var(--text-dim); font: inherit; font-size: var(--t-xs); font-weight: var(--w-semi); line-height: 1.2; cursor: pointer;
   transition: color var(--dur-1) ease, border-color var(--dur-1) ease, background var(--dur-1) ease, transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .csheet__storename { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.csheet__store.is-on { color: #fff; border-color: transparent; background: var(--grad-hero); box-shadow: var(--shadow-violet); transform: scale(1.04); }
+.csheet__store.is-on { color: #fff; border-color: transparent; background: var(--grad-hero); box-shadow: var(--shadow-violet); transform: scale(1.03); }
 .csheet__store:active { transform: scale(0.95); }
 /* The quick post sits on the sheet like one more row, not a card on a card. */
 .csheet__quick { flex: none; animation: csheet-sub 300ms var(--ease-out) both; }
-.csheet__quick .writer { background: color-mix(in srgb, var(--surface-2) 70%, transparent); }
+.csheet__quick .writer {
+  isolation: isolate; border-color: transparent;
+  background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+}
 
 /* A tile: a coloured blob with the emoji, the name, one short line. */
 .csheet__tile {
@@ -9072,6 +9077,14 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 :where(:root[data-motion="reduced"]) .csheet__tile::after { animation: none !important; }
 :where(:root[data-motion="reduced"]) .csheet__tile { animation: fade-in 160ms ease both; }
 
+/* A prize's terms: one quiet line until opened. */
+.pterms { margin-top: 6px; font-size: var(--t-xs); color: var(--text-dim); }
+.pterms summary { cursor: pointer; width: fit-content; font-weight: var(--w-semi); color: var(--text-faint); list-style: none; }
+.pterms summary::-webkit-details-marker { display: none; }
+.pterms summary::before { content: '›'; display: inline-block; margin-right: 6px; transition: transform var(--dur-1) var(--ease-out); }
+.pterms[open] summary::before { transform: rotate(90deg); }
+.pterms p { margin: 6px 0 0; padding: 8px 10px; border-radius: var(--r-md); background: var(--surface); white-space: pre-line; line-height: 1.45; }
+
 /* ── What a card is ────────────────────────────────────────────────────── */
 
 /* [FOR SALE], [DEBATE POLL], [COLLECTION FLEX], [ISO REQUEST], [HOT DEBATE]:
@@ -9137,7 +9150,7 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 }
 .flexshelf__tip--left { left: auto; right: 18px; }
 .flexshelf__go { display: inline-flex; align-items: center; gap: var(--s1); color: var(--accent-text); font-weight: var(--w-semi); font-size: var(--t-xs); text-decoration: none; }
-.flexshelf__thumbs { display: flex; gap: 6px; padding-inline: var(--s4); overflow-x: auto; scrollbar-width: none; }
+.flexshelf__thumbs { display: flex; gap: 6px; padding-inline: var(--s4); overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 .flexshelf__thumb {
   flex: none; width: 52px; height: 52px; padding: 0; overflow: hidden;
   border-radius: var(--r-sm); border: 2px solid transparent; background: var(--surface-2); cursor: pointer; opacity: 0.6;
@@ -9552,7 +9565,7 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .actord__head h2 { margin: 0; font-size: var(--t-md); }
 .actord__all { font-size: var(--t-sm); font-weight: var(--w-semi); color: var(--accent-text); text-decoration: none; }
 .actord__row {
-  display: flex; gap: 8px; overflow-x: auto; scroll-snap-type: x mandatory;
+  display: flex; gap: 8px; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory;
   margin-inline: calc(-1 * var(--page-pad)); padding: 2px var(--page-pad) 4px;
   scrollbar-width: none; overscroll-behavior-x: contain;
 }
@@ -9733,7 +9746,7 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .svstrip__head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .svstrip__head h2 { margin: 0; font-size: var(--t-md); }
 .svstrip__row {
-  display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory;
+  display: flex; gap: 10px; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory;
   margin-inline: calc(-1 * var(--page-pad)); padding: 2px var(--page-pad) 6px;
   scrollbar-width: none; overscroll-behavior-x: contain;
 }
@@ -9977,7 +9990,7 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .winstrip { display: grid; gap: 6px; }
 .winstrip__label { display: flex; align-items: baseline; gap: var(--s2); font-size: var(--t-2xs); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.08em; }
 .winstrip__all { margin-left: auto; text-transform: none; letter-spacing: 0; font-size: var(--t-xs); }
-.winstrip__row { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 6px; scrollbar-width: thin; }
+.winstrip__row { display: flex; gap: 8px; overflow-x: auto; overflow-y: hidden; padding: 2px 2px 6px; scrollbar-width: thin; }
 .minimedal, .winchip {
   --metal-hi: #FFF3B0; --metal: #F5C542; --metal-lo: #A0700E; --glow: 245, 197, 66;
   flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; max-width: 220px;

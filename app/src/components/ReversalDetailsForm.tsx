@@ -3,6 +3,7 @@ import { SkelCards } from './PageSkeletons';
 import { compressImage } from '../imageCompress';
 import { ApiRequestError, api } from '../api';
 import { ErrorNotice } from './ui';
+import { useDraftUploads } from '../draft-uploads';
 
 
 /**
@@ -13,6 +14,7 @@ import { ErrorNotice } from './ui';
  * money and must not pretend to have validated an account it cannot see.
  */
 export function ReversalDetailsForm({ onSaved }: { onSaved?: () => void | Promise<void> } = {}) {
+  const uploads = useDraftUploads();
   const [method, setMethod] = useState('');
   const [identifier, setIdentifier] = useState('');
   const [accountName, setAccountName] = useState('');
@@ -44,7 +46,7 @@ export function ReversalDetailsForm({ onSaved }: { onSaved?: () => void | Promis
     setUploading(true);
     setError(null);
     try {
-      const stored = await api.uploadPhoto(await compressImage(file));
+      const stored = await uploads.upload(await compressImage(file));
       setQrCodeUrl(stored.url);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That image did not upload.');

@@ -22,6 +22,7 @@ import {
 import { PhotoSales } from '../components/PhotoSales';
 import { Select } from '../components/Select';
 import { reducedMotion } from '../motion';
+import { useDraftUploads } from '../draft-uploads';
 
 /**
  * A person's page, as a collector's.
@@ -628,6 +629,7 @@ function CardViewer({ item, no, isMe, groups, owner, userId, onClose, onEdit, on
   onEdit: (changes: { groupId?: string | null; cover?: string; hidden?: string[]; own?: string }, done?: string) => Promise<boolean>;
   onRemove: () => void;
 }) {
+  const uploads = useDraftUploads();
   const toast = useToast();
   const [index, setIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
@@ -642,7 +644,7 @@ function CardViewer({ item, no, isMe, groups, owner, userId, onClose, onEdit, on
   async function upload(file: File) {
     setUploading(true);
     try {
-      const stored = await api.uploadPhoto(await shrink(file));
+      const stored = await uploads.upload(await shrink(file));
       if (await onEdit({ own: stored.url }, 'Your photo is the cover now')) setIndex(0);
     } catch (err) {
       toast(err instanceof ApiRequestError ? err.message : 'That photo did not upload.', 'error');

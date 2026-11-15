@@ -116,7 +116,7 @@
 /* Category chips: the reader's own first, marked with a heart. */
 .discats {
   display: flex; gap: 6px; margin: -4px calc(var(--page-pad) * -1) 0; padding-inline: var(--page-pad);
-  overflow-x: auto; scrollbar-width: none;
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
 }
 .discats::-webkit-scrollbar { display: none; }
 .discat {
@@ -239,7 +239,7 @@
 /* The lenses: one sticky strip under the header, the chosen one lit. */
 .dislens {
   position: sticky; top: var(--nav-h); z-index: var(--z-popover);
-  display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none;
+  display: flex; gap: 6px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
   margin-inline: calc(var(--page-pad) * -1); padding: var(--s2) var(--page-pad);
   background: color-mix(in srgb, var(--bg) 88%, transparent);
   backdrop-filter: blur(24px) saturate(1.4); -webkit-backdrop-filter: blur(24px) saturate(1.4);
@@ -273,7 +273,7 @@
 /* Live now and the competitions: sideways rows of doors into the posts. */
 .dislive__row {
   display: grid; grid-auto-flow: column; grid-auto-columns: minmax(220px, 72%);
-  gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none;
+  gap: 10px; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; scrollbar-width: none;
   margin-inline: calc(var(--page-pad) * -1); padding: 2px var(--page-pad) 6px;
 }
 .dislive__row::-webkit-scrollbar { display: none; }
@@ -333,7 +333,7 @@
 }
 .discrail__row {
   display: grid; grid-auto-flow: column; grid-auto-columns: minmax(150px, 46%);
-  gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none;
+  gap: 10px; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; scrollbar-width: none;
   margin-inline: calc(var(--page-pad) * -1); padding-inline: var(--page-pad);
 }
 .discrail__row::-webkit-scrollbar { display: none; }
@@ -393,7 +393,7 @@
 /* What people are posting about: one sideways line of #topics. */
 .distopics {
   display: flex; gap: 6px; margin: 0 calc(var(--page-pad) * -1); padding-inline: var(--page-pad);
-  overflow-x: auto; scrollbar-width: none;
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
 }
 .distopics::-webkit-scrollbar { display: none; }
 .distopic {

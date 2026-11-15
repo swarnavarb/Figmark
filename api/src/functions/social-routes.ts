@@ -40,7 +40,7 @@ import { tagKey, tidyLabel } from '../../../shared/shop-tags.js';
 import {
   CONTEST_CAPTION_MAX, CONTEST_MAX_ENTRIES, CONTEST_MAX_PRIZES, CONTEST_RULES_MAX, CONTEST_TITLE_MAX, GUESS_MAX_MINOR,
   PHASE_MAX_HOURS, PHASE_MIN_HOURS, PRIZE_MAX_MINOR, PRIZE_NOTE_MAX, SHORTLIST_MAX, SHORTLIST_MIN,
-  HELPFUL_MILESTONES, badgeDetail, closestGuess, contestPhase, isJudging,
+  HELPFUL_MILESTONES, badgeDetail, closestGuess, contestPhase, isJudging, termsFrom, GUESS_MAX_WINNERS,
   type ContestPrize, type ContestWinner, type GuessView, type PostContest, type PostGuess,
 } from '../../../shared/play.js';
 import {
@@ -48,7 +48,7 @@ import {
   type DebatePrize, type PollStyle, type PostBlur, type PostCompare, type PostQuestion, type VoterReward,
 } from '../../../shared/social.js';
 import { verifiedChecks } from '../../../shared/verification.js';
-import { gameAudience, gameWhat, isDue, milestone, payContest, payDebate, settlePlay } from '../play.js';
+import { gameAudience, gameWhat, isDue, milestone, payContest, payDebate, payGuess, settlePlay } from '../play.js';
 import { ownPhotoName } from '../storage/index.js';
 import { likeness, storedFingerprint } from '../image-hash.js';
 import { pictureMatches } from '../photo-search.js';
@@ -203,7 +203,16 @@ function guessView(guess: PostGuess | null | undefined, viewerId: string): Guess
     revealed,
     answerMinor: revealed ? guess.answerMinor : null,
     winner: revealed ? guess.winner ?? null : null,
-    closest: revealed ? closestGuess(guess).slice(0, 3).map((entry) => ({ name: entry.name, amountMinor: entry.amountMinor })) : [],
+    // The shop picking its winner sees ten to choose from; everybody else the
+    // podium, or as many places as the prize pays.
+    closest: revealed
+      ? closestGuess(guess).slice(0, guess.prize?.judge === 'store' ? 10 : Math.max(3, guess.prize?.winners ?? 0))
+        .map((entry) => ({ userId: entry.userId, name: entry.name, amountMinor: entry.amountMinor }))
+      : [],
+    prize: guess.prize
+      ? { amountMinor: guess.prize.amountMinor, storeName: guess.prize.storeName, judge: guess.prize.judge, winners: guess.prize.winners, terms: guess.prize.terms ?? null }
+      : null,
+    winners: guess.winners ?? null,
   };
 }
 
@@ -227,7 +236,7 @@ function pollView(poll: StoredPoll | null | undefined, viewerId: string): PollVi
     ...(poll.stock ? { stock: true } : {}),
     ...(poll.stocked?.length ? { stocked: poll.stocked.map((entry) => entry.optionId) } : {}),
     ...(poll.reward
-      ? { reward: { amountMinor: poll.reward.amountMinor, maxVoters: poll.reward.maxVoters, storeName: poll.reward.storeName, paidCount: poll.reward.paidCount ?? null } }
+      ? { reward: { amountMinor: poll.reward.amountMinor, maxVoters: poll.reward.maxVoters, storeName: poll.reward.storeName, paidCount: poll.reward.paidCount ?? null, terms: poll.reward.terms ?? null } }
       : {}),
   };
 }
@@ -2148,13 +2157,16 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     /** A collection flex: tagged pieces on the photos. */
     flex?: { hotspots?: unknown } | null;
     /** A debate: photo A against photo B, each side optionally an item; a shop may put up a prize. */
-    debate?: { listingIds?: unknown; prize?: { amountMinor?: unknown; judge?: unknown } | null } | null;
+    debate?: { listingIds?: unknown; prize?: { amountMinor?: unknown; judge?: unknown; terms?: unknown } | null } | null;
     /** A guess-the-price: the answer, sealed, and when it comes out. */
-    guess?: { answerMinor?: unknown; revealInHours?: unknown; listingId?: unknown } | null;
+    guess?: {
+      answerMinor?: unknown; revealInHours?: unknown; listingId?: unknown;
+      prize?: { amountMinor?: unknown; judge?: unknown; winners?: unknown; terms?: unknown } | null;
+    } | null;
     /** A photo competition. Shops run them; Figmark runs the weekly challenge. */
     contest?: {
       title?: unknown; rules?: unknown; entriesHours?: unknown; votingHours?: unknown; judging?: unknown;
-      prizes?: unknown; host?: unknown;
+      prizes?: unknown; host?: unknown; terms?: unknown;
     } | null;
     /** Blurred until tapped: 'spoiler' or 'sensitive'. */
     blur?: unknown;
@@ -2276,7 +2288,7 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
 
   // The games a shop runs for money: who may, and for how much, is checked
   // once the voice is known, below.
-  const prizeAsked = Boolean(body.debate?.prize || body.poll?.reward || body.poll?.stock || body.contest);
+  const prizeAsked = Boolean(body.debate?.prize || body.poll?.reward || body.poll?.stock || body.contest || body.guess?.prize);
 
   let guess: PostGuess | null = null;
   if (body.guess) {
@@ -2499,7 +2511,22 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     const amount = credit(body.debate.prize.amountMinor);
     if (amount === null) return badCredit();
     if (amount === 0) return error(400, 'invalid_prize', 'Set the prize, or leave it off.');
-    debatePrize = { storeId: shop.id, storeName: shop.name, amountMinor: amount, judge: body.debate.prize.judge === 'store' ? 'store' : 'likes' };
+    debatePrize = {
+      storeId: shop.id, storeName: shop.name, amountMinor: amount, judge: body.debate.prize.judge === 'store' ? 'store' : 'likes',
+      terms: termsFrom(body.debate.prize.terms),
+    };
+  }
+
+  if (guess && body.guess?.prize && shop) {
+    const amount = credit(body.guess.prize.amountMinor);
+    if (amount === null) return badCredit();
+    if (amount === 0) return error(400, 'invalid_prize', 'Set the prize, or leave it off.');
+    const judge = body.guess.prize.judge === 'store' ? 'store' : 'closest';
+    const winners = judge === 'store' ? 1 : Number(body.guess.prize.winners ?? 1);
+    if (!Number.isInteger(winners) || winners < 1 || winners > GUESS_MAX_WINNERS) {
+      return error(400, 'invalid_prize', `Pay between 1 and ${GUESS_MAX_WINNERS} of the closest guesses.`);
+    }
+    guess = { ...guess, prize: { storeId: shop.id, storeName: shop.name, amountMinor: amount, judge, winners, terms: termsFrom(body.guess.prize.terms) } };
   }
 
   const pollExtra = body.poll;
@@ -2511,7 +2538,9 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     if (amount === 0) return error(400, 'invalid_prize', 'Set the reward, or leave it off.');
     if (!Number.isInteger(most) || most < 1 || most > 500) return error(400, 'invalid_prize', 'Reward between 1 and 500 voters.');
     if (!poll.closesAt) return error(400, 'invalid_prize', 'A rewarded poll needs an end, so it is known who won.');
-    const voterReward: VoterReward = { storeId: shop.id, storeName: shop.name, amountMinor: amount, maxVoters: most };
+    const voterReward: VoterReward = {
+      storeId: shop.id, storeName: shop.name, amountMinor: amount, maxVoters: most, terms: termsFrom((pollExtra.reward as { terms?: unknown }).terms),
+    };
     poll = { ...poll, reward: voterReward };
   }
 
@@ -2546,6 +2575,7 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
       storeId: figmarkHost ? null : shop!.id,
       hostName: figmarkHost ? 'Figmark' : shop!.name,
       title, rules, entriesCloseAt, endsAt, judging, prizes, entries: [],
+      ...(prizes.length && termsFrom(raw.terms) ? { terms: termsFrom(raw.terms) } : {}),
     };
     if (figmarkHost) {
       authorName = 'Figmark';
@@ -4015,7 +4045,7 @@ async function judge(request: HttpRequest, _context: InvocationContext) {
   if (!actor) return notYours();
   if (!post) return noPost();
   if (!(await runsGame(post, user.id, repository))) return error(403, 'forbidden', 'Only whoever runs it decides.');
-  const body = await readJson<{ action?: unknown; entryIds?: unknown; commentId?: unknown; place?: unknown }>(request);
+  const body = await readJson<{ action?: unknown; entryIds?: unknown; commentId?: unknown; place?: unknown; userId?: unknown }>(request);
   if (!body) return error(400, 'invalid_body', 'Request body must be JSON.');
   const ids = Array.isArray(body.entryIds) ? [...new Set(body.entryIds.filter((id): id is string => typeof id === 'string'))] : [];
   const nowIso = new Date().toISOString();
@@ -4080,6 +4110,21 @@ async function judge(request: HttpRequest, _context: InvocationContext) {
     return json(200, { card: await cardFor(saved, repository, actor) });
   }
 
+  if (body.action === 'guess_winner') {
+    const guess = post.guess;
+    if (!guess?.prize || guess.prize.judge !== 'store') return error(400, 'invalid_judging', 'The closest guesses win this one.');
+    if (!guess.revealedAt) return error(409, 'not_now', 'Pick the winner once the price is out.');
+    if (guess.paidAt) return error(409, 'already_picked', 'The prize has already gone out.');
+    const pick = guess.guesses.find((entry) => entry.userId === body.userId);
+    if (!pick) return error(400, 'invalid_winner', 'Pick one of the guesses.');
+    const winner = { userId: pick.userId, name: pick.name, amountMinor: pick.amountMinor };
+    const saved = await repository.mutatePost(post.channelId, post.id, (current) =>
+      (!current.guess?.prize || current.guess.paidAt ? null : { ...current, guess: { ...current.guess, winners: [winner], paidAt: nowIso } }));
+    if (!saved) return noPost();
+    if (saved.guess?.paidAt === nowIso) await payGuess(repository, saved);
+    return json(200, { card: await cardFor(saved, repository, actor) });
+  }
+
   if (body.action === 'sent') {
     const place = Number(body.place);
     if (!post.contest?.winners?.some((winner) => winner.place === place)) return error(400, 'invalid_place', 'No winner in that place.');
@@ -4089,7 +4134,7 @@ async function judge(request: HttpRequest, _context: InvocationContext) {
     return json(200, { card: await cardFor(saved, repository, actor) });
   }
 
-  return error(400, 'invalid_action', 'Shortlist, pick winners, pick the best argument, or mark a prize sent.');
+  return error(400, 'invalid_action', 'Shortlist, pick winners, pick the best argument or the winning guess, or mark a prize sent.');
 }
 
 /** Posts a shop's Engage screen reads back: the most recent hundred in its channel. */

@@ -19,6 +19,7 @@ import { MoneyInput } from './StoreKit';
 import { markSeen } from './channelSeen';
 import { shrink } from './PhotoManager';
 import '../styles/ServiceWorkKit.css';
+import { useDraftUploads } from '../draft-uploads';
 
 /**
  * The pieces every screen of a store's direct work is drawn from: the page a
@@ -708,6 +709,7 @@ export function RequestActions({ view, team, onChanged }: {
 function BillForm({ request, busy, onSend }: {
   request: ServiceRequest; busy: boolean; onSend: (extra: Record<string, unknown>) => void;
 }) {
+  const uploads = useDraftUploads();
   const [weight, setWeight] = useState(request.bill ? String(request.bill.weightKg) : '');
   const [box, setBox] = useState<Dimensions>(request.bill?.box ?? { l: 0, w: 0, h: 0 });
   const [photos, setPhotos] = useState<string[]>(request.bill?.photoUrls ?? []);
@@ -727,7 +729,7 @@ function BillForm({ request, busy, onSend }: {
     setError(null);
     try {
       const urls: string[] = [];
-      for (const file of [...files].slice(0, 4 - photos.length)) urls.push((await api.uploadPhoto(await shrink(file))).url);
+      for (const file of [...files].slice(0, 4 - photos.length)) urls.push((await uploads.upload(await shrink(file))).url);
       setPhotos((now) => [...now, ...urls].slice(0, 4));
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That photo did not upload.');

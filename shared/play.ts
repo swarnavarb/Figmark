@@ -41,6 +41,17 @@ export const CONTEST_TITLE_MAX = 80;
 export const CONTEST_RULES_MAX = 600;
 export const CONTEST_CAPTION_MAX = 140;
 export const PRIZE_NOTE_MAX = 80;
+/** A prize's terms and conditions: optional, on every kind of prize. */
+export const PRIZE_TERMS_MAX = 800;
+/** Most winners one guess-the-price can pay. */
+export const GUESS_MAX_WINNERS = 10;
+
+/** Terms as asked for: trimmed, capped, null when there are none. */
+export function termsFrom(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const text = value.trim().slice(0, PRIZE_TERMS_MAX);
+  return text || null;
+}
 /** A shortlist has to leave something to vote between, and not be the whole field. */
 export const SHORTLIST_MIN = 2;
 export const SHORTLIST_MAX = 12;
@@ -109,6 +120,8 @@ export interface PostContest {
   votingToldAt?: string | null;
   /** Prizes that are not credit, marked handed over by the shop. */
   prizeSent?: number[];
+  /** The prizes' terms and conditions, when the shop set any. */
+  terms?: string | null;
 }
 
 /**
@@ -154,6 +167,24 @@ export const GUESS_MAX_MINOR = 100_000_000;
  * until `revealAt`, and neither do anybody's guesses, so nobody can read the
  * room before they guess.
  */
+/**
+ * A shop's prize on a guess-the-price: store credit, spent only at that shop.
+ *
+ * - closest: the `winners` closest guesses each get it at the reveal;
+ * - store: the shop picks one guess once the price is out.
+ */
+export interface GuessPrize {
+  storeId: string;
+  storeName: string;
+  amountMinor: number;
+  judge: 'closest' | 'store';
+  /** How many of the closest are paid; always 1 when the shop picks. */
+  winners: number;
+  terms?: string | null;
+}
+
+export interface GuessWinner { userId: string; name: string; amountMinor: number }
+
 export interface PostGuess {
   listingId: string | null;
   answerMinor: number;
@@ -161,7 +192,12 @@ export interface PostGuess {
   guesses: { userId: string; name: string; amountMinor: number; at: string }[];
   revealedAt?: string | null;
   /** The closest guess, decided at reveal; ties go to whoever guessed first. */
-  winner?: { userId: string; name: string; amountMinor: number } | null;
+  winner?: GuessWinner | null;
+  prize?: GuessPrize | null;
+  /** Everybody the prize was paid to, closest first. Set once. */
+  winners?: GuessWinner[] | null;
+  /** When the prize was paid. */
+  paidAt?: string | null;
 }
 
 /** A guess as the app reads it. */
@@ -174,8 +210,11 @@ export interface GuessView {
   /** Only once revealed. */
   answerMinor: number | null;
   winner: PostGuess['winner'] | null;
-  /** The three closest, once revealed. */
-  closest: { name: string; amountMinor: number }[];
+  /** The closest, once revealed: three, or as many as the prize pays (and ten to pick from for the shop). */
+  closest: { userId?: string; name: string; amountMinor: number }[];
+  prize?: { amountMinor: number; storeName: string; judge: GuessPrize['judge']; winners: number; terms?: string | null } | null;
+  /** Who the prize went to, once paid. */
+  winners?: GuessWinner[] | null;
 }
 
 /** The guess nearest the answer; ties go to the earliest. */

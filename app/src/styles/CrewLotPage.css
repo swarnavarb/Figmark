@@ -10,7 +10,7 @@
 .cl-roles { display: inline-flex; gap: var(--s1); padding: 3px; border-radius: var(--r-pill); background: var(--surface-2); }
 .cl-num { font-family: var(--mono); font-size: var(--t-sm); color: var(--text-faint); font-weight: var(--w-medium); letter-spacing: 0; }
 .cl-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s4); font-size: var(--t-sm); color: var(--text-dim); }
-.cl-route { display: flex; gap: 0; margin: 0 0 18px; padding: 14px var(--s1) var(--s1); list-style: none; overflow-x: auto; scrollbar-width: none; }
+.cl-route { display: flex; gap: 0; margin: 0 0 18px; padding: 14px var(--s1) var(--s1); list-style: none; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 .cl-route::-webkit-scrollbar { display: none; }
 .cl-route__step { position: relative; flex: 1 0 92px; display: grid; justify-items: center; gap: 6px; padding: 0 var(--s1); text-align: center; }
 .cl-route__step::before { content: ''; position: absolute; top: 6px; left: -50%; right: 50%; height: 2px; background: var(--border); }
