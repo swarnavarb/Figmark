@@ -3444,7 +3444,11 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 .spost__follow:hover { background: var(--accent); color: var(--accent-ink); }
 .spost__follow:active { transform: scale(0.95); }
 .spost__follow:disabled { opacity: 0.6; cursor: default; }
-.spost__byline .spost__follow { padding: 2px 10px; }
+.spost__byline .spost__follow { padding: 1px 9px; margin-left: 8px; line-height: 1.4; }
+/* The name gives way (ellipsis) before the Follow beside it does. */
+.spost__byline .pname { max-width: 100%; }
+.spost__byline .pname__line { flex-wrap: nowrap; }
+.spost__byline .pname__line > .spost__name { min-width: 0; }
 .spost__follow.is-on { background: none; border-color: var(--border); color: var(--text-dim); }
 .spost__follow.is-on:hover { background: var(--surface-2); color: var(--text); }
 

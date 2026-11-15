@@ -381,7 +381,7 @@ export function useConfirm() {
  */
 type Tag = { level: number; title: string; shop?: boolean };
 
-export function PersonLink({ party, className, children, bare, levelFrom = 0 }: {
+export function PersonLink({ party, className, children, bare, levelFrom = 0, after }: {
   party: { name: string; handle: string | null; level?: Tag; id?: string | null; href?: string } | null | undefined;
   className?: string;
   children?: ReactNode;
@@ -393,6 +393,8 @@ export function PersonLink({ party, className, children, bare, levelFrom = 0 }: 
    * other post is noise, not news.
    */
   levelFrom?: number;
+  /** Sits on the name's own line, after it - such as a Follow button - never on the tagline under it. */
+  after?: ReactNode;
 }) {
   if (!party) return null;
   const label = children ?? party.name;
@@ -404,14 +406,14 @@ export function PersonLink({ party, className, children, bare, levelFrom = 0 }: 
   // A community manager's shield goes wherever their name does - a person's
   // name, never their shop's: a shop is not a community manager.
   const mark = party.level?.shop ? null : <ManagerMark id={party.id} handle={party.handle} />;
-  if (bare || !party.level) return <>{name}{mark}</>;
+  if (bare || !party.level) return after ? <span className="pname__line">{name}{mark}{after}</span> : <>{name}{mark}</>;
   if (party.level.level < levelFrom) {
     return party.level.shop
-      ? <span className="pname"><span className="pname__line">{name}</span><span className="lvtag"><span className="lvtag__shop">Shop</span></span></span>
-      : <span className="pname__line">{name}{mark}</span>;
+      ? <span className="pname"><span className="pname__line">{name}{after}</span><span className="lvtag"><span className="lvtag__shop">Shop</span></span></span>
+      : <span className="pname__line">{name}{mark}{after}</span>;
   }
   // The level reads as a tagline under the name.
-  return <span className="pname"><span className="pname__line">{name}{mark}</span><LevelChip tag={party.level} /></span>;
+  return <span className="pname"><span className="pname__line">{name}{mark}{after}</span><LevelChip tag={party.level} /></span>;
 }
 
 /**

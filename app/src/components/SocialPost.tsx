@@ -535,6 +535,15 @@ export function SocialPostCard({
   // The line saying why Discover shows it carries the post's menu in Discover.
   const whyShown = !nested && Boolean(card.why) && !(card.why!.kind === 'followed' && card.followedActed && !following);
   const menuInWhy = inDiscover && whyShown;
+  // Follow sits on the name's own line, not beside the name-and-level block.
+  const followButton = !nested && followTarget && followTarget.key !== voice.storeId && (!followTarget.following || followedHere) ? (
+    <button type="button" className={`spost__follow${followTarget.following ? ' is-on' : ''}`} disabled={followBusy}
+      aria-pressed={followTarget.following}
+      title={voice.storeId && !followTarget.service ? 'Shops do not follow - this follows as you' : undefined}
+      onClick={() => void toggleFollow()}>
+      <Icon name={followTarget.following ? 'check' : 'plus'} size={11} /> {followTarget.following ? 'Following' : 'Follow'}
+    </button>
+  ) : null;
   const moreMenu = (
     <div className="spost__menuwrap">
       <button type="button" className="iconbtn" aria-label="More" aria-expanded={menu}
@@ -647,15 +656,7 @@ export function SocialPostCard({
         <Avatar name={post.authorName} size={nested ? 32 : 42} />
         <div className="spost__who">
           <span className="spost__byline">
-            <PersonLink party={author} className="spost__name" levelFrom={3}>{post.authorName}</PersonLink>
-            {!nested && followTarget && followTarget.key !== voice.storeId && (!followTarget.following || followedHere) && (
-              <button type="button" className={`spost__follow${followTarget.following ? ' is-on' : ''}`} disabled={followBusy}
-                aria-pressed={followTarget.following}
-                title={voice.storeId && !followTarget.service ? 'Shops do not follow - this follows as you' : undefined}
-                onClick={() => void toggleFollow()}>
-                <Icon name={followTarget.following ? 'check' : 'plus'} size={11} /> {followTarget.following ? 'Following' : 'Follow'}
-              </button>
-            )}
+            <PersonLink party={author} className="spost__name" levelFrom={3} after={followButton}>{post.authorName}</PersonLink>
             {card.forum && !inForum && (
               <>
                 <Icon name="right" size={12} className="spost__in" />
