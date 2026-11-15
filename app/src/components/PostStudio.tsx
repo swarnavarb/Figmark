@@ -18,6 +18,7 @@ import { Icon } from './Icon';
 import { PostPreview } from './PostPreview';
 import { useSession } from '../session';
 import { ProLock, useProLocked } from './Billing';
+import { CREDIT_LIFE_DAYS } from '@shared/play';
 import { PERK_IDEAS, REFERRAL_DEFAULT_PER_PERSON, REFERRAL_MAX_MILESTONES, REFERRAL_MAX_PER_PERSON, REFERRAL_PERK_MAX, TIMING_LABELS } from '@shared/referral';
 import type { SpreadAbout } from './SpreadKit';
 import type { Listing } from '@shared/models';
@@ -343,6 +344,8 @@ export function PostStudio({
   const { user } = useSession();
   const [view, setView] = useState<'edit' | 'preview'>('edit');
   const [terms, setTerms] = useState(() => lastTerms(storeId));
+  // How long credit won on this post lasts, in days; 0 for never. The shop's call.
+  const [creditDays, setCreditDays] = useState(0);
 
   // Photo / flex
   const [at, setAt] = useState(0);
@@ -620,6 +623,7 @@ export function PostStudio({
       ...(storeId ? { storeId } : {}),
       ...(forumId ? { forumId } : {}),
       ...(blur ? { blur } : {}),
+      ...(prizeUsed && creditDays ? { creditDays } : {}),
     };
     let body: NewPost;
     if (mode === 'photo') {
@@ -1303,6 +1307,18 @@ export function PostStudio({
           )}
           {mode === 'question' && (
             <p className="pstudio__note"><Icon name="check" size={14} /> Mark the comment that answers it. That answer shows first, and its writer is credited.</p>
+          )}
+
+          {prizeUsed && !(mode === 'spread' && spreadLocked) && (
+            <div className="pstudio__life">
+              <Choice label="Credit won here lasts" value={creditDays} onChange={setCreditDays}
+                options={[{ id: 0, label: 'Never lapses' }, ...CREDIT_LIFE_DAYS.map((days) => ({ id: days, label: days % 365 === 0 ? `${days / 365} year` : `${days} days` }))]} />
+              <p className="faint pstudio__cost">
+                {creditDays
+                  ? `Counted from when it is won. Whatever is unspent after ${creditDays} days lapses on its own.`
+                  : 'Credit stays in their wallet until they spend it.'}
+              </p>
+            </div>
           )}
 
           {error && <ErrorNotice message={error} />}

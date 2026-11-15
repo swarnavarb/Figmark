@@ -256,10 +256,54 @@ export interface StoreCredit {
   kind?: 'shop' | 'forwarder' | 'artist';
   /** Credit a store gave by hand, rather than one won. */
   given?: boolean;
+  /**
+   * When what is left of it lapses, as the shop set it; absent or null for
+   * credit that never does. Nothing has to run to lapse it: every read and
+   * every checkout counts lapsed credit as nothing (see `storeCreditLeft`).
+   * A refund is never a StoreCredit - money owed back lives on the order and
+   * cannot lapse.
+   */
+  expiresAt?: string | null;
+  /** Given by hand as a refund: money owed back, which never lapses. */
+  refund?: boolean;
 }
 
-export const storeCreditLeft = (credit: Pick<StoreCredit, 'amountMinor' | 'spentMinor'>) =>
-  Math.max(0, credit.amountMinor - credit.spentMinor);
+/** Whether a credit's time is up. */
+export const creditLapsed = (credit: Pick<StoreCredit, 'expiresAt'>, now = Date.now()) =>
+  Boolean(credit.expiresAt && Date.parse(credit.expiresAt) <= now);
+
+/** What is left to spend of one credit: nothing once it has lapsed. */
+export const storeCreditLeft = (credit: Pick<StoreCredit, 'amountMinor' | 'spentMinor' | 'expiresAt'>, now = Date.now()) =>
+  (creditLapsed(credit, now) ? 0 : Math.max(0, credit.amountMinor - credit.spentMinor));
+
+/* ── How long credit lasts ──────────────────────────────────────────────── */
+
+/** The lengths a shop picks from. Null - never lapses - is always offered too. */
+export const CREDIT_LIFE_DAYS = [7, 30, 90, 180, 365] as const;
+/** The longest a shop may type. */
+export const CREDIT_LIFE_MAX_DAYS = 730;
+
+/**
+ * A credit life as asked for: a whole number of days, or null for never.
+ * Undefined when it is not one - the caller refuses it.
+ */
+export function creditLifeFrom(value: unknown): number | null | undefined {
+  if (value === undefined || value === null || value === '' || value === 0) return null;
+  const days = Number(value);
+  return Number.isInteger(days) && days >= 1 && days <= CREDIT_LIFE_MAX_DAYS ? days : undefined;
+}
+
+/** When credit given now lapses, or null for never. */
+export function creditExpiry(days: number | null | undefined, from = Date.now()): string | null {
+  return days ? new Date(from + days * 86_400_000).toISOString() : null;
+}
+
+/** "Lasts 30 days", "Never lapses". */
+export function creditLifeLabel(days: number | null | undefined): string {
+  if (!days) return 'Never lapses';
+  if (days % 365 === 0) return `Lasts ${days / 365} year${days === 365 ? '' : 's'}`;
+  return `Lasts ${days} day${days === 1 ? '' : 's'}`;
+}
 
 export const BADGE_KINDS = [
   'contest_winner', 'challenge_winner', 'debate_winner', 'guess_winner',

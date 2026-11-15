@@ -3764,6 +3764,7 @@ function Refunds({ store }: { store: StoreAccess }) {
           <span>
             {deciding.length} to decide{kept.length > 0 ? ` · ${kept.length} kept as credit` : ''} · {waiting.length} waiting on the buyer · {sent} refunded so far
           </span>
+          <span className="rfhero__never">🔒 Refunds never lapse - kept as credit or not, it stays the buyer&apos;s until it is used or returned.</span>
         </div>
         <button type="button" className="rfhero__new" onClick={() => setStarting((open) => !open)}>
           {starting ? 'Close' : '＋ New refund'}

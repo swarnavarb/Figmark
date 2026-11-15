@@ -10386,3 +10386,13 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 
 /* The PRO tag on Spread the word where a shop starts one. */
 .spread-nudge__pro { margin-left: 6px; vertical-align: 1px; }
+
+/* How long credit lasts: on a prize post, and where a store gives credit by hand. */
+.pcredit-life { margin: 0; font-size: var(--t-xs); color: var(--text-dim); }
+.givelife { display: grid; gap: 10px; padding: 12px; border-radius: var(--r-md); background: var(--surface-2); }
+.givelife__refund { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+.givelife__refund input { margin-top: 3px; }
+.givelife__refund span { display: grid; gap: 2px; }
+.givelife__refund small { color: var(--text-dim); font-size: var(--t-xs); }
+.pstudio__life { display: grid; gap: 4px; }
+.rfhero__never { display: block; margin-top: 4px; font-size: var(--t-xs); color: var(--text-dim); }

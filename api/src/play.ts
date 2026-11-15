@@ -8,6 +8,7 @@ import { rupees } from '../../shared/payments.js';
 import { monthKey } from '../../shared/quest.js';
 import { percentages } from '../../shared/social.js';
 import { referralLeaders, type ReferralPayout } from '../../shared/referral.js';
+import { creditExpiry } from '../../shared/play.js';
 import { verifiedChecks } from '../../shared/verification.js';
 import type { getRepository } from './data/index.js';
 import { notify, storeCrew } from './functions/notify.js';
@@ -46,7 +47,9 @@ export interface Reward {
  * Idempotent by id, so a settlement retried after a failure part-way pays
  * nobody twice. Returns what was new.
  */
-export async function reward(repository: Repo, userId: string, given: Reward): Promise<{ credit: boolean; badge: boolean }> {
+export async function reward(
+  repository: Repo, userId: string, given: Reward, creditDays: number | null = null,
+): Promise<{ credit: boolean; badge: boolean }> {
   const user = await repository.getUserById(userId);
   if (!user) return { credit: false, badge: false };
   const now = new Date().toISOString();
@@ -57,7 +60,8 @@ export async function reward(repository: Repo, userId: string, given: Reward): P
   if (!credit && !badge) return { credit, badge };
   await repository.updateUser({
     ...user,
-    ...(credit ? { storeCredits: [...credits, { ...given.credit!, spentMinor: 0, spends: [], createdAt: now }] } : {}),
+    // The shop decides how long prize credit lasts; it lapses on its own after that, read by read.
+    ...(credit ? { storeCredits: [...credits, { ...given.credit!, spentMinor: 0, spends: [], createdAt: now, expiresAt: creditExpiry(creditDays, Date.parse(now)) }] } : {}),
     ...(badge ? { badges: [...badges, { ...given.badge!, at: now } satisfies Badge] } : {}),
   });
   return { credit, badge };
@@ -147,7 +151,7 @@ export async function payContest(repository: Repo, post: Post): Promise<void> {
           }
         : null,
       badge: { id: `bdg_${post.id}_${winner.place}`, kind, detail: `${PLACE_LABELS[winner.place]} in ${contest.title}`, link },
-    });
+    }, post.creditDays ?? null);
     await notify(repository, [winner.userId], {
       kind: 'prize_won',
       title: `You placed ${PLACE_LABELS[winner.place]} in ${contest.title}!`,
@@ -237,7 +241,7 @@ export async function payDebate(repository: Repo, post: Post): Promise<void> {
       ? { id: `prz_${post.id}_best`, storeId: prize.storeId, storeName: prize.storeName, amountMinor: prize.amountMinor, reason: `Best argument: ${gist(post.body)}`, link }
       : null,
     badge: { id: `bdg_${post.id}_best`, kind: 'debate_winner', detail: `Best argument: ${gist(post.body)}`, link },
-  });
+  }, post.creditDays ?? null);
   await notify(repository, [best.userId], {
     kind: 'prize_won',
     title: 'You made the best argument!',
@@ -313,7 +317,7 @@ async function payVoters(repository: Repo, post: Post, nowIso: string): Promise<
   for (const id of voters) {
     await reward(repository, id, {
       credit: { id: `prz_${marked.id}_${id}`, storeId: prize.storeId, storeName: prize.storeName, amountMinor: prize.amountMinor, reason: `Voted for the winner: ${gist(marked.body)}`, link },
-    });
+    }, marked.creditDays ?? null);
   }
   await notify(repository, voters, {
     kind: 'prize_won',
@@ -352,7 +356,7 @@ async function revealGuess(repository: Repo, post: Post, nowIso: string): Promis
   if (guess.winner) {
     await reward(repository, guess.winner.userId, {
       badge: { id: `bdg_${marked.id}_guess`, kind: 'guess_winner', detail: `Closest guess: ${gist(marked.body)}`, link },
-    });
+    }, post.creditDays ?? null);
     if (!guess.prize) {
       await notify(repository, [guess.winner.userId], {
         kind: 'prize_won',
@@ -387,7 +391,7 @@ export async function payGuess(repository: Repo, post: Post): Promise<void> {
         id: `prz_${post.id}_guess_${winner.userId}`, storeId: prize.storeId, storeName: prize.storeName, amountMinor: prize.amountMinor,
         reason: `${prize.judge === 'store' ? 'Picked guess' : index === 0 ? 'Closest guess' : `#${index + 1} closest guess`}: ${gist(post.body)}`, link,
       },
-    });
+    }, post.creditDays ?? null);
   }
   await notify(repository, guess.winners.map((winner) => winner.userId), {
     kind: 'prize_won',
@@ -557,7 +561,7 @@ async function settleReferral(repository: Repo, post: Post, nowIso: string): Pro
         reason: `Brought ${payout.joins} ${payout.joins === 1 ? 'person' : 'people'} to ${referral.storeName}${payout.top ? ' - the most of anyone' : ''}${goalWords}`,
         link: linkOf(marked),
       },
-    });
+    }, marked.creditDays ?? null);
     if (credit) {
       await notify(repository, [payout.userId], {
         kind: 'prize_won',
@@ -580,7 +584,7 @@ async function settleReferral(repository: Repo, post: Post, nowIso: string): Pro
           reason: `Welcome to ${referral.storeName}`,
           link: linkOf(marked),
         },
-      });
+      }, marked.creditDays ?? null);
       if (credit) {
         await notify(repository, [join.userId], {
           kind: 'prize_won',

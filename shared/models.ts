@@ -2881,6 +2881,11 @@ export interface Post extends BaseDocument {
   /** Spread the word: a shop paying credit for new buyers brought from outside, for a set time. */
   referral?: PostReferral | null;
   /**
+   * How many days store credit won on this post lasts, as the shop set it;
+   * absent or null for credit that never lapses. Counted from when it is won.
+   */
+  creditDays?: number | null;
+  /**
    * The shop running this game, when a shop is: its followers and recent
    * buyers heard when it started, and hear again before it closes.
    */

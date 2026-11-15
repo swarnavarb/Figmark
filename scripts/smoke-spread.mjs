@@ -263,4 +263,83 @@ await check('goals unlock together: credit for everyone who helped, a perk, and 
   assert.equal(welcomed.storeId, shop.id);
 });
 
+/* ── How long credit lasts ─────────────────────────────────────────────── */
+console.log('\ncredit that lapses');
+const { giveRoute: give } = await import(new URL('billing-routes.js', fns));
+const { spendStoreCredit } = await import(new URL('../api/dist/api/src/billing.js', import.meta.url));
+const { storeCreditLeft, creditLifeFrom } = await import(new URL('../api/dist/shared/play.js', import.meta.url));
+const DAY = 86_400_000;
+
+await check('a lapsed credit is worth nothing, wherever it is read', async () => {
+  const at = Date.now();
+  assert.equal(storeCreditLeft({ amountMinor: 5000, spentMinor: 1000, expiresAt: new Date(at - 1).toISOString() }, at), 0);
+  assert.equal(storeCreditLeft({ amountMinor: 5000, spentMinor: 1000, expiresAt: new Date(at + DAY).toISOString() }, at), 4000);
+  assert.equal(storeCreditLeft({ amountMinor: 5000, spentMinor: 1000, expiresAt: null }, at), 4000);
+  assert.equal(creditLifeFrom(30), 30);
+  assert.equal(creditLifeFrom(null), null);
+  assert.equal(creditLifeFrom(0), null);
+  assert.equal(creditLifeFrom(5000), undefined);
+  assert.equal(creditLifeFrom(2.5), undefined);
+});
+
+await check('prize credit lasts as long as the shop set on the post, counted from when it is won', async () => {
+  const made = await drive({ rewardMinor: 4000, maxPerPerson: 3, timing: 'now', hours: 24, target: { kind: 'shop' } });
+  assert.equal(made.status, 201);
+  const lasting = await (async () => {
+    await forget(shop.id, 'post');
+    return createPost(req({ headers: shop.headers, body: {
+      body: 'Bring a friend - credit lasts a month', storeId: shop.id, creditDays: 30,
+      referral: { rewardMinor: 4000, maxPerPerson: 3, timing: 'now', hours: 24, target: { kind: 'shop' } },
+    } }), ctx);
+  })();
+  assert.equal(lasting.status, 201, JSON.stringify(lasting.jsonBody));
+  const lastingPost = lasting.jsonBody.post;
+  assert.equal(lastingPost.creditDays, 30);
+  await forget(shop.id, 'post');
+  assert.equal((await createPost(req({ headers: shop.headers, body: {
+    body: 'Nonsense life', storeId: shop.id, creditDays: 9999,
+    referral: { rewardMinor: 4000, maxPerPerson: 3, timing: 'now', hours: 24, target: { kind: 'shop' } },
+  } }), ctx)).status, 400);
+
+  const bringer = await newPerson('Lasting Lata');
+  const code = (await myInvite(req({ headers: bringer.headers }), ctx)).jsonBody.code;
+  const opened = await openInvite(req({ headers: { 'user-agent': BROWSER }, params: { code }, query: { d: `${lastingPost.channelId}/${lastingPost.id}` } }), ctx);
+  await newPerson('Lasting Friend', { cookie: cookieHeader(cookiesOf(opened)) });
+  await repository.mutatePost(lastingPost.channelId, lastingPost.id, (current) => ({
+    ...current, referral: { ...current.referral, endsAt: new Date(Date.now() - 1000).toISOString() },
+  }));
+  await settleDueGames(repository);
+  const won = (await repository.getUserById(bringer.id)).storeCredits.find((entry) => entry.id === `ref_${lastingPost.id}_${bringer.id}`);
+  assert.ok(won, 'paid');
+  const days = (Date.parse(won.expiresAt) - Date.parse(won.createdAt)) / DAY;
+  assert.ok(Math.abs(days - 30) < 0.01, `lasts 30 days, got ${days}`);
+});
+
+await check('credit given by hand lapses when the shop says - but a refund never does', async () => {
+  const buyer = await newPerson('Gifted Gita');
+  const send = (extra) => give(req({ headers: shop.headers, body: {
+    kind: 'shop', recipient: buyer.id, amountMinor: 20000, method: 'credit', reason: 'Thanks for coming back', ...extra,
+  } }), ctx);
+  const refusal = await send({ refund: true, creditDays: 30 });
+  assert.equal(refusal.status, 400);
+  assert.equal(refusal.jsonBody.error, 'refund_lapses');
+  const refund = await send({ refund: true, reason: 'Refund for the damaged box' });
+  assert.equal(refund.status, 201, JSON.stringify(refund.jsonBody));
+  const goodwill = await send({ refund: false, creditDays: 7 });
+  assert.equal(goodwill.status, 201, JSON.stringify(goodwill.jsonBody));
+  const credits = (await repository.getUserById(buyer.id)).storeCredits;
+  assert.equal(credits.find((entry) => entry.id === refund.jsonBody.gift.id).expiresAt, null, 'a refund never lapses');
+  const kind = credits.find((entry) => entry.id === goodwill.jsonBody.gift.id);
+  assert.ok(Math.abs((Date.parse(kind.expiresAt) - Date.parse(kind.createdAt)) / DAY - 7) < 0.01);
+
+  // Seven days on: the goodwill credit has lapsed and checkout skips it; the refund is still there.
+  const account = await repository.getUserById(buyer.id);
+  await repository.updateUser({ ...account, storeCredits: account.storeCredits.map((entry) => (entry.id === kind.id
+    ? { ...entry, expiresAt: new Date(Date.now() - 1000).toISOString() } : entry)) });
+  const spent = await spendStoreCredit(repository, buyer.id, shop.id, 50000, { orderId: 'ord_lapse_test', itemName: 'Test' });
+  assert.equal(spent, 20000, 'only the refund is spent');
+  const after = (await repository.getUserById(buyer.id)).storeCredits;
+  assert.equal(after.find((entry) => entry.id === kind.id).spentMinor, 0, 'the lapsed credit is left untouched');
+});
+
 console.log(`\n${passed} spread checks passed`);

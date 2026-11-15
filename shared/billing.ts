@@ -731,6 +731,10 @@ export const GIFT_METHOD_LABELS: Record<GiftMethod, string> = {
 export interface StoreGift {
   id: string;
   at: string;
+  /** Credit: a refund, which never lapses. */
+  refund?: boolean;
+  /** Credit: when it lapses, as the store set it; absent or null for never. */
+  expiresAt?: string | null;
   giverKind: GiverKind;
   ownerId: string;
   storeName: string;

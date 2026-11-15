@@ -783,6 +783,9 @@ export function SocialPostCard({
             {social.poll && <PollPlay card={card} photos={photos} disabled={nested || !user} vote={vote} />}
             {social.guess && <GuessPlay card={card} disabled={nested || !user} onCard={setCard} />}
             {social.referral && <SpreadPlay card={card} disabled={nested} onCard={setCard} />}
+            {post.creditDays ? (
+              <p className="pcredit-life">⏳ Store credit won here lasts {post.creditDays % 365 === 0 ? `${post.creditDays / 365} year` : `${post.creditDays} days`}, then whatever is unspent lapses.</p>
+            ) : null}
           </>
         );
       })()}

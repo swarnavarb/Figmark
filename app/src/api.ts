@@ -1498,6 +1498,8 @@ export interface NewPost {
   compare?: { kind: CompareKind; labels?: [string, string] } | null;
   /** A question whose comments are its answers. */
   question?: boolean;
+  /** How many days prize credit won here lasts; absent for never. */
+  creditDays?: number;
   /** Spread the word: store credit for each new buyer somebody brings, for a set time. */
   referral?: {
     rewardMinor: number; maxPerPerson: number; topPrizeMinor?: number; timing: ReferralTiming; hours?: number;
@@ -2951,6 +2953,10 @@ export const api = {
     request<GiftsView>(`/me/gifts?kind=${kind}${ownerId ? `&owner=${encodeURIComponent(ownerId)}` : ''}`),
   giveMoney: (body: {
     kind: GiverKind; owner?: string; recipient: string; amountMinor: number; method: GiftMethod; reason: string; reference?: string; orderId?: string;
+    /** Credit only: it is a refund, so it never lapses. */
+    refund?: boolean;
+    /** Credit only, not a refund: how many days it lasts. */
+    creditDays?: number;
   }) => post<{ gift: StoreGift }>('/me/gifts/give', body),
   giftsReceived: () => request<{ gifts: StoreGift[] }>('/me/gifts/received'),
   answerGift: (id: string, arrived: boolean) => post<{ status: StoreGift['status'] }>(`/me/gifts/${encodeURIComponent(id)}/answer`, { arrived }),

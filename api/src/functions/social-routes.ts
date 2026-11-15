@@ -40,7 +40,7 @@ import { tagKey, tidyLabel } from '../../../shared/shop-tags.js';
 import {
   CONTEST_CAPTION_MAX, CONTEST_MAX_ENTRIES, CONTEST_MAX_PRIZES, CONTEST_RULES_MAX, CONTEST_TITLE_MAX, GUESS_MAX_MINOR,
   PHASE_MAX_HOURS, PHASE_MIN_HOURS, PRIZE_MAX_MINOR, PRIZE_NOTE_MAX, SHORTLIST_MAX, SHORTLIST_MIN,
-  HELPFUL_MILESTONES, badgeDetail, closestGuess, contestPhase, isJudging, termsFrom, GUESS_MAX_WINNERS,
+  HELPFUL_MILESTONES, badgeDetail, closestGuess, contestPhase, isJudging, termsFrom, GUESS_MAX_WINNERS, CREDIT_LIFE_MAX_DAYS, creditLifeFrom,
   type ContestPrize, type ContestWinner, type GuessView, type PostContest, type PostGuess,
 } from '../../../shared/play.js';
 import {
@@ -2208,6 +2208,8 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     question?: unknown;
     /** Spread the word: store credit for every new buyer somebody brings, for a set time. */
     referral?: ReferralAsk | null;
+    /** How many days prize credit won here lasts; null or absent for never. */
+    creditDays?: unknown;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -2619,6 +2621,10 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     if (judging !== 'store') poll = { options: [], closesAt: endsAt, style: 'photo' };
   }
 
+  // How long credit won here lasts: the shop's call, on any post that hands credit out.
+  const creditDays = creditLifeFrom(body.creditDays);
+  if (creditDays === undefined) return error(400, 'invalid_days', `Credit lasts 1 to ${CREDIT_LIFE_MAX_DAYS} days, or never lapses.`);
+
   let referral: PostReferral | null = null;
   if (body.referral && shop) {
     // Running a drive is Pro; taking part in one is free for everybody.
@@ -2688,6 +2694,7 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     ...(guess ? { guess } : {}),
     ...(contest ? { contest } : {}),
     ...(referral ? { referral } : {}),
+    ...(creditDays && shop && prizeAsked ? { creditDays } : {}),
     ...(blur ? { blur } : {}),
     ...(compare ? { compare } : {}),
     ...(question ? { question } : {}),
