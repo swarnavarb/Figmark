@@ -35,6 +35,7 @@ import { ShippingLine } from '../components/Offers';
 import { AFFILIATE_PARAM } from '@shared/affiliate';
 import { shopBadge, useShareSheet, type ShareSpec } from '../components/ShareKit';
 import { themeOf } from '../components/momentCard';
+import { ShopDriveBanner, SpreadNudge, SpreadStudio } from '../components/SpreadKit';
 import '../styles/ListingPage.css';
 
 /** What each verification tier means, in a line. */
@@ -124,6 +125,8 @@ export function ListingPage() {
   const onSaved = useCallback((liked: boolean) => setData((prev) => (prev ? { ...prev, liked } : prev)), []);
   const [liked, toggleLike] = useSave(id, data?.liked ?? false, onSaved);
   const shareSheet = useShareSheet();
+  // Spread the word, started from the moment an item goes live.
+  const [spreading, setSpreading] = useState(false);
 
   if (error) return <PageError message={error} />;
   if (!data) return <PageLoading label="Loading the item" shape="listing" />;
@@ -430,14 +433,25 @@ export function ListingPage() {
                 onShare={() => shareSheet.open(shareSpec)} />
             )}
             {shareSheet.sheet}
+            {/* A Spread the word: the shop starts one about this item; a visitor joins the one running. */}
+            {!listing.privateFor && listing.status === 'active' && (data.isOwn ? (
+              <SpreadNudge compact storeId={listing.sellerId} storeName={seller?.storefrontName ?? 'your shop'}
+                about={{ kind: 'listing', listingId: listing.id, title: listing.title }} />
+            ) : <ShopDriveBanner shopId={listing.sellerId} isMe={false} />)}
             {live && (
               <SuccessMoment title={live.first ? 'Your first item is live!' : "It's live!"} confetti={live.first}
                 detail={listing.title}
                 body={listing.privateFor ? 'Only your buyer can see it. They have been sent the link.'
-                  : 'Buyers can find it now. Sharing it gets the first eyes on it fastest.'}
+                  : 'Buyers can find it now. Share it yourself - or Spread the word, and pay your buyers store credit for every new buyer they bring.'}
                 primary={listing.privateFor ? undefined : { label: 'Share it', onClick: () => shareSheet.open(shareSpec) }}
-                secondary={listing.privateFor ? undefined : { label: 'Not now', onClick: () => {} }}
+                secondary={listing.privateFor ? undefined : { label: '📣 Spread the word', onClick: () => setSpreading(true) }}
                 onClose={() => setLive(null)} />
+            )}
+            {spreading && (
+              <SpreadStudio storeId={listing.sellerId} storeName={seller?.storefrontName ?? 'your shop'}
+                about={{ kind: 'listing', listingId: listing.id, title: listing.title }}
+                onClose={() => setSpreading(false)}
+                onPosted={(href) => { setSpreading(false); navigate(href); }} />
             )}
             <DetailBlocks listing={listing} />
             {/* A loose figure is where a restorer or a painter earns their keep: the studios that do it. */}

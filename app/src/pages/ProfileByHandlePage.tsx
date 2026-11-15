@@ -24,6 +24,7 @@ import { CollectorProfile } from './CollectorProfile';
 import { ShopsForYou, shortName, tagPath, useShopsForYou } from '../components/ShopCards';
 import { tagKey } from '@shared/shop-tags';
 import type { ShopStatusView } from '../api';
+import { ShopDriveBanner } from '../components/SpreadKit';
 import '../styles/ProfileByHandlePage.css';
 
 /**
@@ -203,6 +204,9 @@ function Storefront({ data, isMe, onFollow, reload, onPulse }: {
 
         <PageActions profile={data} isMe={isMe} onFollow={onFollow}
           edit={<Link to="/shop?tab=storefront#settings" className="pbtn pbtn--follow">Edit shop</Link>} />
+
+        {/* While the shop runs a Spread the word, every share of it counts. */}
+        <ShopDriveBanner shopId={data.sellerId} isMe={isMe} />
 
         <div className="pstats">
           <FollowCounts userId={data.sellerId} followerCount={data.followerCount} isStore />

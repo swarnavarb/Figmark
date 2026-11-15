@@ -40,7 +40,7 @@ import { tagKey, tidyLabel } from '../../../shared/shop-tags.js';
 import {
   CONTEST_CAPTION_MAX, CONTEST_MAX_ENTRIES, CONTEST_MAX_PRIZES, CONTEST_RULES_MAX, CONTEST_TITLE_MAX, GUESS_MAX_MINOR,
   PHASE_MAX_HOURS, PHASE_MIN_HOURS, PRIZE_MAX_MINOR, PRIZE_NOTE_MAX, SHORTLIST_MAX, SHORTLIST_MIN,
-  HELPFUL_MILESTONES, badgeDetail, closestGuess, contestPhase, isJudging, termsFrom, GUESS_MAX_WINNERS,
+  HELPFUL_MILESTONES, badgeDetail, closestGuess, contestPhase, isJudging, termsFrom, GUESS_MAX_WINNERS, CREDIT_LIFE_MAX_DAYS, creditLifeFrom,
   type ContestPrize, type ContestWinner, type GuessView, type PostContest, type PostGuess,
 } from '../../../shared/play.js';
 import {
@@ -49,6 +49,12 @@ import {
 } from '../../../shared/social.js';
 import { verifiedChecks } from '../../../shared/verification.js';
 import { gameAudience, gameWhat, isDue, milestone, payContest, payDebate, payGuess, settlePlay } from '../play.js';
+import {
+  REFERRAL_DEFAULT_PER_PERSON, REFERRAL_LEADERS, REFERRAL_MAX_HOURS, REFERRAL_MAX_PER_PERSON, REFERRAL_MAX_SHARERS, REFERRAL_MIN_HOURS,
+  REFERRAL_MAX_MILESTONES, goalCount, isReferralTiming, milestonesFrom, referralLeaders, referralPhase,
+  type PostReferral, type ReferralTarget, type ReferralTiming, type ReferralView,
+} from '../../../shared/referral.js';
+import { finishesAt, firstDropAt } from './power-sale.js';
 import { ownPhotoName } from '../storage/index.js';
 import { likeness, storedFingerprint } from '../image-hash.js';
 import { pictureMatches } from '../photo-search.js';
@@ -188,6 +194,8 @@ function publicPost(post: Post): Post {
     // Sealed until it is revealed: the answer and everybody's guesses are the
     // game, and GuessView says what this viewer may see of them.
     ...(post.guess ? { guess: null } : {}),
+    // Who joined through whose link is the shop's and theirs; ReferralView says the counts.
+    ...(post.referral ? { referral: null } : {}),
   };
 }
 
@@ -503,7 +511,8 @@ export async function decorate(
         poll: pollView(post.poll, viewer.userId),
         mine: post.authorId === viewer.userId,
         ...(post.guess ? { guess: guessView(post.guess, viewer.userId) } : {}),
-        ...((post.contest || post.debate?.prize || post.poll?.stock) && (post.authorId === viewer.userId
+        ...(post.referral ? { referral: referralView(post.referral, viewer.userId) } : {}),
+        ...((post.contest || post.debate?.prize || post.poll?.stock || post.referral) && (post.authorId === viewer.userId
           || (post.channel === 'seller' && channelOwner?.sellerProfile && can(channelOwner, viewer.userId, 'posts')))
           ? { host: true } : {}),
       },
@@ -717,6 +726,7 @@ export function liveUntil(post: Post, now: number): number | null {
     if (phase === 'shortlisting' || phase === 'judging') return null;
   }
   if (post.guess && !post.guess.revealedAt && Date.parse(post.guess.revealAt) > now) return Date.parse(post.guess.revealAt);
+  if (post.referral) return referralPhase(post.referral, now) === 'ended' ? null : Date.parse(post.referral.endsAt);
   if (post.poll && !post.contest && post.poll.options.length > 0) {
     if (!post.poll.closesAt) return Number.POSITIVE_INFINITY;
     const closes = Date.parse(post.poll.closesAt);
@@ -732,7 +742,8 @@ export function playedBy(post: Post, userId: string | null): boolean {
   if (!userId) return false;
   return Boolean(post.poll?.options.some((option) => option.voterIds.includes(userId))
     || post.guess?.guesses.some((entry) => entry.userId === userId)
-    || post.contest?.entries.some((entry) => entry.userId === userId));
+    || post.contest?.entries.some((entry) => entry.userId === userId)
+    || post.referral?.sharers.some((entry) => entry.userId === userId));
 }
 
 /** How many open games the Live strip shows. */
@@ -751,6 +762,25 @@ function liveFor(posts: readonly Post[], userId: string | null, now: number, sco
       && post.authorId !== userId && (post.channel === 'forum' || (post.reach ?? 'feed') === 'feed'))
     .sort((a, b) => score(b) - score(a))
     .slice(0, LIVE_SIZE);
+}
+
+/** How many Spread the word drives Discover's row carries. */
+const SPREADS_SHOWN = 12;
+
+/**
+ * Spread the word drives running or about to, for Discover's "Earn store
+ * credit" row: running before upcoming, then the most credit per new buyer,
+ * then the soonest to end. Shown whether or not the reader has taken part -
+ * the row is where they come back to share their link again.
+ */
+function spreadsOf(posts: readonly Post[], now: number, cap = SPREADS_SHOWN): Post[] {
+  const phaseRank = (post: Post) => (referralPhase(post.referral!, now) === 'open' ? 0 : 1);
+  return posts
+    .filter((post) => post.referral && referralPhase(post.referral, now) !== 'ended')
+    .sort((a, b) => phaseRank(a) - phaseRank(b)
+      || b.referral!.rewardMinor - a.referral!.rewardMinor
+      || a.referral!.endsAt.localeCompare(b.referral!.endsAt))
+    .slice(0, cap);
 }
 
 /** Competitions running or just finished, open ones first, those closing soonest first. */
@@ -1481,11 +1511,12 @@ async function discover(request: HttpRequest, _context: InvocationContext) {
   // The Live strip and the competitions row ride on the first page.
   const live = page === 0 ? liveFor(open, user?.id ?? null, now, (post) => score.get(post.id) ?? 0) : [];
   const contests = page === 0 ? contestsOf(open, now) : [];
+  const spreads = page === 0 ? spreadsOf(open, now) : [];
   const listed = [...debates, ...threads, ...flexes, ...rising];
   const listedIds = new Set(listed.map((post) => post.id));
   // With both asked for at once, the stream's page shares the one decorate.
   const streamFirst = wantStream ? streamPosts : [];
-  const extra = [...new Map([...live, ...contests, ...streamFirst].filter((post) => !listedIds.has(post.id)).map((post) => [post.id, post])).values()];
+  const extra = [...new Map([...live, ...contests, ...spreads, ...streamFirst].filter((post) => !listedIds.has(post.id)).map((post) => [post.id, post])).values()];
   const cards = await decorate([...listed, ...extra], repository, actor);
   const byCard = new Map(cards.map((card) => [card.post.id, card]));
   const pick = (posts: Post[]) => posts.map((post) => byCard.get(post.id)).filter((card): card is PostCard => Boolean(card));
@@ -1499,7 +1530,7 @@ async function discover(request: HttpRequest, _context: InvocationContext) {
       ]).then(([wants, spotted, found]) => ({ topics: topicsOf(open, now), wants, spotted, ...found }))
     : {};
   return json(200, {
-    ...(page === 0 ? { live: pick(live), contests: pick(contests) } : {}),
+    ...(page === 0 ? { live: pick(live), contests: pick(contests), spreads: pick(spreads) } : {}),
     debates: pick(debates),
     threads: pick(threads),
     flexes: pick(flexes),
@@ -1565,7 +1596,7 @@ function explained(
     const reason = whyOf({
       endsInMs: until !== null && Number.isFinite(until) ? until - context.now : null,
       live,
-      play: !live ? null : post.contest ? 'contest' : post.guess ? 'guess' : 'poll',
+      play: !live ? null : post.contest ? 'contest' : post.guess ? 'guess' : post.referral ? 'spread' : 'poll',
       followedActed: card.followedActed?.count ?? 0,
       forumJoined: post.channel === 'forum' && context.reader.forums.has(post.channelId),
       contested: contestedness(post),
@@ -1575,7 +1606,7 @@ function explained(
       replay: context.replay,
       left: card.listing && card.listing.buyable !== false ? card.listing.left ?? null : null,
       fill: fill ? { joined: fill.joined, total: fill.total } : null,
-      prize: post.contest?.prizes.length ? 'contest' : post.debate?.prize ? 'debate' : post.poll?.reward ? 'reward' : null,
+      prize: post.contest?.prizes.length ? 'contest' : post.debate?.prize ? 'debate' : post.poll?.reward ? 'reward' : post.referral ? 'spread' : null,
       bought: post.buyCount ?? 0,
       shared: post.shareCount ?? 0,
       comments: post.comments?.length ?? post.replyCount,
@@ -2174,6 +2205,10 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     compare?: { kind?: unknown; labels?: unknown } | null;
     /** A question, whose comments are its answers. */
     question?: unknown;
+    /** Spread the word: store credit for every new buyer somebody brings, for a set time. */
+    referral?: ReferralAsk | null;
+    /** How many days prize credit won here lasts; null or absent for never. */
+    creditDays?: unknown;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -2288,7 +2323,7 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
 
   // The games a shop runs for money: who may, and for how much, is checked
   // once the voice is known, below.
-  const prizeAsked = Boolean(body.debate?.prize || body.poll?.reward || body.poll?.stock || body.contest || body.guess?.prize);
+  const prizeAsked = Boolean(body.debate?.prize || body.poll?.reward || body.poll?.stock || body.contest || body.guess?.prize || body.referral);
 
   let guess: PostGuess | null = null;
   if (body.guess) {
@@ -2585,6 +2620,21 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     if (judging !== 'store') poll = { options: [], closesAt: endsAt, style: 'photo' };
   }
 
+  // How long credit won here lasts: the shop's call, on any post that hands credit out.
+  const creditDays = creditLifeFrom(body.creditDays);
+  if (creditDays === undefined) return error(400, 'invalid_days', `Credit lasts 1 to ${CREDIT_LIFE_MAX_DAYS} days, or never lapses.`);
+
+  let referral: PostReferral | null = null;
+  if (body.referral && shop) {
+    const made = await referralFrom(body.referral, shop, repository);
+    if ('refusal' in made) return made.refusal;
+    if (poll || guess || contest || hotspots || debateIds || compare || question || vibe || body.listingId) {
+      return error(400, 'invalid_referral', 'Spread the word is a post of its own.');
+    }
+    if (!text) return error(400, 'invalid_referral', 'Say what people are spreading the word about.');
+    referral = made.referral;
+  }
+
   // A sale post has to point at an item this account actually sells.
   let listingId: string | null = null;
   if (body.listingId) {
@@ -2639,10 +2689,12 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
     ...(debateIds ? { debate: { listingIds: debateIds, ...(debatePrize ? { prize: debatePrize } : {}) } } : {}),
     ...(guess ? { guess } : {}),
     ...(contest ? { contest } : {}),
+    ...(referral ? { referral } : {}),
+    ...(creditDays && shop && prizeAsked ? { creditDays } : {}),
     ...(blur ? { blur } : {}),
     ...(compare ? { compare } : {}),
     ...(question ? { question } : {}),
-    ...(shop && reach === 'feed' && (poll || guess || contest) ? { hostShopId: shop.id } : {}),
+    ...(shop && reach === 'feed' && (poll || guess || contest || referral) ? { hostShopId: shop.id } : {}),
     createdAt: now,
     updatedAt: now,
   };
@@ -2700,6 +2752,132 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
   if (shop && saved.hostShopId) await announceGame(saved, shop, user.id, repository);
   await tellMentioned(text, saved, { userId: user.id, storeId: null, key: user.id, name: authorName }, 'post', repository);
   return json(201, { post: saved });
+}
+
+/** A Spread the word drive, as the studio sends it. */
+interface ReferralAsk {
+  rewardMinor?: unknown; maxPerPerson?: unknown; topPrizeMinor?: unknown; timing?: unknown; hours?: unknown;
+  target?: { kind?: unknown; saleId?: unknown; listingId?: unknown } | null; terms?: unknown;
+  welcomeMinor?: unknown; milestones?: unknown;
+}
+
+/**
+ * A Spread the word drive as the studio asked for it, checked: what it pays,
+ * what it points at, and when it runs - worked out from the drop it is tied
+ * to, when it is tied to one, so "before the drop" ends as the first item goes
+ * out even if the shop typed nothing about times.
+ */
+async function referralFrom(
+  raw: ReferralAsk,
+  shop: { id: string; name: string },
+  repository: Repo,
+): Promise<{ referral: PostReferral } | { refusal: ReturnType<typeof error> }> {
+  const refuse = (message: string) => ({ refusal: error(400, 'invalid_referral', message) });
+  const amount = (value: unknown) => {
+    const number = value === undefined || value === null || value === '' ? 0 : Number(value);
+    return Number.isInteger(number) && number >= 0 && number <= PRIZE_MAX_MINOR ? number : null;
+  };
+  const rewardMinor = amount(raw.rewardMinor);
+  if (rewardMinor === null) return refuse(`Credit per new buyer is up to ${rupees(PRIZE_MAX_MINOR)}.`);
+  const topPrizeMinor = amount(raw.topPrizeMinor);
+  if (topPrizeMinor === null) return refuse(`A bonus is store credit up to ${rupees(PRIZE_MAX_MINOR)}.`);
+  const welcomeMinor = amount(raw.welcomeMinor);
+  if (welcomeMinor === null) return refuse(`Welcome credit is up to ${rupees(PRIZE_MAX_MINOR)}.`);
+  const milestones = milestonesFrom(raw.milestones, PRIZE_MAX_MINOR);
+  if (!milestones) {
+    return refuse(`Up to ${REFERRAL_MAX_MILESTONES} goals, each a different number of new buyers, each giving credit, a perk or both.`);
+  }
+  // Something has to be on offer, or there is nothing to spread the word for.
+  if (!rewardMinor && !topPrizeMinor && !milestones.length) {
+    return refuse('Set credit per new buyer, a bonus for the top sharer, or a goal everyone unlocks together.');
+  }
+  const maxPerPerson = Number(raw.maxPerPerson ?? REFERRAL_DEFAULT_PER_PERSON);
+  if (!Number.isInteger(maxPerPerson) || maxPerPerson < 1 || maxPerPerson > REFERRAL_MAX_PER_PERSON) {
+    return refuse(`Pay each person for 1 to ${REFERRAL_MAX_PER_PERSON} people they bring.`);
+  }
+  const timing: ReferralTiming = isReferralTiming(raw.timing) ? raw.timing : 'now';
+  const hours = Number(raw.hours);
+  const hoursOk = Number.isFinite(hours) && hours >= REFERRAL_MIN_HOURS && hours <= REFERRAL_MAX_HOURS;
+  const now = Date.now();
+  const owner = await repository.getUserById(shop.id);
+  const storeHandle = owner?.sellerProfile?.username ?? null;
+
+  let target: ReferralTarget = { kind: 'shop' };
+  let startsAt = now;
+  let endsAt = now + hours * 3_600_000;
+  const kind = raw.target?.kind;
+  if (kind === 'drop') {
+    const saleId = typeof raw.target?.saleId === 'string' ? raw.target.saleId : '';
+    const sale = saleId ? await repository.getPowerSale(shop.id, saleId) : null;
+    if (!sale || sale.status === 'cancelled' || sale.status === 'draft') return refuse('Pick one of your live drops that is still to come or running.');
+    target = { kind: 'drop', saleId: sale.id, name: sale.name };
+    const first = Date.parse(firstDropAt(sale));
+    const last = finishesAt(sale);
+    if (timing === 'before') {
+      if (first - now < 10 * 60_000) return refuse('That drop starts too soon to run anything before it. Pick During instead.');
+      endsAt = first;
+    } else if (timing === 'during') {
+      if (sale.status === 'done' || !last) return refuse('That drop has finished. Pick After instead.');
+      startsAt = Math.max(now, first);
+      endsAt = Date.parse(last);
+    } else if (timing === 'after') {
+      if (!hoursOk) return refuse('Run it between an hour and 30 days.');
+      startsAt = sale.status === 'done' || !last ? now : Math.max(now, Date.parse(last));
+      endsAt = startsAt + hours * 3_600_000;
+    } else {
+      return refuse('Say whether it runs before, during or after the drop.');
+    }
+  } else {
+    if (timing !== 'now') return refuse('Only a drive tied to a live drop runs before, during or after it.');
+    if (!hoursOk) return refuse('Run it between an hour and 30 days.');
+    if (kind === 'listing') {
+      const listingId = typeof raw.target?.listingId === 'string' ? raw.target.listingId : '';
+      const listing = listingId ? await repository.getListing(listingId) : null;
+      if (!listing || listing.sellerId !== shop.id || listing.privateFor || listing.status !== 'active') {
+        return refuse('Pick one of your items that is up for sale.');
+      }
+      target = { kind: 'listing', listingId: listing.id, title: listing.title };
+    }
+  }
+  if (endsAt - startsAt < 30 * 60_000) return refuse('That leaves under half an hour to share. Pick a longer run.');
+  if (endsAt - now > (REFERRAL_MAX_HOURS + 24) * 3_600_000) return refuse('A drive ends within 30 days.');
+  return {
+    referral: {
+      storeId: shop.id, storeName: shop.name, storeHandle, target, timing,
+      startsAt: new Date(startsAt).toISOString(), endsAt: new Date(endsAt).toISOString(),
+      rewardMinor, maxPerPerson, topPrizeMinor, terms: termsFrom(raw.terms), sharers: [], joins: [],
+      ...(welcomeMinor ? { welcomeMinor } : {}),
+      ...(milestones.length ? { milestones, reached: milestones.map(() => null) } : {}),
+    },
+  };
+}
+
+/** A drive as one viewer sees it: counts and the top of the board, never who joined. */
+function referralView(referral: PostReferral, viewerId: string): ReferralView {
+  const leaders = referralLeaders(referral);
+  const mine = viewerId
+    ? {
+        in: referral.sharers.some((sharer) => sharer.userId === viewerId),
+        joins: referral.joins.filter((join) => join.sharerId === viewerId).length,
+        paidMinor: referral.payouts?.find((row) => row.userId === viewerId)?.amountMinor ?? null,
+      }
+    : null;
+  return {
+    storeId: referral.storeId, storeName: referral.storeName, storeHandle: referral.storeHandle,
+    target: referral.target, timing: referral.timing, startsAt: referral.startsAt, endsAt: referral.endsAt,
+    rewardMinor: referral.rewardMinor, maxPerPerson: referral.maxPerPerson, topPrizeMinor: referral.topPrizeMinor,
+    terms: referral.terms ?? null,
+    phase: referralPhase(referral),
+    sharers: referral.sharers.length,
+    joined: referral.joins.length,
+    leaders: leaders.slice(0, REFERRAL_LEADERS).map((row) => ({ name: row.name, joins: row.joins })),
+    mine,
+    payouts: referral.payouts
+      ? referral.payouts.filter((row) => row.amountMinor > 0).map((row) => ({ name: row.name, joins: row.joins, amountMinor: row.amountMinor, top: Boolean(row.top) }))
+      : null,
+    welcomeMinor: referral.welcomeMinor ?? 0,
+    goals: (referral.milestones ?? []).map((goal) => ({ ...goal, reached: goalCount(referral) >= goal.at })),
+  };
 }
 
 /**
@@ -3326,7 +3504,7 @@ async function editPost(request: HttpRequest, _context: InvocationContext) {
   if (body.body !== undefined) {
     if (typeof body.body !== 'string') return error(400, 'invalid_edit', 'Send the new words.');
     const text = body.body.trim();
-    if (post.contest || post.guess) return error(409, 'locked', 'A game in progress keeps its words.');
+    if (post.contest || post.guess || post.referral) return error(409, 'locked', 'A game in progress keeps its words.');
     const votes = (post.poll?.options ?? []).reduce((all, option) => all + option.voterIds.length, 0);
     if (post.poll && votes > 0 && text !== post.body) return error(409, 'locked', 'People have voted on this question, so it stays as asked.');
     const photos = post.photoUrls?.length ?? (post.photoUrl ? 1 : 0);
@@ -3895,7 +4073,7 @@ export const socialSearchRoute = handler(search);
 /** Whether this person runs the post's game: wrote it, or speaks for its shop. */
 async function runsGame(post: Post, userId: string, repository: Repo): Promise<boolean> {
   if (post.authorId === userId) return true;
-  const shopId = post.contest?.storeId ?? post.debate?.prize?.storeId ?? (post.channel === 'seller' ? post.channelId : null);
+  const shopId = post.contest?.storeId ?? post.debate?.prize?.storeId ?? post.referral?.storeId ?? (post.channel === 'seller' ? post.channelId : null);
   if (!shopId) return false;
   const owner = await repository.getUserById(shopId);
   return Boolean(owner?.sellerProfile && can(owner, userId, 'posts'));
@@ -4033,6 +4211,78 @@ async function guessPrice(request: HttpRequest, _context: InvocationContext) {
 }
 
 /**
+ * POST /api/social/posts/{channel}/{id}/spread - take part in a Spread the
+ * word: you are on its board from now, and links you share count for you.
+ * The shop's own people cannot: it is their credit.
+ */
+async function joinSpread(request: HttpRequest, _context: InvocationContext) {
+  const { user, repository, post, actor } = await target(request);
+  if (!actor) return notYours();
+  if (!post) return noPost();
+  if (!post.referral) return error(400, 'invalid_referral', 'That post is not a Spread the word.');
+  if (referralPhase(post.referral) === 'ended') return error(409, 'ended', 'This one has ended.');
+  const shop = await repository.getUserById(post.referral.storeId);
+  if (shop?.sellerProfile && can(shop, user.id, 'posts')) return error(403, 'own_shop', 'Your own shop’s credit is not yours to win. Share it anyway!');
+  const at = new Date().toISOString();
+  const saved = await repository.mutatePost(post.channelId, post.id, (current) => {
+    const now = current.referral;
+    if (!now || referralPhase(now) === 'ended' || now.sharers.some((entry) => entry.userId === user.id)) return null;
+    if (now.sharers.length >= REFERRAL_MAX_SHARERS) return null;
+    return { ...current, referral: { ...now, sharers: [...now.sharers, { userId: user.id, name: user.displayName, at }] } };
+  });
+  if (!saved) return noPost();
+  return json(200, { card: await cardFor(saved, repository, actor) });
+}
+
+/** How far back a shop's channel is looked through for a drive that is still running. */
+const DRIVE_WINDOW = 60;
+
+/**
+ * GET /api/social/shops/{id}/spread - the Spread the word this shop is
+ * running or about to run, if any, so its page and its items can say so and
+ * every share of them counts.
+ */
+async function shopSpread(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const viewer = await auth.getCurrentUser(request);
+  const repository = await getRepository();
+  const shopId = request.params.id ?? '';
+  const posts = await repository.listPosts(shopId, DRIVE_WINDOW);
+  const now = Date.now();
+  const running = posts
+    .filter((post) => post.referral && referralPhase(post.referral, now) !== 'ended' && post.referral.storeId === shopId)
+    .sort((a, b) => a.referral!.endsAt.localeCompare(b.referral!.endsAt))
+    .map((post) => ({ channelId: post.channelId, postId: post.id, body: post.body, referral: referralView(post.referral!, viewer?.id ?? '') }));
+  // `drive` is the one the shop's page leads with: one already counting before one still to start.
+  const lead = running.find((entry) => entry.referral.phase === 'open') ?? running[0] ?? null;
+  return json(200, { drive: lead, drives: running });
+}
+
+/** Most drives Discover's Spread the word section lists. */
+const SPREADS_ALL = 60;
+
+/**
+ * GET /api/social/spreads - every Spread the word drive running or about to,
+ * for Discover's own section: read from the open games rather than the recent
+ * posts, so a drive posted a week ago and still running is not missed.
+ */
+async function allSpreads(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.getCurrentUser(request);
+  const repository = await getRepository();
+  const actor = user ? await actorFor(request, user, repository) : GUEST;
+  if (!actor) return notYours();
+  const now = Date.now();
+  const [games, moderated] = await Promise.all([
+    repository.listOpenGames(new Date(now).toISOString(), 500),
+    moderation(repository),
+  ]);
+  const shown = spreadsOf(games.filter((post) => post.referral && !post.repostOf && !post.wallOf
+    && (post.reach ?? 'feed') === 'feed' && !moderated.isRemoved('post', post.id)), now, SPREADS_ALL);
+  return json(200, { spreads: await decorate(shown, repository, actor) });
+}
+
+/**
  * POST /api/social/posts/{channel}/{id}/judge - the host's decisions.
  *
  * - shortlist: mixed judging, entries closed - the entries that go to the vote;
@@ -4154,7 +4404,7 @@ async function shopGames(request: HttpRequest, _context: InvocationContext) {
   if (!owner?.sellerProfile) return error(404, 'not_found', 'No such store.');
   if (!can(owner, user.id, 'posts')) return notYours();
   const posts = (await repository.listPostsForChannels([shopId], GAMES_WINDOW))
-    .filter((post) => post.poll || post.contest || post.guess);
+    .filter((post) => post.poll || post.contest || post.guess || post.referral);
   const settled = await settleDebates(posts, repository);
   const actor: Actor = { userId: user.id, storeId: shopId, key: actorKey(user.id, shopId), name: owner.sellerProfile.storefrontName };
   return json(200, { posts: await decorate(settled, repository, actor) });
@@ -4188,6 +4438,9 @@ export const guessPriceRoute = handler(guessPrice);
 export const judgeRoute = handler(judge);
 export const myRewardsRoute = handler(myRewards);
 export const shopGamesRoute = handler(shopGames);
+export const joinSpreadRoute = handler(joinSpread);
+export const shopSpreadRoute = handler(shopSpread);
+export const allSpreadsRoute = handler(allSpreads);
 app.http('me-posts', { ...anon, methods: ['GET'], route: 'me/posts', handler: myPostsRoute });
 app.http('person-posts', { ...anon, methods: ['GET'], route: 'users/{id}/posts', handler: personPostsRoute });
 app.http('social-feed', { ...anon, methods: ['GET'], route: 'social/feed', handler: socialFeedRoute });
@@ -4224,5 +4477,8 @@ app.http('social-post-enter', { ...anon, methods: ['POST'], route: 'social/posts
 app.http('social-post-guess', { ...anon, methods: ['POST'], route: 'social/posts/{channel}/{id}/guess', handler: guessPriceRoute });
 app.http('social-post-judge', { ...anon, methods: ['POST'], route: 'social/posts/{channel}/{id}/judge', handler: judgeRoute });
 app.http('social-shop-games', { ...anon, methods: ['GET'], route: 'social/shops/{id}/games', handler: shopGamesRoute });
+app.http('social-post-spread', { ...anon, methods: ['POST'], route: 'social/posts/{channel}/{id}/spread', handler: joinSpreadRoute });
+app.http('social-spreads', { ...anon, methods: ['GET'], route: 'social/spreads', handler: allSpreadsRoute });
+app.http('social-shop-spread', { ...anon, methods: ['GET'], route: 'social/shops/{id}/spread', handler: shopSpreadRoute });
 app.http('me-rewards', { ...anon, methods: ['GET'], route: 'me/rewards', handler: myRewardsRoute });
 app.http('social-search', { ...anon, methods: ['GET'], route: 'social/search', handler: socialSearchRoute });

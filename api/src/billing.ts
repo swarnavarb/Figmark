@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { storeCreditLeft } from '../../shared/play.js';
 import {
   DEFAULT_PRICING, PRO_FEATURES, buildStatement, reconcileFeeBook, cleanPricing, feeTermsFor, gstFor, gstSplit, platformFee, proLocked,
   type FeeBookEntry, type FeeKind, type ProFeatureId, type FeeLine, type FeeSettlement, type FeeStatement, type FeeTerms, type Pricing,
@@ -407,13 +408,14 @@ export async function spendStoreCredit(
   if (owing <= 0) return 0;
   const person = await repository.getUserById(userId);
   const credits = person?.storeCredits ?? [];
-  if (!person || !credits.some((credit) => credit.storeId === storeId && credit.amountMinor > credit.spentMinor)) return 0;
+  // Lapsed credit is left as it is: there is nothing in it to spend.
+  if (!person || !credits.some((credit) => credit.storeId === storeId && storeCreditLeft(credit) > 0)) return 0;
   const at = new Date().toISOString();
   let left = owing;
   let spent = 0;
   const next = [...credits].sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map((credit) => {
     if (left <= 0 || credit.storeId !== storeId) return credit;
-    const take = Math.min(Math.max(0, credit.amountMinor - credit.spentMinor), left);
+    const take = Math.min(storeCreditLeft(credit), left);
     if (take <= 0) return credit;
     left -= take;
     spent += take;

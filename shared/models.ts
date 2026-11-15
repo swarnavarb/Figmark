@@ -12,6 +12,7 @@ import type { AppliedOffer, ListingOffer, Perk } from './offers.js';
 import type { LoyaltyApplied } from './loyalty.js';
 import type { FeedPrefs } from './feed.js';
 import type { Badge, GameStage, PostContest, PostGuess, StoreCredit } from './play.js';
+import type { PostReferral } from './referral.js';
 import type {
   PostBlur, PostCompare, PostDebate, PostFlex, PostQuestion, ReactionKind, RepostRef, StoredComment, StoredPoll, StoredReaction, Vibe,
 } from './social.js';
@@ -397,7 +398,7 @@ export interface User extends BaseDocument {
   /** This person's invite code, for `/i/<code>`: made the first time they invite anybody. */
   inviteCode?: string;
   /** Who brought this account to Figmark, if anybody did. Set once, at sign-up. */
-  invitedBy?: { userId: string; at: string; asSeller?: boolean } | null;
+  invitedBy?: { userId: string; at: string; asSeller?: boolean; drive?: { channelId: string; postId: string } | null } | null;
   /** Accounts that signed up through this person's invite, newest last. */
   invitees?: { userId: string; at: string }[];
   /**
@@ -2877,6 +2878,13 @@ export interface Post extends BaseDocument {
   contest?: PostContest | null;
   /** A guess-the-price, sealed until it is revealed. */
   guess?: PostGuess | null;
+  /** Spread the word: a shop paying credit for new buyers brought from outside, for a set time. */
+  referral?: PostReferral | null;
+  /**
+   * How many days store credit won on this post lasts, as the shop set it;
+   * absent or null for credit that never lapses. Counted from when it is won.
+   */
+  creditDays?: number | null;
   /**
    * The shop running this game, when a shop is: its followers and recent
    * buyers heard when it started, and hear again before it closes.
@@ -3171,6 +3179,8 @@ export type NotificationKind =
   | 'pro_plan'
   /** A store paid you or gave you credit. */
   | 'store_gift'
+  /** Store credit or cashback you have is about to lapse. */
+  | 'credit_lapsing'
   /** Flagged for cancelling too often, an appeal, or the flag cleared. */
   | 'cancel_flag'
   /** A loyalty stamp, or a reward it earned. */

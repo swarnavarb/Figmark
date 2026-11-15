@@ -1,5 +1,6 @@
 import type { ModerationMark } from './moderation.js';
 import type { GuessView } from './play.js';
+import type { ReferralView } from './referral.js';
 /**
  * Reactions, comments, shares and polls on a post: the wire shapes and rules.
  *
@@ -380,6 +381,8 @@ export interface PostSocial {
   mine: boolean;
   /** A guess-the-price, as far as this viewer may see it. */
   guess?: GuessView | null;
+  /** Spread the word, as far as this viewer may see it. */
+  referral?: ReferralView | null;
   /**
    * Whether this viewer runs the post's game: wrote it, or speaks for the shop
    * whose post it is - the one who shortlists, picks winners and judges.

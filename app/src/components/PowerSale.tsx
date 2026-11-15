@@ -1,3 +1,4 @@
+import { SpreadNudge } from './SpreadKit';
 import { useToast } from './Feedback';
 import { ProLock, useProLocked } from './Billing';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
@@ -51,7 +52,7 @@ const STATUS_TONE: Record<PowerSaleView['status'], string> = {
   cancelled: 'badge--danger',
 };
 
-export function PowerSalePanel({ storeId, startWith }: { storeId: string; startWith?: SavedCalc[] }) {
+export function PowerSalePanel({ storeId, storeName, startWith }: { storeId: string; storeName: string; startWith?: SavedCalc[] }) {
   const [sales, setSales] = useState<PowerSaleView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -114,7 +115,7 @@ export function PowerSalePanel({ storeId, startWith }: { storeId: string; startW
       {sales && sales.length > 0 && (
         <div className="stack" style={{ gap: 10 }}>
           {sales.map((sale) => (
-            <SaleCard key={sale.id} sale={sale} storeId={storeId} onChanged={load} />
+            <SaleCard key={sale.id} sale={sale} storeId={storeId} storeName={storeName} onChanged={load} />
           ))}
         </div>
       )}
@@ -141,9 +142,10 @@ export function PowerSalePanel({ storeId, startWith }: { storeId: string; startW
  * Open by default while it is running, because that is the one a shop is
  * actually watching.
  */
-function SaleCard({ sale, storeId, onChanged }: {
+function SaleCard({ sale, storeId, storeName, onChanged }: {
   sale: PowerSaleView;
   storeId: string;
+  storeName: string;
   onChanged: () => void | Promise<void>;
 }) {
   const toast = useToast();
@@ -163,6 +165,10 @@ function SaleCard({ sale, storeId, onChanged }: {
   }
 
   const pct = Math.round((sale.posted / Math.max(1, sale.total)) * 100);
+  // A drop is the moment to bring new people in: before it to fill the room,
+  // while it runs, or just after to sell what is left.
+  const recentlyDone = sale.status === 'done' && sale.closedAt && Date.now() - Date.parse(sale.closedAt) < 3 * 86_400_000;
+  const spreadWhen = sale.status === 'scheduled' ? 'before' as const : sale.status === 'running' ? 'during' as const : recentlyDone ? 'after' as const : null;
 
   return (
     <article className={`runcard${open ? ' is-open' : ''}`}>
@@ -188,6 +194,11 @@ function SaleCard({ sale, storeId, onChanged }: {
       <div className="runcard__bar" aria-hidden="true">
         <span style={{ width: `${pct}%` }} />
       </div>
+
+      {spreadWhen && (
+        <SpreadNudge compact storeId={storeId} storeName={storeName}
+          about={{ kind: 'drop', saleId: sale.id, name: sale.name, timing: spreadWhen }} />
+      )}
 
       {open && (
         <div className="runcard__body">
@@ -565,7 +576,7 @@ function PowerSaleBuilderOpen() {
       };
       await api.createPowerSale(draft);
       navigate(back);
-      toast('Power sale is live ⚡');
+      toast('Live drop scheduled ⚡ Spread the word below to fill the room.');
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'Could not schedule that.');
     } finally {

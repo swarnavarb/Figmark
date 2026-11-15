@@ -7,7 +7,7 @@ import type { Order, User } from '../../shared/models.js';
 import { appliedPerks, offerPerk, type Perk } from '../../shared/offers.js';
 import { isStopped } from '../../shared/orders.js';
 import { rupees } from '../../shared/payments.js';
-import type { StoreCredit } from '../../shared/play.js';
+import { creditExpiry, type StoreCredit } from '../../shared/play.js';
 import type { getRepository } from './data/index.js';
 import { loadPricing } from './billing.js';
 import { notify } from './functions/notify.js';
@@ -164,6 +164,8 @@ export async function syncLoyalty(
           id: creditId, storeId: ownerId, storeName: shopName, amountMinor: entry.valueMinor, spentMinor: 0,
           reason: `Loyalty cashback · ${entry.cardName}, stamp ${entry.stamp}`, link: '/wallet?tab=loyalty',
           createdAt: entry.at, spends: [], kind: 'shop', given: true,
+          // The card says how long its cashback lasts, from when it is credited.
+          expiresAt: creditExpiry(cards.find((card) => card.id === entry.cardId)?.cashbackDays ?? null, Date.parse(entry.at)),
         });
       }
       await repository.updateUser({ ...person, storeCredits: credits });

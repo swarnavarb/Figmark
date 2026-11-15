@@ -1,4 +1,6 @@
 import { app, type HttpRequest, type HttpResponseInit, type InvocationContext } from '@azure/functions';
+import { getRepository } from '../data/index.js';
+import { remindOnVisit, sweepLapsing } from '../credit-reminders.js';
 import { meRoute } from './auth-routes.js';
 import { healthRoute } from './health.js';
 import { handler, json } from './http.js';
@@ -49,6 +51,16 @@ async function bootstrap(request: HttpRequest, context: InvocationContext) {
   const [me] = await Promise.all(ALWAYS.map(run));
   const signedIn = Boolean((me?.jsonBody as { user?: unknown } | undefined)?.user);
   if (signedIn) await Promise.all(SIGNED_IN.map(run));
+
+  // Credit about to lapse is mentioned on the way past - no timer (see credit-reminders.ts).
+  try {
+    const repository = await getRepository();
+    const userId = (me?.jsonBody as { user?: { id?: string } } | undefined)?.user?.id;
+    if (userId) await remindOnVisit(repository, userId);
+    await sweepLapsing(repository);
+  } catch {
+    // A reminder is a courtesy; the page loads regardless.
+  }
 
   const cookies = me?.headers instanceof Headers ? me.headers.getSetCookie() : [];
   const response = json(200, { answers }, cookies);

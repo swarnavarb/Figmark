@@ -24,6 +24,7 @@ const STARTS: { id: string; emoji: string; label: string; line: string; hue: str
   { id: 'question', emoji: '❓', label: 'Ask your buyers', line: 'One question, open answers.', hue: 'blue', mode: 'question' },
   { id: 'compare', emoji: '🎨', label: 'Before & after', line: 'A restore or a glow-up.', hue: 'pink', mode: 'compare' },
   { id: 'photo', emoji: '📸', label: 'Photo tag', line: 'New arrivals, every piece tagged.', hue: 'violet', mode: 'photo' },
+  { id: 'spread', emoji: '📣', label: 'Spread the word', line: 'Share your shop, win credit.', hue: 'gold', mode: 'spread' },
 ];
 
 /**
@@ -58,7 +59,7 @@ export function EngagePanel({ store }: { store: StoreAccess }) {
       <section className="sengage__hero">
         <div>
           <h2>Get your buyers talking</h2>
-          <p className="muted">Polls, debates and competitions go to every follower and lead Discover while they are open. Prizes are store credit, spent only at your shop.</p>
+          <p className="muted">Polls, debates and competitions go to every follower and lead Discover while they are open. Spread the word pays your buyers for bringing new ones from outside Figmark. Prizes are store credit, spent only at your shop.</p>
         </div>
         <div className="sengage__starts">
           {STARTS.map((entry, index) => (
@@ -140,10 +141,11 @@ export function EngagePanel({ store }: { store: StoreAccess }) {
             {done.map((card) => (
               <li key={card.post.id}>
                 <Link to={postHref(card.post)}>
-                  <span>{card.post.contest ? '🏆' : card.social.guess ? '🎯' : card.post.debate ? '⚔️' : '📊'}</span>
+                  <span>{card.social.referral ? '📣' : card.post.contest ? '🏆' : card.social.guess ? '🎯' : card.post.debate ? '⚔️' : '📊'}</span>
                   <span className="sengage__donetitle">{card.post.contest?.title ?? card.post.body}</span>
                   <span className="faint">
-                    {card.post.contest ? plural(card.post.contest.entries.length, 'entry', 'entries')
+                    {card.social.referral ? plural(card.social.referral.joined, 'new buyer')
+                      : card.post.contest ? plural(card.post.contest.entries.length, 'entry', 'entries')
                       : card.social.guess ? plural(card.social.guess.count, 'guess', 'guesses') : plural(card.social.poll?.total ?? 0, 'vote')}
                   </span>
                 </Link>

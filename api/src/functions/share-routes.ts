@@ -4,6 +4,7 @@ import { accessFor } from '../../../shared/stores.js';
 import { claimAllGrowth, claimGrowth, emptyGrowth, growthView, tidyGrowth } from '../../../shared/store-growth.js';
 import { buyerTag, storeLevel, storeTag } from '../../../shared/storefront.js';
 import { shopQuestFacts } from '../store-facts.js';
+import { driveTag, parseDriveTag, referralPhase } from '../../../shared/referral.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import {
@@ -111,10 +112,14 @@ async function openInvite(request: HttpRequest, _context: InvocationContext) {
   const counted = await recordOpen(repository, request, inviter.id, target, viewer?.id ?? null);
   // Signed-out visitors carry the invite to sign-up. Keep an earlier invite
   // rather than letting every shared page overwrite whose friend this is.
-  const keep = viewer || readCookie(request, INVITE_COOKIE);
+  // A Spread the word link is a campaign somebody is running right now, so
+  // it does take over an earlier invite: the newest drive link wins.
+  const drivePost = await openDrive(repository, request.query.get('d'));
+  const drive = viewer || !drivePost ? null : driveTag(drivePost.channelId, drivePost.id);
+  const keep = viewer || (readCookie(request, INVITE_COOKIE) && !drive);
   // One cookie per response (see `json`), and the invite is the one that
   // matters. The visitor cookie normally came earlier, from /api/auth/me.
-  const cookies = keep ? counted : [inviteCookie(request.params.code ?? '', asSeller)];
+  const cookies = keep ? counted : [inviteCookie(request.params.code ?? '', asSeller, drive)];
   return json(200, {
     inviter: {
       name: inviter.displayName,
@@ -124,7 +129,22 @@ async function openInvite(request: HttpRequest, _context: InvocationContext) {
     },
     asSeller,
     self: viewer?.id === inviter.id,
+    // What a friend arriving on a Spread the word link is joining, for the welcome they see.
+    drive: drivePost?.referral ? {
+      storeName: drivePost.referral.storeName,
+      welcomeMinor: drivePost.referral.welcomeMinor ?? 0,
+      endsAt: drivePost.referral.endsAt,
+      link: `/social/p/${encodeURIComponent(drivePost.channelId)}/${encodeURIComponent(drivePost.id)}`,
+    } : null,
   }, cookies);
+}
+
+/** The drive a link's tag names, when it is still to run or running. */
+async function openDrive(repository: Repo, raw: string | null) {
+  const tag = parseDriveTag(raw);
+  if (!tag) return null;
+  const post = await repository.getPost(tag.channelId, tag.postId);
+  return post?.referral && referralPhase(post.referral) !== 'ended' ? post : null;
 }
 
 /** What an invite-carrying link pointed at, and the shop it leads into. */

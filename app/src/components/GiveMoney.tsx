@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { CREDIT_LIFE_DAYS } from '@shared/play';
 import { GIFT_METHOD_LABELS, type GiftMethod, type GiverKind, type StoreGift } from '@shared/billing';
 import { ApiRequestError, api, type GiftsView } from '../api';
 import { formatMoney, timeAgo } from '../format';
@@ -72,6 +73,9 @@ function GiveMoneyForm({ view, kind, ownerId, onClose, onSent }: {
   const [method, setMethod] = useState<GiftMethod>('credit');
   const [reason, setReason] = useState('');
   const [reference, setReference] = useState('');
+  // Credit by hand: a refund never lapses; anything else lasts as long as the store says.
+  const [isRefund, setIsRefund] = useState(true);
+  const [days, setDays] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const typed = recipient === '@' || view.people.length === 0;
@@ -87,6 +91,7 @@ function GiveMoneyForm({ view, kind, ownerId, onClose, onSent }: {
       await api.giveMoney({
         kind, owner: ownerId, recipient: who,
         amountMinor: minor, method, reason: reason.trim(), reference: reference.trim() || undefined,
+        ...(method === 'credit' ? { refund: isRefund, ...(!isRefund && days ? { creditDays: days } : {}) } : {}),
       });
       onSent();
     } catch (err) {
@@ -141,6 +146,31 @@ function GiveMoneyForm({ view, kind, ownerId, onClose, onSent }: {
             <span>UPI or bank reference</span>
             <input value={reference} onChange={(e) => setReference(e.target.value)} maxLength={80} />
           </label>
+        )}
+        {method === 'credit' && (
+          <div className="givelife">
+            <label className="givelife__refund">
+              <input type="checkbox" checked={isRefund} onChange={(e) => setIsRefund(e.target.checked)} />
+              <span>
+                <b>This is a refund</b>
+                <small>Money you owe them back. Refund credit never lapses.</small>
+              </span>
+            </label>
+            {!isRefund && (
+              <div className="field">
+                <span>Credit lasts</span>
+                <div className="chips chips--tight" role="radiogroup" aria-label="Credit lasts">
+                  {[0, ...CREDIT_LIFE_DAYS].map((option) => (
+                    <button key={option} type="button" role="radio" aria-checked={days === option}
+                      className={`chip${days === option ? ' is-on' : ''}`} onClick={() => setDays(option)}>
+                      {option === 0 ? 'Never lapses' : option % 365 === 0 ? `${option / 365} year` : `${option} days`}
+                    </button>
+                  ))}
+                </div>
+                <small className="faint">{days ? `Whatever is unspent after ${days} days lapses on its own.` : 'It stays until they spend it.'}</small>
+              </div>
+            )}
+          </div>
         )}
         <label className="field">
           <span>What it is for</span>

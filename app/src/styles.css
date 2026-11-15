@@ -7629,6 +7629,16 @@ a.ocust__name:hover { color: var(--accent-text); }
 .ticket__dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: live-dot 1s ease-in-out infinite; }
 @keyframes live-dot { 50% { opacity: 0.2; } }
 .ticket__shop { opacity: 0.7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A Spread the word drive on the drop: a gold pill on the top line, never a
+   line of its own, and a thin gold edge round the ticket. */
+.ticket--spread .ticket__shop { flex: 1; min-width: 0; }
+.ticket__spread {
+  flex-shrink: 0; padding: 3px var(--s2); border-radius: var(--r-pill); white-space: nowrap;
+  background: var(--grad-gold); color: inherit; font-weight: var(--w-bold); text-decoration: none;
+  box-shadow: 0 2px 8px rgba(234, 179, 8, 0.45);
+}
+.ticket__spread:hover { filter: brightness(1.06); }
+.ticket--spread { box-shadow: 0 8px 18px rgba(0, 0, 0, 0.4), inset 0 0 0 2px var(--gold); }
 .ticket__name { font-size: var(--t-base); font-weight: var(--w-bold); line-height: 1.2; letter-spacing: -0.01em; color: inherit; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ticket__name:hover { text-decoration: underline; text-underline-offset: 3px; }
 /* The label and the clock on one line. */
@@ -10180,3 +10190,224 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .rsfield--lot { --zone: var(--coral); }
 .rsfield--post { --zone: var(--lime); }
 .rsfield--pre > span, .rsfield--lot > span, .rsfield--post > span { color: var(--zone); font-weight: var(--w-semi); }
+
+/* ── Spread the word ───────────────────────────────────────────────────── */
+/* The post, the banner on a shop's page and items, and the nudge on a drop or an item (SpreadKit). */
+
+.spread {
+  display: grid; gap: var(--s2); padding: 14px; border-radius: var(--r-lg);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: radial-gradient(120% 90% at 100% 0%, var(--warn-soft), transparent 62%), var(--surface-2);
+}
+.spread.is-ended { border-color: var(--border); }
+.spread--banner { margin: var(--s3) 0; }
+.spread__head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); flex-wrap: wrap; }
+.spread__kicker {
+  display: inline-flex; align-items: center; gap: var(--s1);
+  font-size: var(--t-xs); font-weight: var(--w-bold); letter-spacing: 0.08em; text-transform: uppercase; color: var(--warn);
+}
+.spread__clock {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: var(--r-pill);
+  background: rgba(0, 0, 0, 0.35); font: var(--w-bold) var(--t-xs)/1.3 var(--mono); font-variant-numeric: tabular-nums; color: var(--text);
+}
+.spread__clock.is-soon { color: var(--text-dim); }
+.spread__clock.is-done { color: var(--text-faint); }
+.spread__dot { width: 7px; height: 7px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 3px var(--warn-soft); }
+.spread__clock.is-soon .spread__dot { background: var(--text-faint); box-shadow: none; }
+.spread__offer { margin: 0; font-size: var(--t-md); line-height: 1.4; }
+.spread__offer strong {
+  font: var(--w-bold) var(--t-xl)/1.1 var(--display);
+  background: var(--grad-gold); -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.spread__small { margin: 0; }
+.spread__act { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+.spread__mine { display: inline-flex; align-items: center; gap: 6px; font-size: var(--t-sm); color: var(--text-dim); }
+.spread__error { margin: 0; color: var(--danger); font-size: var(--t-sm); }
+.spread__stats { display: flex; gap: var(--s4); font-size: var(--t-sm); color: var(--text-dim); }
+.spread__stats b { color: var(--text); font-variant-numeric: tabular-nums; }
+.spread__board { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.spread__board li {
+  display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; align-items: center; gap: var(--s2);
+  padding: 6px 10px; border-radius: var(--r-md); background: rgba(0, 0, 0, 0.22); font-size: var(--t-sm);
+}
+.spread__rank { font: var(--w-bold) var(--t-xs)/1 var(--mono); color: var(--text-faint); text-align: center; }
+.spread__board li:first-child .spread__rank { color: var(--warn); }
+.spread__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.spread__count { font: var(--w-bold) var(--t-sm)/1 var(--mono); font-variant-numeric: tabular-nums; }
+.spread__won {
+  margin: 0; padding: var(--s2) var(--s3); border-radius: var(--r-md); font-size: var(--t-sm);
+  background: linear-gradient(115deg, var(--warn-soft), transparent 80%); box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.3);
+}
+.spread__rules { margin: 0; line-height: 1.5; }
+.spread__terms { font-size: var(--t-xs); color: var(--text-dim); }
+.spread__terms summary { cursor: pointer; }
+.spread__terms p { margin: var(--s1) 0 0; white-space: pre-wrap; }
+
+.spread-nudge {
+  position: relative; display: grid; gap: var(--s3); margin: var(--s3) 0; padding: 16px; border-radius: var(--r-lg);
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  background:
+    radial-gradient(90% 120% at 0% 0%, rgba(251, 191, 36, 0.16), transparent 60%),
+    radial-gradient(80% 100% at 100% 100%, rgba(249, 115, 22, 0.12), transparent 60%),
+    var(--surface-2);
+  box-shadow: 0 10px 30px -18px rgba(251, 191, 36, 0.55);
+}
+.spread-nudge--compact { padding: 14px; gap: 10px; }
+.spread-nudge__head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--s3); }
+.spread-nudge__badge {
+  display: grid; place-items: center; width: 44px; height: 44px; border-radius: 14px;
+  font-size: calc(22px * var(--text-scale));
+  background: var(--grad-gold); box-shadow: 0 6px 18px -6px rgba(249, 115, 22, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+.spread-nudge__copy { display: grid; gap: 2px; min-width: 0; }
+.spread-nudge__copy strong { font: var(--w-bold) var(--t-md)/1.3 var(--display); }
+.spread-nudge__eyebrow {
+  font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.1em; text-transform: uppercase; color: var(--warn);
+}
+.spread-nudge__line { margin: 0; color: var(--text-dim); font-size: var(--t-sm); line-height: 1.5; }
+.spread-nudge__steps {
+  list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px;
+}
+.spread-nudge__steps li {
+  display: grid; justify-items: start; gap: 4px; padding: 8px 10px; border-radius: var(--r-md);
+  background: rgba(0, 0, 0, 0.25); font-size: var(--t-xs); line-height: 1.35; color: var(--text);
+}
+.spread-nudge__steps span {
+  display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%;
+  background: var(--warn-soft); color: var(--warn); font: var(--w-bold) var(--t-2xs)/1 var(--mono);
+}
+.spread-nudge__stats { display: flex; flex-wrap: wrap; align-items: center; gap: 6px var(--s4); font-size: var(--t-sm); color: var(--text-dim); }
+.spread-nudge__stats b { color: var(--text); font-variant-numeric: tabular-nums; }
+.spread-nudge__acts { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; }
+.spread-nudge__go, .spread__go {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  background: var(--grad-gold); border-color: transparent; color: #1A1206;
+  box-shadow: 0 8px 20px -10px rgba(249, 115, 22, 0.8);
+}
+.spread-nudge__go:hover:not(:disabled), .spread__go:hover:not(:disabled) { filter: brightness(1.06); background: var(--grad-gold); color: #1A1206; }
+.spread-nudge > .spread-nudge__go { justify-self: stretch; }
+.spread-nudge--live { border-style: solid; }
+@media (max-width: 380px) {
+  .spread-nudge__steps { grid-template-columns: 1fr; }
+}
+
+/* Discover's "Earn store credit" row (SpreadRow). */
+.spreadrow {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(200px, 62%); gap: var(--s3);
+  overflow-x: auto; scroll-snap-type: x mandatory; padding: 2px 0 var(--s3); margin-bottom: var(--s3);
+  scrollbar-width: none;
+}
+.spreadrow::-webkit-scrollbar { display: none; }
+@media (min-width: 720px) { .spreadrow { grid-auto-columns: 240px; } }
+.spreadcard {
+  display: grid; scroll-snap-align: start; overflow: hidden; border-radius: var(--r-lg);
+  border: 1px solid rgba(251, 191, 36, 0.35); background: var(--surface-2); color: var(--text); text-decoration: none;
+  animation: spreadcard-in 260ms var(--ease-out) both;
+}
+@keyframes spreadcard-in { from { opacity: 0; transform: translateY(6px); } }
+.spreadcard__top {
+  position: relative; display: grid; place-items: center; height: 96px;
+  background: radial-gradient(120% 120% at 100% 0%, var(--warn-soft), transparent 70%), var(--surface);
+}
+.spreadcard__top img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.spreadcard__top .spread__clock { position: absolute; top: 8px; right: 8px; z-index: 1; }
+.spreadcard__art {
+  position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 4px;
+  background:
+    radial-gradient(60% 80% at 30% 20%, rgba(255, 255, 255, 0.18), transparent 60%),
+    var(--grad-gold);
+}
+.spreadcard__emoji { font-size: calc(34px * var(--text-scale)); filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.25)); }
+.spreadcard__tag { font: var(--w-bold) var(--t-2xs)/1 var(--display); letter-spacing: 0.12em; text-transform: uppercase; color: #1A1206; }
+.spreadcard__body { display: grid; gap: 3px; padding: 10px 12px 12px; min-width: 0; }
+.spreadcard__shop { font-size: var(--t-xs); font-weight: var(--w-bold); color: var(--warn); text-transform: uppercase; letter-spacing: 0.06em; }
+.spreadcard__pay { font-size: var(--t-sm); }
+.spreadcard__pay strong { font: var(--w-bold) var(--t-lg)/1.1 var(--display); }
+.spreadcard__body .faint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.spreadcard__meta { font-size: var(--t-xs); color: var(--text-dim); }
+
+/* The post share sheet's note on a Spread the word: the links in it are the sharer's own. */
+.sharesheet__drive {
+  margin: 0 0 var(--s3); padding: var(--s2) var(--s3); border-radius: var(--r-md); font-size: var(--t-sm); line-height: 1.5;
+  background: linear-gradient(115deg, var(--warn-soft), transparent 80%); box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.3);
+}
+
+/* The welcome a friend sees after opening a Spread the word link signed out (DriveWelcome). */
+.dwelcome {
+  position: fixed; z-index: 60; left: 50%; transform: translateX(-50%);
+  bottom: calc(var(--nav-h, 72px) + 14px + env(safe-area-inset-bottom, 0px));
+  width: min(560px, calc(100% - 24px));
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 10px;
+  padding: 12px 12px 12px 14px; border-radius: var(--r-lg);
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  background: radial-gradient(100% 140% at 0% 0%, rgba(251, 191, 36, 0.22), transparent 60%), var(--surface);
+  box-shadow: 0 18px 40px -16px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(0, 0, 0, 0.3);
+  animation: dwelcome-in 360ms var(--ease-out) both;
+}
+@keyframes dwelcome-in { from { opacity: 0; transform: translate(-50%, 16px); } }
+.dwelcome__gift {
+  display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px;
+  background: var(--grad-gold); font-size: calc(20px * var(--text-scale));
+}
+.dwelcome__copy { display: grid; gap: 2px; font-size: var(--t-sm); line-height: 1.35; min-width: 0; }
+.dwelcome__copy span { color: var(--text-dim); font-size: var(--t-xs); }
+.dwelcome__copy b { color: var(--warn); }
+.dwelcome__go { background: var(--grad-gold); border-color: transparent; color: #1A1206; }
+.dwelcome__close {
+  width: 28px; height: 28px; border: 0; border-radius: 50%; background: transparent; color: var(--text-faint);
+  font-size: calc(20px * var(--text-scale)); line-height: 1; cursor: pointer;
+}
+
+/* The goals a whole Spread the word unlocks together (GoalTrack). */
+.goals { display: grid; gap: 10px; padding: 12px; border-radius: var(--r-md); background: rgba(0, 0, 0, 0.24); }
+.goals__head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s2); font-size: var(--t-sm); }
+.goals__title { font-weight: var(--w-bold); }
+.goals__count { color: var(--text-dim); font-size: var(--t-xs); }
+.goals__count b { color: var(--text); font: var(--w-bold) var(--t-sm)/1 var(--mono); }
+.goals__bar { position: relative; height: 10px; margin: 8px 12px 14px 0; border-radius: var(--r-pill); background: rgba(255, 255, 255, 0.08); }
+.goals__fill {
+  position: absolute; inset: 0; border-radius: inherit; background: var(--grad-gold);
+  transform-origin: left center; transition: transform 600ms var(--ease-out);
+  box-shadow: 0 0 12px rgba(251, 191, 36, 0.45);
+}
+.goals__mark {
+  position: absolute; top: 50%; transform: translate(-50%, -50%);
+  display: grid; place-items: center; min-width: 26px; height: 26px; padding: 0 5px; border-radius: var(--r-pill);
+  background: var(--surface); border: 2px solid rgba(255, 255, 255, 0.18);
+  font: var(--w-bold) var(--t-2xs)/1 var(--mono); color: var(--text-dim);
+}
+.goals__mark.is-reached { background: var(--grad-gold); border-color: transparent; color: #1A1206; box-shadow: 0 0 0 4px var(--warn-soft); }
+.goals__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.goals__list li { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: var(--s2); align-items: baseline; font-size: var(--t-sm); color: var(--text-dim); }
+.goals__list li.is-reached { color: var(--text); }
+.goals__at { font: var(--w-bold) var(--t-xs)/1.4 var(--mono); color: var(--text-faint); white-space: nowrap; }
+.goals__list li.is-reached .goals__at { color: var(--warn); }
+.goals__gift { min-width: 0; }
+.spread__welcome {
+  margin: 0; padding: 8px 10px; border-radius: var(--r-md); font-size: var(--t-sm);
+  background: var(--ok-soft); box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.3);
+}
+.spread__welcome b { color: var(--ok); }
+.spread__next { color: var(--text-dim); }
+.spread__offerline { color: var(--text-dim); font-size: var(--t-sm); }
+.spreadcard__goal { display: grid; gap: 4px; font-size: var(--t-xs); color: var(--text-dim); }
+.spreadcard__bar { display: block; height: 6px; border-radius: var(--r-pill); background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.spreadcard__bar > span { display: block; height: 100%; background: var(--grad-gold); transform-origin: left center; }
+
+
+/* How long credit lasts: on a prize post, and where a store gives credit by hand. */
+.pcredit-life { margin: 0; font-size: var(--t-xs); color: var(--text-dim); }
+.givelife { display: grid; gap: 10px; padding: 12px; border-radius: var(--r-md); background: var(--surface-2); }
+.givelife__refund { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+.givelife__refund input { margin-top: 3px; }
+.givelife__refund span { display: grid; gap: 2px; }
+.givelife__refund small { color: var(--text-dim); font-size: var(--t-xs); }
+.pstudio__life { display: grid; gap: 4px; }
+.rfhero__never { display: block; margin-top: 4px; font-size: var(--t-xs); color: var(--text-dim); }
+
+/* Discover's Spread the word section: every drive, wrapped rather than in a sideways row. */
+.spreadrow--grid {
+  grid-auto-flow: row; grid-auto-columns: auto; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+  overflow: visible; scroll-snap-type: none;
+}
+@media (max-width: 479px) { .spreadrow--grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s2); } }

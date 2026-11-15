@@ -250,7 +250,7 @@
 }
 :root[data-bars='hidden'] .dislens { top: env(safe-area-inset-top, 0px); }
 .dislens::-webkit-scrollbar { display: none; }
-/* Five lenses fit a phone's width without scrolling: the marks go, the words stay. */
+/* Six lenses fit a phone's width without scrolling: the marks go, the words stay. */
 @media (max-width: 479px) {
   .dislens { gap: 4px; }
   .dislens__tab { padding: 0 8px; font-size: var(--t-xs); }
@@ -491,3 +491,44 @@ a.discweek__row:active { transform: scale(0.99); }
 .discover__stream .spost[data-kind='vibe'],
 .discover__stream .spost[data-kind='repost'],
 .discover__stream .spost[data-kind='text'] { --kind: 6, 214, 231; }
+
+/* Spread the word: its tab's count, the "See all" on the For you row, and the section itself. */
+.dislens__count--gold { background: var(--grad-gold); color: #1A1206; }
+.discsection__all {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 2px; padding: 4px 10px; border: 0; border-radius: var(--r-pill);
+  background: var(--surface-2); color: var(--text-dim); font: inherit; font-size: var(--t-xs); font-weight: var(--w-semi); cursor: pointer;
+}
+.discsection__all:hover { color: var(--text); }
+.spreadhero {
+  position: relative; overflow: hidden; display: grid; gap: 10px; padding: 14px var(--s4); border-radius: var(--r-xl);
+  border: 1px solid color-mix(in srgb, var(--gold) 45%, transparent);
+  background:
+    radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--gold) 26%, transparent), transparent 60%),
+    radial-gradient(90% 80% at 0% 100%, color-mix(in srgb, var(--coral) 18%, transparent), transparent 60%),
+    var(--surface);
+  animation: spreadhero-in 0.5s var(--ease-out) both;
+}
+@keyframes spreadhero-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.spreadhero__burst {
+  position: absolute; top: 6px; right: 12px; font-size: calc(44px * var(--text-scale)); line-height: 1; transform: rotate(-14deg);
+  filter: drop-shadow(0 8px 18px color-mix(in srgb, var(--gold) 55%, transparent));
+}
+.spreadhero__copy { display: grid; gap: 4px; padding-right: 56px; }
+.spreadhero__copy h2 {
+  margin: 0; font-size: var(--t-lg); font-weight: var(--w-bold); letter-spacing: -0.02em;
+  background: var(--grad-gold); -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.spreadhero__copy p { margin: 0; color: var(--text-dim); font-size: var(--t-sm); line-height: 1.4; }
+/* The three steps on one line, each a small numbered chip. */
+.spreadhero__steps { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.spreadhero__steps li {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px 4px 4px; border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--bg) 55%, transparent); font-size: var(--t-xs); color: var(--text); white-space: nowrap;
+}
+.spreadhero__steps b {
+  display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%;
+  background: var(--grad-gold); color: #1A1206; font-size: var(--t-2xs);
+}
+.spreadhero__stats { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0; font-size: var(--t-xs); color: var(--text-dim); }
+.spreadhero__stats b { color: var(--text); font-variant-numeric: tabular-nums; }
+.spreadhero__stats .spreadhero__mine { color: var(--ok); }

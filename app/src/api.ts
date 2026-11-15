@@ -23,6 +23,7 @@ import type {
 import type { DisputeStatus, FulfilmentStage, OrderCheckpoint, OrderStatus, Sourcing, StorePermission } from '@shared/enums';
 import type { DealState } from '@shared/deals';
 import type { Badge, ContestJudging, GuessView, StoreCredit } from '@shared/play';
+import type { ReferralTiming, ReferralView } from '@shared/referral';
 import type { LotTally } from '@shared/board';
 import type { DiscoverWhy, FollowSuggestion, Leaderboard, SeenEntry, SpottedItem, TopicChip, WantRow } from '@shared/feed';
 import type { FindWhy } from '@shared/discover-finds';
@@ -647,6 +648,8 @@ export interface DropCardData {
   reminders: number;
   reminded: boolean;
   channel: string;
+  /** A Spread the word drive on this drop: credit for bringing a friend to it. */
+  spread?: { rewardMinor: number; welcomeMinor: number; open: boolean; href: string } | null;
 }
 
 /** A step forward that can still be taken back, and until when. */
@@ -724,6 +727,8 @@ export interface InviteOpen {
   };
   asSeller: boolean;
   self: boolean;
+  /** A Spread the word link: what the friend is joining. */
+  drive?: { storeName: string; welcomeMinor: number; endsAt: string; link: string } | null;
 }
 
 export interface OrderTracking {
@@ -1495,6 +1500,24 @@ export interface NewPost {
   compare?: { kind: CompareKind; labels?: [string, string] } | null;
   /** A question whose comments are its answers. */
   question?: boolean;
+  /** How many days prize credit won here lasts; absent for never. */
+  creditDays?: number;
+  /** Spread the word: store credit for each new buyer somebody brings, for a set time. */
+  referral?: {
+    rewardMinor: number; maxPerPerson: number; topPrizeMinor?: number; timing: ReferralTiming; hours?: number;
+    target: { kind: 'shop' } | { kind: 'drop'; saleId: string } | { kind: 'listing'; listingId: string };
+    terms?: string | null;
+    welcomeMinor?: number;
+    milestones?: { at: number; creditMinor: number; perk: string }[];
+  } | null;
+}
+
+/** The Spread the word a shop is running or about to, as its page and items show it. */
+export interface ShopDrive {
+  channelId: string;
+  postId: string;
+  body: string;
+  referral: ReferralView;
 }
 
 /** What Discover is made of, each list already ranked. The rails come on the first page only. */
@@ -1503,6 +1526,8 @@ export interface DiscoverResponse {
   live?: PostCard[];
   /** Competitions running or just finished. First page only. */
   contests?: PostCard[];
+  /** Spread the word drives running or about to: the "Earn store credit" row. First page only. */
+  spreads?: PostCard[];
   debates: PostCard[];
   threads: PostCard[];
   flexes: PostCard[];
@@ -2930,6 +2955,10 @@ export const api = {
     request<GiftsView>(`/me/gifts?kind=${kind}${ownerId ? `&owner=${encodeURIComponent(ownerId)}` : ''}`),
   giveMoney: (body: {
     kind: GiverKind; owner?: string; recipient: string; amountMinor: number; method: GiftMethod; reason: string; reference?: string; orderId?: string;
+    /** Credit only: it is a refund, so it never lapses. */
+    refund?: boolean;
+    /** Credit only, not a refund: how many days it lasts. */
+    creditDays?: number;
   }) => post<{ gift: StoreGift }>('/me/gifts/give', body),
   giftsReceived: () => request<{ gifts: StoreGift[] }>('/me/gifts/received'),
   answerGift: (id: string, arrived: boolean) => post<{ status: StoreGift['status'] }>(`/me/gifts/${encodeURIComponent(id)}/answer`, { arrived }),
@@ -3036,10 +3065,11 @@ export const api = {
   logShare: (body: { kind: ShareKind; via: ShareEvent['via']; target?: string | null; storeId?: string | null }) =>
     post<{ ok: true }>('/share/log', body),
   myInvite: () => request<InviteSummary>('/invite/me'),
-  openInvite: (code: string, page?: { t: 'item' | 'shop' | 'profile'; id: string } | null, asSeller = false) => {
+  openInvite: (code: string, page?: { t: 'item' | 'shop' | 'profile'; id: string } | null, asSeller = false, drive: string | null = null) => {
     const query = new URLSearchParams();
     if (page) { query.set('t', page.t); query.set('id', page.id); }
     if (asSeller) query.set('as', 'seller');
+    if (drive) query.set('d', drive);
     const suffix = query.toString();
     return visitorKnown().then(() => request<InviteOpen>(`/i/${encodeURIComponent(code)}${suffix ? `?${suffix}` : ''}`));
   },
@@ -3366,6 +3396,8 @@ export const api = {
   myItems: () => request<{ groups: ItemGroup[] }>('/me/items'),
   fillingLots: () => request<{ lots: FillingLot[] }>('/showcase/lots'),
   drops: () => request<{ drops: DropCardData[] }>('/showcase/drops'),
+  /** Every Spread the word drive running or about to, for Discover's section. */
+  spreads: () => request<{ spreads: PostCard[] }>('/social/spreads'),
   drop: (sellerId: string, id: string) =>
     request<{ drop: DropCardData }>(`/showcase/drops/${encodeURIComponent(sellerId)}/${encodeURIComponent(id)}`),
   remindDrop: (sellerId: string, id: string, on: boolean) =>
@@ -3766,6 +3798,11 @@ export const api = {
   /** Put a photo into a competition: one each, while entries are open. */
   enterContest: (channelId: string, id: string, photoUrl: string, caption: string) =>
     post<{ entryId: string; card: PostCard }>(`${postPath(channelId, id)}/enter`, { photoUrl, caption }),
+  /** Take part in a Spread the word: links you share count for you from now. */
+  joinSpread: (channelId: string, id: string) =>
+    post<{ card: PostCard }>(`/social/posts/${encodeURIComponent(channelId)}/${encodeURIComponent(id)}/spread`, {}),
+  /** The Spread the word a shop is running or about to, if any. */
+  shopSpread: (shopId: string) => request<{ drive: ShopDrive | null; drives: ShopDrive[] }>(`/social/shops/${encodeURIComponent(shopId)}/spread`),
   guessPrice: (channelId: string, id: string, amountMinor: number) =>
     post<{ guess: GuessView }>(`${postPath(channelId, id)}/guess`, { amountMinor }),
   /** The host's decisions: a shortlist, the winners, a debate's best argument, a prize handed over. */

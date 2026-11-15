@@ -1,4 +1,5 @@
 import { useToast } from './Feedback';
+import { CREDIT_LIFE_DAYS } from '@shared/play';
 import { useCallback, useEffect, useState } from 'react';
 import { SkelCards, SkelRows } from './PageSkeletons';
 import {
@@ -32,18 +33,21 @@ type Draft = {
   listingIds: string[];
   minOrder: string;
   rewards: (LoyaltyReward | null)[];
+  /** Days cashback lasts once credited; 0 for never. */
+  cashbackDays: number;
   active: boolean;
 };
 
 const blank = (): Draft => ({
   name: 'Regulars card', theme: 'gold', everything: true, listingIds: [], minOrder: '0',
   rewards: Array.from({ length: STAMPS }, (_, index) => (index === 3 ? { kind: 'cashback_flat', amountMinor: 5_000 } : index === 7 ? { kind: 'free_shipping' } : null)),
+  cashbackDays: 0,
   active: true,
 });
 
 const fromCard = (card: LoyaltyCard): Draft => ({
   id: card.id, name: card.name, theme: card.theme, everything: card.listingIds === null, listingIds: card.listingIds ?? [],
-  minOrder: String(card.minOrderMinor / 100), rewards: [...card.rewards], active: card.active,
+  minOrder: String(card.minOrderMinor / 100), rewards: [...card.rewards], cashbackDays: card.cashbackDays ?? 0, active: card.active,
 });
 
 export function LoyaltyManager({ ownerId: _ownerId }: { ownerId: string }) {
@@ -220,6 +224,7 @@ function CardEditor({ draft: start, settings, onCancel, onSaved }: {
         listingIds: draft.everything ? null : draft.listingIds,
         minOrderMinor: Math.round(Number(draft.minOrder || 0) * 100),
         rewards: draft.rewards,
+        cashbackDays: draft.cashbackDays || null,
       });
       onSaved();
       toast('Loyalty card saved.');
@@ -340,6 +345,22 @@ function CardEditor({ draft: start, settings, onCancel, onSaved }: {
         <small className="faint">
           Up to {formatMoney(settings.maxFlatMinor)} or {settings.maxCashbackBp / 100}% cashback, and {settings.maxPercentOffBp / 100}% off, as Figmark allows.
         </small>
+        {draft.rewards.some((reward) => reward?.kind === 'cashback_flat' || reward?.kind === 'cashback_percent') && (
+          <div className="field">
+            <span>Cashback lasts</span>
+            <div className="chips chips--tight" role="radiogroup" aria-label="Cashback lasts">
+              {[0, ...CREDIT_LIFE_DAYS].map((option) => (
+                <button key={option} type="button" role="radio" aria-checked={draft.cashbackDays === option}
+                  className={`chip${draft.cashbackDays === option ? ' is-on' : ''}`} onClick={() => setDraft({ ...draft, cashbackDays: option })}>
+                  {option === 0 ? 'Never lapses' : option % 365 === 0 ? `${option / 365} year` : `${option} days`}
+                </button>
+              ))}
+            </div>
+            <small className="faint">
+              {draft.cashbackDays ? `Counted from when it lands in their wallet. Whatever is unspent after ${draft.cashbackDays} days lapses.` : 'Cashback stays in their wallet until they spend it.'}
+            </small>
+          </div>
+        )}
       </div>
       {error && <p className="notice notice--error">{error}</p>}
       <div className="row" style={{ gap: 8 }}>

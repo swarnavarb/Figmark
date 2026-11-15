@@ -290,6 +290,9 @@ export async function heldCreditMinor(
  * placed, oldest first, after any credit the shop kept for them: that money
  * was theirs first. Mutates `order` (the caller saves it); saves the buyer.
  */
+/** The reference on the payment line store credit makes, so a call-off can find it again. */
+const WON_CREDIT_REFERENCE = 'Store credit won';
+
 async function spendWonCredit(repository: Repo, order: Order, actorId: string, owing: number, now: string): Promise<number> {
   if (owing <= 0) return 0;
   const buyer = await repository.getUserById(order.buyerId);
@@ -317,7 +320,7 @@ async function spendWonCredit(repository: Repo, order: Order, actorId: string, o
       amountMinor: spent,
       batchId: null,
       batchTotalMinor: null,
-      reference: 'Store credit won',
+      reference: WON_CREDIT_REFERENCE,
       recordedBy: actorId,
     },
   ];
@@ -328,19 +331,74 @@ async function spendWonCredit(repository: Repo, order: Order, actorId: string, o
   return spent;
 }
 
-/** Puts back store credit an order spent, for an order turned down before it was taken on. */
-async function returnWonCredit(repository: Repo, order: Order): Promise<number> {
+/**
+ * The time a cancelled order held the buyer's store credit: from when it was
+ * placed to when it was called off. The credit gets exactly that time back,
+ * so a buyer never loses days to an order that did not go ahead.
+ */
+export function creditGraceMs(order: Pick<Order, 'placedAt' | 'createdAt'>, cancelledAt: number): number {
+  const placed = Date.parse(order.placedAt ?? order.createdAt);
+  return Number.isFinite(placed) ? Math.max(0, cancelledAt - placed) : 0;
+}
+
+/**
+ * Puts back store credit an order spent, for an order turned down or called
+ * off. Credit with a lapse date has it pushed back by the time the order held
+ * it (see `creditGraceMs`) - so if it would have lapsed meanwhile, it is
+ * alive again for the days it had left - and its reminder is owed afresh.
+ * Returns the amount, and the grace in days for the order's note.
+ */
+async function returnWonCredit(repository: Repo, order: Order, cancelledAt = Date.now()): Promise<{ back: number; graceDays: number }> {
   const buyer = await repository.getUserById(order.buyerId);
   const credits = buyer?.storeCredits ?? [];
+  const grace = creditGraceMs(order, cancelledAt);
   let back = 0;
+  let extended = false;
   const next = credits.map((credit) => {
     const mine = credit.spends.filter((spend) => spend.orderId === order.id);
     if (mine.length === 0) return credit;
     const amount = mine.reduce((sum, spend) => sum + spend.amountMinor, 0);
     back += amount;
-    return { ...credit, spentMinor: Math.max(0, credit.spentMinor - amount), spends: credit.spends.filter((spend) => spend.orderId !== order.id) };
+    const lapses = credit.expiresAt ? Date.parse(credit.expiresAt) : NaN;
+    if (Number.isFinite(lapses) && grace > 0) extended = true;
+    return {
+      ...credit,
+      spentMinor: Math.max(0, credit.spentMinor - amount),
+      spends: credit.spends.filter((spend) => spend.orderId !== order.id),
+      ...(Number.isFinite(lapses) ? { expiresAt: new Date(lapses + grace).toISOString(), remindedAt: null } : {}),
+    };
   });
   if (buyer && back > 0) await repository.updateUser({ ...buyer, storeCredits: next });
+  return { back, graceDays: extended ? grace / 86_400_000 : 0 };
+}
+
+/** "3 days", "1 day 4 hours", "5 hours": a grace, said the way a person would. */
+function graceWords(days: number): string {
+  const whole = Math.floor(days);
+  const hours = Math.round((days - whole) * 24);
+  if (whole === 0) return `${Math.max(1, hours)} hour${hours === 1 ? '' : 's'}`;
+  return `${whole} day${whole === 1 ? '' : 's'}${hours ? ` ${hours} hour${hours === 1 ? '' : 's'}` : ''}`;
+}
+
+/**
+ * Store credit won from the shop and spent on an order that is now being
+ * called off goes back as store credit - never into the refund the seller owes,
+ * which is money the buyer paid and never lapses. Run before `callOffOrder`, so
+ * the refund it raises is only what the buyer actually paid. Mutates `order`
+ * (the caller saves it); saves the buyer.
+ */
+export async function returnSpentStoreCredit(repository: Repo, order: Order, actorId: string): Promise<number> {
+  const now = Date.now();
+  const { back, graceDays } = await returnWonCredit(repository, order, now);
+  if (back <= 0) return 0;
+  order.payments = (order.payments ?? []).filter((payment) => !(payment.kind === 'credit' && payment.reference === WON_CREDIT_REFERENCE));
+  order.stageHistory = [
+    ...order.stageHistory,
+    {
+      stage: order.stage, enteredAt: new Date(now).toISOString(), recordedBy: actorId,
+      note: `🎁 ${rupees(back)} of store credit went back to the buyer${graceDays > 0 ? `, with ${graceWords(graceDays)} added to its time - as long as this order held it` : ''}.`,
+    },
+  ];
   return back;
 }
 
@@ -462,7 +520,7 @@ export async function returnKeptCredit(repository: Repo, order: Order, actorId: 
     await repository.updateOrder(source);
   }
 
-  returned += await returnWonCredit(repository, order);
+  returned += (await returnWonCredit(repository, order)).back;
   order.payments = (order.payments ?? []).filter((payment) => payment.kind !== 'credit');
   if (returned > 0) {
     order.stageHistory = [

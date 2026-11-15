@@ -1692,7 +1692,7 @@ function MyItems({ store }: { store: StoreAccess }) {
       )}
 
       {shelf === 'drops' ? (
-        <Later><PowerSalePanel storeId={store.ownerId} startWith={saleCalcs} /></Later>
+        <Later><PowerSalePanel storeId={store.ownerId} storeName={store.name} startWith={saleCalcs} /></Later>
       ) : shelf === 'drafts' ? (
         !drafts ? <SkelCards n={2} h={72} /> : shownDrafts.length + unpublished.length === 0 ? (
           <EmptyState title={query ? 'No draft matches that' : 'No drafts'}>
@@ -3764,6 +3764,7 @@ function Refunds({ store }: { store: StoreAccess }) {
           <span>
             {deciding.length} to decide{kept.length > 0 ? ` · ${kept.length} kept as credit` : ''} · {waiting.length} waiting on the buyer · {sent} refunded so far
           </span>
+          <span className="rfhero__never">🔒 Refunds never lapse - kept as credit or not, it stays the buyer&apos;s until it is used or returned.</span>
         </div>
         <button type="button" className="rfhero__new" onClick={() => setStarting((open) => !open)}>
           {starting ? 'Close' : '＋ New refund'}

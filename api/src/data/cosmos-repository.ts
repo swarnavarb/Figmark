@@ -1233,6 +1233,7 @@ export class CosmosRepository implements Repository {
       query: 'SELECT * FROM c WHERE'
         + ' (IS_OBJECT(c.contest) AND NOT IS_STRING(c.contest.settledAt))'
         + ' OR (IS_OBJECT(c.guess) AND NOT IS_STRING(c.guess.revealedAt))'
+        + ' OR (IS_OBJECT(c.referral) AND NOT IS_STRING(c.referral.settledAt))'
         + ' OR (IS_STRING(c.poll.closesAt) AND (c.poll.closesAt >= @now'
         + ' OR (IS_OBJECT(c.debate) AND NOT IS_STRING(c.resultsSentAt))'
         + ' OR (IS_OBJECT(c.poll.reward) AND NOT IS_STRING(c.poll.reward.paidAt))))'
@@ -1493,6 +1494,21 @@ export class CosmosRepository implements Repository {
       })
       .fetchAll();
     return resources.map((row) => ({ id: row.id, clientDevices: row.clientDevices ?? [] }));
+  }
+
+  /* Cross-partition over the rewards parts, but run at most every quarter of
+     an hour, on the back of somebody opening the app (credit-reminders.ts). */
+  async listUserIdsWithLapsingCredit(fromIso: string, toIso: string, limit: number): Promise<string[]> {
+    const { resources } = await this.container('userParts')
+      .items.query<string>({
+        query: "SELECT DISTINCT VALUE c.userId FROM c JOIN s IN c.storeCredits WHERE c.part = 'rewards'"
+          + ' AND IS_STRING(s.expiresAt) AND s.expiresAt > @from AND s.expiresAt <= @to'
+          + ' AND NOT IS_STRING(s.remindedAt) AND s.amountMinor > s.spentMinor'
+          + ' OFFSET 0 LIMIT @limit',
+        parameters: [{ name: '@from', value: fromIso }, { name: '@to', value: toIso }, { name: '@limit', value: limit }],
+      })
+      .fetchAll();
+    return resources;
   }
 
   /* Cross-partition over accounts, but only run when a device turns

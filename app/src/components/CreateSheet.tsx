@@ -98,6 +98,7 @@ const STORE: { label: string; actions: Action[] }[] = [
       { id: 'stock', emoji: '📦', title: 'Stock next?', line: 'Results land in your Store Console.', studio: 'poll', presets: { stock: true }, hue: 'lime' },
       { id: 'sdebate', emoji: '🎤', title: 'Debate with a prize', line: 'Store credit for the best argument.', studio: 'debate', presets: { prize: true }, hue: 'pink' },
       { id: 'squestion', emoji: '❓', title: 'Ask your buyers', line: 'One question, open answers.', studio: 'question', hue: 'blue' },
+      { id: 'sspread', emoji: '📣', title: 'Spread the word', line: 'Credit for every new buyer they bring.', studio: 'spread', hue: 'gold' },
     ],
   },
   {

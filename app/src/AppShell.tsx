@@ -15,6 +15,7 @@ import { Avatar, Icon, Modal } from './components/ui';
 import { api } from './api';
 import { VoicePicker } from './components/SocialVoice';
 import { useSession } from './session';
+import { DriveWelcome, rememberDriveWelcome } from './components/DriveWelcome';
 import { VerifyNudge, VerifyPrompt } from './components/VerifyNudges';
 import { PendingReviewsPrompt } from './components/PendingReviewsPrompt';
 import { inviteCodeFor } from './components/inviteCode';
@@ -224,6 +225,7 @@ export function AppShell() {
 
       {user && <FloatingCalc />}
 
+      <DriveWelcome />
       <TabBar />
       <OfflineBar />
       {searching && <MarketSearch initial={query} onClose={closeSearch} onSubmit={submitSearch} onPhoto={searchPhoto} />}
@@ -434,9 +436,14 @@ function useInviteParam() {
     const page = item ? { t: 'item' as const, id: decodeURIComponent(item[1]!) }
       : handle ? { t: 'profile' as const, id: handle[1]! }
         : null;
-    void api.openInvite(code, page).catch(() => undefined);
+    void api.openInvite(code, page, false, params.get('d')).then((opened) => {
+      if (opened.drive && !opened.self) {
+        rememberDriveWelcome({ inviter: opened.inviter.name, storeName: opened.drive.storeName, welcomeMinor: opened.drive.welcomeMinor, endsAt: opened.drive.endsAt });
+      }
+    }).catch(() => undefined);
     const rest = new URLSearchParams(params);
     rest.delete('i');
+    rest.delete('d');
     const suffix = rest.toString();
     navigate(`${pathname}${suffix ? `?${suffix}` : ''}`, { replace: true, state });
     // Only the code arriving somewhere it can be counted is an event.

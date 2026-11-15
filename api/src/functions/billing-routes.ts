@@ -6,7 +6,7 @@ import {
   type GiftMethod, type GiverKind, type ProGrant, type ProVoucher, type Pricing, type StoreGift,
 } from '../../../shared/billing.js';
 import type { User } from '../../../shared/models.js';
-import { storeCreditLeft, type StoreCredit } from '../../../shared/play.js';
+import { CREDIT_LIFE_MAX_DAYS, creditExpiry, creditLifeFrom, storeCreditLeft, type StoreCredit } from '../../../shared/play.js';
 import { rupees } from '../../../shared/payments.js';
 import { rightsIn, storeOf } from '../../../shared/service-stores.js';
 import { can } from '../../../shared/stores.js';
@@ -389,6 +389,12 @@ async function give(request: HttpRequest, _context: InvocationContext) {
 
   const reference = text(input.reference, 80) || null;
   if (input.method === 'direct' && !reference) return error(400, 'no_reference', 'Add the UPI or bank reference, so they can find it.');
+  // Credit given by hand lasts as long as the store says - unless it is a
+  // refund. Money owed back is the buyer's and never lapses.
+  const asRefund = input.refund === true;
+  const creditDays = creditLifeFrom(input.creditDays);
+  if (creditDays === undefined) return error(400, 'invalid_days', `Credit lasts 1 to ${CREDIT_LIFE_MAX_DAYS} days, or never lapses.`);
+  if (asRefund && creditDays) return error(400, 'refund_lapses', 'A refund never lapses. Turn off the time limit, or say it is not a refund.');
   const now = new Date().toISOString();
   const gift: StoreGift = {
     id: `gift_${randomUUID().slice(0, 12)}`,
@@ -408,6 +414,7 @@ async function give(request: HttpRequest, _context: InvocationContext) {
     byName: user.displayName,
     status: input.method === 'direct' ? 'sent' : input.method === 'credit' ? 'credited' : 'received',
     answeredAt: input.method === 'direct' ? null : now,
+    ...(input.method === 'credit' ? { refund: asRefund, expiresAt: asRefund ? null : creditExpiry(creditDays, Date.parse(now)) } : {}),
   };
 
   if (gift.method === 'credit') {
@@ -423,6 +430,8 @@ async function give(request: HttpRequest, _context: InvocationContext) {
       spends: [],
       kind,
       given: true,
+      expiresAt: asRefund ? null : creditExpiry(creditDays, Date.parse(now)),
+      ...(asRefund ? { refund: true } : {}),
     };
     await repository.updateUser({ ...recipient, storeCredits: [...(recipient.storeCredits ?? []), credit] });
   }
@@ -436,7 +445,7 @@ async function give(request: HttpRequest, _context: InvocationContext) {
       ? `${found.name} gave you ${rupees(amount)} store credit`
       : `${found.name} sent you ${rupees(amount)}`,
     body: gift.method === 'credit'
-      ? `${reason}. It comes off your next order there on its own.`
+      ? `${reason}. It comes off your next order there on its own${!asRefund && creditDays ? ` - use it within ${creditDays} days` : ''}.`
       : gift.method === 'gateway'
         ? `${reason}. Paid through the gateway · ${gift.gatewayRef}.`
         : `${reason}. Ref ${reference}. Tell them whether it arrived.`,

@@ -43,7 +43,7 @@ import { availableManagers, bringUpToDate, feeGst, managerName, pickManager, quo
 import { actorName, gistOf, stars, toWhom } from '../../../shared/notifications.js';
 import { notify, orderNames } from './notify.js';
 import { openDisputeRecord } from './dispute-routes.js';
-import { adjustHeldCredit, heldCreditMinor, placeOrder, repriceCheckout, returnKeptCredit, unavailableReason } from './placement.js';
+import { adjustHeldCredit, heldCreditMinor, placeOrder, repriceCheckout, returnKeptCredit, returnSpentStoreCredit, unavailableReason } from './placement.js';
 import { error, handler, json } from './http.js';
 import { callOffOrder } from './call-off.js';
 import { ownPhotos } from '../storage/index.js';
@@ -2234,6 +2234,8 @@ async function cancelOrder(request: HttpRequest, _context: InvocationContext) {
   // damaged, lost or sold elsewhere. A parcel already on its way never is.
   // The order's pre-order place is freed either way.
   const shippedOut = order.status === 'shipped';
+  // Store credit spent on it goes back as credit, with the time it was held; the rest is a refund.
+  await returnSpentStoreCredit(repository, order, user.id);
   const owed = callOffOrder(order, reason, user.id);
   if (user.id === order.sellerId) order.sellerCancelledAt = new Date().toISOString();
   await repository.updateOrder(order);

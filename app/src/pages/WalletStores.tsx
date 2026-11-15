@@ -44,6 +44,15 @@ function emptyRow(id: string, name: string): StoreRow {
   return { id, name, spendMinor: 0, owedMinor: 0, byKind: { kept: 0, given: 0, won: 0, loyalty: 0, owed: 0 }, lines: [], cards: [], ready: 0, paidOut: 0 };
 }
 
+/** "Use by 12 Dec", or "Lapses in 3 days" when it is close. */
+function lapseNote(expiresAt: string | null | undefined): string {
+  if (!expiresAt) return '';
+  const days = Math.ceil((Date.parse(expiresAt) - Date.now()) / 86_400_000);
+  if (days <= 1) return '⏳ Lapses today';
+  if (days <= 7) return `⏳ Lapses in ${days} days`;
+  return `Use by ${new Date(expiresAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: days > 300 ? 'numeric' : undefined })}`;
+}
+
 function buildRows(refunds: MyRefund[], credits: StoreCredit[], gifts: StoreGift[], cards: CardProgress[]): StoreRow[] {
   const rows = new Map<string, StoreRow>();
   const row = (id: string, name: string) => {
@@ -58,7 +67,11 @@ function buildRows(refunds: MyRefund[], credits: StoreCredit[], gifts: StoreGift
     target.byKind[kind] += refund.leftMinor;
     if (kind === 'kept') target.spendMinor += refund.leftMinor;
     else target.owedMinor += refund.leftMinor;
-    target.lines.push({ kind, label: refund.itemName, amountMinor: refund.leftMinor, at: refund.createdAt, link: `/order/${refund.orderId}`, note: refund.reason ?? undefined });
+    // A refund is the buyer's money: it never lapses, and says so.
+    target.lines.push({
+      kind, label: refund.itemName, amountMinor: refund.leftMinor, at: refund.createdAt, link: `/order/${refund.orderId}`,
+      note: [refund.reason, 'Refund · never lapses'].filter(Boolean).join(' · '),
+    });
   }
   for (const credit of credits) {
     const left = storeCreditLeft(credit);
@@ -69,7 +82,10 @@ function buildRows(refunds: MyRefund[], credits: StoreCredit[], gifts: StoreGift
     target.spendMinor += left;
     target.lines.push({
       kind, label: credit.reason, amountMinor: left, at: credit.createdAt, link: credit.link,
-      note: credit.spentMinor > 0 ? `${formatMoney(credit.spentMinor)} of ${formatMoney(credit.amountMinor)} spent` : undefined,
+      note: [
+        credit.spentMinor > 0 ? `${formatMoney(credit.spentMinor)} of ${formatMoney(credit.amountMinor)} spent` : '',
+        credit.refund ? 'Refund · never lapses' : lapseNote(credit.expiresAt),
+      ].filter(Boolean).join(' · ') || undefined,
     });
   }
   for (const gift of gifts) {

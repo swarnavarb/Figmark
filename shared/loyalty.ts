@@ -22,6 +22,7 @@
  * (`LoyaltySettings`, in the pricing document).
  */
 
+import { CREDIT_LIFE_MAX_DAYS, creditLifeFrom } from './play.js';
 import { appliedPerks, type OfferKind, type Perk } from './offers.js';
 
 export const STAMPS = 8;
@@ -122,6 +123,8 @@ export interface LoyaltyCard {
   minOrderMinor: number;
   /** One slot per stamp, a reward or nothing. */
   rewards: (LoyaltyReward | null)[];
+  /** How many days cashback from this card lasts once credited; absent or null for never. */
+  cashbackDays?: number | null;
   active: boolean;
   createdAt: string;
   updatedAt: string;
@@ -211,7 +214,7 @@ export function rewardWords(reward: LoyaltyReward, money: (minor: number) => str
 /** Checks a card a shop saved against the operators' rules. */
 export function cleanCard(
   raw: unknown, settings: LoyaltySettings,
-): { card: Pick<LoyaltyCard, 'name' | 'theme' | 'listingIds' | 'minOrderMinor' | 'rewards' | 'active'> } | { error: string } {
+): { card: Pick<LoyaltyCard, 'name' | 'theme' | 'listingIds' | 'minOrderMinor' | 'rewards' | 'active' | 'cashbackDays'> } | { error: string } {
   if (!raw || typeof raw !== 'object') return { error: 'Send the card.' };
   const input = raw as Record<string, unknown>;
   const name = typeof input.name === 'string' ? input.name.trim().slice(0, 40) : '';
@@ -256,7 +259,9 @@ export function cleanCard(
     rewards.push(reward);
   }
   if (!rewards.some(Boolean)) return { error: 'Put a reward on at least one stamp.' };
-  return { card: { name, theme, listingIds, minOrderMinor: min, rewards, active: input.active !== false } };
+  const cashbackDays = creditLifeFrom(input.cashbackDays);
+  if (cashbackDays === undefined) return { error: `Cashback lasts 1 to ${CREDIT_LIFE_MAX_DAYS} days, or never lapses.` };
+  return { card: { name, theme, listingIds, minOrderMinor: min, rewards, active: input.active !== false, cashbackDays } };
 }
 
 /** Whether an order stamps a card: delivered, an item the card covers, big enough, after the card began. */

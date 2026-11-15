@@ -236,6 +236,7 @@
 .ppreview__stars { margin: 0; text-align: center; font-size: calc(30px * var(--text-scale)); letter-spacing: 6px; color: var(--warn); }
 .ppreview__prizes { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: var(--t-sm); }
 .ppreview__prizes li { display: flex; gap: 8px; padding: 6px 10px; border-radius: 10px; background: var(--warn-soft); }
+.ppreview__fakebtn { justify-self: start; pointer-events: none; }
 .ppreview__prize { margin: 0; padding: 8px 10px; border-radius: 12px; background: var(--warn-soft); border: 1px solid rgba(251, 191, 36, 0.4); font-size: var(--t-sm); }
 .ppreview__blurred { filter: blur(14px); }
 .ppreview__foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: var(--t-xs); color: var(--text-dim); }
@@ -421,3 +422,22 @@
   border-radius: var(--r-pill); background: var(--accent); color: #fff;
 }
 .pstudio__body[hidden] { display: none !important; }
+
+/* Spread the word: goals the whole drive unlocks together. */
+.pstudio__goals { display: grid; gap: 8px; padding: 12px; border-radius: 14px; background: rgba(0, 0, 0, 0.22); }
+.pstudio__goalshead { margin: 0 0 2px; display: grid; gap: 2px; font-size: var(--t-sm); }
+.pstudio__goalshead span { color: var(--text-dim); font-size: var(--t-xs); line-height: 1.45; }
+.pstudio__goal {
+  display: grid; grid-template-columns: auto 104px 28px; grid-template-areas: "at money x" "perk perk perk";
+  gap: 6px; align-items: center; padding: 8px; border-radius: 12px; background: var(--surface-2);
+}
+.pstudio__goalat { grid-area: at; display: flex; align-items: center; gap: 6px; font-size: var(--t-xs); color: var(--text-dim); }
+.pstudio__goalat input { width: 58px; text-align: center; font-weight: var(--w-bold); }
+.pstudio__goal .pstudio__moneybox { grid-area: money; }
+.pstudio__goalperk { grid-area: perk; }
+.pstudio__goalx {
+  grid-area: x; width: 28px; height: 28px; border: 0; border-radius: 50%; background: transparent;
+  color: var(--text-faint); font-size: calc(18px * var(--text-scale)); cursor: pointer;
+}
+.pstudio__perkideas { display: flex; flex-wrap: wrap; gap: 6px; }
+.pstudio__perkideas .chip { font-size: var(--t-xs); }
