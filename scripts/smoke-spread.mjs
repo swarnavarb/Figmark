@@ -19,7 +19,7 @@ const { verifiedSignup } = await import('./verified-signup.mjs');
 const signup = verifiedSignup(rawSignup);
 const { myInviteRoute: myInvite, openInviteRoute: openInvite } = await import(new URL('share-routes.js', fns));
 const {
-  createPostRoute: createPost, joinSpreadRoute: joinSpread, shopSpreadRoute: shopSpread, readPostRoute: readPost, discoverRoute: discover,
+  createPostRoute: createPost, joinSpreadRoute: joinSpread, shopSpreadRoute: shopSpread, allSpreadsRoute: allSpreads, readPostRoute: readPost, discoverRoute: discover,
 } = await import(new URL('social-routes.js', fns));
 await useFixtures();
 const { getRepository } = await import(new URL('../api/dist/api/src/data/index.js', import.meta.url));
@@ -73,15 +73,12 @@ const drive = async (referral, body = 'Bring a friend - credit for every new buy
 
 console.log('spread the word');
 
-await check('running one is Pro: refused without it, open with it', async () => {
-  const refused = await drive({ rewardMinor: 10000, maxPerPerson: 2, timing: 'now', hours: 24, target: { kind: 'shop' } });
-  assert.equal(refused.status, 402);
-  assert.equal(refused.jsonBody.error, 'pro_required');
+let post;
+await check('free for every shop: no Pro needed', async () => {
   const account = await repository.getUserById(shop.id);
-  await repository.updateUser({ ...account, pro: { until: new Date(Date.now() + 90 * 86_400_000).toISOString(), history: [] } });
+  assert.ok(!account.pro?.until || Date.parse(account.pro.until) < Date.now(), 'the shop has no Pro');
 });
 
-let post;
 await check('a shop starts one: credit per new buyer, a cap, a bonus and a timer', async () => {
   const made = await drive({ rewardMinor: 10000, maxPerPerson: 2, topPrizeMinor: 5000, timing: 'now', hours: 24, target: { kind: 'shop' } });
   assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
@@ -125,8 +122,23 @@ await check('tied to a live drop: before ends as the first item goes out, during
   assert.equal(after.status, 201, JSON.stringify(after.jsonBody));
   const a = (await repository.getPost(after.jsonBody.post.channelId, after.jsonBody.post.id)).referral;
   assert.equal(a.startsAt, d.endsAt, 'after starts when the drop ends');
+  // The drop's ticket on the Buy tab names the drive: the one counting now.
+  const { dropRoute, dropsRoute } = await import(new URL('showcase-routes.js', fns));
+  await repository.savePowerSale({ ...sale, status: 'running', openedAt: new Date(at).toISOString() });
+  const ticket = (await dropRoute(req({ params: { sellerId: shop.id, id: sale.id } }), ctx)).jsonBody.drop;
+  assert.equal(ticket.spread.open, true, 'the before drive is counting');
+  assert.equal(ticket.spread.rewardMinor, 5000);
+  assert.equal(ticket.spread.href, `/social/p/${encodeURIComponent(before.jsonBody.post.channelId)}/${before.jsonBody.post.id}`);
+  const shelf = (await dropsRoute(req({}), ctx)).jsonBody.drops.find((entry) => entry.id === sale.id);
+  assert.ok(shelf?.spread, 'on the shelf too');
+  // Discover's own section lists every drive, the ones still to start included.
+  const all = (await allSpreads(req({}), ctx)).jsonBody.spreads.map((card) => card.post.id);
+  for (const made of [before, during, after]) assert.ok(all.includes(made.jsonBody.post.id), 'every drive in the section');
   // Tidy: these three would otherwise be the shop's running drive below.
   for (const made of [before, during, after]) await repository.deletePost(made.jsonBody.post.channelId, made.jsonBody.post.id);
+  const gone = (await dropRoute(req({ params: { sellerId: shop.id, id: sale.id } }), ctx)).jsonBody.drop;
+  assert.equal(gone.spread, null, 'no drive, no tag');
+  await repository.savePowerSale({ ...sale, status: 'cancelled' });
 });
 
 let sharer;

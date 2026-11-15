@@ -7629,6 +7629,16 @@ a.ocust__name:hover { color: var(--accent-text); }
 .ticket__dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: live-dot 1s ease-in-out infinite; }
 @keyframes live-dot { 50% { opacity: 0.2; } }
 .ticket__shop { opacity: 0.7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A Spread the word drive on the drop: a gold pill on the top line, never a
+   line of its own, and a thin gold edge round the ticket. */
+.ticket--spread .ticket__shop { flex: 1; min-width: 0; }
+.ticket__spread {
+  flex-shrink: 0; padding: 3px var(--s2); border-radius: var(--r-pill); white-space: nowrap;
+  background: var(--grad-gold); color: inherit; font-weight: var(--w-bold); text-decoration: none;
+  box-shadow: 0 2px 8px rgba(234, 179, 8, 0.45);
+}
+.ticket__spread:hover { filter: brightness(1.06); }
+.ticket--spread { box-shadow: 0 8px 18px rgba(0, 0, 0, 0.4), inset 0 0 0 2px var(--gold); }
 .ticket__name { font-size: var(--t-base); font-weight: var(--w-bold); line-height: 1.2; letter-spacing: -0.01em; color: inherit; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ticket__name:hover { text-decoration: underline; text-underline-offset: 3px; }
 /* The label and the clock on one line. */
@@ -10384,8 +10394,6 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .spreadcard__bar { display: block; height: 6px; border-radius: var(--r-pill); background: rgba(255, 255, 255, 0.08); overflow: hidden; }
 .spreadcard__bar > span { display: block; height: 100%; background: var(--grad-gold); transform-origin: left center; }
 
-/* The PRO tag on Spread the word where a shop starts one. */
-.spread-nudge__pro { margin-left: 6px; vertical-align: 1px; }
 
 /* How long credit lasts: on a prize post, and where a store gives credit by hand. */
 .pcredit-life { margin: 0; font-size: var(--t-xs); color: var(--text-dim); }
@@ -10396,3 +10404,10 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .givelife__refund small { color: var(--text-dim); font-size: var(--t-xs); }
 .pstudio__life { display: grid; gap: 4px; }
 .rfhero__never { display: block; margin-top: 4px; font-size: var(--t-xs); color: var(--text-dim); }
+
+/* Discover's Spread the word section: every drive, wrapped rather than in a sideways row. */
+.spreadrow--grid {
+  grid-auto-flow: row; grid-auto-columns: auto; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+  overflow: visible; scroll-snap-type: none;
+}
+@media (max-width: 479px) { .spreadrow--grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s2); } }

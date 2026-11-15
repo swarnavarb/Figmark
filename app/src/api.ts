@@ -648,6 +648,8 @@ export interface DropCardData {
   reminders: number;
   reminded: boolean;
   channel: string;
+  /** A Spread the word drive on this drop: credit for bringing a friend to it. */
+  spread?: { rewardMinor: number; welcomeMinor: number; open: boolean; href: string } | null;
 }
 
 /** A step forward that can still be taken back, and until when. */
@@ -3394,6 +3396,8 @@ export const api = {
   myItems: () => request<{ groups: ItemGroup[] }>('/me/items'),
   fillingLots: () => request<{ lots: FillingLot[] }>('/showcase/lots'),
   drops: () => request<{ drops: DropCardData[] }>('/showcase/drops'),
+  /** Every Spread the word drive running or about to, for Discover's section. */
+  spreads: () => request<{ spreads: PostCard[] }>('/social/spreads'),
   drop: (sellerId: string, id: string) =>
     request<{ drop: DropCardData }>(`/showcase/drops/${encodeURIComponent(sellerId)}/${encodeURIComponent(id)}`),
   remindDrop: (sellerId: string, id: string, on: boolean) =>

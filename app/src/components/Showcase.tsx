@@ -165,7 +165,7 @@ function DropTicket({ drop: initial, index }: { drop: DropCardData; index: numbe
   const from = prices.length > 0 ? Math.min(...prices) : null;
 
   return (
-    <article className={`ticket${live ? ' is-live' : ''}`} style={{ ['--i' as string]: index }}>
+    <article className={`ticket${live ? ' is-live' : ''}${drop.spread ? ' ticket--spread' : ''}`} style={{ ['--i' as string]: index }}>
       <span className="ticket__curtain ticket__curtain--l" aria-hidden="true" />
       <span className="ticket__curtain ticket__curtain--r" aria-hidden="true" />
       <div className="ticket__inner">
@@ -174,6 +174,13 @@ function DropTicket({ drop: initial, index }: { drop: DropCardData; index: numbe
             ? <span className="ticket__live"><span className="ticket__dot" /> LIVE</span>
             : <span className="ticket__soon">⚡ Drop</span>}
           <span className="ticket__shop">{drop.shop.name}</span>
+          {/* On the top line, so a drive adds no height to the ticket. */}
+          {drop.spread && (
+            <Link to={drop.spread.href} className="ticket__spread"
+              title={`Spread the word: bring a friend who's new to Figmark and earn ${formatMoney(drop.spread.rewardMinor, 'INR')} store credit${drop.spread.open ? '' : ' (starts soon)'}`}>
+              📣 Earn {formatMoney(drop.spread.rewardMinor, 'INR')}
+            </Link>
+          )}
         </span>
         <Link to={drop.channel} className="ticket__name">{drop.name}</Link>
         {live ? (

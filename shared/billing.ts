@@ -141,11 +141,6 @@ export const PRO_FEATURES = [
     benefit: 'Run a timed drop for your followers. Everybody gets told at once, and the rush fills your orders before the timer runs out.',
   },
   {
-    id: 'spread', icon: '📣', title: 'Spread the word', punch: 'Your buyers bring you new ones',
-    line: 'Timed drives with goals everyone unlocks together, welcome credit for friends and a leaderboard.',
-    benefit: 'Your followers share their own link on WhatsApp and Instagram. Set goals the whole crowd unlocks - a mystery item, early access, credit - and pay only for brand-new buyers who join.',
-  },
-  {
     id: 'loyalty', icon: '🎟️', title: 'Loyalty cards', punch: 'Turn buyers into regulars',
     line: 'Eight-stamp cards with cashback, free items and money off on the stamps you pick.',
     benefit: 'Every delivered order stamps the buyer\'s card. Put cashback or a free item on the stamps you choose - buyers see how close they are on every item you list, and come back to fill it.',
@@ -281,7 +276,7 @@ export const DEFAULT_PRICING: Pricing = {
       { months: 12, priceMinor: 1_59_900, bumpPoints: 30, enabled: true },
     ],
     trialDays: 0,
-    features: { insights: true, calculator: true, costs: true, customers: true, powerSale: true, spread: true, loyalty: true },
+    features: { insights: true, calculator: true, costs: true, customers: true, powerSale: true, loyalty: true },
   },
   cancels: { enabled: true, windowDays: 30, maxPct: 20, minOrders: 5, pauseDirect: true },
   loyalty: DEFAULT_LOYALTY,

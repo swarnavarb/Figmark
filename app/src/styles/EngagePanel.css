@@ -20,8 +20,6 @@
   transition: border-color var(--dur-1) ease, transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .sengage__start strong { font-size: var(--t-sm); line-height: 1.25; }
-.sengage__start { position: relative; }
-.sengage__pro { position: absolute; top: 10px; right: 10px; }
 .sengage__line { font-size: var(--t-xs); color: var(--text-dim); line-height: 1.3; }
 .sengage__emoji { font-size: calc(22px * var(--text-scale)); line-height: 1; margin-bottom: 4px; display: inline-block; }
 .sengage__start--gold { --tile: var(--gold); --tile-line: rgba(251, 191, 36, 0.45); }

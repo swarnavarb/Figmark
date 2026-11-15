@@ -44,12 +44,13 @@ import '../styles/DiscoverPage.css';
  * nothing is shown twice on the first screens.
  */
 
-type Lens = 'all' | 'live' | 'debates' | 'shelves' | 'finds' | 'week';
+type Lens = 'all' | 'live' | 'spread' | 'debates' | 'shelves' | 'finds' | 'week';
 type IconName = Parameters<typeof Icon>[0]['name'];
 
 const LENSES: { id: Exclude<Lens, 'week'>; label: string; icon: IconName }[] = [
   { id: 'all', label: 'For you', icon: 'spark' },
   { id: 'live', label: 'Live', icon: 'poll' },
+  { id: 'spread', label: 'Spread', icon: 'megaphone' },
   { id: 'debates', label: 'Debates', icon: 'forum' },
   { id: 'shelves', label: 'Shelves', icon: 'camera' },
   { id: 'finds', label: 'Finds', icon: 'tag' },
@@ -64,7 +65,7 @@ function lensFrom(value: string | null, hash: string): Lens {
   if (hash === '#competitions') return 'live';
   if (!value) return 'all';
   if (LEGACY_LENS[value]) return LEGACY_LENS[value]!;
-  return (['all', 'live', 'debates', 'shelves', 'finds', 'week'] as const).find((lens) => lens === value) ?? 'all';
+  return (['all', 'live', 'spread', 'debates', 'shelves', 'finds', 'week'] as const).find((lens) => lens === value) ?? 'all';
 }
 
 /** An item worth surfacing, and the one word that says why. Ranked on the server. */
@@ -586,6 +587,7 @@ function DiscoverBody() {
             aria-pressed={lens === entry.id} onClick={() => setLens(entry.id)}>
             <Icon name={entry.icon} size={14} /> {entry.label}
             {entry.id === 'live' && liveCount > 0 && <span className="dislens__count">{liveCount}</span>}
+            {entry.id === 'spread' && spreads.length > 0 && <span className="dislens__count dislens__count--gold">{spreads.length}</span>}
           </button>
         ))}
       </nav>
@@ -623,7 +625,10 @@ function DiscoverBody() {
           {spots.length > 0 && !words.length && <SpotlightDeck spots={spots} />}
           {spreads.length > 0 && !narrowed && (
             <>
-              <h2 className="discsection"><Icon name="megaphone" size={15} /> Earn store credit</h2>
+              <h2 className="discsection">
+                <Icon name="megaphone" size={15} /> Earn store credit
+                <button type="button" className="discsection__all" onClick={() => setLens('spread')}>See all <Icon name="right" size={12} /></button>
+              </h2>
               <SpreadRow cards={spreads} />
             </>
           )}
@@ -685,6 +690,8 @@ function DiscoverBody() {
         <FindsView finds={shownFinds} spotted={rails.spotted} category={category} />
       ) : lens === 'week' ? (
         <WeeklyBest />
+      ) : lens === 'spread' ? (
+        <SpreadView first={spreads} />
       ) : lens === 'live' ? (
         <LiveView live={live} contests={contests} spreads={spreads} posts={posts} />
       ) : lens === 'debates' ? (
@@ -1286,6 +1293,77 @@ function pictures(card: PostCard): string[] {
 }
 
 /* ── the Live lens ───────────────────────────────────────────────────────── */
+
+/**
+ * Discover's Spread the word section: every drive running or about to, from
+ * every shop - not only the dozen the For you row carries. Running ones first,
+ * then those still to start, each a card with its clock, its pay and its goal.
+ */
+function SpreadView({ first }: { first: PostCard[] }) {
+  const [cards, setCards] = useState<PostCard[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    api.spreads()
+      .then((result) => { if (alive) setCards(result.spreads); })
+      .catch((caught) => { if (alive) setError(caught instanceof ApiRequestError ? caught.message : 'Could not load every drive.'); });
+    return () => { alive = false; };
+  }, []);
+  const all = (cards ?? first).filter((card) => card.social.referral && card.social.referral.phase !== 'ended');
+  const open = all.filter((card) => card.social.referral!.phase === 'open');
+  const soon = all.filter((card) => card.social.referral!.phase === 'soon');
+  const shops = new Set(all.map((card) => card.social.referral!.storeId)).size;
+  const best = all.reduce((most, card) => Math.max(most, card.social.referral!.rewardMinor), 0);
+  const sharing = all.filter((card) => card.social.referral!.mine?.in).length;
+  return (
+    <div className="discover__stream">
+      <section className="spreadhero">
+        <span className="spreadhero__burst" aria-hidden="true">📣</span>
+        <div className="spreadhero__copy">
+          <h2>Spread the word</h2>
+          <p>Shops pay you store credit for every friend you bring who&rsquo;s new to Figmark.</p>
+        </div>
+        <ol className="spreadhero__steps">
+          <li><b>1</b> Get your link</li>
+          <li><b>2</b> Share anywhere</li>
+          <li><b>3</b> Earn per new buyer</li>
+        </ol>
+        {all.length > 0 && (
+          <p className="spreadhero__stats">
+            <span><b>{open.length}</b> running</span>
+            {soon.length > 0 && <span><b>{soon.length}</b> starting soon</span>}
+            <span><b>{shops}</b> {shops === 1 ? 'shop' : 'shops'}</span>
+            {best > 0 && <span>up to <b>{formatMoney(best)}</b> a friend</span>}
+            {sharing > 0 && <span className="spreadhero__mine">you&rsquo;re in <b>{sharing}</b></span>}
+          </p>
+        )}
+      </section>
+      {error && cards === null && first.length === 0 && <ErrorNotice message={error} />}
+      {cards === null && first.length === 0 && !error ? (
+        <p className="discend"><Spinner size={14} label="Loading" /> Finding every drive</p>
+      ) : all.length === 0 ? (
+        <EmptyState title="No drives right now">
+          When a shop starts one, it shows up here - with a timer, the credit it pays and the goals everyone unlocks together.
+        </EmptyState>
+      ) : (
+        <>
+          {open.length > 0 && (
+            <>
+              <h2 className="discsection"><span className="dischero__pulse" aria-hidden="true" /> Running now <span className="faint">{open.length}</span></h2>
+              <SpreadRow cards={open} grid />
+            </>
+          )}
+          {soon.length > 0 && (
+            <>
+              <h2 className="discsection"><Icon name="bell" size={15} /> Starting soon <span className="faint">{soon.length}</span></h2>
+              <SpreadRow cards={soon} grid />
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
 
 /**
  * Everything open to take part in: what closes within the day first, then the

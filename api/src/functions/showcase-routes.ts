@@ -2,7 +2,8 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import { lotIsDone, lotPhase } from '../../../shared/fulfilment.js';
 import { lotNo, lotNumberFrom } from '../../../shared/routes.js';
 import { isCancelledLike } from '../../../shared/orders.js';
-import type { Lot, PowerSale, User } from '../../../shared/models.js';
+import type { Lot, Post, PowerSale, User } from '../../../shared/models.js';
+import { referralPhase } from '../../../shared/referral.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { advancePowerSale, asOf, finishesAt, firstDropAt, nextDropAt, remindOne } from './power-sale.js';
@@ -102,7 +103,43 @@ async function fillingLots(_request: HttpRequest, _context: InvocationContext) {
 }
 
 /** A sale as the shelf and the channel's countdown draw it: as of now, nothing written ahead. */
-function dropView(stored: PowerSale, shop: User | undefined, viewerId: string | null) {
+/**
+ * A Spread the word drive on a drop, as its ticket names it: the one counting
+ * now before one still to start, the most credit per friend first.
+ */
+type DriveTag = { rewardMinor: number; welcomeMinor: number; open: boolean; href: string };
+
+function driveTags(games: Post[], now: number): Map<string, DriveTag> {
+  const tags = new Map<string, DriveTag>();
+  for (const post of games) {
+    const referral = post.referral;
+    if (!referral || referral.target.kind !== 'drop') continue;
+    const phase = referralPhase(referral, now);
+    if (phase === 'ended') continue;
+    const key = `${referral.storeId}/${referral.target.saleId}`;
+    const tag: DriveTag = {
+      rewardMinor: referral.rewardMinor,
+      welcomeMinor: referral.welcomeMinor ?? 0,
+      open: phase === 'open',
+      href: `/social/p/${encodeURIComponent(post.channelId)}/${encodeURIComponent(post.id)}`,
+    };
+    const was = tags.get(key);
+    if (!was || (tag.open && !was.open) || (tag.open === was.open && tag.rewardMinor > was.rewardMinor)) tags.set(key, tag);
+  }
+  return tags;
+}
+
+async function drivesFor(repository: Awaited<ReturnType<typeof getRepository>>): Promise<Map<string, DriveTag>> {
+  try {
+    const now = Date.now();
+    return driveTags(await repository.listOpenGames(new Date(now).toISOString(), 500), now);
+  } catch {
+    // The shelf without its tags beats no shelf.
+    return new Map();
+  }
+}
+
+function dropView(stored: PowerSale, shop: User | undefined, viewerId: string | null, drive: DriveTag | null = null) {
   const sale = asOf(stored);
   const out = sale.items.filter((item) => item.postedAt).length;
   const startsAt = firstDropAt(sale);
@@ -130,6 +167,8 @@ function dropView(stored: PowerSale, shop: User | undefined, viewerId: string | 
     reminders: (sale.reminders ?? []).length,
     reminded: viewerId ? (sale.reminders ?? []).includes(viewerId) : false,
     channel: `/social/c/${encodeURIComponent(sale.sellerId)}`,
+    // Bring a friend to it and earn credit: a Spread the word drive on this drop.
+    spread: drive,
   };
 }
 
@@ -162,9 +201,14 @@ async function drops(request: HttpRequest, _context: InvocationContext) {
     // Soonest to start first; live ones (already started) ahead of all.
     .sort((a, b) => firstDropAt(a).localeCompare(firstDropAt(b)));
   const picked = capPerShop(shown);
-  const shops = new Map((await repository.listUsersByIds([...new Set(picked.map((sale) => sale.sellerId))]))
-    .map((user) => [user.id, user]));
-  return json(200, { drops: picked.map((sale) => dropView(sale, shops.get(sale.sellerId), viewer?.id ?? null)) });
+  const [shopRows, drives] = await Promise.all([
+    repository.listUsersByIds([...new Set(picked.map((sale) => sale.sellerId))]),
+    picked.length > 0 ? drivesFor(repository) : Promise.resolve(new Map<string, DriveTag>()),
+  ]);
+  const shops = new Map(shopRows.map((user) => [user.id, user]));
+  return json(200, {
+    drops: picked.map((sale) => dropView(sale, shops.get(sale.sellerId), viewer?.id ?? null, drives.get(`${sale.sellerId}/${sale.id}`) ?? null)),
+  });
 }
 
 /** GET /api/showcase/drops/{sellerId}/{id} - one, for the channel's countdown. */
@@ -175,8 +219,8 @@ async function drop(request: HttpRequest, _context: InvocationContext) {
   const viewer = await auth.getCurrentUser(request);
   const sale = await repository.getPowerSale(sellerId, id);
   if (!sale || !asOf(sale).openedAt) return error(404, 'not_found', 'No such drop.');
-  const shop = await repository.getUserById(sellerId);
-  return json(200, { drop: dropView(sale, shop ?? undefined, viewer?.id ?? null) });
+  const [shop, drives] = await Promise.all([repository.getUserById(sellerId), drivesFor(repository)]);
+  return json(200, { drop: dropView(sale, shop ?? undefined, viewer?.id ?? null, drives.get(`${sellerId}/${id}`) ?? null) });
 }
 
 /**
@@ -210,8 +254,8 @@ async function remind(request: HttpRequest, _context: InvocationContext) {
   });
   // The first item may already be written ahead, its reminders held for it.
   await remindOne(repository, saved, user.id, on);
-  const shop = await repository.getUserById(sellerId);
-  return json(200, { drop: dropView(saved, shop ?? undefined, user.id) });
+  const [shop, drives] = await Promise.all([repository.getUserById(sellerId), drivesFor(repository)]);
+  return json(200, { drop: dropView(saved, shop ?? undefined, user.id, drives.get(`${sellerId}/${id}`) ?? null) });
 }
 
 export const fillingLotsRoute = handler(fillingLots);

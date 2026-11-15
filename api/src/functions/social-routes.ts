@@ -55,7 +55,6 @@ import {
   type PostReferral, type ReferralTarget, type ReferralTiming, type ReferralView,
 } from '../../../shared/referral.js';
 import { finishesAt, firstDropAt } from './power-sale.js';
-import { proRefusal } from '../billing.js';
 import { ownPhotoName } from '../storage/index.js';
 import { likeness, storedFingerprint } from '../image-hash.js';
 import { pictureMatches } from '../photo-search.js';
@@ -774,14 +773,14 @@ const SPREADS_SHOWN = 12;
  * then the soonest to end. Shown whether or not the reader has taken part -
  * the row is where they come back to share their link again.
  */
-function spreadsOf(posts: readonly Post[], now: number): Post[] {
+function spreadsOf(posts: readonly Post[], now: number, cap = SPREADS_SHOWN): Post[] {
   const phaseRank = (post: Post) => (referralPhase(post.referral!, now) === 'open' ? 0 : 1);
   return posts
     .filter((post) => post.referral && referralPhase(post.referral, now) !== 'ended')
     .sort((a, b) => phaseRank(a) - phaseRank(b)
       || b.referral!.rewardMinor - a.referral!.rewardMinor
       || a.referral!.endsAt.localeCompare(b.referral!.endsAt))
-    .slice(0, SPREADS_SHOWN);
+    .slice(0, cap);
 }
 
 /** Competitions running or just finished, open ones first, those closing soonest first. */
@@ -2627,9 +2626,6 @@ async function createPost(request: HttpRequest, _context: InvocationContext) {
 
   let referral: PostReferral | null = null;
   if (body.referral && shop) {
-    // Running a drive is Pro; taking part in one is free for everybody.
-    const locked = await proRefusal(repository, shop.id, 'spread');
-    if (locked) return locked;
     const made = await referralFrom(body.referral, shop, repository);
     if ('refusal' in made) return made.refusal;
     if (poll || guess || contest || hotspots || debateIds || compare || question || vibe || body.listingId) {
@@ -4262,6 +4258,30 @@ async function shopSpread(request: HttpRequest, _context: InvocationContext) {
   return json(200, { drive: lead, drives: running });
 }
 
+/** Most drives Discover's Spread the word section lists. */
+const SPREADS_ALL = 60;
+
+/**
+ * GET /api/social/spreads - every Spread the word drive running or about to,
+ * for Discover's own section: read from the open games rather than the recent
+ * posts, so a drive posted a week ago and still running is not missed.
+ */
+async function allSpreads(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.getCurrentUser(request);
+  const repository = await getRepository();
+  const actor = user ? await actorFor(request, user, repository) : GUEST;
+  if (!actor) return notYours();
+  const now = Date.now();
+  const [games, moderated] = await Promise.all([
+    repository.listOpenGames(new Date(now).toISOString(), 500),
+    moderation(repository),
+  ]);
+  const shown = spreadsOf(games.filter((post) => post.referral && !post.repostOf && !post.wallOf
+    && (post.reach ?? 'feed') === 'feed' && !moderated.isRemoved('post', post.id)), now, SPREADS_ALL);
+  return json(200, { spreads: await decorate(shown, repository, actor) });
+}
+
 /**
  * POST /api/social/posts/{channel}/{id}/judge - the host's decisions.
  *
@@ -4420,6 +4440,7 @@ export const myRewardsRoute = handler(myRewards);
 export const shopGamesRoute = handler(shopGames);
 export const joinSpreadRoute = handler(joinSpread);
 export const shopSpreadRoute = handler(shopSpread);
+export const allSpreadsRoute = handler(allSpreads);
 app.http('me-posts', { ...anon, methods: ['GET'], route: 'me/posts', handler: myPostsRoute });
 app.http('person-posts', { ...anon, methods: ['GET'], route: 'users/{id}/posts', handler: personPostsRoute });
 app.http('social-feed', { ...anon, methods: ['GET'], route: 'social/feed', handler: socialFeedRoute });
@@ -4457,6 +4478,7 @@ app.http('social-post-guess', { ...anon, methods: ['POST'], route: 'social/posts
 app.http('social-post-judge', { ...anon, methods: ['POST'], route: 'social/posts/{channel}/{id}/judge', handler: judgeRoute });
 app.http('social-shop-games', { ...anon, methods: ['GET'], route: 'social/shops/{id}/games', handler: shopGamesRoute });
 app.http('social-post-spread', { ...anon, methods: ['POST'], route: 'social/posts/{channel}/{id}/spread', handler: joinSpreadRoute });
+app.http('social-spreads', { ...anon, methods: ['GET'], route: 'social/spreads', handler: allSpreadsRoute });
 app.http('social-shop-spread', { ...anon, methods: ['GET'], route: 'social/shops/{id}/spread', handler: shopSpreadRoute });
 app.http('me-rewards', { ...anon, methods: ['GET'], route: 'me/rewards', handler: myRewardsRoute });
 app.http('social-search', { ...anon, methods: ['GET'], route: 'social/search', handler: socialSearchRoute });
