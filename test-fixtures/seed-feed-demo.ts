@@ -1,5 +1,6 @@
 import type { Post } from '../shared/models.js';
 import type { PostHotspot, ReactionKind, StoredComment } from '../shared/social.js';
+import type { PostReferral, ReferralMilestone, ReferralTarget, ReferralTiming } from '../shared/referral.js';
 import { reactorIds, seedArt } from './seed.js';
 
 /**
@@ -17,6 +18,10 @@ import { reactorIds, seedArt } from './seed.js';
  * - Three drops from Tokyo Line inside two hours, which the feed folds into one.
  * - New posts from a shop and a person the demo account does not follow, which
  *   rise on Discover.
+ * - Four Spread the word drives, so Discover's "Spread the word" section and
+ *   the shops' banners have something in them: one counting during Kaiju's
+ *   live drop, one filling the room before Tokyo Line's, one on a single
+ *   Sneaker Vault pair, and a shop-wide one from Gadget Grid with goals.
  * - #topics spread across all of them - sneakers, gunpla, shelfie - so the
  *   topic chips and the tag pages have posts behind them.
  *
@@ -50,6 +55,22 @@ interface DemoSeed {
   poll?: { options: string[]; votes: (number | string[])[]; closesInHours: number };
   debate?: [string | null, string | null];
   hotspots?: PostHotspot[];
+  /** A Spread the word drive this post runs. Times are hours from now; sharers and joins hours ago. */
+  spread?: {
+    target: ReferralTarget;
+    timing: ReferralTiming;
+    startsInHours: number;
+    endsInHours: number;
+    rewardMinor: number;
+    maxPerPerson: number;
+    topPrizeMinor: number;
+    welcomeMinor?: number;
+    milestones?: ReferralMilestone[];
+    terms?: string;
+    sharers: [userId: string, name: string, hoursAgo: number][];
+    /** New accounts, whose link brought them, and when. */
+    joins: [userId: string, sharerId: string, hoursAgo: number][];
+  };
   /** On-screen counters, so the reading signals have something to weigh. */
   seen?: { views: number; opens: number; dwellMs: number };
 }
@@ -68,7 +89,88 @@ const gunplaShelf: PostHotspot[] = [
   { photo: 1, x: 0.5, y: 0.5, label: 'PG Unicorn', status: 'wishlist', listingId: null },
 ];
 
+/** The shops the drives belong to, as the posts name them. */
+const STORES: Record<string, { name: string; handle: string }> = {
+  usr_kaiju: { name: 'Kaiju Imports', handle: 'kaiju_imports' },
+  usr_tokyoline: { name: 'Tokyo Line', handle: 'tokyo_line' },
+  usr_sneakervault: { name: 'Sneaker Vault', handle: 'sneaker_vault' },
+  usr_gadgetgrid: { name: 'Gadget Grid', handle: 'gadget_grid' },
+  usr_courtside: { name: 'Courtside Kicks', handle: 'courtside_kicks' },
+};
+
 const DEMO: DemoSeed[] = [
+  /* Spread the word drives: Discover's own section, and each shop's banner. */
+  {
+    // During Kaiju's live drop (pws_demo_live): counting until its last window shuts.
+    id: 'pst_fd_spread_vault', channelId: 'usr_kaiju', authorId: 'usr_kaiju', authorName: 'Kaiju Imports',
+    body: '📣 Midnight Vault is live. Bring a friend who is new to Figmark and earn ₹150 store credit for each one - top sharer takes ₹1,000 more. #kaiju',
+    hoursAgo: 1.5,
+    reactors: 8,
+    spread: {
+      target: { kind: 'drop', saleId: 'pws_demo_live', name: 'Kaiju Midnight Vault' }, timing: 'during',
+      startsInHours: -1.5, endsInHours: 7 * 24 - 1.5,
+      rewardMinor: 150_00, maxPerPerson: 10, topPrizeMinor: 1_000_00, welcomeMinor: 100_00,
+      sharers: [['usr_b_vikram', 'Vikram Chauhan', 1.4], ['usr_b_rohit', 'Rohit Deshmukh', 1.2], ['usr_b_sana', 'Sana Qureshi', 0.8]],
+      joins: [['usr_b_sourav', 'usr_b_vikram', 1], ['usr_b_neha', 'usr_b_vikram', 0.6], ['usr_b_priyanka', 'usr_b_rohit', 0.4]],
+    },
+    seen: { views: 190, opens: 34, dwellMs: 700_000 },
+  },
+  {
+    // Before Tokyo Line's drop (pws_demo_soon): fill the room, ends as the first item goes out.
+    id: 'pst_fd_spread_grails', channelId: 'usr_tokyoline', authorId: 'usr_tokyoline', authorName: 'Tokyo Line',
+    body: '⚡ Friday Night Grails in under 3 hours. Every new collector you bring before it starts is ₹100 credit - and at 10 new buyers the Mystery Akiba box drops 15 minutes early for everyone who shared.',
+    hoursAgo: 0.5,
+    reactors: 6,
+    spread: {
+      target: { kind: 'drop', saleId: 'pws_demo_soon', name: 'Friday Night Grails' }, timing: 'before',
+      startsInHours: -0.5, endsInHours: 2.9,
+      rewardMinor: 100_00, maxPerPerson: 5, topPrizeMinor: 0,
+      milestones: [
+        { at: 10, creditMinor: 0, perk: 'The drop opens 15 minutes early for sharers' },
+        { at: 25, creditMinor: 250_00, perk: 'A mystery item added to the drop' },
+      ],
+      sharers: [['usr_b_karan', 'Karan Malhotra', 0.4], ['usr_b_meghna', 'Meghna Iyer', 0.3]],
+      joins: [['usr_b_avradeep', 'usr_b_karan', 0.2]],
+    },
+  },
+  {
+    // One pair, shop-picked: the Setsubun Dunk.
+    id: 'pst_fd_spread_dunk', channelId: 'usr_sneakervault', authorId: 'usr_sneakervault', authorName: 'Sneaker Vault',
+    body: 'Know someone hunting Setsubun Dunks? Send them our link - ₹200 credit for every new buyer, up to five. Three days only. #sneakers',
+    hoursAgo: 20,
+    reactors: 7,
+    spread: {
+      target: { kind: 'listing', listingId: 'lst_demo_kicks_1', title: 'Dunk Low "Setsubun" — UK 9' }, timing: 'now',
+      startsInHours: -20, endsInHours: 52,
+      rewardMinor: 200_00, maxPerPerson: 5, topPrizeMinor: 500_00,
+      terms: 'New accounts only, verified by phone. Credit is spent at Sneaker Vault.',
+      sharers: [['usr_b_farah', 'Farah Sheikh', 19], ['usr_b_ipsita', 'Ipsita Nair', 15], ['usr_b_tanmay', 'Tanmay Bose', 9], ['usr_b_aisha', 'Aisha Fernandes', 4]],
+      joins: [
+        ['usr_b_dev', 'usr_b_farah', 18], ['usr_b_nikhil', 'usr_b_farah', 12],
+        ['usr_b_sourav', 'usr_b_ipsita', 10], ['usr_b_neha', 'usr_b_tanmay', 6],
+      ],
+    },
+    seen: { views: 240, opens: 41, dwellMs: 820_000 },
+  },
+  {
+    // The whole shop, a week long, with goals everyone unlocks together.
+    id: 'pst_fd_spread_gadget', channelId: 'usr_gadgetgrid', authorId: 'usr_gadgetgrid', authorName: 'Gadget Grid',
+    body: 'Spread the word week 🎧 Bring friends who are new to Figmark: ₹75 credit each, ₹50 welcome credit for them, and free shipping for everybody once we hit 20. #gadgets',
+    hoursAgo: 30,
+    reactors: 5,
+    spread: {
+      target: { kind: 'shop' }, timing: 'now',
+      startsInHours: -30, endsInHours: 7 * 24 - 30,
+      rewardMinor: 75_00, maxPerPerson: 20, topPrizeMinor: 750_00, welcomeMinor: 50_00,
+      milestones: [
+        { at: 5, creditMinor: 50_00, perk: '' },
+        { at: 20, creditMinor: 0, perk: 'Free shipping on every order for a week' },
+      ],
+      sharers: [['usr_b_dev', 'Dev Anand Rao', 28], ['usr_b_priyanka', 'Priyanka Sen', 22]],
+      joins: [['usr_b_avradeep', 'usr_b_dev', 26], ['usr_b_sourav', 'usr_b_dev', 20], ['usr_b_neha', 'usr_b_priyanka', 14]],
+    },
+  },
+
   /* Debates. */
   {
     id: 'pst_fd_debate_shelf', channelId: 'usr_b_karan', authorId: 'usr_b_karan', authorName: 'Karan Malhotra',
@@ -227,6 +329,23 @@ export function seedFeedDemoPosts(base = Date.now()): Post[] {
           closesAt: new Date(base + entry.poll.closesInHours * HOUR).toISOString(),
         }
       : null;
+    const when = (hours: number) => new Date(base + hours * HOUR).toISOString();
+    const store = STORES[entry.channelId];
+    const referral: PostReferral | null = entry.spread && store
+      ? {
+          storeId: entry.channelId, storeName: store.name, storeHandle: store.handle,
+          target: entry.spread.target, timing: entry.spread.timing,
+          startsAt: when(entry.spread.startsInHours), endsAt: when(entry.spread.endsInHours),
+          rewardMinor: entry.spread.rewardMinor, maxPerPerson: entry.spread.maxPerPerson,
+          topPrizeMinor: entry.spread.topPrizeMinor, terms: entry.spread.terms ?? null,
+          sharers: entry.spread.sharers.map(([userId, name, hoursAgo]) => ({ userId, name, at: when(-hoursAgo) })),
+          joins: entry.spread.joins.map(([userId, sharerId, hoursAgo]) => ({ userId, sharerId, at: when(-hoursAgo) })),
+          ...(entry.spread.welcomeMinor ? { welcomeMinor: entry.spread.welcomeMinor } : {}),
+          ...(entry.spread.milestones
+            ? { milestones: entry.spread.milestones, reached: entry.spread.milestones.map(() => null) }
+            : {}),
+        }
+      : null;
     const photoUrls = (entry.art ?? []).map((art, index) => seedArt(art, postIndex * 10 + index));
     return {
       id: entry.id,
@@ -252,6 +371,7 @@ export function seedFeedDemoPosts(base = Date.now()): Post[] {
       replyTo: null,
       ...(entry.debate ? { debate: { listingIds: entry.debate } } : {}),
       ...(entry.hotspots ? { flex: { hotspots: entry.hotspots } } : {}),
+      ...(referral ? { referral, hostShopId: referral.storeId } : {}),
       ...(entry.seen ?? {}),
       resultsSentAt: null,
       createdAt: at,
