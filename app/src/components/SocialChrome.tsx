@@ -27,8 +27,8 @@ export type SocialView = 'feed' | 'channels' | 'wanted' | 'forums' | 'messages';
 export const SOCIAL_VIEWS: { id: SocialView; label: string; icon: IconName }[] = [
   { id: 'feed', label: 'Following', icon: 'spark' },
   { id: 'channels', label: 'Channels', icon: 'megaphone' },
-  { id: 'wanted', label: 'Wanted (ISO)', icon: 'target' },
-  { id: 'forums', label: 'Groups', icon: 'forum' },
+  { id: 'wanted', label: 'Wanted', icon: 'target' },
+  { id: 'forums', label: 'Forums', icon: 'forum' },
   { id: 'messages', label: 'Messages', icon: 'mail' },
 ];
 
@@ -48,8 +48,10 @@ function usePulse(): Pulse {
       const seen = seenMap();
       setPulse({
         messages: inbox.status === 'fulfilled' ? inbox.value.threads.reduce((sum, row) => sum + row.unread, 0) : 0,
+        // How many channels have news, not how many messages: twenty drops from
+        // one busy shop is one place to look, and the tab should say one.
         channels: channels.status === 'fulfilled'
-          ? channels.value.channels.filter((row) => !row.mine).reduce((sum, row) => sum + unreadOf(row, seen), 0)
+          ? channels.value.channels.filter((row) => !row.mine && unreadOf(row, seen) > 0).length
           : 0,
         // Joined forums with a post since you last looked in.
         forums: forums.status === 'fulfilled'
@@ -141,7 +143,6 @@ export function SocialTop({ view, onView }: { view: SocialView; onView: (view: S
           <div className="soctop__bar">
             <Link to="/" className="soctop__mark" aria-label="Figmark home" />
             <h1 className="soctop__title">Social</h1>
-            <span className="soctop__live" aria-hidden="true">Live</span>
             <div className="soctop__tools">
               <button type="button" className="soctop__icon" aria-label="Search people, shops and forums"
                 onClick={() => setSearching(true)}>
@@ -245,7 +246,7 @@ export function SocialSearch({ onClose }: { onClose: () => void }) {
           <div className="socsearch__intro">
             <span className="socsearch__glyph" aria-hidden="true"><Icon name="users" size={26} /></span>
             <strong>Find your people</strong>
-            <span className="faint">Search by name or @handle. Items live in the Buy search.</span>
+            <span className="faint">Search by name or @handle. Items live in the Shop search.</span>
           </div>
         )}
         {empty && <p className="socsearch__none">Nobody by that name yet.</p>}
@@ -317,7 +318,7 @@ export function SocialMatches({ result, open, onError }: {
                 {shop.photoUrl ? <img loading="lazy" decoding="async" className="socsearch__photo" src={shop.photoUrl} alt="" /> : <Avatar name={shop.name} size={44} />}
                 <span className="socsearch__who">
                   <strong>{shop.name} <span className="socsearch__kind">Shop</span></strong>
-                  <span className="faint">{shop.handle ? `@${shop.handle} · ` : ''}{shop.followerCount} followers</span>
+                  <span className="faint">{shop.handle ? `@${shop.handle} · ` : ''}{shop.followerCount} follower{shop.followerCount === 1 ? '' : 's'}</span>
                 </span>
               </button>
               {shop.mine ? <span className="faint">Yours</span> : followButton(shop.id, shop.following)}

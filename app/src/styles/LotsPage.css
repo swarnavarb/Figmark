@@ -53,14 +53,6 @@
 }
 .picker-panel .search { max-width: none; }
 
-.pickset__sub {
-  margin-top: var(--s1);
-  font-size: var(--t-xs);
-  font-weight: var(--w-semi);
-  color: var(--text-dim);
-  text-transform: uppercase;
-  letter-spacing: .04em;
-}
 .pick__steps {
   font-size: var(--t-2xs);
   color: var(--text-dim);
@@ -138,12 +130,6 @@
 /* A lot opened inside the Sell tab: the tab already pads the page, so this adds none. */
 .lotdetail { display: grid; gap: 0; }
 /* ── Tagging people, and what they may press ───────────────────────────── */
-.ptag { position: relative; display: block; }
-.ptag__list { position: absolute; z-index: var(--z-popover); top: calc(100% + 4px); left: 0; right: 0; margin: 0; padding: var(--s1); list-style: none; border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface); box-shadow: var(--shadow); }
-.ptag__opt { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 9px 10px; border-radius: var(--r-sm); cursor: pointer; }
-.ptag__opt:hover, .ptag__opt.is-active { background: var(--surface-hover); }
-.ptag__name { font-weight: var(--w-semi); color: var(--text); }
-.ptag__handle { font-size: var(--t-xs); color: var(--text-faint); }
 .crewbtns__role { display: grid; gap: 6px; margin: 0; padding: var(--s3); border: 1px solid var(--border); border-radius: var(--r-md); }
 .crewbtns__opt { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 10px; row-gap: 2px; padding: var(--s2) 10px; border-radius: var(--r-sm); cursor: pointer; }
 .crewbtns__opt:hover { background: var(--surface-2); }
@@ -175,7 +161,6 @@
 .fb-offer.is-on { color: var(--ok); }
 .fb-confirm { display: grid; gap: 10px; padding: 14px; border-radius: var(--r-md); background: var(--sk-soft, var(--accent-soft)); font-size: var(--t-sm); }
 .fb { gap: 14px; }
-.pick__note { font-size: var(--t-xs); color: var(--text-dim); }
 @media (max-width: 520px) {
   .lotnav__tab { grid-auto-flow: row; gap: 2px; padding: 6px 2px; }
   .lotnav__label { font-size: var(--t-2xs); }

@@ -462,8 +462,8 @@ async function storeTeam(request: HttpRequest, _context: InvocationContext) {
       await notify(repository, [member.id], {
         kind: 'service_store',
         title: `You were added to ${store.companyName}`,
-        body: 'It is under My services now.',
-        link: '/services/mine',
+        body: 'Switch to it from the dropdown at the top of the Sell tab.',
+        link: `/services/store/${kind}/${owner.id}`,
       });
     }
   }

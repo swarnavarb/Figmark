@@ -1,4 +1,5 @@
 import type { PayoutSummary } from '@shared/payouts';
+import type { DayRange, DaySource, ShopDays } from '@shared/step-days';
 import type { LotCostKey, LotSplit } from '@shared/lot-costs';
 import type { CancelFlag, CancelSettings, CancelStats, FeeSettlement, FeeStatement, GiftMethod, GiverKind, PlatformFees, Pricing, ProFeatureId, ProGrant, ProPlan, StoreGift } from '@shared/billing';
 import type { CardProgress, IssuedReward, LoyaltyApplied, LoyaltyCard, LoyaltyReward, LoyaltySettings } from '@shared/loyalty';
@@ -24,6 +25,7 @@ import type { DealState } from '@shared/deals';
 import type { Badge, ContestJudging, GuessView, StoreCredit } from '@shared/play';
 import type { LotTally } from '@shared/board';
 import type { DiscoverWhy, FollowSuggestion, Leaderboard, SeenEntry, SpottedItem, TopicChip, WantRow } from '@shared/feed';
+import type { FindWhy } from '@shared/discover-finds';
 import type { BoxEstimate, LotPhase, Timings } from '@shared/insights';
 import type { CrewRole, ServiceKind, ServiceMeta } from '@shared/services';
 import type { ArtistJobAction, StoreKind } from '@shared/service-stores';
@@ -47,7 +49,7 @@ import type { CommunityAction } from '@shared/disputes';
 import type { MarketSettings } from '@shared/settings';
 import type { Allocation, OrderMoney } from '@shared/payments';
 import type { QuestView, StickerView } from '@shared/quest';
-import type { BoardInfo, BoardView } from '@shared/boards';
+import type { BoardInfo, BoardScope, BoardView } from '@shared/boards';
 import type { CollectionGroup, CollectionItem, ShareEvent, ShareKind } from '@shared/models';
 import type { LearnDoc } from '@shared/learn';
 import type { AffiliateEarningStatus } from '@shared/affiliate';
@@ -229,6 +231,17 @@ export function warmReads(starts: (() => Promise<unknown>)[]): void {
   } finally {
     warming = false;
   }
+}
+
+/**
+ * A write that only records something about the visit (which device this
+ * is) and changes nothing any screen of the app reads. It leaves the held
+ * reads alone: the device report goes out as the first screen draws, and
+ * emptying the reads then sent the catalogue's six warmed reads, and two the
+ * bootstrap had answered, a second time on every signed-in load.
+ */
+function record<T>(path: string, body: unknown): Promise<T> {
+  return send<T>(path, { method: 'POST', body: JSON.stringify(body) });
 }
 
 function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -413,6 +426,8 @@ export interface BoardList {
   boards: (BoardInfo & { members: number })[];
   mine: string[];
   suggestions: (BoardInfo & { members: number })[];
+  /** Your own top-three finishes, newest first (signed in). */
+  podiums?: { board: string; season: string; place: 1 | 2 | 3 }[];
   limit: number;
 }
 
@@ -632,7 +647,10 @@ export interface PublicTracking {
   status: 'moving' | 'delivered' | 'cancelled';
   steps: string[];
   at: number;
-  etaDays: number | null;
+  /** How long each step usually takes, worked out by the system; null where nothing was measured. */
+  stepDays: (DayRange | null)[];
+  /** Days left, as a range, once every step still to come has been measured. */
+  eta: { low: number; high: number; source: DaySource } | null;
   updates: { at: string; text: string }[];
 }
 
@@ -1385,6 +1403,8 @@ export interface PostCard {
   social: PostSocial;
   /** Whether the viewer follows the channel it was posted in. */
   following: boolean;
+  /** Who the Follow beside the name follows, and whether the viewer already does. */
+  follow?: { key: string; following: boolean; service?: { kind: StoreKind; ownerId: string } } | null;
   /** What a repost passes on. Null when the original has been taken down. */
   original?: PostCard | null;
   /** The forum it was said in, when read anywhere but that forum. */
@@ -1451,6 +1471,10 @@ export interface DiscoverResponse {
   topics?: TopicChip[];
   wants?: WantRow[];
   spotted?: SpottedItem[];
+  /** Items worth a look, ranked over the whole catalogue, each saying why. First page only. */
+  finds?: { listing: FeedListing; why: FindWhy }[];
+  /** The categories this reader saves from, most first: what Discover leans towards. */
+  leaning?: string[];
   /**
    * The endless stream: every public post worth a look in one order made for
    * this reader, each saying why. The first page rides with the lists above;
@@ -1706,25 +1730,11 @@ export interface SocialSearchResult {
 
 /* ── Seller dashboards ─────────────────────────────────────────────────── */
 
-export interface DashboardResponse {
-  analytics: {
-    revenueMinor: number;
-    unitsSold: number;
-    orderCount: number;
-    activeListings: number;
-    views: number;
-    saves: number;
-    conversion: number;
-    daily: { date: string; orders: number; revenueMinor: number }[];
-    topListings: { id: string; title: string; viewCount: number; likeCount: number; unitsSold: number }[];
-  };
-}
-
 /** The card over the Sell tab: a few figures for each tab, read in one go. Null where this person may not see one. */
 export interface SellDashboard {
   currency: string;
   listings: {
-    onSale: number; drafts: number; soldOut: number; endingSoon: number; views: number; saves: number;
+    onSale: number; drafts: number; soldOut: number; expired: number; lowStock: number; endingSoon: number; views: number; saves: number;
     best: { id: string; title: string; units: number } | null;
   } | null;
   orders: { open: number; unpaid: number; claimed: number; inTransit: number; delivered30: number; cancelled30: number } | null;
@@ -1737,7 +1747,21 @@ export interface SellDashboard {
     followers: number; team: number; tier: string;
     setup: { photo: boolean; cover: boolean; bio: boolean; payment: boolean };
   } | null;
+  /** What is waiting on the shop, whichever tab is open. Null where this person may not see one. */
+  todo: {
+    answer: number | null; answerSince: string[] | null; noLot: number | null; noLotListings: number | null;
+    lowStock: number | null;
+  };
 }
+
+/** A listing started and not yet published, as the Drafts shelf draws it. */
+export interface DraftCard {
+  id: string; sellerId: string; title: string; priceMinor: number | null; category: string | null;
+  photoUrl: string | null; savedBy: string; createdAt: string; updatedAt: string;
+}
+
+/** What a request about several things did to each. */
+export interface BatchAnswer { results: { id: string; ok: boolean; message?: string }[]; done: number; failed: number }
 
 /* ── Pro analytics ─────────────────────────────────────────────────────── */
 
@@ -2616,7 +2640,7 @@ export interface CrewLotView {
   forwarder: { ownerId: string; name: string } | null;
   lot: CrewLotRef & { laneLabel: string | null; trackingReference: string | null; city: string | null };
   steps: { index: number; name: string; assignee: StepAssignee | null; key: string | null }[];
-  buttons: { key: string; label: string; step: string; index: number; assigned: boolean }[];
+  buttons: { key: string; label: string; step: string; index: number; assigned: boolean; courier?: boolean }[];
   moves: { index: number; name: string; forward: boolean }[];
   items: {
     id: string; itemName: string; condition: string; quantity: number; weightGrams: number;
@@ -3032,14 +3056,20 @@ export const api = {
     post<{ order: Order; heldMinor: number }>(`/orders/${encodeURIComponent(id)}/credit-hold`, { creditId }),
   myPosts: () => request<{ posts: PostCard[] }>('/me/posts'),
   personPosts: (userId: string) => request<{ posts: PostCard[] }>(`/users/${encodeURIComponent(userId)}/posts`),
-  quest: () => request<{ view: QuestView }>('/quest/me'),
+  quest: () => request<{ view: QuestView; autoCollected?: { taskId: string; title: string; xp: number; bumps: number }[] }>('/quest/me'),
   questCheckIn: () => post<QuestResult>('/quest/checkin'),
   questClaim: (taskId: string) => post<QuestResult>('/quest/claim', { taskId }),
   questReveal: () => post<QuestResult>('/quest/reveal'),
+  questRepair: () => post<QuestResult>('/quest/repair'),
   boards: () => request<BoardList>('/boards'),
-  board: (id: string, season?: string) =>
-    request<BoardView>(`/boards/board/${encodeURIComponent(id)}${season ? `?season=${encodeURIComponent(season)}` : ''}`),
-  boardJoin: (target: { board: string } | { tag: string }) => post<{ boards: string[]; joined: BoardInfo }>('/boards/join', target),
+  board: (id: string, season?: string, scope?: BoardScope) => {
+    const query = new URLSearchParams();
+    if (season) query.set('season', season);
+    if (scope && scope !== 'all') query.set('scope', scope);
+    const tail = query.toString();
+    return request<BoardView>(`/boards/board/${encodeURIComponent(id)}${tail ? `?${tail}` : ''}`);
+  },
+  boardJoin: (target: { board: string }) => post<{ boards: string[]; joined: BoardInfo }>('/boards/join', target),
   boardLeave: (board: string) => post<{ boards: string[] }>('/boards/leave', { board }),
   collector: (userId: string) => request<CollectorPage>(`/users/${encodeURIComponent(userId)}/collector`),
   learn: () => request<LearnDoc & { customised: boolean }>('/learn'),
@@ -3090,7 +3120,24 @@ export const api = {
 
   activity: () => request<ActivityResponse>('/me/activity'),
   /** Just the seller's own stock - what the Items screen shows, without the rest of the account. */
-  myListings: () => request<{ listings: Listing[] }>('/me/listings'),
+  myListings: (storeId?: string) =>
+    request<{ listings: Listing[] }>(`/me/listings${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
+  /** The same change to several listings: each is answered for by name. */
+  batchListings: (items: { id: string; edit?: Partial<NewListing> & { quantityWas?: number }; expire?: boolean; remove?: boolean }[]) =>
+    post<BatchAnswer>('/me/listings/batch', { items }),
+  /** Yes to several orders, or "received" to several claimed payments. */
+  answerOrders: (ids: readonly string[], action: 'accept' | 'received') =>
+    post<BatchAnswer>('/me/orders/answer', { ids, action }),
+  /** Listings started and not yet published, kept with the shop. */
+  drafts: (storeId?: string) =>
+    request<{ drafts: DraftCard[] }>(`/me/drafts${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
+  draft: (id: string, storeId?: string) =>
+    request<{ draft: DraftCard & { form: Record<string, unknown> } }>(
+      `/me/drafts?id=${encodeURIComponent(id)}${storeId ? `&store=${encodeURIComponent(storeId)}` : ''}`),
+  saveDraft: (form: unknown, id?: string | null, storeId?: string) =>
+    post<{ draft: DraftCard }>(`/me/drafts/save${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, { form, ...(id ? { id } : {}) }),
+  deleteDraft: (id: string, storeId?: string) =>
+    post<{ deleted: string }>(`/me/drafts/${encodeURIComponent(id)}/delete${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, {}),
 
   myLots: (storeId?: string) =>
     request<LotsResponse>(`/me/lots${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
@@ -3237,6 +3284,7 @@ export const api = {
     post<{ photos: OrderPhoto[] }>(`/orders/${encodeURIComponent(orderId)}/photos/${encodeURIComponent(photoId)}`, { remove: true }),
 
   routes: () => request<RoutesResponse>('/routes'),
+  stepDays: (sellerId: string) => request<ShopDays>(`/step-days?seller=${encodeURIComponent(sellerId)}`),
   saveRoute: (body: {
     id?: string;
     name: string;
@@ -3284,15 +3332,16 @@ export const api = {
   remindDrop: (sellerId: string, id: string, on: boolean) =>
     post<{ drop: DropCardData }>(`/showcase/drops/${encodeURIComponent(sellerId)}/${encodeURIComponent(id)}/remind`, { on }),
 
-  templates: () => request<{ templates: PostTemplate[] }>('/templates'),
+  templates: (storeId?: string) =>
+    request<{ templates: PostTemplate[] }>(`/templates${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
   saveTemplate: (body: {
     id?: string; name: string; category?: string; attributes?: Record<string, string>; tags?: string[];
     condition?: string | null; sourcing?: string; description?: string; defaultLotId?: string | null;
     preLotSteps?: { name: string; description?: string }[]; preLotName?: string;
     lotRouteId?: string | null; kind?: 'post' | 'power'; terms?: TemplateTerms | null;
-  }) => post<{ template: PostTemplate }>('/templates/new', body),
-  deleteTemplate: (id: string) =>
-    post<{ deleted: string }>(`/templates/${encodeURIComponent(id)}/delete`, {}),
+  }, storeId?: string) => post<{ template: PostTemplate }>(`/templates/new${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, body),
+  deleteTemplate: (id: string, storeId?: string) =>
+    post<{ deleted: string }>(`/templates/${encodeURIComponent(id)}/delete${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`, {}),
   /** A picture in, a URL out. The browser shrinks it before it gets here. */
   uploadPhoto: (dataUrl: string) => postPhoto<StoredPhoto>('/uploads', dataUrl),
   /** The shop's photo or banner: open to any signed-in account, unlike listing photos. */
@@ -3349,15 +3398,9 @@ export const api = {
   },
   /** The operators' short forms for route buttons. */
   routeWords: () => request<RouteWords>('/route-words'),
-  /** The Sell tab's three counts; null where this person may not see one. */
+  /** The Sell tab's cards and what is waiting on the shop, in one read. */
   sellDashboard: (storeId?: string) =>
     request<SellDashboard>(`/me/sell/dashboard${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
-  sellTodo: (storeId?: string) =>
-    request<{
-      answer: number | null; answerSince?: string[] | null; noLot: number | null; noLotListings?: number | null; lots: number | null;
-    }>(
-      `/me/sell/todo${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
-
   /** The seller cannot serve an order. Puts the stock and the place back. */
   rejectOrder: (id: string, reason: string) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/reject`, { reason }),
@@ -3539,7 +3582,6 @@ export const api = {
     request<{ storefront: SellerProfile | null; displayName: string }>('/me/storefront'),
   saveStorefront: (body: StorefrontDraft) =>
     post<{ storefront: SellerProfile }>('/me/storefront/save', body),
-  dashboard: () => request<DashboardResponse>('/me/dashboard'),
   insights: (storeId?: string) =>
     request<InsightsResponse>(`/me/insights${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
   interest: (storeId?: string) =>
@@ -3770,7 +3812,7 @@ export const api = {
   pushUnsubscribe: (endpoint: string) => post<{ ok: true }>('/push/unsubscribe', { endpoint }),
   pushTest: () => post<{ sent: number }>('/push/test'),
   reportDevice: (body: { id: string; platform: string; browser: string; installed: boolean; push: string }) =>
-    post<{ ok: true; onHomeScreen?: boolean }>('/me/device', body),
+    record<{ ok: true; onHomeScreen?: boolean }>('/me/device', body),
   closeWant: (id: string, buyerId: string) =>
     post<{ want: WantCard }>(`/wants/${encodeURIComponent(id)}/close?buyer=${encodeURIComponent(buyerId)}`),
   forumMembers: (id: string) => request<ForumMembers>(`/social/forums/${encodeURIComponent(id)}/members`),

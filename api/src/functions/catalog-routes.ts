@@ -50,7 +50,7 @@ import { sniffImageType } from '../storage/sanitize.js';
 import { fingerprint, storedFingerprint } from '../image-hash.js';
 import { rankByPhoto, type LearnedHash } from '../photo-search.js';
 import { alreadyRead, everListed, findSales, onSale, type PhotoSales } from '../photo-sales.js';
-import { announceFirstDibs, firstDibsView, restockView, startFirstDibs, tellRestocked } from './stock-alert-routes.js';
+import { announceFirstDibs, firstDibsView, restockView, startFirstDibs, tellPriceDropped, tellRestocked } from './stock-alert-routes.js';
 import { tooFast, clientIp } from '../rate-limit.js';
 import { describePhoto, visionAvailable } from '../vision.js';
 import { refreshIdentity } from '../shop-identity.js';
@@ -145,6 +145,7 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
     kind: request.query.get('kind') ?? undefined,
     sort: request.query.get('sort') ?? undefined,
     maxPriceMinor: priceCeiling(request.query.get('maxPrice')),
+    minPriceMinor: priceCeiling(request.query.get('minPrice')),
     // One shop's live stock, for its storefront.
     sellerId: request.query.get('seller') ?? undefined,
   });
@@ -160,21 +161,17 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
   const likedIds = new Set(liked);
   // Expired is read off the clock, so it is filtered here rather than stored.
   const listings = catalog.filter((listing) => !isExpired(listing));
-
-  // Only the lots these listings ride in, not every lot on the site.
-  const lotKeys = [...new Map(listings.filter((l) => l.lotId).map((l) => [l.lotId!, l.sellerId])).entries()];
-  const [sellers, lots] = await Promise.all([
-    repository.listSellerCardsByIds([...new Set(listings.map((l) => l.sellerId))]),
-    Promise.all(lotKeys.map(([lotId, sellerId]) => repository.getLot(sellerId, lotId))),
-  ]);
-  const sellerById = new Map(sellers.map((s) => [s.id, toSellerCard(s)]));
   // A shop that stopped taking orders leaves the Shop feed and search; its
   // own page (asked for with ?seller=) still shows everything it has up.
-  const stopped = new Set(sellers.filter((s) => !listedInShop(s.sellerProfile?.orderStatus)).map((s) => s.id));
-  const shown = request.query.get('seller') || stopped.size === 0
-    ? listings : listings.filter((listing) => !stopped.has(listing.sellerId));
-  // The lot contributes exactly one buyer-visible fact: when it ships.
-  const dispatchByLot = new Map(lots.filter((l) => l !== null).map((l) => [l.id, l.estimatedDispatchAt]));
+  const all = await feedCards(repository, listings, likedIds, { keepStopped: Boolean(request.query.get('seller')) });
+  // Two questions asked of the shop and the promise rather than the item row:
+  // how far the shop is trusted, and how soon it says the parcel arrives.
+  // Answered here, after the shops are read, so the stored query stays the same.
+  const minTrust = Number(request.query.get('minTrust')) || 0;
+  const maxDays = Number(request.query.get('maxDays')) || 0;
+  const cards = all.filter((card) =>
+    (minTrust <= 0 || (card.seller?.trustScore ?? 0) >= minTrust)
+    && (maxDays <= 0 || (card.deliveryEta != null && card.deliveryEta.maxDays <= maxDays)));
 
   // A catalog search is counted, by term and whether anything came back: the
   // shops' Data screens show what buyers look for, and what nobody stocks.
@@ -185,22 +182,49 @@ async function feed(request: HttpRequest, _context: InvocationContext) {
   }
 
   return json(200, {
-    listings: shown.map((listing) => ({
-      ...cardListing(publicListing(listing)),
-      liked: likedIds.has(listing.id),
-      seller: sellerById.get(listing.sellerId) ?? null,
-      estimatedDispatchAt: listing.lotId ? (dispatchByLot.get(listing.lotId) ?? null) : null,
-    })),
+    listings: cards,
     // Facets are derived from the live catalog so the filter chips can never
     // offer a category that has nothing behind it. Note that this narrows with
     // the filters, which is the point: it answers "what else is in here", not
     // "what exists somewhere".
-    categories: [...new Set(shown.map((l) => l.category))].sort(),
+    categories: [...new Set(cards.map((l) => l.category))].sort(),
     followedSellerIds,
     // Under a page's worth: this is every match there is, so a search typed
     // further can narrow these on the device instead of asking again.
     complete: catalog.length < limit,
   });
+}
+
+/**
+ * Listings as catalogue cards: one photo, a cut description, the shop's card,
+ * when its lot ships, and whether this reader saved it. Expired items and the
+ * items of shops that stopped taking orders are left out, unless `keepStopped`
+ * (a shop's own page shows everything it has up).
+ *
+ * Shared by the Shop feed and Discover's finds, so a card reads the same in both.
+ */
+export async function feedCards(
+  repository: Awaited<ReturnType<typeof getRepository>>, catalog: readonly Listing[], likedIds: ReadonlySet<string>,
+  { keepStopped = false }: { keepStopped?: boolean } = {},
+) {
+  const listings = catalog.filter((listing) => !isExpired(listing));
+  // Only the lots these listings ride in, not every lot on the site.
+  const lotKeys = [...new Map(listings.filter((l) => l.lotId).map((l) => [l.lotId!, l.sellerId])).entries()];
+  const [sellers, lots] = await Promise.all([
+    repository.listSellerCardsByIds([...new Set(listings.map((l) => l.sellerId))]),
+    Promise.all(lotKeys.map(([lotId, sellerId]) => repository.getLot(sellerId, lotId))),
+  ]);
+  const sellerById = new Map(sellers.map((s) => [s.id, toSellerCard(s)]));
+  const stopped = new Set(sellers.filter((s) => !listedInShop(s.sellerProfile?.orderStatus)).map((s) => s.id));
+  const shown = keepStopped || stopped.size === 0 ? listings : listings.filter((listing) => !stopped.has(listing.sellerId));
+  // The lot contributes exactly one buyer-visible fact: when it ships.
+  const dispatchByLot = new Map(lots.filter((l) => l !== null).map((l) => [l.id, l.estimatedDispatchAt]));
+  return shown.map((listing) => ({
+    ...cardListing(publicListing(listing)),
+    liked: likedIds.has(listing.id),
+    seller: sellerById.get(listing.sellerId) ?? null,
+    estimatedDispatchAt: listing.lotId ? (dispatchByLot.get(listing.lotId) ?? null) : null,
+  }));
 }
 
 /** GET /api/listings/{id} - detail, with seller, lot, comments and like state. */
@@ -1567,9 +1591,22 @@ async function myListings(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireAuth(request);
   const repository = await getRepository();
+  /* `?store=` is a shop the caller helps run. It used to be ignored: the
+     answer was always the caller's own items, so a manager's Listings screen
+     filtered somebody else's shop out of their own shelf and showed nothing. */
+  const storeId = request.query.get('store');
+  let sellerId = user.id;
+  if (storeId && storeId !== user.id) {
+    const owner = await repository.getUserById(storeId);
+    if (!owner?.sellerProfile) return error(404, 'not_found', 'No such store.');
+    if (!can(owner, user.id, 'listings')) {
+      return error(403, 'forbidden', 'You cannot see that store\u2019s items.');
+    }
+    sellerId = owner.id;
+  }
   // The same shelf as `/me/activity`: sold out and expired included, withdrawn
   // and scheduled-sale items not.
-  const listings = (await repository.listListings({ sellerId: user.id, includeHidden: true, limit: 10_000 }))
+  const listings = (await repository.listListings({ sellerId, includeHidden: true, limit: 10_000 }))
     .filter((row) => row.status !== 'archived' && !row.unlisted);
   return json(200, { listings });
 }
@@ -1819,6 +1856,7 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
   if (refusal) return refusal;
   if (!updated) return error(404, 'not_found', 'No such listing.');
   await tellRestocked(repository, listing, updated);
+  await tellPriceDropped(repository, listing, updated);
   await claimPhotos(updated.photos.map((photo) => photo.blobName || photo.url), `listing:${updated.id}`);
   if (Array.isArray(body.photos)) {
     // Photos taken off the listing leave the blob too, unless something else still names them.

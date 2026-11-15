@@ -15,7 +15,7 @@ import { isLive as storeIsLive, rightsIn, storeOf } from '../../../shared/servic
 import { parseStoreKey, storeKey, type ChannelMessage } from '../../../shared/service-work.js';
 import { isExpired, isMultiple, rupees } from '../../../shared/payments.js';
 import { personRef, sellerRef, type PartyRef } from '../../../shared/parties.js';
-import { PERSON_FOLLOW, isPersonFollow } from '../../../shared/storefront.js';
+import { PERSON_FOLLOW, isPersonFollow, personFollowId } from '../../../shared/storefront.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { ownPhotos } from '../storage/index.js';
@@ -52,6 +52,8 @@ import { gameAudience, gameWhat, isDue, milestone, payContest, payDebate, settle
 import { ownPhotoName } from '../storage/index.js';
 import { likeness, storedFingerprint } from '../image-hash.js';
 import { pictureMatches } from '../photo-search.js';
+import { rankFinds, type FindWhy } from '../../../shared/discover-finds.js';
+import { feedCards } from './catalog-routes.js';
 
 /**
  * The social side: what the people you follow are saying, and the forums.
@@ -92,6 +94,12 @@ interface PostCard {
    * follow its author is a dead end.
    */
   following: boolean;
+  /**
+   * Who the Follow beside the name follows: the shop for a post said as a
+   * shop, the service store for a service's post, and otherwise the person
+   * who wrote it. Absent when that is the viewer.
+   */
+  follow?: { key: string; following: boolean; service?: { kind: 'forwarder' | 'artist'; ownerId: string } } | null;
   /** The post this one passes on, when it is a repost. Null when that post has gone. */
   original?: PostCard | null;
   /**
@@ -392,6 +400,17 @@ export async function decorate(
     // the line on a card costs a name or two per post, not a read of every reactor.
     !top ? Promise.resolve(new Set<string>()) : options.watched ? Promise.resolve(options.watched) : watchedBy(viewer.userId, repository),
   ]);
+  // Everything the viewer follows, raw - shops by id, people as `person:<id>`,
+  // services as `kind:ownerId` - for the Follow beside each author's name.
+  const followKeys = new Set<string>();
+  if (top) {
+    const [follows, services] = await Promise.all([
+      repository.listFollowsBy(viewer.userId).catch(() => []),
+      repository.listServiceStoresFollowedBy(viewer.userId).catch(() => [] as string[]),
+    ]);
+    for (const follow of follows) followKeys.add(follow.sellerId);
+    for (const service of services) followKeys.add(service);
+  }
   const actedBy = new Map<string, string[]>();
   if (watched.size > 0) {
     for (const post of posts) {
@@ -482,6 +501,21 @@ export async function decorate(
       following: followedIds.has(post.channelId) || post.channelId === viewer.userId || Boolean(post.service),
       shop: spokenAsShop,
     };
+    if (top && !guest) {
+      if (post.service) {
+        if (post.service.ownerId !== viewer.userId) {
+          card.follow = {
+            key: post.channelId, following: followKeys.has(post.channelId),
+            service: { kind: post.service.kind, ownerId: post.service.ownerId },
+          };
+        }
+      } else if (spokenAsShop) {
+        if (post.channelId !== viewer.userId) card.follow = { key: post.channelId, following: followKeys.has(post.channelId) };
+      } else if (post.authorId !== viewer.userId) {
+        const key = personFollowId(post.authorId);
+        card.follow = { key, following: followKeys.has(key) };
+      }
+    }
     if (savedIds.has(post.id)) card.saved = true;
     const acted = actedBy.get(post.id);
     if (acted) {
@@ -968,6 +1002,9 @@ async function following(request: HttpRequest, _context: InvocationContext) {
   return feedFor(request, true);
 }
 
+/** How long the reader's own post keeps the top of their feed over a debate result. */
+const OWN_ON_TOP_MS = 24 * 3_600_000;
+
 async function feedFor(request: HttpRequest, followingOnly: boolean) {
   const auth = await getAuthService();
   const user = await auth.requireAuth(request);
@@ -1040,9 +1077,14 @@ async function feedFor(request: HttpRequest, followingOnly: boolean) {
       .sort((a, b) => sink(a) - sink(b) || engagedActors(b).size - engagedActors(a).size || b.createdAt.localeCompare(a.createdAt)),
   ].filter((post) => !inFeed.has(post.id) && !resultIds.has(post.id) && post.authorId !== user.id && post.channelId !== user.id);
 
-  const merged: Post[] = [...results];
+  // What the reader has just said themselves stays where they left it, on
+  // top: a debate result is news, but not above their own fresh post.
+  const ownFirst = results.length === 0 ? 0
+    : followedPosts.findIndex((post) => post.authorId !== user.id || now - Date.parse(post.createdAt) > OWN_ON_TOP_MS);
+  const leading = followedPosts.slice(0, ownFirst === -1 ? followedPosts.length : ownFirst);
+  const merged: Post[] = [...leading, ...results];
   let next = 0;
-  followedPosts.forEach((post, index) => {
+  followedPosts.slice(leading.length).forEach((post, index) => {
     merged.push(post);
     if ((index + 1) % DISCOVER_EVERY === 0 && next < found.length) merged.push(found[next++]!);
   });
@@ -1207,7 +1249,9 @@ const SPREAD_GAP = 6;
 /** How far down a post under an open report sits until somebody decides. */
 const REPORTED_LIFT = 0.3;
 /** Topic chips, hunts and spotted items on the first page. */
-const DISCOVER_TOPICS = 8;
+const DISCOVER_TOPICS = 24;
+/** Listings read for Discover's finds: the most wanted, the newest, and the reader's own categories. */
+const FINDS_POOL = 120;
 const DISCOVER_WANTS = 8;
 const DISCOVER_SPOTTED = 12;
 const TOPIC_WINDOW_MS = 14 * 86_400_000;
@@ -1442,7 +1486,8 @@ async function discover(request: HttpRequest, _context: InvocationContext) {
     ? await Promise.all([
         wantsFor(user?.id ?? null, me, repository),
         spottedIn(open, user?.id ?? null, score, repository),
-      ]).then(([wants, spotted]) => ({ topics: topicsOf(open, now), wants, spotted }))
+        findsFor(user?.id ?? null, liked, repository),
+      ]).then(([wants, spotted, found]) => ({ topics: topicsOf(open, now), wants, spotted, ...found }))
     : {};
   return json(200, {
     ...(page === 0 ? { live: pick(live), contests: pick(contests) } : {}),
@@ -1575,6 +1620,35 @@ function topicsOf(posts: readonly Post[], now: number): TopicChip[] {
     .filter((chip, _index, all) => chip.posts >= 2 || all.length <= DISCOVER_TOPICS)
     .sort((a, b) => b.posts - a.posts || a.key.localeCompare(b.key))
     .slice(0, DISCOVER_TOPICS);
+}
+
+/**
+ * Discover's finds, ranked here over the live catalogue rather than on the
+ * device over one page of it: the most wanted, the newest (where restocks and
+ * price cuts surface) and the categories this reader saves from, which are
+ * also what Discover says it is leaning towards.
+ */
+async function findsFor(userId: string | null, liked: readonly string[], repository: Repo): Promise<{
+  finds: { listing: Awaited<ReturnType<typeof feedCards>>[number]; why: FindWhy }[];
+  leaning: string[];
+}> {
+  const saved = (await Promise.all(liked.slice(0, 20).map((id) => repository.getListing(id))))
+    .filter((listing): listing is Listing => Boolean(listing));
+  const counts = new Map<string, number>();
+  for (const listing of saved) counts.set(listing.category, (counts.get(listing.category) ?? 0) + 1);
+  const leaning = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([category]) => category);
+  const hobbies = new Set(leaning);
+  const pools = await Promise.all([
+    repository.listListings({ sort: 'popular', limit: FINDS_POOL }),
+    repository.listListings({ limit: FINDS_POOL }),
+    hobbies.size ? repository.listListings({ categories: leaning, sort: 'popular', limit: FINDS_POOL }) : Promise.resolve([] as Listing[]),
+  ]);
+  const pool = pools.flat().filter((listing) => !isExpired(listing)
+    && (listing.quantityMode === 'multiple' || listing.quantityAvailable > 0 || Boolean(listing.preOrder)));
+  const ranked = rankFinds(pool, hobbies, userId, Date.now());
+  const why = new Map(ranked.map((entry) => [entry.listing.id, entry.why]));
+  const cards = await feedCards(repository, ranked.map((entry) => entry.listing), new Set(liked));
+  return { finds: cards.map((card) => ({ listing: card, why: why.get(card.id)! })), leaning };
 }
 
 /**

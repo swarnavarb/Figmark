@@ -189,21 +189,26 @@ export function VoicePicker({ size = 44, switchOnly = false, title = 'Post, reac
     };
   }, [open]);
 
-  // The green switch stays for anyone signed in, since its menu is also where
-  // another business is opened; the photo in a composer is only a menu with a choice in it.
+  // Only somebody with a shop has anybody to switch to. Opening a business has
+  // its own way in (Sell), so one profile means no switch at all - and the
+  // photo in a composer is only a menu when there is a choice in it.
   if (!switchOnly && voices.length < 2) return <VoiceAvatar voice={voice} size={size} />;
-  if (switchOnly && !user) return null;
+  if (switchOnly && (!user || voices.length < 2)) return null;
 
   return (
     <div className="voicepick" ref={box}>
       <button type="button" className="voicepick__button" aria-haspopup="menu" aria-expanded={open}
         aria-label={`Posting as ${voice.name}. Switch profile`} onClick={toggle}>
         {switchOnly ? (
-          <span className="voicepick__switch" aria-hidden="true"><Icon name="sort" size={Math.round(size * 0.45)} /></span>
+          // Who is speaking now, and that it opens: a pill, never a second round profile photo.
+          <span className="voicepick__switch" aria-hidden="true">
+            <VoiceAvatar voice={voice} size={Math.round(size * 0.62)} />
+            <Icon name="down" size={12} />
+          </span>
         ) : (
           <>
             <VoiceAvatar voice={voice} size={size} />
-            <span className="voicepick__swap" aria-hidden="true"><Icon name="sort" size={11} /></span>
+            <span className="voicepick__swap" aria-hidden="true"><Icon name="down" size={11} /></span>
           </>
         )}
       </button>

@@ -21,6 +21,7 @@ import {
 } from '../components/ServiceWorkKit';
 import { useSession } from '../session';
 import { BackLink } from '../components/ScrollManager';
+import { WorkSwitcher } from '../components/WorkSwitcher';
 import { EmptyState, ErrorNotice, Icon } from '../components/ui';
 import { formatDate, formatMoney, formatWeight, timeAgo } from '../format';
 import { MoneyInput, Picture, StatTile, StatusPill, StoreCover, StoreMark, accentStyle } from '../components/StoreKit';
@@ -110,7 +111,8 @@ export function StoreConsolePage() {
 
   return (
     <main className="page sc-page" style={accentStyle(store.accent)}>
-      <BackLink to="/services/mine">{store.companyName}</BackLink>
+      {/* One workspace among the others the Sell tab switches between. */}
+      <WorkSwitcher />
       {console.isOwner && <FeeLockBanner />}
       <section className="sc-hero">
         <StoreCover kind={kind} coverUrl={store.coverUrl} accent={store.accent}>
@@ -1062,7 +1064,7 @@ function TeamPanel({ kind, console, onSaved }: { kind: StoreKind; console: Store
         <form className="sa-card stack" onSubmit={(event) => { event.preventDefault(); void run({ identifier, rights, tag }); }}>
           <div className="sa-card__head">
             <h2>Add someone</h2>
-            <span className="muted">They get this store under My services, with only what you tick.</span>
+            <span className="muted">They get this store in their Sell tab’s workspace switcher, with only what you tick.</span>
           </div>
           <div className="field-row">
             <label className="field"><span>Their @handle, email or phone</span>

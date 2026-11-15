@@ -280,7 +280,26 @@ export interface PlayerRow {
   points: number;
   wins: number;
   votes: number;
+  /** Place on the board; people level on points and wins share it (1, 2, 2, 4). */
+  rank?: number;
+}
+
+/** Ranks rows already sorted by points then wins, ties sharing a place. */
+export function rankPlayers<T extends { points: number; wins: number }>(sorted: readonly T[]): (T & { rank: number })[] {
+  let rank = 0;
+  return sorted.map((row, index) => {
+    const prev = sorted[index - 1];
+    if (!prev || prev.points !== row.points || prev.wins !== row.wins) rank = index + 1;
+    return { ...row, rank };
+  });
 }
 
 /** Points on the leaderboard: a win is worth far more than a vote, but voting is how most people play. */
 export const LEADER_POINTS = { first: 10, second: 6, third: 4, debate: 5, guess: 5, vote: 1 } as const;
+/**
+ * Most points votes can earn one person in a season. Votes only count on the
+ * games themselves (a competition's entries, a debate's sides), never on an
+ * ordinary poll, and this cap keeps a pile of polls and friends from buying a
+ * place: past it, only winning moves you up.
+ */
+export const VOTE_POINTS_CAP = 30;

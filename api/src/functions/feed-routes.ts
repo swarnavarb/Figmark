@@ -14,6 +14,8 @@ import { formatOf } from '../discover-rank.js';
 import { moderation } from '../moderation.js';
 import { tooFast } from '../rate-limit.js';
 import { leaderboardOf } from '../play.js';
+import { rankPlayers } from '../../../shared/play.js';
+import { monthKey } from '../../../shared/quest.js';
 import { error, handler, json } from './http.js';
 import {
   ACTION_WEIGHT, GUEST, actorFor, decorate, tasteSignalOf, engagedActors, isBroadcast, mayRead, notYours, readJson, topicKeysOf, type PostCard, type Repo,
@@ -342,6 +344,8 @@ async function suggestions(request: HttpRequest, _context: InvocationContext) {
 }
 
 const WEEK_MS = 7 * 86_400_000;
+/** Game posts one season's Top players is counted from, at most. */
+const GAME_POSTS = 2000;
 
 /**
  * GET /api/social/leaderboard - this week's best: the most loved shelves, the
@@ -384,15 +388,19 @@ async function leaderboard(_request: HttpRequest, _context: InvocationContext) {
   }
   const loudest = [...voices.entries()].filter(([, entry]) => entry.reactions > 0)
     .sort((a, b) => b[1].reactions - a[1].reactions).slice(0, 5);
-  // The games are scored over the whole window, not the week: a competition
-  // runs longer than seven days, and its winners should not fall off the
-  // board the day it ends.
-  const games = [...leaderboardOf(recent).values()]
-    .sort((a, b) => b.points - a.points || b.wins - a.wins).slice(0, 10);
+  // The games run in monthly seasons, like the hobby boards: a competition
+  // runs longer than seven days, and a month is long enough to finish one.
+  // Read by date, not from the recent window, so a busy feed cannot push
+  // this month's games off the board.
+  const season = monthKey(Date.now());
+  const seasonStart = new Date(Date.parse(`${season}-01T00:00:00+05:30`)).toISOString();
+  const games = rankPlayers([...leaderboardOf(await repository.listGamePostsSince(seasonStart, GAME_POSTS), season).values()]
+    .sort((a, b) => b.points - a.points || b.wins - a.wins)).slice(0, 10);
   const people = new Map((await repository.listUsersByIds([...loudest.map(([id]) => id), ...games.map((row) => row.userId)]))
     .map((person) => [person.id, person]));
   const board: Leaderboard = {
     since,
+    playersSeason: season,
     shelves,
     debates,
     voices: loudest.flatMap(([id, entry]) => {

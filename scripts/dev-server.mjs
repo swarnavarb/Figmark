@@ -57,8 +57,10 @@ const {
   setCrewRoute,
 } = await import(new URL('fulfilment-routes.js', apiRoot));
 const { suggestPeopleRoute, addOrderPhotoRoute, updateOrderPhotoRoute } = await import(new URL('crew-routes.js', apiRoot));
-const { storefrontRoute, updateStorefrontRoute, storefrontPhotoRoute, regionGuessRoute, dashboardRoute, myStoresRoute, updateManagersRoute, salesRoute, sellTodoRoute, sellDashboardRoute, orderStatusRoute, shopPulseRoute, payoutsRoute } =
+const { storefrontRoute, updateStorefrontRoute, storefrontPhotoRoute, regionGuessRoute, myStoresRoute, updateManagersRoute, salesRoute, sellDashboardRoute, orderStatusRoute, shopPulseRoute, payoutsRoute } =
   await import(new URL('seller-routes.js', apiRoot));
+const { answerOrdersRoute, batchListingsRoute, listDraftsRoute, saveDraftRoute, deleteDraftRoute } =
+  await import(new URL('seller-desk-routes.js', apiRoot));
 const { makeTrackLinkRoute, publicTrackingRoute } = await import(new URL('public-track-routes.js', apiRoot));
 const {
   socialFeedRoute, channelsRoute, channelThreadRoute, createPostRoute, myPostsRoute, personPostsRoute,
@@ -108,7 +110,7 @@ const {
 const { costsRoute, saveCostSheetRoute, saveOrderCostsRoute, saveOrderCostsBatchRoute, deepRoute, salesReportRoute, nudgeRoute } = await import(new URL('pro-routes.js', apiRoot));
 const { customersRoute, customerRoute, messageGroupRoute, dataOverviewRoute } = await import(new URL('customer-routes.js', apiRoot));
 const {
-  listRoutesRoute, saveRouteRoute, deleteRouteRoute, applyRouteRoute, closeLotRoute,
+  listRoutesRoute, stepDaysRoute, saveRouteRoute, deleteRouteRoute, applyRouteRoute, closeLotRoute,
   lotCandidatesRoute, addItemsRoute, stepLotRoute, noteOnLotRoute, setLotRouteRoute,
   stepItemRoute, myItemsRoute,
 } = await import(new URL('tracking-routes.js', apiRoot));
@@ -146,7 +148,7 @@ const {
   adminReassignRoute, adminActionsRoute, adminDecideActionRoute, adminLedgerRoute, adminAuditRoute,
 } = await import(new URL('admin-routes.js', apiRoot));
 const {
-  questMeRoute, questCheckInRoute, questClaimRoute, questRevealRoute, collectorRoute,
+  questMeRoute, questCheckInRoute, questClaimRoute, questRevealRoute, questRepairRoute, collectorRoute,
 } = await import(new URL('quest-routes.js', apiRoot));
 const {
   boardsListRoute, boardJoinRoute, boardLeaveRoute, boardReadRoute,
@@ -261,12 +263,10 @@ const routes = [
   ['POST', '/api/me/storefront/save', updateStorefrontRoute],
   ['POST', '/api/me/storefront/photo', storefrontPhotoRoute],
   ['GET', '/api/me/region-guess', regionGuessRoute],
-  ['GET', '/api/me/dashboard', dashboardRoute],
   ['GET', '/api/me/sales', salesRoute],
   ['GET', '/api/me/payouts', payoutsRoute],
   ['POST', '/api/orders/:id/track-link', makeTrackLinkRoute],
   ['GET', '/api/track/:token', publicTrackingRoute],
-  ['GET', '/api/me/sell/todo', sellTodoRoute],
   ['GET', '/api/me/sell/dashboard', sellDashboardRoute],
   ['GET', '/api/me/stores', myStoresRoute],
   ['POST', '/api/me/storefront/orders', orderStatusRoute],
@@ -384,6 +384,7 @@ const routes = [
   ['POST', '/api/quest/checkin', questCheckInRoute],
   ['POST', '/api/quest/claim', questClaimRoute],
   ['POST', '/api/quest/reveal', questRevealRoute],
+  ['POST', '/api/quest/repair', questRepairRoute],
   ['GET', '/api/boards', boardsListRoute],
   ['POST', '/api/boards/join', boardJoinRoute],
   ['POST', '/api/boards/leave', boardLeaveRoute],
@@ -495,6 +496,7 @@ const routes = [
   ['GET', '/api/me/customers/:buyerId', customerRoute],
   ['GET', '/api/me/data/overview', dataOverviewRoute],
   ['GET', '/api/routes', listRoutesRoute],
+  ['GET', '/api/step-days', stepDaysRoute],
   ['POST', '/api/routes/new', saveRouteRoute],
   ['POST', '/api/routes/:id/delete', deleteRouteRoute],
   ['POST', '/api/routes/:id/apply', applyRouteRoute],
@@ -506,6 +508,11 @@ const routes = [
   ['POST', '/api/lots/:id/route', setLotRouteRoute],
   ['POST', '/api/orders/:id/step', stepItemRoute],
   ['GET', '/api/me/items', myItemsRoute],
+  ['POST', '/api/me/orders/answer', answerOrdersRoute],
+  ['POST', '/api/me/listings/batch', batchListingsRoute],
+  ['GET', '/api/me/drafts', listDraftsRoute],
+  ['POST', '/api/me/drafts/save', saveDraftRoute],
+  ['POST', '/api/me/drafts/:id/delete', deleteDraftRoute],
   ['GET', '/api/templates', listTemplatesRoute],
   ['POST', '/api/templates/new', saveTemplateRoute],
   ['POST', '/api/templates/:id/delete', deleteTemplateRoute],
@@ -686,8 +693,10 @@ const server = createServer((request, response) => {
       // Not every route answers with JSON: a photo comes back as bytes with
       // its own content type, the way the Functions host would send it.
       const binary = result.body instanceof Buffer || result.body instanceof Uint8Array;
+      // A compressed JSON answer is bytes too, with its headers in a Headers
+      // object (http.ts), which spreading would empty.
       const headers = binary
-        ? { ...(result.headers ?? {}) }
+        ? (result.headers instanceof Headers ? Object.fromEntries(result.headers) : { ...(result.headers ?? {}) })
         : { 'Content-Type': 'application/json' };
       const cookies = setCookiesOf(result);
       if (cookies.length > 0) headers['Set-Cookie'] = cookies;

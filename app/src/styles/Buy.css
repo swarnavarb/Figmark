@@ -113,3 +113,22 @@
 .etafields { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: end; gap: var(--s2); }
 .etafields .field { margin: 0; }
 .etafields__to { padding-bottom: 12px; color: var(--text-dim); font-size: var(--t-sm); }
+/* The delivery time the system would give, from real arrivals: one tap to use it. */
+.etasuggest {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--s2);
+  padding: var(--s2) var(--s3); border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--aqua) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--aqua) 35%, transparent);
+  font-size: var(--t-xs); color: var(--text-dim);
+}
+.etasuggest--market {
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  border-color: color-mix(in srgb, var(--warn) 35%, transparent);
+}
+.etasuggest__text { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; }
+.etasuggest__text b { color: var(--text); }
+.etasuggest__src {
+  padding: 1px 7px; border-radius: var(--r-pill); font-size: var(--t-2xs); font-weight: var(--w-semi);
+  background: color-mix(in srgb, var(--aqua) 18%, transparent); color: var(--aqua);
+}
+.etasuggest--market .etasuggest__src { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }

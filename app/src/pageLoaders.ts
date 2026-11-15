@@ -107,6 +107,7 @@ export function warmPage(path: string, search = ''): void {
   // After the first load, pressing Shop while on the Shop page warms nothing:
   // that page already has its answers.
   if (found[1] === 'feed' && !search && !(booted && location.pathname === '/')) warmShopReads();
+  if (found[1] === 'discover' && !(booted && location.pathname.startsWith('/discover'))) warmDiscoverReads();
   booted = true;
 }
 
@@ -123,6 +124,22 @@ function warmShopReads(): void {
     () => api.searchRoutes({}),
     () => api.searchStudios(''),
   ]);
+}
+
+/**
+ * What Discover asks for as it draws, with the same arguments. The lists are
+ * the same for everybody. The stream is too, unless a guest has interests
+ * stored on this device: then a guest's address differs from a signed-in
+ * reader's, and who is signed in is not known yet, so it is left to the page.
+ */
+function warmDiscoverReads(): void {
+  let interests = false;
+  try {
+    interests = (window.localStorage.getItem('figmark.discover.interests') ?? '[]') !== '[]';
+  } catch {
+    // No storage: nothing stored either.
+  }
+  warmReads(interests ? [api.discoverLists] : [() => api.discoverStream(), api.discoverLists]);
 }
 
 /** The six tabs' screens, the places a thumb goes next. */

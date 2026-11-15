@@ -297,7 +297,68 @@ export function stepButtonLabel(
   /* On a button the country is its flag and long words take their short
      forms; with no lot to say which country, the word "origin" stands in. */
   const said = renderButtonText(name, vars);
-  return said.length > 44 ? `${said.slice(0, 43).replace(/\s+\S*$/, '')}…` : said;
+  return shortButtonText(said);
+}
+
+/** The most a button made from a step's name says: a pill on a phone, not a sentence. */
+export const BUTTON_TEXT_MAX = 24;
+/** Past this it is cut to whole words whatever it loses: the most a seller's own button words may be. */
+export const BUTTON_TEXT_HARD_MAX = 28;
+
+/** Who did it, said at the start of a step's name - the button needs only what happened. */
+const BUTTON_ACTOR = /^(?:the\s+)?(?:seller|supplier|shop|buyer|courier|(?:freight\s+)?forwarder|(?:domestic\s+)?handler)\s+(?=\S)/i;
+/** A word a button should not end on. */
+const BUTTON_TAIL = /\s+(?:to|at|from|in|on|for|with|by|of|and|&|the|a|an|into|onto)$/i;
+
+/**
+ * A step's name cut down to button size, in its own words rather than with an
+ * ellipsis: the last part of a two-part name ("Purchases & ships to
+ * forwarder" → "Ships to forwarder"), then without the actor ("Forwarder
+ * consolidates" → "Consolidates"), then as many whole words as fit, never
+ * ending on "to" or "the".
+ */
+export function shortButtonText(text: string, max = BUTTON_TEXT_MAX): string {
+  const capital = (words: string) => words.charAt(0).toUpperCase() + words.slice(1);
+  let out = text.replace(/\s+/g, ' ').trim();
+  if (out.length <= max) return capital(out);
+  // "Out for delivery: handed to the courier" - the title is the button.
+  if (/^[^:]{3,}:\s/.test(out)) out = out.slice(0, out.indexOf(':')).trim();
+  // With no country set yet, the stand-in word is the long one.
+  if (out.length > max) out = out.replace(/\bdestination\b/gi, 'dest.');
+  const parts = out.split(/\s*(?:&|\+|,|;|\band\b|\bthen\b)\s*/i).map((part) => part.trim()).filter(Boolean);
+  if (parts.length > 1) out = parts[parts.length - 1]!;
+  if (out.length > max) out = out.replace(BUTTON_ACTOR, '');
+  /* Then the longest words from the middle, keeping what happened (the first
+     word) and where (the last): "Received at international WH" → "Received at WH". */
+  const small = /^(?:to|at|from|in|on|for|with|by|of|the|a|an|into|onto)$/i;
+  const words = out.split(' ');
+  let dropped = 0;
+  while (words.join(' ').length > max && words.length > 2 && dropped < 2) {
+    dropped += 1;
+    let drop = -1;
+    for (let index = 1; index < words.length - 1; index += 1) {
+      // Whose it is ("forwarder's WH") is the point of the step, so it stays.
+      if (!small.test(words[index]!) && !/['’]s$/i.test(words[index]!)
+        && (drop < 0 || words[index]!.length > words[drop]!.length)) drop = index;
+    }
+    if (drop < 0) break;
+    words.splice(drop, 1);
+  }
+  if (words.length >= 2 && words.join(' ').length <= max) out = words.join(' ');
+  /* A little over is better than losing what the step means: up to the
+     length a seller's own button words may be, it is kept whole. */
+  if (out.length > max && words.join(' ').length <= BUTTON_TEXT_HARD_MAX) out = words.join(' ');
+  if (out.length > BUTTON_TEXT_HARD_MAX) {
+    let fitted = '';
+    for (const word of out.split(' ')) {
+      const next = fitted ? `${fitted} ${word}` : word;
+      if (next.length > max) break;
+      fitted = next;
+    }
+    while (BUTTON_TAIL.test(fitted)) fitted = fitted.replace(BUTTON_TAIL, '');
+    out = fitted || `${out.slice(0, max - 1)}…`;
+  }
+  return capital(out);
 }
 
 /**
@@ -716,12 +777,12 @@ export const ROUTE_PRESETS: readonly RoutePreset[] = [
     blurb: 'Pieces gather at your warehouse, then travel together as one lot.',
     steps: [
       { name: 'Ordering', description: 'The order is placed with you and you are sourcing the piece.', side: 'pre' },
-      { name: 'At the overseas warehouse', description: 'The piece has arrived and is waiting for a lot.', side: 'pre', trigger: 'china_received' },
-      { name: 'Dispatched', description: 'The lot has left the warehouse.', side: 'post' },
-      { name: 'In transit', description: 'On its way out of the country.', side: 'post' },
-      { name: 'Customs', description: 'Clearing customs on arrival. Usually handled by the forwarder.', side: 'post' },
-      { name: 'Landed', description: 'The lot has been received in {dest}.', side: 'post', trigger: 'india_received' },
-      { name: 'Out for delivery', description: 'Handed to the domestic courier.', side: 'post', trigger: 'dispatched' },
+      { name: 'At {origin} warehouse', description: 'The piece has arrived in {origin} and is waiting for a lot.', side: 'pre', trigger: 'china_received' },
+      { name: 'Dispatched from {origin}', description: 'The lot has left {origin}.', side: 'post' },
+      { name: 'In transit', description: 'On its way from {origin} to {dest}.', side: 'post' },
+      { name: 'Customs in {dest}', description: 'Clearing customs on arrival in {dest}. Usually handled by the forwarder.', side: 'post' },
+      { name: 'Landed in {dest}', description: 'The lot has been received in {dest}.', side: 'post', trigger: 'india_received' },
+      { name: 'Out for delivery', description: 'Handed to the courier in {dest}.', side: 'post', trigger: 'dispatched' },
       { name: 'Delivered', description: 'It reached you.', side: 'post' },
     ],
   },
@@ -733,11 +794,11 @@ export const ROUTE_PRESETS: readonly RoutePreset[] = [
       { name: 'Order placed', description: 'Placed with the shop. The buyer pays (or marks payment sent), and the seller confirms it before sourcing begins.', side: 'pre' },
       { name: 'Ordered from the supplier', description: 'The shop has placed the order with their supplier.', side: 'pre' },
       { name: 'Supplier sourcing', description: 'The supplier is obtaining the piece.', side: 'pre' },
-      { name: 'At the overseas warehouse', description: 'The piece has arrived and is waiting for a lot.', side: 'pre', trigger: 'china_received' },
-      { name: 'Dispatched', description: 'The lot has left the warehouse.', side: 'post' },
-      { name: 'In transit', description: 'On its way out of the country.', side: 'post' },
-      { name: 'Customs', description: 'Clearing customs on arrival.', side: 'post' },
-      { name: 'Out for delivery', description: 'Handed to the domestic courier.', side: 'post', trigger: 'dispatched' },
+      { name: 'At {origin} warehouse', description: 'The piece has arrived in {origin} and is waiting for a lot.', side: 'pre', trigger: 'china_received' },
+      { name: 'Dispatched from {origin}', description: 'The lot has left {origin}.', side: 'post' },
+      { name: 'In transit', description: 'On its way from {origin} to {dest}.', side: 'post' },
+      { name: 'Customs in {dest}', description: 'Clearing customs on arrival in {dest}.', side: 'post' },
+      { name: 'Out for delivery', description: 'Handed to the courier in {dest}.', side: 'post', trigger: 'dispatched' },
       { name: 'Delivered', description: 'It reached you.', side: 'post' },
     ],
   },
@@ -747,11 +808,11 @@ export const ROUTE_PRESETS: readonly RoutePreset[] = [
     blurb: 'The supplier ships straight to your freight forwarder. No warehouse of yours.',
     steps: [
       { name: 'Order placed', description: 'Placed with the shop. The buyer pays (or marks payment sent), and the seller confirms it before sourcing begins.', side: 'pre' },
-      { name: 'Supplier shipped', description: 'The supplier has sent the piece to the freight forwarder.', side: 'pre' },
+      { name: 'Supplier shipped', description: 'The supplier has sent the piece to the freight forwarder in {origin}.', side: 'pre' },
       { name: 'At the forwarder', description: 'Received and being consolidated into a lot.', side: 'post', trigger: 'china_received' },
-      { name: 'Dispatched', description: 'The lot has left for {dest}.', side: 'post' },
-      { name: 'Customs', description: 'Clearing customs on arrival. Handled by the forwarder.', side: 'post' },
-      { name: 'Landed', description: 'The lot has been received in {dest}.', side: 'post', trigger: 'india_received' },
+      { name: 'Dispatched from {origin}', description: 'The lot has left {origin} for {dest}.', side: 'post' },
+      { name: 'Customs in {dest}', description: 'Clearing customs on arrival in {dest}. Handled by the forwarder.', side: 'post' },
+      { name: 'Landed in {dest}', description: 'The lot has been received in {dest}.', side: 'post', trigger: 'india_received' },
       { name: 'Delivered', description: 'It reached you.', side: 'post' },
     ],
   },
@@ -763,8 +824,8 @@ export const ROUTE_PRESETS: readonly RoutePreset[] = [
       { name: 'Order placed', description: 'Placed with the shop. The buyer pays (or marks payment sent), and the seller confirms it before sourcing begins.', side: 'pre' },
       { name: 'Supplier shipped', description: 'The piece has been handed to the courier.', side: 'pre' },
       { name: 'Tracking issued', description: 'The courier has given the parcel a tracking number.', side: 'pre' },
-      { name: 'In transit', description: 'On its way to {dest}.', side: 'pre' },
-      { name: 'Customs', description: 'Clearing customs. The courier handles this.', side: 'pre' },
+      { name: 'In transit', description: 'On its way from {origin} to {dest}.', side: 'pre' },
+      { name: 'Customs in {dest}', description: 'Clearing customs in {dest}. The courier handles this.', side: 'pre' },
       { name: 'Out for delivery', description: 'With the local courier for the last leg.', side: 'pre', trigger: 'dispatched' },
       { name: 'Delivered', description: 'It reached you.', side: 'pre' },
     ],
@@ -777,10 +838,10 @@ export const ROUTE_PRESETS: readonly RoutePreset[] = [
       { name: 'Pre-order placed', description: 'Your place is reserved against the release.', side: 'pre' },
       { name: 'Release month reached', description: 'The maker has reached the announced release window.', side: 'pre' },
       { name: 'Produced', description: 'The piece has been made and shipped to the warehouse.', side: 'pre' },
-      { name: 'At the overseas warehouse', description: 'Arrived and waiting for a lot.', side: 'pre', trigger: 'china_received' },
-      { name: 'Dispatched', description: 'The lot has left the warehouse.', side: 'post' },
-      { name: 'Customs', description: 'Clearing customs on arrival.', side: 'post' },
-      { name: 'Out for delivery', description: 'Handed to the domestic courier.', side: 'post', trigger: 'dispatched' },
+      { name: 'At {origin} warehouse', description: 'Arrived in {origin} and waiting for a lot.', side: 'pre', trigger: 'china_received' },
+      { name: 'Dispatched from {origin}', description: 'The lot has left {origin}.', side: 'post' },
+      { name: 'Customs in {dest}', description: 'Clearing customs on arrival in {dest}.', side: 'post' },
+      { name: 'Out for delivery', description: 'Handed to the courier in {dest}.', side: 'post', trigger: 'dispatched' },
       { name: 'Delivered', description: 'It reached you.', side: 'post' },
     ],
   },

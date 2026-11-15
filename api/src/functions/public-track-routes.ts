@@ -3,13 +3,15 @@ import { app, type HttpRequest, type InvocationContext } from '@azure/functions'
 import { asBuyerSees, inLot, lotIsDone, settledHistory } from '../../../shared/fulfilment.js';
 import { ladderBeforeLot, withReceivedAs } from '../../../shared/buttons.js';
 import {
-  currentStepOf, daysLeftOn, itemStepOn, renderStepText, routeOf, ticksOf, triggeredStep,
+  currentStepOf, itemStepOn, renderStepText, routeOf, ticksOf, triggeredStep,
 } from '../../../shared/routes.js';
 import { AuthError } from '../auth/errors.js';
 import { getAuthService } from '../auth/index.js';
 import { config } from '../config.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
+import { shopDays } from '../step-days.js';
+import { daysLeftRange, rangeForStep, type DayRange } from '../../../shared/step-days.js';
 
 /**
  * "Where is my parcel", for people without an account.
@@ -83,21 +85,26 @@ async function publicTracking(request: HttpRequest, _context: InvocationContext)
   const seller = sellers[0];
   const vars = { origin: lot?.originCountry ?? null, destination: lot?.destinationCountry ?? null };
 
+  // How long each step usually takes, as the system worked it out - the shop's own, or the market's.
+  const days = await shopDays(repository, order.sellerId).catch(() => null);
   let steps: string[];
+  let stepDays: (DayRange | null)[] = [];
   let at: number;
-  let etaDays: number | null = null;
+  let eta: { low: number; high: number; source: DayRange['source'] } | null = null;
   if (lot) {
     const route = routeOf(lot);
     steps = route.steps.map((step) => renderStepText(step.name, vars));
+    stepDays = route.steps.map((step, index) => (index < route.steps.length - 1 ? rangeForStep(days?.steps, step.name) : null));
     at = itemStepOn(route, currentStepOf(lot), order.currentStep, ticksOf(order));
     const lastMove = settledHistory(lot.stageHistory).filter((event) => event.step).at(-1);
     const daysIn = lastMove ? Math.max(0, Math.floor((Date.now() - Date.parse(lastMove.enteredAt)) / 86_400_000)) : 0;
-    etaDays = lotIsDone(lot) || order.status === 'delivered' ? null : daysLeftOn(route, Math.max(0, at), daysIn);
+    eta = lotIsDone(lot) || order.status === 'delivered' ? null : daysLeftRange(route.steps, Math.max(0, at), days?.steps, daysIn);
   } else {
     const template = listing?.lotRouteId ? await repository.getRoute(order.sellerId, listing.lotRouteId) : null;
     const before = ladderBeforeLot(order, template);
     const ladder = withReceivedAs(before.steps, order.receivedAs);
     steps = [...ladder.map((step) => renderStepText(step.name, vars)), 'Waiting for its shipment'];
+    stepDays = [...ladder.map((step) => rangeForStep(days?.steps, step.name)), null];
     at = Math.max(0, triggeredStep({ steps: ladder }, ticksOf(order)));
   }
   if (order.status === 'delivered') at = steps.length - 1;
@@ -118,7 +125,8 @@ async function publicTracking(request: HttpRequest, _context: InvocationContext)
     status: stopped ? 'cancelled' : order.status === 'delivered' ? 'delivered' : 'moving',
     steps,
     at: Math.min(Math.max(0, at), steps.length - 1),
-    etaDays,
+    stepDays,
+    eta,
     updates,
   });
 }

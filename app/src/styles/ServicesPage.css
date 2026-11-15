@@ -1,11 +1,5 @@
 /* Moved from styles.css: rules only this chunk's code can match. */
 .parcel--gone { opacity: 0.62; border-color: rgba(52, 211, 153, 0.35); }
-.svx-mine__body { flex: 1; min-width: 0; display: grid; gap: 2px; }
-.svx-mine__ping {
-  flex: 0 0 auto; min-width: 22px; height: 22px; padding: 0 7px;
-  display: grid; place-items: center; border-radius: var(--r-pill);
-  background: var(--pink); color: #fff; font-size: var(--t-2xs); font-weight: var(--w-bold);
-}
 .svx::before {
   content: ''; position: absolute; z-index: -1; inset: 0; border-radius: inherit;
   background: linear-gradient(105deg, transparent 42%, color-mix(in srgb, var(--svx) 10%, transparent) 50%, transparent 58%) 0 0 / 300% 100%;
@@ -20,32 +14,10 @@
  * chunk rather than in front of every page. Split out of styles.css by
  * where each class is used; see the note at the top of styles.css.
  */
-/* ── Services tab: one door to your own work, then two services in their own
+/* ── Services tab: the two services anyone can hire, each in its own
    colours. Forwarders read as cargo - sea-blue, dotted flight paths, routes
    laid out like a boarding pass. Artists read as a studio - warm pink into
    violet, brush strokes, a little gallery. ───────────────────────────── */
-.svx-mine {
-  position: relative;
-  display: flex; align-items: center; gap: 14px;
-  margin-bottom: 6px; padding: var(--s4) 18px;
-  border-radius: var(--r-lg);
-  background:
-    radial-gradient(120% 140% at 100% 0%, var(--violet-soft), transparent 60%),
-    var(--surface);
-  box-shadow: inset 0 0 0 1px var(--violet-line);
-  color: inherit; text-decoration: none;
-  transition: transform var(--dur-2) var(--ease), box-shadow var(--dur-2) var(--ease);
-}
-.svx-mine:hover { transform: translateY(-1px); box-shadow: inset 0 0 0 1px var(--violet-lit), 0 12px 30px rgba(124, 58, 237, 0.2); }
-.svx-mine:active { transform: scale(0.99); }
-.svx-mine__icon {
-  display: grid; place-items: center; flex: 0 0 auto;
-  width: 44px; height: 44px; border-radius: var(--r-md);
-  background: var(--grad-hero); color: #fff;
-}
-.svx-mine__title { font-family: var(--display); font-size: var(--t-lg); font-weight: var(--w-bold); letter-spacing: -0.02em; }
-.svx-mine__line { font-size: var(--t-sm); color: var(--text-dim); }
-.svx-mine__go { flex: 0 0 auto; color: var(--violet-text); }
 /* Room under the last block for its glow to clear the tab bar. */
 .svx-stack { display: grid; gap: 22px; padding-bottom: var(--s7); }
 /* Each service is one block: its banner, and the people offering it inside. */
@@ -163,7 +135,6 @@
 .svx-art__stroke--two { animation-delay: 0.6s; }
 .svx-art__drop { transform-box: fill-box; transform-origin: center; animation: svx-drop 6s var(--ease) infinite; }
 @media (prefers-reduced-motion: reduce) {
-  .svx-mine { transition: none; }
   .svx, .svx::before, .svx__mark, .svx-art__route, .svx-art__ping, .svx-art__drop { animation: none !important; }
   .svx-art__stroke { animation: none; stroke-dashoffset: 0; }
   .svx-art__plane { display: none; }

@@ -15,6 +15,8 @@ import {
 } from '@shared/social';
 import { CompareSlider } from './CompareSlider';
 import { isAnnouncement } from '@shared/posts';
+import { conditionWords } from '@shared/enums';
+import { MentionSuggest } from './MentionSuggest';
 import { formatMoney, timeAgo } from '../format';
 import { ManagerMark } from './ManagerBadge';
 import { Avatar, Modal, PersonLink, Thumb, useConfirm } from './ui';
@@ -119,7 +121,7 @@ export function DropCard({ listing, drop }: { listing: NonNullable<PostCard['lis
         )}
         <span className="dropcard__body">
           <span className="dropcard__name">{listing.title}</span>
-          <span className="dropcard__cond">{listing.condition} · members only</span>
+          <span className="dropcard__cond" title={conditionWords(listing.condition)?.meaning}>{conditionWords(listing.condition)?.words} · members only</span>
           <span className="dropcard__prices">
             <b>{formatMoney(drop.memberPriceMinor, listing.currency)}</b>
             {rises && <s>{formatMoney(drop.publicPriceMinor, listing.currency)}</s>}
@@ -187,7 +189,7 @@ function BoostBadge({ kind }: { kind: PostBoost }) {
     <span className="boost" ref={wrap}>
       <button type="button" className={`boost__icon boost__icon--${kind}`} aria-label={meta.title}
         aria-expanded={open} onClick={() => setOpen(!open)}>
-        <Icon name={meta.icon} size={12} />
+        <Icon name={meta.icon} size={12} /> <span>{meta.title}</span>
       </button>
       {open && (
         <span className={`boost__tip boost__tip--${kind}`} role="status">
@@ -207,12 +209,12 @@ function BoostBadge({ kind }: { kind: PostBoost }) {
  * it is, a short-stock item how many are left - the two things that make
  * somebody act now rather than later.
  */
-function SaleItem({ listing, post, nested, offerTo }: {
+function SaleItem({ listing, post, nested, tagged }: {
   listing: NonNullable<PostCard['listing']>;
   post: PostCard['post'];
   nested: boolean;
-  /** The shop's handle, when this viewer may message it about the item. */
-  offerTo: string | null;
+  /** The card above already carries the For sale tag. */
+  tagged: boolean;
 }) {
   const href = `/listing/${listing.id}?post=${encodeURIComponent(`${post.channelId}:${post.id}`)}`;
   const fill = listing.fill ?? null;
@@ -228,11 +230,12 @@ function SaleItem({ listing, post, nested, offerTo }: {
           <Thumb seed={listing.id} label={listing.title} className="spost__itemphoto" />
         )}
         <span className="spost__itembody">
-          <span className="spost__itemtag">{gone ? 'Sold out' : fill ? 'Group pre-order' : 'For sale'}</span>
+          {/* Where the card already says "For sale", only a state that differs is said again here. */}
+          {(gone || fill || !tagged) && <span className="spost__itemtag">{gone ? 'Sold out' : fill ? 'Group pre-order' : 'For sale'}</span>}
           <span className="spost__itemname">{listing.title}</span>
           <span className="spost__itemmeta">
             <span className="spost__price">{formatMoney(listing.priceMinor, listing.currency)}</span>
-            <span className="faint">{listing.condition}</span>
+            <span className="faint" title={conditionWords(listing.condition)?.meaning}>{conditionWords(listing.condition)?.words}</span>
             {!gone && listing.left != null && listing.left > 0 && (
               <span className="spost__left">{listing.left === 1 ? 'Last one' : `${listing.left} left`}</span>
             )}
@@ -248,15 +251,9 @@ function SaleItem({ listing, post, nested, offerTo }: {
           {gone ? 'View' : fill ? 'Join' : 'Buy'} <Icon name="right" size={12} />
         </span>
       </Link>
-      {!nested && (sold > 0 || offerTo) && (
+      {!nested && sold > 0 && (
         <span className="spost__saleline">
-          {sold > 0 && <span><Icon name="tag" size={12} /> {sold} bought from this post</span>}
-          {offerTo && (
-            <Link className="spost__offer"
-              to={`/messages/${encodeURIComponent(offerTo)}?about=${encodeURIComponent(listing.id)}`}>
-              💬 Message about this
-            </Link>
-          )}
+          <span><Icon name="tag" size={12} /> {sold} bought from this post</span>
         </span>
       )}
     </div>
@@ -279,7 +276,7 @@ const CONTENT_TYPES: Record<ContentType, string> = {
   sale: 'For sale',
   debate: 'Debate poll',
   flex: 'Collection flex',
-  iso: 'ISO request',
+  iso: 'Wanted',
   thread: 'Hot debate',
 };
 
@@ -299,9 +296,15 @@ export function ContentBadge({ type }: { type: ContentType }) {
 
 export function SocialPostCard({
   card: initial, openComments = false, onRemoved, onReposted, nested = false, rank, inForum = false, canModerate = false, onPinned,
-  promoted = false,
+  promoted = false, inDiscover = false,
 }: {
   card: PostCard;
+  /**
+   * Read in Discover's stream among many strangers: one line saying why it is
+   * there (with a quick "not for me"), and Follow only once
+   * the reader has taken part in it.
+   */
+  inDiscover?: boolean;
   /** Shown because its conversation took off (Discover's hot debates), not for the post alone. */
   promoted?: boolean;
   /** Read by the forum's admin or a moderator, who may take it down or pin it. */
@@ -324,6 +327,10 @@ export function SocialPostCard({
   const { pathname } = useLocation();
   const [following, setFollowing] = useState(initial.following);
   const [followBusy, setFollowBusy] = useState(false);
+  /** Whoever the Follow beside the name is for, and whether it is followed now. */
+  const [followTarget, setFollowTarget] = useState(initial.follow ?? null);
+  /** Followed from this card, so it says Following (and can be undone) rather than vanish. */
+  const [followedHere, setFollowedHere] = useState(false);
   const [showComments, setShowComments] = useState(openComments);
   const [sharing, setSharing] = useState(false);
   const [menu, setMenu] = useState(false);
@@ -356,6 +363,8 @@ export function SocialPostCard({
   }, [openComments, user, nested, initial.post]);
 
   const { post, listing, author, social } = card;
+  /** The shop's handle, when this viewer may message it about the item on the post. */
+  const offerTo = !nested && listing && card.shop && !social.mine && !voice.storeId ? author.handle : null;
   const photos = post.photoUrls?.length ? post.photoUrls : post.photoUrl ? [post.photoUrl] : [];
   // A Figmark link is drawn as its card, unless the post brought its own pictures.
   const linked = !post.vibe && photos.length === 0 ? figmarkLink(post.body) : null;
@@ -429,6 +438,26 @@ export function SocialPostCard({
     }
   }
 
+  async function toggleFollow() {
+    if (!followTarget) return;
+    const was = followTarget;
+    setFollowBusy(true);
+    setFollowTarget({ ...was, following: !was.following });
+    setFollowedHere(true);
+    try {
+      const now = was.service
+        ? (await api.followStore(was.service.kind, was.service.ownerId, !was.following)).following
+        : (await api.follow(was.key)).following;
+      setFollowTarget({ ...was, following: now });
+      if (was.key === post.channelId) setFollowing(now);
+    } catch (err) {
+      setFollowTarget(was);
+      setError(err instanceof ApiRequestError ? err.message : 'Could not follow.');
+    } finally {
+      setFollowBusy(false);
+    }
+  }
+
   async function putAway(how: 'hidden' | 'less' | 'topic' | 'muted') {
     setMenu(false);
     setAway(how);
@@ -490,7 +519,7 @@ export function SocialPostCard({
       {post.answersWant && (
         <Link className="spost__kind spost__kind--poll"
           to={`/social?view=wanted&want=${encodeURIComponent(post.answersWant.id)}&buyer=${encodeURIComponent(post.answersWant.buyerId)}`}>
-          <Icon name="target" size={11} /> Answers an ISO
+          <Icon name="target" size={11} /> Answers a want
         </Link>
       )}
       {hot && <span className="spost__kind spost__kind--hot">🔥 Hot</span>}
@@ -503,30 +532,131 @@ export function SocialPostCard({
   );
 
   const type = nested ? null : contentTypeOf(card, promoted);
+  // The line saying why Discover shows it carries the post's menu in Discover.
+  const whyShown = !nested && Boolean(card.why) && !(card.why!.kind === 'followed' && card.followedActed && !following);
+  const menuInWhy = inDiscover && whyShown;
+  // Follow sits on the name's own line, not beside the name-and-level block.
+  const followButton = !nested && followTarget && followTarget.key !== voice.storeId && (!followTarget.following || followedHere) ? (
+    <button type="button" className={`spost__follow${followTarget.following ? ' is-on' : ''}`} disabled={followBusy}
+      aria-pressed={followTarget.following}
+      title={voice.storeId && !followTarget.service ? 'Shops do not follow - this follows as you' : undefined}
+      onClick={() => void toggleFollow()}>
+      <Icon name={followTarget.following ? 'check' : 'plus'} size={11} /> {followTarget.following ? 'Following' : 'Follow'}
+    </button>
+  ) : null;
+  const moreMenu = (
+    <div className="spost__menuwrap">
+      <button type="button" className="iconbtn" aria-label="More" aria-expanded={menu}
+        onClick={() => setMenu(!menu)}>
+        <Icon name="more" size={18} />
+      </button>
+      {menu && (
+        <div className="spost__menu" role="menu" onMouseLeave={() => setMenu(false)}>
+          <button type="button" role="menuitem" onClick={() => { setMenu(false); void copyLink(post).then((copied) => { if (copied) toast('Link copied'); }); }}>
+            <Icon name="link" size={15} /> Copy link
+          </button>
+          {pathname !== postHref(post) && (
+            <Link role="menuitem" to={postHref(post)} onClick={() => setMenu(false)}>
+              <Icon name="external" size={15} /> Open post
+            </Link>
+          )}
+          {social.mine && !post.contest && !post.guess && !post.wallOf && (
+            <button type="button" role="menuitem" onClick={() => {
+              setMenu(false);
+              setEditing({ body: post.body, blur: post.blur ?? null, busy: false });
+            }}>
+              <Icon name="compose" size={15} /> Edit post
+            </button>
+          )}
+          {offerTo && listing && (
+            <Link role="menuitem" onClick={() => setMenu(false)}
+              to={`/messages/${encodeURIComponent(offerTo)}?about=${encodeURIComponent(listing.id)}`}>
+              <Icon name="mail" size={15} /> Message {post.authorName} about this
+            </Link>
+          )}
+          {user && (
+            <button type="button" role="menuitem" onClick={() => void toggleSave()}>
+              <Icon name="bookmark" size={15} /> {saved ? 'Unsave' : 'Save post'}
+            </button>
+          )}
+          {user && !social.mine && (
+            <>
+              <button type="button" role="menuitem" onClick={() => void putAway('less')}>
+                <Icon name="down" size={15} /> Not interested
+              </button>
+              {topicWords(post).length > 0 && (
+                <button type="button" role="menuitem" onClick={() => void putAway('topic')}>
+                  <Icon name="down" size={15} /> Less like this
+                </button>
+              )}
+              <button type="button" role="menuitem" onClick={() => void putAway('hidden')}>
+                <Icon name="hide" size={15} /> Hide post
+              </button>
+              {voiceId !== user.id && (
+                <button type="button" role="menuitem" onClick={() => void putAway('muted')}>
+                  <Icon name="mute" size={15} /> Mute {post.authorName}
+                </button>
+              )}
+            </>
+          )}
+          {canModerate && (
+            <button type="button" role="menuitem" onClick={async () => {
+              setMenu(false);
+              try {
+                const { pinned } = await api.pinPost(post.channelId, post.id);
+                onPinned?.(post.id, pinned);
+              } catch (err) {
+                setError(err instanceof ApiRequestError ? err.message : 'Could not pin that.');
+              }
+            }}>
+              <Icon name="bolt" size={15} /> {post.pinned ? 'Unpin' : 'Pin to the top'}
+            </button>
+          )}
+          {/* Somebody else's post: report it to Figmark, or raise a dispute a community manager hears. */}
+          {user && !social.mine && (
+            <>
+              <button type="button" role="menuitem" onClick={() => { setMenu(false); setObjecting('report'); }}>
+                ⚠️ Report now
+              </button>
+              <button type="button" role="menuitem" onClick={() => { setMenu(false); setObjecting('dispute'); }}>
+                ⚖️ Raise a dispute
+              </button>
+            </>
+          )}
+          {(social.mine || canModerate) && (
+            <button type="button" role="menuitem" className="is-danger" onClick={() => void remove()}>
+              <Icon name="trash" size={15} /> {social.mine ? 'Delete post' : 'Remove post (moderator)'}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
 
   return (
-    <article ref={shell} data-post-id={nested ? undefined : post.id} className={`spost spost--${categoryOf(card)}${nested ? ' spost--nested' : ''}${rank ? ' spost--ranked' : ''}`}>
-      {!nested && <span className="spost__glow" aria-hidden="true" />}
+    <article ref={shell} data-post-id={nested ? undefined : post.id} data-kind={nested ? undefined : (type ?? categoryOf(card))}
+      className={`spost spost--${categoryOf(card)}${nested ? ' spost--nested' : ''}${rank ? ' spost--ranked' : ''}`}>
       {dialog}
-      {type && <ContentBadge type={type} />}
-      {!nested && card.followedActed && !following && (
+      {type && !(inDiscover && (card.why || (card.followedActed && !following))) && <ContentBadge type={type} />}
+      {!nested && card.followedActed && !following && !(inDiscover && card.why && card.why.kind !== 'followed') && (
         <p className="spost__social">
           <Icon name="users" size={12} />
           <span>{actedLine(card.followedActed)}</span>
         </p>
       )}
       {!nested && card.why && !(card.why.kind === 'followed' && card.followedActed && !following) && (
-        <p className={`spost__social spost__why spost__why--${card.why.kind}`}>
+        <div className={`spost__social spost__why spost__why--${card.why.kind}`}>
           <span aria-hidden="true">{WHY_MARK[card.why.kind] ?? '✦'}</span>
           <span>{card.why.label}</span>
-        </p>
+          {menuInWhy && moreMenu}
+        </div>
       )}
       {rank !== undefined && <span className="spost__rank" aria-label={`Trending number ${rank}`}>#{rank}</span>}
       <header className="spost__head">
         <Avatar name={post.authorName} size={nested ? 32 : 42} />
         <div className="spost__who">
           <span className="spost__byline">
-            <PersonLink party={author} className="spost__name">{post.authorName}</PersonLink>
+            <PersonLink party={author} className="spost__name" levelFrom={3} after={followButton}>{post.authorName}</PersonLink>
             {card.forum && !inForum && (
               <>
                 <Icon name="right" size={12} className="spost__in" />
@@ -557,106 +687,7 @@ export function SocialPostCard({
             {kindLine}
           </span>
         </div>
-        {/* On the right, before the menu, for anyone not yet followed. A shop does not
-            follow anybody, so speaking as one still follows as the person. */}
-        {!nested && !social.mine && !following && post.channel === 'seller' && voice.storeId !== post.channelId && (
-          <button type="button" className="spost__follow" disabled={followBusy}
-            title={voice.storeId ? 'Shops do not follow - this follows as you' : undefined}
-            onClick={async () => {
-              setFollowBusy(true);
-              try {
-                setFollowing((await api.follow(post.channelId)).following);
-              } catch (err) {
-                setError(err instanceof ApiRequestError ? err.message : 'Could not follow.');
-              } finally {
-                setFollowBusy(false);
-              }
-            }}>
-            <Icon name="plus" size={11} /> Follow
-          </button>
-        )}
-        {!nested && (
-          <div className="spost__menuwrap">
-            <button type="button" className="iconbtn" aria-label="More" aria-expanded={menu}
-              onClick={() => setMenu(!menu)}>
-              <Icon name="more" size={18} />
-            </button>
-            {menu && (
-              <div className="spost__menu" role="menu" onMouseLeave={() => setMenu(false)}>
-                <button type="button" role="menuitem" onClick={() => { setMenu(false); void copyLink(post).then((copied) => { if (copied) toast('Link copied'); }); }}>
-                  <Icon name="link" size={15} /> Copy link
-                </button>
-                {pathname !== postHref(post) && (
-                  <Link role="menuitem" to={postHref(post)} onClick={() => setMenu(false)}>
-                    <Icon name="external" size={15} /> Open post
-                  </Link>
-                )}
-                {social.mine && !post.contest && !post.guess && !post.wallOf && (
-                  <button type="button" role="menuitem" onClick={() => {
-                    setMenu(false);
-                    setEditing({ body: post.body, blur: post.blur ?? null, busy: false });
-                  }}>
-                    <Icon name="compose" size={15} /> Edit post
-                  </button>
-                )}
-                {user && (
-                  <button type="button" role="menuitem" onClick={() => void toggleSave()}>
-                    <Icon name="bookmark" size={15} /> {saved ? 'Unsave' : 'Save post'}
-                  </button>
-                )}
-                {user && !social.mine && (
-                  <>
-                    <button type="button" role="menuitem" onClick={() => void putAway('less')}>
-                      <Icon name="down" size={15} /> Not interested
-                    </button>
-                    {topicWords(post).length > 0 && (
-                      <button type="button" role="menuitem" onClick={() => void putAway('topic')}>
-                        <Icon name="down" size={15} /> Less like this
-                      </button>
-                    )}
-                    <button type="button" role="menuitem" onClick={() => void putAway('hidden')}>
-                      <Icon name="hide" size={15} /> Hide post
-                    </button>
-                    {voiceId !== user.id && (
-                      <button type="button" role="menuitem" onClick={() => void putAway('muted')}>
-                        <Icon name="mute" size={15} /> Mute {post.authorName}
-                      </button>
-                    )}
-                  </>
-                )}
-                {canModerate && (
-                  <button type="button" role="menuitem" onClick={async () => {
-                    setMenu(false);
-                    try {
-                      const { pinned } = await api.pinPost(post.channelId, post.id);
-                      onPinned?.(post.id, pinned);
-                    } catch (err) {
-                      setError(err instanceof ApiRequestError ? err.message : 'Could not pin that.');
-                    }
-                  }}>
-                    <Icon name="bolt" size={15} /> {post.pinned ? 'Unpin' : 'Pin to the top'}
-                  </button>
-                )}
-                {/* Somebody else's post: report it to Figmark, or raise a dispute a community manager hears. */}
-                {user && !social.mine && (
-                  <>
-                    <button type="button" role="menuitem" onClick={() => { setMenu(false); setObjecting('report'); }}>
-                      ⚠️ Report now
-                    </button>
-                    <button type="button" role="menuitem" onClick={() => { setMenu(false); setObjecting('dispute'); }}>
-                      ⚖️ Raise a dispute
-                    </button>
-                  </>
-                )}
-                {(social.mine || canModerate) && (
-                  <button type="button" role="menuitem" className="is-danger" onClick={() => void remove()}>
-                    <Icon name="trash" size={15} /> {social.mine ? 'Delete post' : 'Remove post (moderator)'}
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        )}
+        {!nested && !menuInWhy && moreMenu}
       </header>
       {objecting === 'report' && (
         <ReportModal targetType={post.channel === 'forum' ? 'forum_post' : 'post'} targetId={post.id} parentId={post.channelId}
@@ -759,8 +790,7 @@ export function SocialPostCard({
       {listing && post.drop && <DropCard listing={listing} drop={post.drop} />}
 
       {listing && !post.drop && (
-        <SaleItem listing={listing} post={post} nested={nested}
-          offerTo={!nested && card.shop && !social.mine && !voice.storeId ? author.handle : null} />
+        <SaleItem listing={listing} post={post} nested={nested} tagged={type === 'sale'} />
       )}
 
       {post.repostOf && (
@@ -1494,6 +1524,7 @@ function Comments({ card, onCount, onPost }: {
           </button>
         </div>
         )}
+        {user && <MentionSuggest field={input} value={text} onChange={setText} />}
       </div>
     </section>
   );
@@ -1611,7 +1642,7 @@ function Comment({ comment, fresh, card, onReply, onChanged, small = false }: {
       <Avatar name={comment.authorName} size={small ? 26 : 32} />
       <div className="cmt__main">
         <div className="cmt__bubble">
-          <PersonLink party={comment.author} className="cmt__name">{comment.authorName}</PersonLink>
+          <PersonLink party={comment.author} className="cmt__name" levelFrom={3}>{comment.authorName}</PersonLink>
           {debate && comment.side && <TeamChip poll={card.social.poll} side={comment.side} />}
           {best && <span className="teamchip teamchip--best">🎤 Best argument</span>}
           {comment.accepted && <span className="teamchip teamchip--answer">✅ Best answer</span>}
@@ -1632,12 +1663,16 @@ function Comment({ comment, fresh, card, onReply, onChanged, small = false }: {
               {comment.accepted ? 'Unmark answer' : '✅ Mark as answer'}
             </button>
           )}
-          {comment.canDelete && <button type="button" onClick={() => void remove()}>Delete</button>}
+          {/* Delete lives in the ⋮ menu where there is one; without it, here.
+              Your own validated (or awaiting-validation) words get no menu. */}
+          {comment.canDelete && !(comment.moderation && !(comment.mine && (comment.moderation.validated || comment.moderation.reportedByMe)))
+            && <button type="button" onClick={() => void remove()}>Delete</button>}
           {likes > 0 && <span className="cmt__likes">❤️ {likes}</span>}
           {/* Only in the full thread, where the comment carries its moderation state. */}
           {comment.moderation && (
             <ReportButton targetType="post_comment" targetId={comment.id} parentId={`${channelId}:${id}`}
-              mine={Boolean(comment.mine)} moderation={comment.moderation} />
+              mine={Boolean(comment.mine)} moderation={comment.moderation}
+              onDelete={comment.canDelete ? () => void remove() : undefined} />
           )}
         </div>
       </div>

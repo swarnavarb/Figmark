@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { CustomQuote, ServiceRequest, ServiceWorkDoc } from '../../../shared/service-work.js';
 import type { TrackingRoute } from '../../../shared/routes.js';
 import type { StoreKind } from '../../../shared/service-stores.js';
-import type { PostTemplate } from '../../../shared/templates.js';
+import type { ListingDraft, PostTemplate } from '../../../shared/templates.js';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import type { ViewSource } from '../../../shared/seller-data.js';
 import type {
@@ -78,6 +78,8 @@ export interface CatalogQuery {
   includeHidden?: boolean;
   /** The most an item may cost, in paise. Absent, zero or less means no ceiling. */
   maxPriceMinor?: number;
+  /** The least an item may cost, in paise. Absent, zero or less means no floor. */
+  minPriceMinor?: number;
 }
 
 /**
@@ -179,6 +181,12 @@ export interface Repository {
   getTemplate(sellerId: string, templateId: string): Promise<PostTemplate | null>;
   saveTemplate(template: PostTemplate): Promise<PostTemplate>;
   deleteTemplate(sellerId: string, templateId: string): Promise<boolean>;
+
+  /** Listings a shop has started and not yet published, newest first. */
+  listListingDrafts(sellerId: string): Promise<ListingDraft[]>;
+  getListingDraft(sellerId: string, draftId: string): Promise<ListingDraft | null>;
+  saveListingDraft(draft: ListingDraft): Promise<ListingDraft>;
+  deleteListingDraft(sellerId: string, draftId: string): Promise<boolean>;
 
   /** The route templates a shop has written. */
   listRoutes(sellerId: string): Promise<TrackingRoute[]>;
@@ -607,6 +615,12 @@ export interface Repository {
    * and isDue picks from it. Finishing a game takes it off the list.
    */
   listOpenGames(nowIso: string, limit: number): Promise<Post[]>;
+  /**
+   * The games (competitions, debates, guess-the-prices) posted since `sinceIso`
+   * or decided since then, newest first, at most `limit`: what the season's
+   * Top players board is counted from.
+   */
+  listGamePostsSince(sinceIso: string, limit: number): Promise<Post[]>;
 
   listForums(): Promise<Forum[]>;
   getForum(id: string): Promise<Forum | null>;

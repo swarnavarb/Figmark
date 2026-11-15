@@ -453,6 +453,11 @@ code, kbd, samp, pre {
 :where(:root[data-motion="reduced"]) .csheet__box,
 :where(:root[data-motion="reduced"]) .fcalc__fab { background: color-mix(in srgb, var(--surface) 97%, transparent); }
 :where(:root[data-motion="reduced"]) .dislens { background: color-mix(in srgb, var(--bg) 97%, transparent); }
+/* A browser that cannot blur gets the bars near solid instead of see-through. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .tabbar { background: color-mix(in srgb, var(--surface) 96%, transparent); }
+  .dislens { background: color-mix(in srgb, var(--bg) 97%, transparent); }
+}
 
 .muted { color: var(--text-dim); font-size: var(--t-sm); }
 .faint { color: var(--text-faint); font-size: var(--t-xs); }
@@ -555,9 +560,9 @@ code, kbd, samp, pre {
   content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: calc(-1 * var(--glass-tail)); z-index: -2;
   background: linear-gradient(180deg,
     rgb(var(--top-rgb)) 0, rgb(var(--top-rgb)) var(--strip-h),
-    rgb(var(--top-rgb) / 0.4) calc(100% - var(--glass-tail)), rgb(var(--top-rgb) / 0) 100%);
-  backdrop-filter: blur(18px) saturate(1.4);
-  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+    rgb(var(--top-rgb) / 0.72) calc(100% - var(--glass-tail)), rgb(var(--top-rgb) / 0) 100%);
+  backdrop-filter: blur(28px) saturate(1.5);
+  -webkit-backdrop-filter: blur(28px) saturate(1.5);
   -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - var(--glass-tail)), transparent 100%);
   mask-image: linear-gradient(180deg, #000 calc(100% - var(--glass-tail)), transparent 100%);
   pointer-events: none;
@@ -1681,12 +1686,17 @@ summary::-webkit-details-marker { display: none; }
   /* Glass, as the header is once scrolled: the page passes underneath as a
      blurred hint of movement. The blur is the bar's backdrop only - the tabs
      and the pill sit on top of it, sharp. */
-  background: color-mix(in srgb, var(--surface) 55%, transparent);
-  backdrop-filter: blur(24px) saturate(1.6);
-  -webkit-backdrop-filter: blur(24px) saturate(1.6);
-  border: 1px solid var(--border);
+  /* Frosted: a milky sheen over a little of the surface colour, on a heavy
+     blur, so the page behind is a soft wash of colour rather than legible. */
+  /* Thick enough that words scrolling behind it are a blur, not readable. */
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02)),
+    color-mix(in srgb, var(--surface) 72%, transparent);
+  backdrop-filter: blur(40px) saturate(1.8);
+  -webkit-backdrop-filter: blur(40px) saturate(1.8);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 22px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.14);
   max-width: 440px;
   margin: 0 auto;
   height: var(--tabbar-float);
@@ -2559,7 +2569,7 @@ a.ins__name:hover, a.ins__who:hover { color: var(--accent-text); }
 .ladder__row {
   position: relative;
   display: grid; grid-template-columns: 20px 1fr; align-items: baseline; gap: 10px;
-  padding: 7px 0;
+  padding: var(--s2) 0;
   font-size: var(--t-sm); color: var(--text-faint);
 }
 .ladder__row.is-done { color: var(--text-dim); }
@@ -2570,11 +2580,7 @@ a.ins__name:hover, a.ins__who:hover { color: var(--accent-text); }
 /* The controls here are always on: they are the point of the box, not a
    hover-revealed extra on a rung. */
 .ladder__lot-acts .ladder__act { text-decoration: none; color: var(--text-dim); }
-.ladder__leave-line {
-  position: relative; z-index: 1; justify-self: center;
-  width: 9px; height: 9px; border-radius: 2px; transform: rotate(45deg);
-  border: 1px dashed var(--text-faint); background: var(--surface);
-}
+.ladder__leave-line { width: 9px; }
 .ladder__leave-go {
   display: inline-flex; align-items: center; gap: var(--s1);
   padding: 3px 10px; border: 1px solid var(--accent-line); border-radius: var(--r-pill);
@@ -3412,6 +3418,9 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 /* Why Discover is showing it, in a word or two over the post. */
 .spost__why--ending, .spost__why--taking-off, .spost__why--scarce, .spost__why--prize { color: var(--accent-text); }
 .spost__why--explore { color: var(--text-dim); font-style: italic; }
+/* In Discover the post's menu sits at the end of that line. */
+.spost__why .spost__menuwrap { margin: -6px -6px -6px auto; font-style: normal; font-weight: var(--w-regular); }
+.spost__why .spost__menuwrap .iconbtn { width: 30px; height: 30px; color: var(--text-faint); }
 .spost__mention, .spost__topic { color: var(--accent-text); font-weight: var(--w-semi); text-decoration: none; }
 .spost__mention:hover, .spost__topic:hover { text-decoration: underline; }
 
@@ -3435,13 +3444,21 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 .spost__follow:hover { background: var(--accent); color: var(--accent-ink); }
 .spost__follow:active { transform: scale(0.95); }
 .spost__follow:disabled { opacity: 0.6; cursor: default; }
+.spost__byline .spost__follow { padding: 1px 9px; margin-left: 8px; line-height: 1.4; }
+/* The name gives way (ellipsis) before the Follow beside it does. */
+.spost__byline .pname { max-width: 100%; }
+.spost__byline .pname__line { flex-wrap: nowrap; }
+.spost__byline .pname__line > .spost__name { min-width: 0; }
+.spost__follow.is-on { background: none; border-color: var(--border); color: var(--text-dim); }
+.spost__follow.is-on:hover { background: var(--surface-2); color: var(--text); }
 
 /* Why the home feed shows a post: an icon that explains itself in a bubble above it. */
 .boost { position: relative; display: inline-flex; }
 .boost__icon {
-  display: inline-grid; place-items: center;
-  width: 20px; height: 20px; padding: 0;
-  border: 1px solid transparent; border-radius: 50%;
+  display: inline-flex; align-items: center; gap: 3px;
+  height: 20px; padding: 0 7px 0 5px;
+  border: 1px solid transparent; border-radius: var(--r-pill);
+  font-size: var(--t-2xs); font-weight: 700; line-height: 1;
   cursor: pointer;
   transition: transform var(--dur-1) var(--ease);
 }
@@ -3449,6 +3466,7 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 .boost__icon:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 2px; }
 .boost__icon--trending { background: var(--warn-soft); color: var(--warn); border-color: rgba(251, 191, 36, 0.4); }
 .boost__icon--rising { background: var(--aqua-soft); color: var(--aqua); border-color: var(--aqua-line); }
+.boost__icon--result { background: var(--violet-soft, rgba(124, 58, 237, 0.18)); color: var(--violet-lit); border-color: rgba(139, 92, 246, 0.4); }
 .boost__tip {
   position: absolute; z-index: var(--z-popover);
   left: -8px; bottom: calc(100% + 8px);
@@ -4064,15 +4082,6 @@ a.psheet__row:hover { background: var(--surface-hover); }
 @media (max-width: 480px) {
   .writer__foot .writer__tool span { display: none; }
 }
-.rsmap__seg b { color: var(--zone); font-size: var(--t-sm); }
-.rsgap__wait span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rsgap__wait .waveloader { width: 12px; height: 12px; color: var(--warn); }
-.rsgap__editor select, .rsgap__editor input, .rsgap__editor .fmselect {
-  padding: 7px 9px; border-radius: var(--r-sm); border: 1px solid var(--border); background: var(--surface);
-  font-size: var(--t-xs);
-}
-.rszone__text b { font-size: var(--t-sm); color: var(--zone); }
-.rszone__text span { font-size: var(--t-2xs); color: var(--text-dim); }
 .rspick__body b { font-size: var(--t-sm); }
 .rspick__body span { font-size: var(--t-2xs); color: var(--text-dim); }
 
@@ -4544,7 +4553,6 @@ a.psheet__row:hover { background: var(--surface-hover); }
   transition: box-shadow var(--dur-2) var(--ease), transform var(--dur-2) var(--ease);
 }
 @media (hover: hover) {
-  .social .spost:not(.spost--nested):hover { box-shadow: 0 14px 34px rgb(var(--c1) / 0.16); }
 }
 .social .spost--nested { background: var(--surface-2); border-radius: var(--r-md); }
 .spost--ranked { margin-top: 10px; }
@@ -4596,7 +4604,8 @@ a.psheet__row:hover { background: var(--surface-hover); }
   font-size: var(--t-2xs); font-weight: var(--w-bold);
   letter-spacing: 0.1em; text-transform: uppercase; color: var(--sx-blaze, var(--lime));
 }
-.spost__itemmeta { display: flex; align-items: baseline; gap: var(--s2); }
+.spost__itemmeta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--s2); }
+.spost__itemmeta > * { white-space: nowrap; }
 .social .spost__price { color: var(--sx-volt); font-size: var(--t-md); }
 .spost__itemcta {
   flex: 0 0 auto; display: inline-flex; align-items: center; gap: 3px;
@@ -4623,12 +4632,6 @@ a.psheet__row:hover { background: var(--surface-hover); }
   color: var(--text-dim); font-size: var(--t-xs);
 }
 .spost__saleline > span { display: inline-flex; align-items: center; gap: var(--s1); }
-.spost__offer {
-  padding: var(--s1) 10px; border-radius: var(--r-pill);
-  border: 1px solid var(--border-strong); color: var(--text);
-  font-weight: var(--w-semi);
-}
-.spost__offer:hover { background: var(--surface-2); }
 .writer__tool--item svg { color: var(--sx-blaze, var(--coral)); }
 
 .stockpick {
@@ -4721,77 +4724,8 @@ a.psheet__row:hover { background: var(--surface-hover); }
    inside the feed's column instead of bleeding past it. */
 @media (min-width: 720px) {
   .hotstrip__row, .feed__filters { margin-inline: 0; padding-inline: 0; }
-}
-
-/* ── Post colours: two hues per kind of post, pushing against each other ──
-
-   Every post carries a pair of colours for what it is - an item, a poll, a
-   photo post, a line of text - so a feed reads by kind before it is read by
-   word. Each colour is a soft blob in one corner; they drift towards each
-   other and back on different clocks, so the two are always mid-scuffle and
-   no two cards are in step. Kept to a quarter strength over the dark card:
-   vivid at the edges, quiet behind the words.
-
-   Only transform is animated, on layers of their own, so a long feed costs
-   the compositor and never the layout. */
-
-.spost--text   { --c1: 255 122 26;  --c2: 192 38 211; }
-.spost--item   { --c1: 212 255 58;  --c2: 255 91 31; }
-.spost--photo  { --c1: 255 46 126;  --c2: 34 211 238; }
-.spost--poll   { --c1: 6 214 231;   --c2: 139 92 246; }
-.spost--vibe   { --c1: 255 184 0;   --c2: 236 72 153; }
-.spost--repost { --c1: 59 130 246;  --c2: 255 90 95; }
-
-.spost__glow {
-  position: absolute; inset: 0; z-index: -1;
-  overflow: hidden;
-  border-radius: inherit;
-  pointer-events: none;
-}
-.spost__glow::before,
-.spost__glow::after {
-  content: '';
-  position: absolute;
-  width: 85%; aspect-ratio: 1;
-  border-radius: 50%;
-  will-change: transform;
-}
-.spost__glow::before {
-  left: -30%; top: -35%;
-  background: radial-gradient(circle, rgb(var(--c1) / 0.3), rgb(var(--c1) / 0.1) 38%, transparent 66%);
-  animation: glow-lunge-a 11s ease-in-out infinite alternate;
-}
-.spost__glow::after {
-  right: -30%; bottom: -35%;
-  background: radial-gradient(circle, rgb(var(--c2) / 0.3), rgb(var(--c2) / 0.1) 38%, transparent 66%);
-  animation: glow-lunge-b 13s ease-in-out infinite alternate;
-}
-.spost:nth-child(3n + 1) .spost__glow::before { animation-delay: -4s; }
-.spost:nth-child(3n + 2) .spost__glow::after { animation-delay: -7s; }
-.spost:nth-child(4n) .spost__glow::before { animation-duration: 9s; }
-@keyframes glow-lunge-a {
-  0% { transform: translate(0, 0) scale(1); }
-  50% { transform: translate(38%, 22%) scale(1.18); }
-  100% { transform: translate(62%, 8%) scale(0.92); }
-}
-@keyframes glow-lunge-b {
-  0% { transform: translate(0, 0) scale(1); }
-  50% { transform: translate(-40%, -26%) scale(1.2); }
-  100% { transform: translate(-60%, -6%) scale(0.95); }
-}
-
-/* The edge: a hairline in the post's two colours, so the card is framed by
-   its kind even where the blobs have drifted away. */
-.social .spost:not(.spost--nested)::before {
-  content: '';
-  position: absolute; inset: 0; z-index: -1;
-  padding: 1px;
-  border-radius: inherit;
-  background: linear-gradient(125deg, rgb(var(--c1) / 0.6), rgba(255, 255, 255, 0.05) 45%, rgb(var(--c2) / 0.55));
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
+  /* Room for every chip: wrap rather than hide the last one past the column's edge. */
+  .feed__filters { flex-wrap: wrap; overflow: visible; }
 }
 
 /* ── The composer: a line forever running round it ─────────────────────── */
@@ -4820,7 +4754,7 @@ a.psheet__row:hover { background: var(--surface-hover); }
 :root[data-bars='hidden'] .tabbar { transform: translateY(calc(100% + var(--tabbar-gap) + 24px)); }
 
 @media (prefers-reduced-motion: reduce) {
-  .spost__glow::before, .spost__glow::after, .social .writer::before { animation: none; }
+  .social .writer::before { animation: none; }
   .nav, .tabbar { transition: none; }
 }
 
@@ -5271,16 +5205,6 @@ body.is-locked { overflow: hidden; }
   transform: skewX(-9deg); transform-origin: left bottom;
   text-shadow: 0 2px 14px rgba(0, 0, 0, 0.18);
 }
-.soctop__live {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 2px var(--s2) 2px 6px; border-radius: var(--r-pill);
-  background: rgba(0, 0, 0, 0.22);
-  font-size: var(--t-2xs); font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase;
-}
-.soctop__live::before {
-  content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--sx-volt);
-  animation: live-dot 1.8s ease-out infinite;
-}
 .soctop__tools { display: flex; align-items: center; gap: var(--s2); margin-left: auto; }
 .soctop__icon, .soccompact__search {
   display: grid; place-items: center; width: 36px; height: 36px; flex: 0 0 auto;
@@ -5298,10 +5222,9 @@ body.is-locked { overflow: hidden; }
 .soctop .bell__panel { top: calc(env(safe-area-inset-top, 0px) + 60px); color: var(--text); }
 .soctop .pmenu__btn { background: #fff; }
 .soctop .pmenu__panel { color: var(--text); }
-/* A narrow phone has room for the title and the four buttons, not the Live tag too. */
+/* A narrow phone: the title and the four buttons, a little closer together. */
 @media (max-width: 360px) {
   .soctop__bar { gap: var(--s2); }
-  .soctop__live { display: none; }
   .soctop__tools { gap: 6px; }
 }
 
@@ -5646,24 +5569,32 @@ body.is-locked { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
   .soctop { animation: none; }
   .soccompact, .socsearch, .forumcard, .wanted .wantcard { transition: none; animation: none; }
-  .soctop__live::before { animation: none; }
 }
 
-/* All five sections in one row on a phone: icon over word, equal widths, so
-   none of them hides past the edge. */
+/* All five sections in one row on a phone: a word each, equal widths, so
+   none of them hides past the edge and the header stays one slim band. The
+   icons come back on a wide screen, where there is room for them. */
 .soctop__tabs {
   display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px;
   margin-inline: 0; padding: 0; overflow: visible;
 }
 .soctop__tabs .soctab {
-  flex-direction: column; justify-content: center; gap: var(--s1);
-  padding: 9px 2px var(--s2); border-radius: var(--r-lg); font-size: var(--t-xs); letter-spacing: 0.01em;
+  justify-content: center;
+  padding: 8px 2px; border-radius: var(--r-pill); font-size: var(--t-xs); letter-spacing: 0.01em;
+}
+.soctop__tabs .soctab > svg { display: none; }
+@media (max-width: 719px) {
+  .soctop__in { gap: 10px; padding-bottom: var(--s3); }
+  .soctop__title { font-size: var(--t-lg); }
+  .soctop__bar { min-height: 38px; }
 }
 .soctop__tabs .soctab > span:not(.soctab__badge) { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 @media (min-width: 720px) {
-  .soctop__tabs { max-width: 640px; }
-  .soctop__tabs .soctab { flex-direction: row; font-size: var(--t-sm); padding: 10px var(--s2); }
+  .soctop__in, .soccompact__in { max-width: calc(640px + 2 * var(--page-pad)); }
+  .socialtab .wanted, .socialtab .forums { max-width: 640px; width: 100%; margin-inline: auto; }
+  .soctop__tabs .soctab { gap: 7px; font-size: var(--t-sm); padding: 10px var(--s2); }
+  .soctop__tabs .soctab > svg { display: block; }
 }
 .soccompact .soctab__badge { min-width: 16px; height: 16px; line-height: 16px; font-size: var(--t-2xs); }
 @media (max-width: 380px) {
@@ -5773,17 +5704,20 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
 }
 .isoanswer__as > span:last-child { display: grid; font-size: var(--t-sm); }
 
-/* The switch on its own: the small green disc, so it never reads as a second
-   profile photo next to the real one. */
+/* The switch on its own: a pill with the profile speaking now and a caret, so
+   it reads as "posting as this - change" and never as a second profile photo. */
 .voicepick__switch {
-  display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%;
-  background: var(--sx-volt, #D4FF3A); color: var(--sx-ink, #1A0B06);
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85), 0 4px 12px rgba(0, 0, 0, 0.2);
+  display: inline-flex; align-items: center; gap: 2px; height: 30px; padding: 2px 6px 2px 3px;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.92); color: var(--sx-ink, #1A0B06);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
-.soccompact .voicepick__switch { width: 28px; height: 28px; }
+.voicepick__switch .avatar, .voicepick__switch .voiceav { box-shadow: none; }
+.voicepick__button:has(.voicepick__switch) { border-radius: var(--r-pill); }
+.soccompact .voicepick__switch { height: 28px; }
 /* The same switch in the top bar on Discover, where the cart would be. */
 .nav__voice { display: grid; flex: 0 0 auto; }
-.nav__voice .voicepick__switch { width: 34px; height: 34px; }
+.nav__voice .voicepick__switch { height: 34px; }
 .nav__voice .voicepick__menu { color: var(--text); }
 .soctop__voice { flex: 0 0 auto; }
 /* Room for the counts on the corners, which a scrolling row would clip. */
@@ -6412,19 +6346,9 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
 }
 .trk__bar span {
   display: block; height: 100%; border-radius: inherit; background: var(--grad-play);
-  box-shadow: 0 0 14px rgba(163, 230, 53, 0.5); transition: width 700ms var(--ease);
+  transition: width 500ms var(--ease);
 }
 .trk__ladder { padding-top: var(--s1); }
-@keyframes trk-next { 50% { box-shadow: inset 0 0 0 2px var(--aqua), 0 0 4px rgba(6, 214, 231, 0.1); } }
-.trkbox__item {
-  position: relative; flex: 0 0 88px; display: grid; justify-items: center; align-content: start; gap: 5px;
-  padding: 0 var(--s1); text-align: center; scroll-snap-align: start;
-}
-@keyframes trkbox-here {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-2px); }
-}
-
 /* A rung the journey has not got near yet, on the last mile. */
 .ladder__row.is-locked { color: var(--text-faint); opacity: 0.7; }
 
@@ -6441,16 +6365,13 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
 /* The one to press: big enough to hit first time, and the only one that looks like this. */
 .stepact__btn.is-next {
   height: 40px; padding: 0 var(--s4); font-size: var(--t-sm); font-weight: var(--w-bold);
-  border-color: var(--accent); background: var(--accent); color: #fff;
-  box-shadow: 0 6px 18px -8px rgba(124, 58, 237, 0.7);
+  border-color: var(--accent); background: var(--accent); color: #fff; border-radius: var(--r-pill);
 }
 /* Pressed: a small tick that undoes, not a second call to action. */
 .stepact__btn.is-done {
-  height: 26px; padding: 0 9px;
-  border-color: rgba(52, 211, 153, 0.35); background: var(--ok-soft); color: var(--ok);
+  height: 26px; padding: 0 9px; border-radius: var(--r-pill);
+  border-color: transparent; background: var(--ok-soft); color: var(--ok);
 }
-/* Further on: drawn so the seller sees what comes next, but it opens only once the one before it is pressed. */
-.stepact__btn.is-later { border-style: dashed; background: none; color: var(--text-faint); }
 .stepact__btn.is-done:disabled { opacity: 1; }
 /* The lot's Move here, scrolled to from the order card's Lot stop. */
 .ladder__move { scroll-margin: 120px; }
@@ -6477,7 +6398,6 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
 .rsprev__title .faint { font-size: var(--t-2xs); }
 .rsprev__who b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rsprev__who .faint { font-size: var(--t-2xs); }
-.rsbtn__ship input { min-width: 0; padding: 6px 9px; font-size: var(--t-2xs); }
 .rcvd__text span { font-size: var(--t-2xs); color: var(--text-dim); }
 .rcvd__own input { min-width: 0; padding: 9px 10px; font-size: var(--t-sm); }
 
@@ -6518,7 +6438,7 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
 @media (max-width: 719px) {
   :root:has(.sellform__bar) { scroll-padding-bottom: calc(var(--tabbar-h) + 88px); }
 }
-.sellform__go { margin-top: var(--s1); background: var(--grad-hero); border-color: transparent; box-shadow: var(--shadow-violet); }
+.sellform__go { background: var(--grad-hero); border-color: transparent; box-shadow: var(--shadow-violet); }
 .lbox__hint { font-size: var(--t-xs); color: var(--text-faint); }
 .ltoggle__text b { font-weight: var(--w-semi); }
 .ltoggle__text span { font-size: var(--t-xs); color: var(--text-faint); }
@@ -8882,8 +8802,6 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
   padding: 0; border: 0; background: none; cursor: pointer;
   font: inherit; color: var(--accent-text); text-decoration: underline;
 }
-.todo { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: var(--s2); }
-@keyframes todo-new-pop { from { transform: rotate(6deg) scale(.4); opacity: 0; } to { transform: rotate(6deg) scale(1); opacity: 1; } }
 .taginput__ideas { display: flex; flex-wrap: wrap; gap: 6px; }
 .taginput__idea {
   padding: 5px 10px; border: 1px dashed var(--border-strong); border-radius: var(--r-pill);
@@ -8895,7 +8813,7 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .notice--line { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .order-cancel { justify-self: end; }
 /* An ⓘ beside a heading or a step's name sits just after the words. */
-.ladder__name .qinfo, .rszone__text .qinfo { margin-left: 6px; vertical-align: middle; }
+.ladder__name .qinfo { margin-left: 6px; vertical-align: middle; }
 @media (max-width: 720px) {
   .ops .card--pad { padding: 14px; }
 }
@@ -9964,6 +9882,40 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .medalcard__board { font-size: var(--t-sm); line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .medalcard__season { font-size: var(--t-xs); color: var(--text-dim); }
 
+/* The same medals, small: your own wins in a strip above a leaderboard. */
+.winstrip { display: grid; gap: 6px; }
+.winstrip__label { display: flex; align-items: baseline; gap: var(--s2); font-size: var(--t-2xs); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.08em; }
+.winstrip__all { margin-left: auto; text-transform: none; letter-spacing: 0; font-size: var(--t-xs); }
+.winstrip__row { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 6px; scrollbar-width: thin; }
+.minimedal, .winchip {
+  --metal-hi: #FFF3B0; --metal: #F5C542; --metal-lo: #A0700E; --glow: 245, 197, 66;
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; max-width: 220px;
+  padding: 5px 10px 5px 5px; border-radius: 999px; color: inherit; text-decoration: none;
+  background: linear-gradient(180deg, var(--surface-2), var(--surface));
+  border: 1px solid rgba(var(--glow), 0.4);
+}
+.minimedal--silver { --metal-hi: #FFFFFF; --metal: #CBD5E1; --metal-lo: #64748B; --glow: 203, 213, 225; }
+.minimedal--bronze { --metal-hi: #FFD9B0; --metal: #D08A4E; --metal-lo: #7C4319; --glow: 208, 138, 78; }
+.winchip { --glow: 139, 92, 246; }
+.winchip:hover { border-color: rgba(var(--glow), 0.8); }
+.minimedal__disc {
+  display: grid; place-items: center; width: 26px; height: 26px; flex: 0 0 auto; border-radius: 50%;
+  background: radial-gradient(circle at 32% 28%, var(--metal-hi), transparent 42%), radial-gradient(circle, var(--metal) 0 55%, var(--metal-lo) 100%);
+  box-shadow: 0 0 0 2px var(--metal-lo), 0 2px 6px rgba(var(--glow), 0.35);
+}
+.minimedal__disc b { font-size: var(--t-xs); line-height: 1; color: var(--metal-lo); text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6); }
+.winchip__emoji { display: grid; place-items: center; width: 26px; height: 26px; flex: 0 0 auto; border-radius: 50%; background: rgba(var(--glow), 0.18); font-size: var(--t-sm); }
+.minimedal__text { display: grid; min-width: 0; line-height: 1.2; }
+.minimedal__text b { font-size: var(--t-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.minimedal__text small { font-size: var(--t-2xs); color: var(--text-dim); white-space: nowrap; }
+/* Which period a board or a win belongs to. */
+.periodtag {
+  display: inline-block; padding: 1px 7px; border-radius: 999px; vertical-align: middle;
+  font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--q-gold, #F5C542); background: rgba(245, 197, 66, 0.14); border: 1px solid rgba(245, 197, 66, 0.35);
+}
+.periodtag--weekly { color: #22D3EE; background: rgba(34, 211, 238, 0.12); border-color: rgba(34, 211, 238, 0.35); }
+
 /* Wins: one card each, in its kind's colour, rising in turn; the medal glints. */
 .wincards { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); }
 .wincard {
@@ -10061,3 +10013,61 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
    carries on from there when its section scrolls back into view. */
 [data-offscreen], [data-offscreen]::before, [data-offscreen]::after,
 [data-offscreen] *, [data-offscreen] *::before, [data-offscreen] *::after { animation-play-state: paused !important; }
+
+/* The person tag: a handle typed, with the accounts it matches listed under it.
+   Used by the lot form and the route maker, so it is here rather than in either chunk. */
+.ptag { position: relative; display: block; }
+.ptag__list { position: absolute; z-index: var(--z-popover); top: calc(100% + 4px); left: 0; right: 0; margin: 0; padding: var(--s1); list-style: none; border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface); box-shadow: var(--shadow); }
+.ptag__opt { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 9px 10px; border-radius: var(--r-sm); cursor: pointer; }
+.ptag__opt:hover, .ptag__opt.is-active { background: var(--surface-hover); }
+.ptag__name { font-weight: var(--w-semi); color: var(--text); }
+.ptag__handle { font-size: var(--t-xs); color: var(--text-faint); }
+
+/* How long a step usually takes, as the system measured it. Teal for a shop's
+   own history; amber, with its label, for the market's. */
+.dayschip {
+  display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px;
+  padding: 2px 8px; border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--aqua) 14%, transparent);
+  color: var(--aqua); font-size: var(--t-2xs); font-weight: var(--w-semi);
+  line-height: 1.5; max-width: 100%;
+}
+.dayschip--market { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); }
+.dayschip__src {
+  padding-left: 6px; border-left: 1px solid currentColor;
+  font-weight: var(--w-medium); letter-spacing: 0.02em; opacity: 0.9;
+}
+
+/* A labelled field: in an open route step, and on the new-lot cards. */
+.rsfield { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; min-width: 0; }
+.rsfield > span, .rsbtn__label, .rsbtn__wholabel { font-size: var(--t-xs); color: var(--text-dim); }
+.rsfield input:not(.fmselect__required), .rsbtn__words {
+  width: 100%; min-width: 0; height: 40px; padding: 0 var(--s3); border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--surface-2); color: var(--text); font: inherit; font-size: var(--t-sm);
+}
+.rsfield input:focus, .rsbtn__words:focus { outline: none; border-color: var(--accent); }
+.rsfield input:disabled { color: var(--text-dim); -webkit-text-fill-color: var(--text-dim); }
+
+/* A lot and the people who work it, as the new-lot form asks for them: two
+   cards, each in a colour of its own. The route preview's lane uses the first. */
+.rsgroup {
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s3); min-width: 0; padding: var(--s4); border-radius: var(--r-lg);
+  background: linear-gradient(180deg, var(--group-soft), transparent 120px), var(--surface);
+  box-shadow: inset 0 0 0 1px var(--group-line);
+}
+.rsgroup--lot { --group: var(--violet-text); --group-soft: var(--violet-soft); --group-line: var(--violet-line); }
+.rsgroup--people { --group: var(--warn); --group-soft: var(--warn-soft); --group-line: rgba(251, 191, 36, 0.4); }
+.rsgroup--route { --group: var(--blue-text); --group-soft: var(--blue-soft); --group-line: var(--blue-line); }
+.rsgroup__title {
+  display: flex; align-items: center; gap: var(--s2); margin: 0;
+  font-size: var(--t-xs); font-weight: var(--w-bold); letter-spacing: 0.06em; text-transform: uppercase; color: var(--group);
+}
+.rsgroup__opt { margin-left: auto; font-weight: var(--w-normal); letter-spacing: 0; text-transform: none; color: var(--text-faint); }
+.rsgroup__lane { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: var(--s2); align-items: end; }
+.rsgroup__arrow { display: grid; place-items: center; height: 40px; color: var(--group); }
+.rsgroup__hint { font-size: var(--t-xs); line-height: 1.45; color: var(--text-dim); }
+.rsgroup__dot { display: inline-block; width: 8px; height: 8px; margin-right: 4px; border-radius: 50%; background: var(--zone); }
+.rsfield--pre { --zone: var(--aqua); }
+.rsfield--lot { --zone: var(--coral); }
+.rsfield--post { --zone: var(--lime); }
+.rsfield--pre > span, .rsfield--lot > span, .rsfield--post > span { color: var(--zone); font-weight: var(--w-semi); }

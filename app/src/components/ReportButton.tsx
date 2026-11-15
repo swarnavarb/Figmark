@@ -11,7 +11,7 @@ import { ContentMenu } from './DisputeFlows';
  * Your own words: "Ask to validate", so a genuine review can carry a mark
  * saying an operator looked.
  */
-export function ReportButton({ targetType, targetId, parentId, mine, moderation, authorId, label }: {
+export function ReportButton({ targetType, targetId, parentId, mine, moderation, authorId, label, onDelete }: {
   targetType: ReportTarget;
   targetId: string;
   /** Whose page a review is on, the listing a comment is under, `channelId:postId`, or a post's channel. */
@@ -22,6 +22,8 @@ export function ReportButton({ targetType, targetId, parentId, mine, moderation,
   authorId?: string;
   /** What a dispute about it says it is about. */
   label?: string;
+  /** Put Delete in the menu, for whoever may delete it. */
+  onDelete?: () => void;
 }) {
   const { user, gate } = useSession();
   const [sent, setSent] = useState(Boolean(moderation?.reportedByMe));
@@ -35,7 +37,8 @@ export function ReportButton({ targetType, targetId, parentId, mine, moderation,
         <span className="faint reportbtn__sent">Validation requested</span>
       ) : user ? (
         <ContentMenu targetType={targetType} targetId={targetId} parentId={parentId} authorId={authorId}
-          label={label ?? REPORT_TARGET_LABELS[targetType]} mine={mine} reported={sent} onReported={() => setSent(true)} />
+          label={label ?? REPORT_TARGET_LABELS[targetType]} mine={mine} reported={sent} onReported={() => setSent(true)}
+          onDelete={onDelete} />
       ) : (
         <button type="button" className="iconbtn cmenu__btn is-locked" aria-label="More"
           onClick={gate(() => undefined, 'Sign in to report, dispute or validate this.')}>⋮</button>

@@ -6,6 +6,9 @@ import { haptic } from '../haptics';
 
 type State = ShopStatusView['state'];
 
+/** Said on the window when a shop's open/paused/closed state is changed here. */
+export const SHOP_STATUS_EVENT = 'figmark:shop-status';
+
 /** Left to right: closed, pause, open - the switch reads like a traffic light on its side. */
 const STEPS: { id: State; label: string; hint: string }[] = [
   { id: 'stopped', label: 'Closed', hint: 'Hidden from the marketplace. Nobody can buy.' },
@@ -67,6 +70,8 @@ export function ShopStatusSwitch({ storeId }: { storeId: string }) {
     try {
       const result = await api.setShopStatus({ storeId, state, days: state === 'paused' ? pauseDays : undefined });
       setStatus(result.orderStatus);
+      // The pill in the Sell tab's header reads the same answer.
+      window.dispatchEvent(new CustomEvent(SHOP_STATUS_EVENT, { detail: { storeId, status: result.orderStatus } }));
       toast(changedText(result.orderStatus), result.orderStatus.state === 'stopped' ? 'error' : result.orderStatus.state === 'paused' ? 'info' : 'ok');
     } catch (err) {
       setStatus(before);

@@ -26,13 +26,6 @@
   opacity: 0.75;
 }
 .picker:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
-.filters__clear {
-  flex: none;
-  border: 0; background: none; padding: 6px var(--s1);
-  color: var(--text-faint); font-size: var(--t-sm); cursor: pointer;
-  text-decoration: underline; text-underline-offset: 3px;
-}
-.filters__clear:hover { color: var(--text); }
 .cat__glyph { display: block; color: var(--cat-hue, var(--text-dim)); transition: color var(--dur-1) var(--ease); }
 .qfeed { padding-top: 0; }
 .qbar--buy { flex-wrap: nowrap; gap: 6px; }
@@ -411,3 +404,99 @@
   .qfeed > :nth-child(7) { animation-delay: 250ms; }
   .qfeed > :nth-child(n+8) { animation-delay: 300ms; }
 }
+
+/* ── Today's pick, once flipped: one line ───────────────────────────────── */
+.qdropline {
+  display: flex; align-items: center; gap: var(--s1); min-width: 0; margin: 0 0 var(--s3); padding: 4px 4px 4px var(--s3);
+  border: 1px solid color-mix(in srgb, var(--q-gold) 45%, transparent); border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--q-gold) 8%, var(--surface));
+}
+.qdropline__link {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--s2); padding: 6px 0;
+  color: var(--text); text-decoration: none; font-size: var(--t-sm);
+}
+.qdropline__mark { flex: none; color: var(--q-gold); display: grid; place-items: center; }
+.qdropline__label { flex: none; font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.06em; text-transform: uppercase; color: var(--q-gold); }
+.qdropline__title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qdropline__price { flex: none; font-variant-numeric: tabular-nums; }
+.qdropline__toggle, .qdrop__fold {
+  flex: none; display: grid; place-items: center; width: 36px; height: 36px; padding: 0; cursor: pointer;
+  border: 0; border-radius: var(--r-sm); background: transparent; color: var(--q-gold);
+}
+.qdropline__toggle:hover, .qdrop__fold:hover { background: color-mix(in srgb, var(--q-gold) 16%, transparent); }
+/* The card's own arrow points up: it folds the card back into its line. */
+.qdrop__fold { position: absolute; top: 6px; right: 6px; transform: rotate(180deg); }
+
+/* ── Filters: Sort, one button for the rest, chips for what is on ───────── */
+.filters__open {
+  position: relative; flex: none; display: inline-flex; align-items: center; gap: 6px; overflow: hidden;
+  padding: 6px var(--s3); border: 1px solid var(--border); border-radius: var(--r-pill);
+  background: var(--surface); color: var(--text-dim); font: inherit; font-size: var(--t-sm); cursor: pointer;
+}
+.filters__open:hover { color: var(--text); border-color: var(--border-strong); }
+.filters__open.is-on { color: var(--text); border-color: var(--accent); }
+.filters__count {
+  display: grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--r-pill);
+  background: var(--accent); color: #fff; font-size: var(--t-2xs); font-weight: var(--w-bold);
+}
+.fchips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.fchip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px 4px 11px; border-radius: var(--r-pill);
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--text);
+  font: inherit; font-size: var(--t-xs); cursor: pointer;
+}
+.fchip__x { display: grid; place-items: center; opacity: 0.75; }
+.fchips__clear { border: 0; background: none; color: var(--text-faint); font: inherit; font-size: var(--t-xs); text-decoration: underline; cursor: pointer; }
+
+.fsheet { display: grid; gap: var(--s4); padding-bottom: var(--s2); color: var(--text); }
+.fsheet__group { display: grid; gap: var(--s2); margin: 0; padding: 0; border: 0; min-width: 0; }
+.fsheet__group legend, .fsheet__legend { padding: 0; margin-bottom: var(--s2); font-size: var(--t-sm); font-weight: var(--w-semi); color: var(--text); }
+.fsheet__choices { display: flex; flex-wrap: wrap; gap: 6px; }
+.fsheet__choices button {
+  padding: 7px 12px; border: 1px solid var(--border); border-radius: var(--r-pill); background: var(--surface);
+  color: var(--text-dim); font: inherit; font-size: var(--t-sm); cursor: pointer;
+}
+.fsheet__choices button.is-on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--text); }
+.fsheet__price { display: flex; align-items: center; gap: var(--s2); }
+.fsheet__price input {
+  flex: 1 1 0; width: 0; min-width: 0; height: 40px; padding: 0 var(--s3); box-sizing: border-box; border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--surface); color: var(--text); font: inherit; font-size: var(--t-md);
+}
+.fsheet__foot {
+  position: sticky; bottom: -18px; display: flex; gap: var(--s2); justify-content: space-between;
+  margin: var(--s2) -18px -18px; padding: var(--s3) 18px; border-top: 1px solid var(--border); background: var(--bg-elev, var(--surface));
+}
+.fsheet__foot .btn:last-child { flex: 1; }
+
+/* ── The list's heading, with its count and "Alert me" ──────────────────── */
+.qrow__side { display: inline-flex; align-items: center; gap: var(--s2); flex: none; }
+.qrow__head h2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qrow__head { gap: var(--s2); align-items: center; }
+.qalert { white-space: nowrap; }
+
+/* ── Shelves that are whole sections, laid between rows of items ────────── */
+.qshelf-wide { grid-column: 1 / -1; min-width: 0; margin: var(--s2) 0; }
+
+/* ── Recently viewed ────────────────────────────────────────────────────── */
+.qrecent { grid-column: 1 / -1; min-width: 0; margin: var(--s2) 0; }
+.qrecent__head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: var(--s2); }
+.qrecent__head h2 { margin: 0; font-size: var(--t-md); }
+.qrecent__clear { border: 0; background: none; color: var(--text-faint); font: inherit; font-size: var(--t-xs); cursor: pointer; }
+.qrecent__track { display: flex; gap: var(--s2); overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+.qrecent__track::-webkit-scrollbar { display: none; }
+.qrecent__item {
+  flex: none; width: 116px; display: grid; gap: 4px; color: var(--text); text-decoration: none; font-size: var(--t-xs);
+}
+.qrecent__art { width: 116px; height: 116px; border-radius: var(--r-sm); overflow: hidden; display: grid; place-items: center; }
+.qrecent__art .thumb__img { width: 100%; height: 100%; object-fit: cover; }
+.qrecent__title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.3; }
+.qrecent__price { font-variant-numeric: tabular-nums; }
+
+/* The category row scrolls: a soft edge says there is more past it. */
+.qzones {
+  -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent);
+  mask-image: linear-gradient(90deg, #000 85%, transparent);
+}
+/* Room on the right of the open card for its fold arrow. */
+.qdrop.is-revealed .qdrop__body { padding-right: 34px; }

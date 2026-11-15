@@ -8,7 +8,7 @@ import {
 } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { AdvanceStrip } from '../components/Buy';
-import { CONDITION_TAGS, SOURCING_LABELS } from '@shared/enums';
+import { SOURCING_LABELS } from '@shared/enums';
 import {
   CATALOG_KINDS, CATALOG_KIND_LABELS, CATALOG_SORTS, CATALOG_SORT_LABELS, CATEGORY_GROUPS, CONDITION_BUCKETS, categoriesIn, factsOf, filterOptions, matchesKind, priceCeiling,
   type CatalogKind,
@@ -23,8 +23,8 @@ import {
 } from '../components/ServiceCards';
 import { FREIGHT_MODE_LABELS } from '@shared/service-stores';
 import { countryFlag } from '@shared/countries';
-import { CategoryIcon } from '../components/CategoryIcon';
 import { EarnPill, earnOf } from '../components/Affiliate';
+import { CategoryIcon } from '../components/CategoryIcon';
 import {
   DemandRail, EarnRail, EndingRail, FEED_VIEW_TITLES, PreOrderRail, demandPicks, earnPicks, endingPicks, isFeedView,
   preOrderPicks,
@@ -37,15 +37,13 @@ import { CollectorChip, Glyph, RarityRibbon, StoreChip, XpBar, useQuest } from '
 import { EmptyState, ErrorNotice, Icon, LevelChip, Thumb, leadPhoto } from '../components/ui';
 import { useSave } from '../components/useSave';
 import { formatMoney, timeAgo } from '../format';
+import { useRecentlyViewed } from '../recentViews';
+import {
+  AlertMe, DAY_CHOICES, FilterChips, FilterSheet, RecentRail, priceLabel, sheetCount, type FilterValues,
+} from '../components/ShopFinder';
 import { clearPhotoQuery, usePhotoQuery } from '../photoQuery';
 import '../styles/FeedPage.css';
 import { Select } from '../components/Select';
-
-export const PRICE_BANDS = [
-  { label: 'Under ₹500', value: '50000' },
-  { label: 'Under ₹2,000', value: '200000' },
-  { label: 'Under ₹10,000', value: '1000000' },
-];
 
 /**
  * The catalogue as the URL describes it, and the ways to change it.
@@ -81,6 +79,11 @@ export function useCatalog() {
   const kind = params.get('kind') === 'mixed_lot' ? '' : params.get('kind') ?? '';
   const sort = params.get('sort') ?? 'newest';
   const maxPrice = params.get('maxPrice') ?? '';
+  const minPrice = params.get('minPrice') ?? '';
+  // Asked of the shop and its promise rather than the item: how far it is
+  // trusted, and how soon it says the parcel arrives.
+  const minTrust = params.get('minTrust') ?? '';
+  const maxDays = params.get('maxDays') ?? '';
   // A photo search: the URL names it, the photo itself is only ever in memory.
   const photoId = params.get('photo') ?? '';
   const photo = usePhotoQuery(photoId);
@@ -119,6 +122,7 @@ export function useCatalog() {
     if (!photoFound) return null;
     const inGroup = group ? new Set(categoriesIn(group)) : null;
     const ceiling = priceCeiling(maxPrice);
+    const floor = priceCeiling(minPrice);
     const listings = photoFound.filter((listing) =>
       (!inGroup || inGroup.has(listing.category))
       && (!category || listing.category === category)
@@ -127,17 +131,20 @@ export function useCatalog() {
       && (!size || listing.attributes?.['size'] === size)
       && matchesAuthenticity(listing, authenticity)
       && (!kind || matchesKind(listing, kind))
-      && (ceiling === undefined || listing.priceMinor <= ceiling));
+      && (ceiling === undefined || listing.priceMinor <= ceiling)
+      && (floor === undefined || listing.priceMinor >= floor)
+      && (!Number(minTrust) || (listing.seller?.trustScore ?? 0) >= Number(minTrust))
+      && (!Number(maxDays) || (listing.deliveryEta != null && listing.deliveryEta.maxDays <= Number(maxDays))));
     // Best match first unless a price order was asked for.
     if (sort === 'price_asc') listings.sort((a, b) => a.priceMinor - b.priceMinor);
     if (sort === 'price_desc') listings.sort((a, b) => b.priceMinor - a.priceMinor);
     return { listings, categories: [...new Set(listings.map((l) => l.category))].sort(), followedSellerIds: [] };
-  }, [photoFound, group, category, condition, type, size, authenticity, kind, maxPrice, sort]);
+  }, [photoFound, group, category, condition, type, size, authenticity, kind, maxPrice, minPrice, minTrust, maxDays, sort]);
 
   // How many pages of the catalogue are asked for: "Show more" adds one, and
   // any change of filter starts again from the first.
   const [pages, setPages] = useState(1);
-  const filters = `${search}|${group}|${category}|${condition}|${type}|${size}|${authenticity}|${kind}|${sort}|${maxPrice}`;
+  const filters = `${search}|${group}|${category}|${condition}|${type}|${size}|${authenticity}|${kind}|${sort}|${maxPrice}|${minPrice}|${minTrust}|${maxDays}`;
   const [pagesFor, setPagesFor] = useState(filters);
   if (pagesFor !== filters) {
     setPagesFor(filters);
@@ -152,6 +159,7 @@ export function useCatalog() {
     void api
       .feed({
         q: search, group, category, condition, type, size, authenticity, kind, sort, maxPrice,
+        minPrice: minPrice || undefined, minTrust: minTrust || undefined, maxDays: maxDays || undefined,
         limit: pages > 1 ? String(pages * CATALOG_PAGE) : undefined,
       })
       .then((result) => {
@@ -164,7 +172,7 @@ export function useCatalog() {
     return () => {
       cancelled = true;
     };
-  }, [photoId, search, group, category, condition, type, size, authenticity, kind, sort, maxPrice, pages]);
+  }, [photoId, search, group, category, condition, type, size, authenticity, kind, sort, maxPrice, minPrice, minTrust, maxDays, pages]);
 
   /** Back to the ordinary catalogue, with the filters as they are. */
   const clearPhoto = useCallback(() => {
@@ -232,13 +240,13 @@ export function useCatalog() {
     [params, setParams],
   );
 
-  const activeFilters = [group, category, condition, type, size, authenticity, kind, maxPrice]
+  const activeFilters = [group, category, condition, type, size, authenticity, kind, maxPrice, minPrice, minTrust, maxDays]
     .filter(Boolean).length;
   return {
     params, setParams, data: photoId ? photoData : data, error, loading, setData,
     // More to come: the server said this is not every match, and there is room to ask for more.
     canShowMore: !photoId && data?.complete === false && pages < CATALOG_MAX_PAGES, showMore,
-    search, group, category, condition, type, size, authenticity, kind, sort, maxPrice,
+    search, group, category, condition, type, size, authenticity, kind, sort, maxPrice, minPrice, minTrust, maxDays,
     photo, clearPhoto,
     toggle, chooseGroup, chooseKind, set, activeFilters,
   };
@@ -250,24 +258,29 @@ export function useCatalog() {
  * Every listing wears a rarity worked out from how it is
  * actually selling (sales, saves, views, how full its pre-order is, and how
  * close its timer is), so "Legendary" is a fact about demand rather than a
- * sticker a seller chose. Above the grid sit only the daily drop and any drop
- * that is on now; the quest board lives on the Quests page, so the first
- * thing to buy is never more than a scroll away.
+ * sticker a seller chose. Above the grid sit only the search, the daily pick
+ * and any drop that is on now; everything else - lots filling up, shops for
+ * you, what you looked at lately - is a shelf between rows of items, so the
+ * first thing to buy is never more than a scroll away.
  */
 
 type Rated = FeedListing & { rarity: ListingRarity };
 
 const RARITY_FILTERS: readonly RarityTier[] = ['legendary', 'epic', 'new'];
 
+/** The filters the sheet holds, by their URL name. */
+const SHEET_KEYS = ['category', 'condition', 'type', 'size', 'authenticity', 'rarity', 'minPrice', 'maxPrice', 'minTrust', 'maxDays'] as const;
+
 export function FeedPage() {
   const {
     params, setParams, data, error, loading,
-    search, group, category, condition, type, size, authenticity, kind, sort, maxPrice,
+    search, group, category, condition, type, size, authenticity, kind, sort, maxPrice, minPrice, minTrust, maxDays,
     photo, clearPhoto,
     chooseGroup, chooseKind, set, activeFilters,
     canShowMore, showMore,
   } = useCatalog();
   const rarityFilter = (params.get('rarity') ?? '') as RarityTier | '';
+  const [sheetOpen, setSheetOpen] = useState(false);
   // Forwarders or artists instead of items: a badge on the category row.
   const svcParam = params.get('svc');
   const svc: ServiceKind | null = svcParam === 'forwarder' || svcParam === 'artist' ? svcParam : null;
@@ -276,7 +289,7 @@ export function FeedPage() {
     const off = svc === kind;
     clearServices(next);
     if (!off) {
-      for (const key of ['group', 'category', 'type', 'size', 'authenticity', 'kind', 'maxPrice', 'condition', 'rarity', 'view']) next.delete(key);
+      for (const key of ['group', 'category', 'type', 'size', 'authenticity', 'kind', 'maxPrice', 'minPrice', 'minTrust', 'maxDays', 'condition', 'rarity', 'view']) next.delete(key);
       next.set('svc', kind);
     }
     setParams(next, { replace: true });
@@ -297,20 +310,10 @@ export function FeedPage() {
   const preOrders = useMemo(() => preOrderPicks(rated), [rated]);
   const base = feedView ? { demand, ending: endingSoon, earn, preorder: preOrders }[feedView] : rated;
   const shown = rarityFilter ? base.filter((listing) => listing.rarity.tier === rarityFilter) : base;
-  const [drawn, more] = useProgressive(shown.length, `${params.toString()}`);
-  // The shelves sit in the grid after every 4th card, or after the last one
-  // when there are fewer.
-  const rails = useMemo(() => {
-    const last = shown.length - 1;
-    return [
-      { at: Math.min(3, last), rail: <DemandRail listings={demand} /> },
-      { at: Math.min(7, last), rail: <EndingRail listings={endingSoon} now={now} /> },
-      { at: Math.min(11, last), rail: <EarnRail listings={earn} /> },
-      { at: Math.min(15, last), rail: <PreOrderRail listings={preOrders} now={now} /> },
-    ];
-  }, [shown.length, demand, endingSoon, earn, preOrders, now]);
+  const [drawn, sentinel] = useProgressive(shown.length, `${params.toString()}`);
   const fillingLots = useFillingLots();
   const drops = useDrops();
+  const recent = useRecentlyViewed();
 
   /* Shops alongside items: the ones known for what was searched, and when
      just browsing, the ones this buyer's likes and purchases point to. */
@@ -339,16 +342,13 @@ export function FeedPage() {
 
   const browsing = !search && !photo && activeFilters === 0 && !rarityFilter && !feedView && !svc;
 
-  /* The page fills top to bottom: the daily pick, the drops, the filters, the
-     lots, the shops, then the grid. A section waits for the ones above it, so
-     nothing that answers late pushes down what is already being read. */
+  /* The page fills top to bottom: the daily pick, the drops, then the grid. A
+     section waits for the ones above it, so nothing that answers late pushes
+     down what is already being read. */
   const answered = Boolean(data) || Boolean(error);
-  const [showDaily, showDrops, showFilters, showBoxes, showShops, showGrid] = useCascade([
+  const [showDaily, showDrops, showGrid] = useCascade([
     !browsing || answered,
     !browsing || drops !== null,
-    true,
-    !browsing || fillingLots !== null,
-    !browsing || forYou !== null,
     answered || !loading,
   ]);
   const pending = <><SkelBlock h={112} /><SkeletonGrid count={4} /></>;
@@ -366,15 +366,70 @@ export function FeedPage() {
   }, [group, svc]);
 
   // Forwarders and artists among the items: each beside an item it fits (ServiceCards).
+  // A search for a repaint or a forwarder is asking for a person: the studios or routes first.
   const providers = useProviders();
   const services = useMemo(() => (browsing ? placeServices(shown, providers) : new Map<number, never[]>()),
     [browsing, shown, providers]);
-  // A search for a repaint or a forwarder is asking for a person: the studios or routes first.
   const wants = search && !photo ? searchWants(search) : null;
   const studioHits = useStudioSearch(wants === 'artist' ? search : null);
+  // What has loaded is not everything there is: counts say so with a "+".
+  const more = !photo && data?.complete === false;
   const counts = useMemo(() => Object.fromEntries(
     RARITY_FILTERS.map((tier) => [tier, rated.filter((listing) => listing.rarity.tier === tier).length]),
   ) as Record<RarityTier, number>, [rated]);
+  // What this search mostly found, to guess the category an alert is for.
+  const seenCategories = useMemo(() => {
+    const tally = new Map<string, number>();
+    for (const listing of shown) tally.set(listing.category, (tally.get(listing.category) ?? 0) + 1);
+    return [...tally.entries()].sort((a, b) => b[1] - a[1]).map(([name]) => name);
+  }, [shown]);
+
+  /* The shelves, each after a row of items: what you looked at, what is
+     selling, lots filling up, what is ending, shops for you, then the rest. */
+  const shelves = useMemo(() => {
+    const last = shown.length - 1;
+    const after = (n: number) => Math.min(n, last);
+    return [
+      { at: after(1), node: <RecentRail items={recent} /> },
+      { at: after(3), node: <DemandRail listings={demand} /> },
+      { at: after(5), node: fillingLots && fillingLots.length > 0
+        ? <div className="qshelf-wide"><FillingBoxes lots={fillingLots} /></div> : null },
+      { at: after(7), node: <EndingRail listings={endingSoon} now={now} /> },
+      { at: after(9), node: forYou && forYou.length > 0
+        ? <div className="qshelf-wide"><ShopsForYou shops={forYou} /></div> : null },
+      { at: after(11), node: <EarnRail listings={earn} /> },
+      { at: after(15), node: <PreOrderRail listings={preOrders} now={now} /> },
+    ];
+  }, [shown.length, recent, demand, fillingLots, endingSoon, forYou, earn, preOrders, now]);
+
+  /* Filters: the sheet's values, and a chip for each one that is on. */
+  const values: FilterValues = { category, condition, type, size, authenticity, rarity: rarityFilter, minPrice, maxPrice, minTrust, maxDays };
+  const setMany = (changes: Partial<Record<string, string>>) => {
+    const next = new URLSearchParams(params);
+    for (const [key, value] of Object.entries(changes)) {
+      if (value) next.set(key, value);
+      else next.delete(key);
+    }
+    setParams(next, { replace: true });
+  };
+  const clearFilters = () => setMany({
+    ...Object.fromEntries(SHEET_KEYS.map((key) => [key, ''])), view: '',
+  });
+  const option = (list: readonly { value: string; label: string }[], value: string) =>
+    list.find((entry) => entry.value === value)?.label ?? value;
+  const chips = [
+    feedView && { key: 'view', label: FEED_VIEW_TITLES[feedView], clear: () => set('view', '') },
+    (minPrice || maxPrice) && { key: 'price', label: priceLabel(minPrice, maxPrice), clear: () => setMany({ minPrice: '', maxPrice: '' }) },
+    category && { key: 'category', label: category, clear: () => set('category', '') },
+    condition && { key: 'condition', label: CONDITION_BUCKETS[condition as keyof typeof CONDITION_BUCKETS]?.label ?? condition, clear: () => set('condition', '') },
+    authenticity && { key: 'authenticity', label: option(authenticityOptions, authenticity), clear: () => set('authenticity', '') },
+    maxDays && { key: 'maxDays', label: `Arrives within ${option(DAY_CHOICES, maxDays).toLowerCase()}`, clear: () => set('maxDays', '') },
+    minTrust && { key: 'minTrust', label: `Trust ${minTrust}+`, clear: () => set('minTrust', '') },
+    rarityFilter && { key: 'rarity', label: RARITY_LABELS[rarityFilter], clear: () => set('rarity', '') },
+    type && { key: 'type', label: option(typeOptions, type), clear: () => set('type', '') },
+    size && { key: 'size', label: option(sizeOptions, size), clear: () => set('size', '') },
+  ].filter((chip): chip is { key: string; label: string; clear: () => void } => Boolean(chip));
+  const onSheet = sheetCount(values);
 
   return (
     <main className="page qfeed">
@@ -391,8 +446,8 @@ export function FeedPage() {
       {showDaily && !showDrops && pending}
       {browsing && showDrops && <DropsStage drops={drops} />}
 
-      {showFilters && showDrops && (
-      <div className="stack" id="catalogue" style={{ marginBottom: 18 }}>
+      {showDrops && (
+      <div className="stack" id="catalogue" style={{ marginBottom: 14 }}>
         {/* Zones: what a thing is. Round, like the pin badges they are named after. */}
         <div className="qzones" role="tablist" aria-label="Categories" ref={zonesRef}>
           <button type="button" role="tab" aria-selected={group === '' && !svc}
@@ -420,64 +475,37 @@ export function FeedPage() {
 
         {svc ? <ServiceFilters kind={svc} providers={providers} params={params} set={set} /> : (
         <>
-        {/* How it is sold. How rare it is sits with the other one-of-many
-            choices below, as a picker rather than a third row of chips. */}
+        {/* How it is sold, then the order, then every other filter behind one button. */}
         <KindTabs value={(kind || 'all') as CatalogKind} onChoose={chooseKind} />
         <div className="filters">
           <Picker label="Sort" icon="sort" value={sort} onChange={(value) => set('sort', value)}
             options={CATALOG_SORTS.map((entry) => ({ value: entry, label: CATALOG_SORT_LABELS[entry] }))} />
-          <Picker label="Price" icon="price" value={maxPrice} onChange={(value) => set('maxPrice', value)}
-            empty="Any price" options={PRICE_BANDS} />
-          <Picker label="Condition" icon="condition" value={condition} onChange={(value) => set('condition', value)}
-            empty="Any condition"
-            options={CONDITION_TAGS.map((tag) => ({ value: tag, label: CONDITION_BUCKETS[tag].label }))} />
-          <Picker label="Original or copy" icon="authentic" value={authenticity}
-            onChange={(value) => set('authenticity', value)} empty="Original or copy" options={authenticityChoices} />
-          <Picker label="Rarity" icon="rarity" value={rarityFilter} onChange={(value) => set('rarity', value)}
-            empty="Any rarity"
-            options={RARITY_FILTERS.map((tier) => ({ value: tier, label: `${RARITY_LABELS[tier]} · ${counts[tier]}` }))} />
-          {data && data.categories.length > 1 && (
-            <Picker label="Category" icon="type" value={category} onChange={(value) => set('category', value)}
-              empty="Any category" options={data.categories.map((entry) => ({ value: entry, label: entry }))} />
-          )}
-          {/* What the heading asks about. Absent on "Everything", where a size
-              could mean a shoe, a shirt or a bag. */}
-          {typeOptions.length > 0 && (
-            <Picker label="Type" icon="type" value={type} onChange={(value) => set('type', value)}
-              empty="Any type" options={typeOptions.map((option) => ({ value: option.value, label: option.label }))} />
-          )}
-          {sizeOptions.length > 0 && (
-            <Picker label="Size" icon="size" value={size} onChange={(value) => set('size', value)}
-              empty="Any size" options={sizeOptions.map((option) => ({ value: option.value, label: option.label }))} />
-          )}
-          {(activeFilters > 0 || rarityFilter || feedView) && (
-            <button type="button" className="filters__clear" onClick={() => setParams(
-              new URLSearchParams([
-                ...(search ? [['q', search]] : []),
-                ...(photo ? [['photo', photo.id]] : []),
-              ]), { replace: true },
-            )}>
-              Clear
-            </button>
-          )}
+          <button type="button" className={`filters__open${onSheet > 0 ? ' is-on' : ''}`} onPointerDown={tapFx}
+            onClick={() => setSheetOpen(true)} aria-haspopup="dialog">
+            <Icon name="filter" size={13} /> Filters
+            {onSheet > 0 && <span className="filters__count">{onSheet}</span>}
+          </button>
         </div>
+        <FilterChips chips={chips} onClearAll={clearFilters} />
         </>
         )}
       </div>
       )}
-
-      {showDrops && !showBoxes && pending}
-      {browsing && showBoxes && <FillingBoxes lots={fillingLots ?? []} />}
+      {sheetOpen && (
+        <FilterSheet values={values} set={(key, value) => set(key, value)} setMany={setMany} onClose={() => setSheetOpen(false)}
+          total={shown.length} more={more} categories={data?.categories ?? []}
+          typeOptions={typeOptions.map((entry) => ({ value: entry.value, label: entry.label }))}
+          sizeOptions={sizeOptions.map((entry) => ({ value: entry.value, label: entry.label }))}
+          authenticityOptions={authenticityChoices} rarityCounts={counts} />
+      )}
 
       {wants === 'artist' && <ServiceStrip title="Artists who do this" sub="Restore, repaint, customise" picks={studioHits} />}
       {wants === 'forwarder' && <ServiceStrip title="Forwarders" sub="Routes, days and price per kg" picks={providers.forwarders} />}
       {search && !photo && <ShopStrip title={`Shops for “${search}”`} sub="Known for it by name, tags or what they list" shops={searchShops} />}
-      {showBoxes && !showShops && pending}
-      {browsing && showShops && <ShopsForYou shops={forYou} />}
 
-      {!showShops ? null : svc ? <ServiceResults kind={svc} providers={providers} params={params} /> : (
+      {showGrid && svc ? <ServiceResults kind={svc} providers={providers} params={params} /> : (
       <>
-      {error && <ErrorNotice message={error} />}
+      {showGrid && error && <ErrorNotice message={error} />}
 
       <div className="qrow__head">
         {photo ? (
@@ -489,9 +517,12 @@ export function FeedPage() {
             </button>
           </h2>
         ) : (
-          <h2>{rarityFilter ? `${RARITY_LABELS[rarityFilter]} finds` : feedView ? FEED_VIEW_TITLES[feedView] : 'All loot'}</h2>
+          <h2>{search ? `“${search}”` : rarityFilter ? `${RARITY_LABELS[rarityFilter]} finds` : feedView ? FEED_VIEW_TITLES[feedView] : 'All items'}</h2>
         )}
-        {data && <span className="faint">{shown.length} {shown.length === 1 ? 'item' : 'items'}</span>}
+        <span className="qrow__side">
+          {data && <span className="faint">{shown.length}{more ? '+' : ''} {shown.length === 1 && !more ? 'item' : 'items'}</span>}
+          {search && !photo && <AlertMe search={search} category={category} maxPrice={maxPrice} condition={condition} seen={seenCategories} />}
+        </span>
       </div>
 
       {!showGrid || (loading && !data) ? (
@@ -505,11 +536,13 @@ export function FeedPage() {
             ? 'Try another photo, or search with words instead.'
             : rarityFilter
             ? 'Rarity moves with demand. Check back as things sell and fill.'
-            : activeFilters > 0 || search
-              ? 'Try removing a filter or searching for something broader.'
-              : 'Be the first to list something.'}
+            : search
+              ? 'Try something broader, or press “Alert me” to be told when a shop lists it.'
+              : activeFilters > 0
+                ? 'Try removing a filter.'
+                : 'Be the first to list something.'}
         </EmptyState>
-        {/* No items to sit beside, but the people offering services are still worth showing. */}
+        {/* No items to show, but the people offering services are still worth knowing about. */}
         {browsing && <ServiceGrid providers={providers} />}
         </>
       ) : (
@@ -518,11 +551,11 @@ export function FeedPage() {
             <Fragment key={listing.id}>
               <LootCard listing={listing} priority={n < 2} />
               {/* A shelf first, then a service card: the card then starts the row under the shelf. */}
-              {browsing && rails.map((entry, r) => entry.at === n && <Fragment key={r}>{entry.rail}</Fragment>)}
+              {browsing && shelves.map((entry, r) => entry.at === n && entry.node && <Fragment key={r}>{entry.node}</Fragment>)}
               {services.get(n)?.map((pick) => <ServiceCard key={`${pick.kind}:${pick.store.ownerId}`} pick={pick} />)}
             </Fragment>
           ))}
-          {drawn < shown.length && <span ref={more} className="qgrid__more" aria-hidden="true" />}
+          {drawn < shown.length && <span ref={sentinel} className="qgrid__more" aria-hidden="true" />}
         </div>
       )}
       {drawn >= shown.length && canShowMore && (
@@ -622,6 +655,10 @@ function QuestBar() {
 function DailyDrop({ listings, now }: { listings: Rated[]; now: number }) {
   const { view, act } = useQuest();
   const [busy, setBusy] = useState(false);
+  // Whether the flipped card is open in full; folded to a line unless opened.
+  const [open, setOpen] = useState(false);
+  const foldTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(foldTimer.current), []);
 
   const pick = useMemo(() => {
     const pool = ['legendary', 'epic'].map((tier) => listings.filter((listing) => listing.rarity.tier === tier))
@@ -634,10 +671,32 @@ function DailyDrop({ listings, now }: { listings: Rated[]; now: number }) {
   if (!pick) return null;
   const revealed = Boolean(view?.dailyRevealed);
 
+  // Flipped: one line, with an arrow to open the card again. Just flipped here,
+  // the card finishes turning over before it folds away.
+  if (revealed && !open) {
+    return (
+      <div className="qdropline">
+        <Link to={`/listing/${pick.id}`} className="qdropline__link">
+          <span className="qdropline__mark" aria-hidden="true"><Glyph name="star" size={13} /></span>
+          <span className="qdropline__label">Today&rsquo;s pick</span>
+          <span className="qdropline__title">{pick.title}</span>
+          <b className="qdropline__price">{formatMoney(pick.priceMinor, pick.currency)}</b>
+        </Link>
+        <button type="button" className="qdropline__toggle" aria-expanded="false" aria-label="Show today's pick in full"
+          onClick={() => setOpen(true)}>
+          <Icon name="chevron" size={16} />
+        </button>
+      </div>
+    );
+  }
+
   async function reveal() {
     setBusy(true);
+    // Open while it turns over, then folded into its line.
+    setOpen(true);
     await act(api.questReveal, 'Loot revealed');
     setBusy(false);
+    foldTimer.current = window.setTimeout(() => setOpen(false), FLIP_MS + 1200);
   }
 
   return (
@@ -665,6 +724,10 @@ function DailyDrop({ listings, now }: { listings: Rated[]; now: number }) {
               {pick.rarity.reasons[0] && ` · ${pick.rarity.reasons[0]}`}
             </p>
             <Link className="btn btn--sm qbtn-gold" to={`/listing/${pick.id}`}>See it</Link>
+            <button type="button" className="qdrop__fold" aria-expanded="true" aria-label="Show today's pick as one line"
+              onClick={() => { window.clearTimeout(foldTimer.current); setOpen(false); }}>
+              <Icon name="chevron" size={16} />
+            </button>
           </>
         ) : (
           <>
@@ -869,6 +932,9 @@ function countdown(hours: number): string {
   if (hours < 24) return `${Math.floor(hours)}h ${Math.floor((hours % 1) * 60)}m`;
   return `${Math.floor(hours / 24)}d ${Math.floor(hours % 24)}h`;
 }
+
+/** How long the daily card takes to turn over (the flip's transition in styles.css). */
+const FLIP_MS = 700;
 
 /** Time until the India day turns, when the drop and the dailies reset. */
 function untilMidnight(now: number): string {

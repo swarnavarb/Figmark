@@ -52,6 +52,7 @@ const TrackPage = page(loaders.track, 'TrackPage');
 const ListingPage = page(loaders.listing, 'ListingPage');
 const SellPage = page(loaders.sell, 'SellPage');
 const ShopPage = page(loaders.shop, 'ShopPage');
+const ManagedShopPage = page(loaders.shop, 'ManagedShopPage');
 const LotBoardPage = page(loaders.lotBoard, 'LotBoardPage');
 const RouteRedirect = page(loaders.routes, 'RouteRedirect');
 const RouteStudioPage = page(loaders.routeStudio, 'RouteStudioPage');
@@ -59,6 +60,7 @@ const ServicesPage = page(loaders.services, 'ServicesPage');
 const MyServicesPage = page(loaders.services, 'MyServicesPage');
 const ConsignmentsPage = page(loaders.services, 'ConsignmentsPage');
 const DistributionPage = page(loaders.services, 'DistributionPage');
+const SupplierPage = page(loaders.services, 'SupplierPage');
 const ServiceDirectoryPage = page(loaders.services, 'ServiceDirectoryPage');
 const StoreApplyPage = page(loaders.storeApply, 'StoreApplyPage');
 const OpenPage = page(loaders.open, 'OpenPage');
@@ -163,10 +165,13 @@ function App() {
         <Route path="/services/mine" element={members(<MyServicesPage />)} />
         <Route path="/services/mine/forwarder" element={members(<ConsignmentsPage />)} />
         <Route path="/services/mine/handler" element={members(<DistributionPage />)} />
+        <Route path="/services/mine/supplier" element={members(<SupplierPage />)} />
         <Route path="/services/apply/:kind" element={members(<StoreApplyPage />)} />
         <Route path="/open" element={members(<OpenPage />)} />
         <Route path="/services/store/:kind" element={members(<StoreConsolePage />)} />
         <Route path="/services/store/:kind/:ownerId" element={members(<StoreConsolePage />)} />
+        {/* A shop you help run: the Sell tab's console, opened from My services. */}
+        <Route path="/services/manage/:ownerId" element={members(<ManagedShopPage />)} />
         <Route path="/services/crew/:sellerId/:lotId" element={members(<CrewLotPage />)} />
         {/* Last of the four, so the static paths above win the match. */}
         <Route path="/services/:kind" element={<ServiceDirectoryPage />} />

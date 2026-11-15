@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import type { Order } from '@shared/models';
 import { renderStepText, type RouteStep, type StageIcon } from '@shared/routes';
 import { settledHistory } from '@shared/fulfilment';
@@ -39,64 +39,20 @@ export function stepEmoji(step: Pick<RouteStep, 'name' | 'trigger' | 'stageIcon'
    importable from here for the screens that draw it. */
 export { withLastMile } from '@shared/buttons';
 
-/** One box in the row across the top of a timeline: a step, and whether it has been reached. */
-export interface TrackBox { key: string; icon: string; label: string; state: 'done' | 'here' | 'next' | 'locked' }
-
-/**
- * The steps as boxes - "Order placed", "Received at the warehouse", on to
- * "Delivered" - each ticked once reached. Everything past the next one is
- * locked: the journey opens a box at a time as it gets there.
- */
-export function boxesFor(steps: readonly Pick<RouteStep, 'id' | 'name' | 'trigger' | 'stageIcon' | 'locked'>[], current: number,
-  vars?: { origin?: string | null; destination?: string | null }): TrackBox[] {
-  return steps.map((step, index) => ({
-    key: `${step.id}-${index}`,
-    icon: stepEmoji(step, index),
-    label: renderStepText(step.name, vars ?? {}),
-    state: index < current ? 'done' : index === current ? 'here' : index === current + 1 ? 'next' : 'locked',
-  }));
-}
-
-/** The row of boxes itself, slid along to the one it is at. */
-export function TrackBoxes({ boxes }: { boxes: TrackBox[] }) {
-  const row = useRef<HTMLOListElement>(null);
-  const here = boxes.findIndex((box) => box.state === 'here');
-  /* Slide the row, not the page, so the box it is at sits in view with the one before it. */
-  useEffect(() => {
-    const list = row.current;
-    const item = list?.children[Math.max(0, here - 1)] as HTMLElement | undefined;
-    if (list && item) list.scrollTo({ left: item.offsetLeft, behavior: 'smooth' });
-  }, [here]);
-  return (
-    <ol ref={row} className="trkbox" aria-label="Milestones" tabIndex={0}>
-      {boxes.map((box, index) => (
-        <li key={box.key} className={`trkbox__item is-${box.state}`} style={{ ['--i' as string]: index }}
-          title={`${box.label}${box.state === 'locked' ? ' — unlocks as the journey gets there' : ''}`}>
-          <span className="trkbox__icon" aria-hidden="true">{box.icon}</span>
-          <span className="trkbox__label">{box.label}</span>
-          {(box.state === 'done' || box.state === 'here') && <span className="trkbox__tick" aria-label="reached">✓</span>}
-        </li>
-      ))}
-    </ol>
-  );
-}
-
 /**
  * Where an order has got to, as one card: a headline for the step it is on,
- * a bar for how far along that is, the milestones as boxes, and the steps
- * themselves, dated.
+ * a thin bar for how far along that is, and the steps themselves, dated.
  *
  * The same card for the buyer and the seller - the two are looking at one
  * parcel, and should never read two different journeys.
  */
-export function TrackHero({ icon, now, sub, done, total, boxes, children }: {
+export function TrackHero({ icon, now, sub, done, total, children }: {
   icon: string;
   /** The step it is on, in a few words. */
   now: string;
   sub?: ReactNode;
   done: number;
   total: number;
-  boxes?: TrackBox[];
   children?: ReactNode;
 }) {
   const share = total > 0 ? Math.round((Math.min(done, total) / total) * 100) : 0;
@@ -105,17 +61,17 @@ export function TrackHero({ icon, now, sub, done, total, boxes, children }: {
       <div className="trk__hero">
         <span className="trk__icon" aria-hidden="true">{icon}</span>
         <span className="trk__now">
-          <span className="trk__eyebrow">Where it is now</span>
           <b className="trk__title">{now}</b>
           {sub && <span className="trk__sub">{sub}</span>}
         </span>
-        <span className="trk__pct">{share}%</span>
+        <span className="trk__count" aria-label={`Step ${Math.min(done, total)} of ${total}`}>
+          {Math.min(done, total)}<span aria-hidden="true">/{total}</span>
+        </span>
       </div>
       <div className="trk__bar" role="progressbar" aria-valuenow={share} aria-valuemin={0} aria-valuemax={100}
         aria-label="How far along it is">
         <span style={{ width: `${share}%` }} />
       </div>
-      {boxes && boxes.length > 0 && <TrackBoxes boxes={boxes} />}
       {children}
     </div>
   );
@@ -220,10 +176,6 @@ export function DirectTrack({ order, actFor }: {
   return (
     <TrackHero icon={endedOf(order) ? '🚫' : here.icon} now={endedOf(order)?.label ?? here.label}
       sub={<>🏠 In hand · ships from the seller{next ? <> · next: <b>{next.label}</b></> : null}</>}
-      boxes={steps.map((step, index) => ({
-        key: step.key, icon: step.icon, label: step.label,
-        state: step.done ? (index === done - 1 ? 'here' : 'done') : index === done ? 'next' : 'locked',
-      }))}
       done={done} total={steps.length}>
       {order.shipment && <ShipmentChip shipment={order.shipment} />}
       <div className="trk__ladder">

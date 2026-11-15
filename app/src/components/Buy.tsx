@@ -21,6 +21,8 @@ import type { TemplateTerms } from '@shared/templates';
 import { InfoTip } from './InfoTip';
 import { useToast } from './Feedback';
 import '../styles/Buy.css';
+import type { DayRange } from '@shared/step-days';
+import type { Sourcing } from '@shared/enums';
 
 /**
  * The small, loud pieces the Buy, Sell and Purchases screens share: stock and
@@ -299,8 +301,10 @@ export function termsBody(draft: TermsDraft) {
  * date is its expiry, so both questions step aside rather than being asked
  * twice.
  */
-export function TermsFields({ value, onChange, preOrder = false, publicLater = false, privateDeal = false, priceMinor, forTemplate = false, withEta = true }: {
+export function TermsFields({ value, onChange, preOrder = false, publicLater = false, privateDeal = false, priceMinor, forTemplate = false, withEta = true, withStock = true }: {
   value: TermsDraft;
+  /** Ask how many there are here; off where the form asks it beside the price. */
+  withStock?: boolean;
   /** Ask the delivery time here too; off where the form asks it on its own, outside a fold. */
   withEta?: boolean;
   onChange: (next: TermsDraft) => void;
@@ -326,8 +330,8 @@ export function TermsFields({ value, onChange, preOrder = false, publicLater = f
     <>
       {withEta && <EtaFields value={value} onChange={onChange} optional={forTemplate} />}
 
-      <LBox icon="📦" title="Stock & payment">
-        {!preOrder && !forTemplate && (
+      <LBox icon={withStock ? '📦' : '💳'} title={withStock ? 'Stock & payment' : 'Payment'}>
+        {!preOrder && !forTemplate && withStock && (
           <>
             <OptionTiles label="Quantity" value={value.quantityMode} onChange={(quantityMode) => set({ quantityMode })}
               options={[
@@ -453,13 +457,27 @@ export function TermsFields({ value, onChange, preOrder = false, publicLater = f
  * it is the first thing a buyer asks, and the shop's on-time rate is
  * measured against it.
  */
-export function EtaFields({ value, onChange, optional = false }: {
+/** The example each field shows while empty: a shop's own shelf ships in days, an import in weeks. */
+const ETA_EXAMPLE: Record<Sourcing, { min: string; max: string }> = {
+  in_hand: { min: '3', max: '5' },
+  import: { min: '41', max: '48' },
+};
+
+export function EtaFields({ value, onChange, optional = false, suggest = null, sourcing = 'import' }: {
   value: TermsDraft;
   onChange: (next: TermsDraft) => void;
   /** A quick fill may leave it for each item to say. */
   optional?: boolean;
+  /**
+   * What the system would say, from how long this shop's orders really took
+   * to arrive (leaving out the odd delay) - or the market's where it has none.
+   */
+  suggest?: Pick<DayRange, 'low' | 'high' | 'source'> | null;
+  /** How the item is sourced, for the example in the empty fields. */
+  sourcing?: Sourcing;
 }) {
   const set = (patch: Partial<TermsDraft>) => onChange({ ...value, ...patch });
+  const suggested = suggest && !(Number(value.etaMin) === suggest.low && Number(value.etaMax) === suggest.high) ? suggest : null;
   const etaIssue = value.etaMin || value.etaMax ? etaProblem(etaOf(value)) : null;
   return (
     <LBox icon="🚚" title="Delivery time" hint={etaOf(value) && !etaIssue
@@ -469,18 +487,28 @@ export function EtaFields({ value, onChange, optional = false }: {
       <div className="etafields">
         <label className="field">
           <span>Quickest (days)</span>
-          <input type="number" inputMode="numeric" min="1" max={ETA_MAX_DAYS} step="1" placeholder="45"
+          <input type="number" inputMode="numeric" min="1" max={ETA_MAX_DAYS} step="1" placeholder={ETA_EXAMPLE[sourcing].min}
             value={value.etaMin} required={!optional} aria-required={!optional}
             onChange={(e) => set({ etaMin: e.target.value, ...(value.etaMax === '' || Number(value.etaMax) < Number(e.target.value) ? { etaMax: e.target.value } : {}) })} />
         </label>
         <span className="etafields__to" aria-hidden="true">to</span>
         <label className="field">
           <span>Longest (days)</span>
-          <input type="number" inputMode="numeric" min={value.etaMin || 1} max={ETA_MAX_DAYS} step="1" placeholder="50"
+          <input type="number" inputMode="numeric" min={value.etaMin || 1} max={ETA_MAX_DAYS} step="1" placeholder={ETA_EXAMPLE[sourcing].max}
             value={value.etaMax} required={!optional} aria-required={!optional}
             onChange={(e) => set({ etaMax: e.target.value })} />
         </label>
       </div>
+      {suggested && (
+        <span className={`etasuggest${suggested.source === 'market' ? ' etasuggest--market' : ''}`}>
+          <span className="etasuggest__text">
+            <span aria-hidden="true">💡</span> Suggested: <b>{suggested.low}–{suggested.high} days</b>
+            <span className="etasuggest__src">{suggested.source === 'market' ? 'Market trend' : 'From your past orders'}</span>
+          </span>
+          <button type="button" className="btn btn--sm btn--ghost"
+            onClick={() => set({ etaMin: String(suggested.low), etaMax: String(suggested.high) })}>Use</button>
+        </span>
+      )}
       {etaIssue && <span className="notice notice--error">{etaIssue}</span>}
       <span className="field__hint">
         Orders that reach the buyer after the longest day count as late on your shop's on-time rate.

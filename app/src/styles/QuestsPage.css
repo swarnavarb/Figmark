@@ -1,8 +1,4 @@
 /* Moved from styles.css: rules only this chunk's code can match. */
-.qboard__rank--1 { background: var(--q-gold); }
-.qboard__rank--2 { background: #C9D3E3; }
-.qboard__rank--3 { background: #D08A4E; }
-.qboard__rank--4 { background: var(--surface-hover); color: var(--text-dim); }
 .qpanel.qarcade {
   --strip: 84px;
   position: relative; overflow: hidden; padding-bottom: var(--strip);
@@ -24,6 +20,11 @@
   flex: none; min-width: 30px; text-align: center; padding: 2px var(--s1); border-radius: var(--r-sm);
   font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-xs); font-weight: var(--w-bold); color: var(--q-gold-ink); background: var(--surface-hover);
 }
+/* Gold, silver and bronze for the top three; after the base rule so they win. */
+.qleaders__rank.qboard__rank--1 { background: var(--q-gold); }
+.qleaders__rank.qboard__rank--2 { background: #C9D3E3; }
+.qleaders__rank.qboard__rank--3 { background: #D08A4E; }
+.qleaders__rank.qboard__rank--4 { background: var(--surface-hover); color: var(--text-dim); }
 .qleaders__who { flex: 1; min-width: 0; display: grid; font-size: var(--t-sm); }
 .qbreak__row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); }
 .qbreak__row dt small { font-family: var(--ui); font-variant-numeric: tabular-nums; font-size: var(--t-2xs); color: var(--text-faint); }
@@ -111,8 +112,7 @@
 .qboards__picker { display: grid; gap: var(--s2); padding: var(--s3); margin-bottom: var(--s3); border-radius: var(--r-md); background: var(--surface-2); }
 .qboards__picker p { margin: 0; font-size: var(--t-xs); }
 .qboards__label { font-size: var(--t-2xs); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.08em; }
-.qboards__typed { display: flex; gap: var(--s2); }
-.qboards__typed input { flex: 1; min-width: 0; }
+.qboards__gap { margin: 0; font-size: var(--t-xs); padding: 6px 10px; border-radius: var(--r-md); background: var(--surface-2); }
 .qboards__board { display: grid; gap: var(--s2); }
 .qboards__head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px var(--s2); }
 .qboards__head .faint { flex: 1; min-width: 0; font-size: var(--t-xs); }
@@ -129,3 +129,4 @@
 .qranks li { display: flex; justify-content: space-between; gap: var(--s2); padding: 3px 8px; border-radius: var(--r-sm); font-size: var(--t-xs); }
 .qranks li.is-me { background: var(--violet-soft); }
 .qranks small { color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.qstreak__save { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); flex-wrap: wrap; }

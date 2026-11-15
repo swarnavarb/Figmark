@@ -9,8 +9,11 @@ export type Shipment = { courier?: string; awb?: string };
  * keyboard over the question before it has been read; both fields are
  * optional, because the AWB often comes only once the courier has collected.
  */
-export function ShipDialog({ intro, awb: askAwb = true, hint = 'No AWB yet? Dispatch now and add it later.', busy = false, onClose, onSave }: {
+export function ShipDialog({ intro, awb: askAwb = true, hint = 'No AWB yet? Dispatch now and add it later.', busy = false, title = '🚚 Dispatch it', submit = '🚚 Mark dispatched', onClose, onSave }: {
   intro: ReactNode;
+  /** For a hand-over step other than Dispatched: the dialog's title and its button. */
+  title?: string;
+  submit?: string;
   /** False when one answer would go on several parcels, each with its own AWB. */
   awb?: boolean;
   hint?: string;
@@ -21,7 +24,7 @@ export function ShipDialog({ intro, awb: askAwb = true, hint = 'No AWB yet? Disp
   const [courier, setCourier] = useState('');
   const [awb, setAwb] = useState('');
   return (
-    <Modal title="🚚 Dispatch it" onClose={onClose}>
+    <Modal title={title} onClose={onClose}>
       <form className="stack" onSubmit={(event) => {
         event.preventDefault();
         onSave({ courier: courier.trim() || undefined, awb: askAwb ? awb.trim() || undefined : undefined });
@@ -40,7 +43,7 @@ export function ShipDialog({ intro, awb: askAwb = true, hint = 'No AWB yet? Disp
           </label>
         )}
         <span className="field__hint">{hint}</span>
-        <button type="submit" className="btn btn--block" disabled={busy}>{busy ? 'Saving…' : '🚚 Mark dispatched'}</button>
+        <button type="submit" className="btn btn--block" disabled={busy}>{busy ? 'Saving…' : submit}</button>
         <button type="button" className="btn btn--quiet btn--block" onClick={onClose}>Cancel</button>
       </form>
     </Modal>

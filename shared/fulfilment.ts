@@ -86,6 +86,10 @@ export function asBuyerSees<T extends Pick<Order, 'status' | 'checkpoints' | 'sh
   order: T,
   now: number = Date.now(),
 ): T {
+  /* Delivered since: that is not held back, and a dispatch can no longer be
+     taken back once it is - rolling the order back to before its dispatch
+     would show a parcel that has arrived as one still to be sent. */
+  if (order.status === 'delivered') return order;
   const pending = order.stageHistory.find((event) => event.undoBefore && isPendingUndo(event, now));
   if (!pending?.undoBefore) return order;
   const before = pending.undoBefore;

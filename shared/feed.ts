@@ -185,8 +185,10 @@ export interface Leaderboard {
   debates: { postId: string; channelId: string; question: string; votes: number; leading: string | null }[];
   /** People and shops whose posts drew the most this week. */
   voices: { id: string; name: string; handle: string | null; shop: boolean; reactions: number; posts: number }[];
-  /** Who is winning the games: competitions, debates, guesses, and every vote cast. */
+  /** Who is winning the games this season: competitions, debates, guesses, and votes on them. */
   players?: PlayerRow[];
+  /** The season (YYYY-MM, India time) `players` is for. */
+  playersSeason?: string;
 }
 
 /**

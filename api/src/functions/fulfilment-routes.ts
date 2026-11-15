@@ -1319,6 +1319,18 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
     return error(409, 'not_accepted', NOT_ACCEPTED_MESSAGE);
   }
 
+  /* A step the route says changes hands with a courier (`forward`) takes the
+     courier name and AWB with its button, whichever button that is. Kept on
+     the step's own event, where the buyer's timeline already reads a lot's
+     hand-over from; blank ones are not stored. Dispatched keeps its own
+     shipment record below. */
+  const handOver = on && !undoing && Boolean(button?.forward) && checkpoint !== 'dispatched'
+    ? {
+        shipper: typeof body.courier === 'string' ? body.courier.trim().slice(0, 80) || undefined : undefined,
+        trackingId: typeof body.awb === 'string' ? body.awb.trim().slice(0, 80) || undefined : undefined,
+      }
+    : {};
+
   /* A custom button records that it happened, and nothing else: none of the
      seven's consequences (status, protection window, delivery) hang off it. */
   if (customId && button) {
@@ -1331,7 +1343,7 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
       ? withoutUndo(order.stageHistory, undoing)
       : [
           ...order.stageHistory,
-          { stage: order.stage, step: button.name, enteredAt: now, note: on ? `${button.name}.` : `${button.name} — undone.`, recordedBy: user.id, ...tag },
+          { stage: order.stage, step: button.name, enteredAt: now, note: on ? `${button.name}.` : `${button.name} — undone.`, recordedBy: user.id, ...handOver, ...tag },
         ];
     const saved = await repository.updateOrder(order);
     return json(200, {
@@ -1437,6 +1449,7 @@ async function setCheckpoint(request: HttpRequest, _context: InvocationContext) 
       enteredAt: now,
       note: on ? receivedNote ?? `${CHECKPOINT_EVENT_TEXT[checkpoint]}` : `${CHECKPOINT_EVENT_TEXT[checkpoint]} — undone.`,
       recordedBy: user.id,
+      ...handOver,
       ...tag,
       ...(undoBefore ? { undoBefore } : {}),
     },

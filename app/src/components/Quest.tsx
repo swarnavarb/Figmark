@@ -87,13 +87,20 @@ export function QuestProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     if (!user) return;
     try {
-      const { view: next } = await api.quest();
+      const { view: next, autoCollected } = await api.quest();
       setView(next);
       noticeLevel(next);
+      // Quests finished in a day, week or month that ended before they were tapped.
+      if (autoCollected?.length) {
+        const xp = autoCollected.reduce((sum, task) => sum + task.xp, 0);
+        toast(autoCollected.length === 1
+          ? `Collected "${autoCollected[0]!.title}" for you: +${xp} XP`
+          : `Collected ${autoCollected.length} finished quests for you: +${xp} XP`, 'ok');
+      }
     } catch {
       // The game is a layer over the market: if it cannot load, the market still works.
     }
-  }, [user, noticeLevel]);
+  }, [user, noticeLevel, toast]);
 
   useEffect(() => {
     void refresh();

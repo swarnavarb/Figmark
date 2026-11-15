@@ -1,4 +1,5 @@
 import type { ShopOrderStatus } from './shop-status.js';
+import type { StoredBoardScore } from './boards.js';
 import type { CancelFlag, FeeTerms, ProState } from './billing.js';
 import type { CostStep, ItemCostSheet, ProfitTemplate, SavedCalc } from './profit.js';
 import type { DealState } from './deals.js';
@@ -352,9 +353,18 @@ export interface User extends BaseDocument {
   quest?: QuestState;
   /**
    * Hobby leaderboards this person competes on (at most BOARD_LIMIT), as board
-   * ids: `cat:<category group>` or `tag:<hobby>`. See shared/boards.ts.
+   * ids: `cat:<board>` (see BOARD_CATEGORIES in shared/boards.ts). Accounts
+   * from before the boards were broadened may still hold `tag:<hobby>` or
+   * `cat:wear`; `currentBoards` reads those as the board they became.
    */
   boards?: string[];
+  /**
+   * This person's score on each board they are on, by season, counted from
+   * their orders, collection, reviews and posts in the hobby. Kept here so a
+   * board reads every member in one query instead of recounting each of them;
+   * refreshed by the clock, when they open the board, and when they join it.
+   */
+  boardScores?: Record<string, StoredBoardScore>;
   /** Top-three finishes in hobby leaderboard seasons that have ended, recorded once each. */
   podiums?: { board: string; season: string; place: 1 | 2 | 3 }[];
   /**
@@ -509,6 +519,12 @@ export interface QuestState {
   bumps?: number;
   /** Bumps spent, newest last. */
   bumpLog?: { listingId: string; at: string }[];
+  /**
+   * Missed days filled in by spending bump points to keep a streak alive.
+   * They count for the streak only - never as check-ins that pay XP or count
+   * toward a check-in quest.
+   */
+  repairs?: string[];
   /** The last XP and level worked out, so a name can wear its level without a recount. */
   xpCache?: number;
   levelCache?: number;
@@ -3242,6 +3258,8 @@ export type NotificationKind =
   | 'answer_accepted'
   /** Something you asked to hear about is back in stock. */
   | 'back_in_stock'
+  /** Something you saved got cheaper. */
+  | 'price_drop'
   /** A shop stocked what you voted for, and you may buy it before anybody else. */
   | 'first_dibs'
   /** A live drop you set a reminder for starts within minutes. */

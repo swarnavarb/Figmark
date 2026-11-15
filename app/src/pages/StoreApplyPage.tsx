@@ -91,7 +91,7 @@ export function StoreApplyPage() {
     return (
       <main className="page">
         <EmptyState icon={<Icon name="check" size={26} />} title="Your store is open">
-          <Link to="/services/mine" className="btn">Go to My services</Link>
+          <Link to="/services/mine" className="btn">Go to All my work</Link>
         </EmptyState>
       </main>
     );
@@ -140,7 +140,7 @@ export function StoreApplyPage() {
         </div>
         <div className="row" style={{ justifyContent: 'center', marginTop: 18 }}>
           <button type="button" className="btn btn--ghost" onClick={() => { setEditing(true); setAt(0); }}>Edit application</button>
-          <Link to="/services/mine" className="btn btn--quiet">Back to My services</Link>
+          <Link to="/services/mine" className="btn btn--quiet">Back to All my work</Link>
         </div>
       </main>
     );

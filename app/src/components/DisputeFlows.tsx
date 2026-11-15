@@ -325,7 +325,7 @@ export function DirectDealNote({ nothingPaid = false }: { nothingPaid?: boolean 
  * The ⋯ on a review, comment or post: "Report now" and "Raise a dispute".
  * On your own words, the one thing you can ask for is validation.
  */
-export function ContentMenu({ targetType, targetId, parentId, authorId, label, mine, reported, onReported }: {
+export function ContentMenu({ targetType, targetId, parentId, authorId, label, mine, reported, onReported, onDelete }: {
   targetType: ReportTarget;
   targetId: string;
   parentId: string;
@@ -336,6 +336,8 @@ export function ContentMenu({ targetType, targetId, parentId, authorId, label, m
   /** This viewer already has an open report on it. */
   reported?: boolean;
   onReported?: () => void;
+  /** Offered first when the viewer may delete it, so a row needs one menu rather than a menu and a button. */
+  onDelete?: () => void;
 }) {
   const [menu, setMenu] = useState(false);
   const [open, setOpen] = useState<'report' | 'validate' | 'dispute' | null>(null);
@@ -380,6 +382,9 @@ export function ContentMenu({ targetType, targetId, parentId, authorId, label, m
       </button>
       {menu && createPortal(
         <span ref={list} className="cmenu__list" role="menu" style={place}>
+          {onDelete && (
+            <button type="button" role="menuitem" onClick={() => { setMenu(false); onDelete(); }}>🗑️ Delete</button>
+          )}
           {mine ? (
             <button type="button" role="menuitem" onClick={() => { setMenu(false); setOpen('validate'); }}>✅ Ask to validate</button>
           ) : (

@@ -5,6 +5,7 @@ import { useSession } from '../session';
 import { CreateSheet } from './CreateSheet';
 import { warmTab } from '../pageLoaders';
 import { haptic } from '../haptics';
+import { workHome } from './WorkSwitcher';
 
 /**
  * Six places and one action.
@@ -70,9 +71,16 @@ export const TABS: readonly Tab[] = [
     id: 'sell',
     to: '/shop',
     label: 'Sell',
+    // Every job you do, not only your own shop: the shops you help run, your
+    // forwarding and art stores, the lots you supply or hand out and the
+    // Community Service desk are workspaces the switcher at the top of Sell
+    // moves between, so the bar says Sell while you are in any of them.
     match: (path) =>
       path.startsWith('/shop') || path.startsWith('/sell') || path.startsWith('/lots')
-      || path.startsWith('/lot/') || path.startsWith('/routes'),
+      || path.startsWith('/lot/') || path.startsWith('/routes') || path === '/open'
+      || path.startsWith('/services/store/') || path.startsWith('/services/manage/')
+      || path.startsWith('/services/mine') || path.startsWith('/services/crew/')
+      || path.startsWith('/community-service'),
     icon: (
       <>
         <path d="M4 8.5 12 4l8 4.5v7L12 20l-8-4.5v-7Z" />
@@ -85,12 +93,9 @@ export const TABS: readonly Tab[] = [
     id: 'services',
     to: '/services',
     label: 'Services',
-    // The consoles too: a lot to pack and a Community Service desk are
-    // somebody's job rather than somebody's shop, and the bar should say so
-    // while they are standing in one.
-    match: (path) =>
-      path.startsWith('/services') || path.startsWith('/forwarders')
-      || path.startsWith('/community-service'),
+    // The people you can hire. Your own work under /services is Sell's, which
+    // comes first in this list and so wins those addresses.
+    match: (path) => path.startsWith('/services') || path.startsWith('/forwarders'),
     icon: SERVICES_GLYPH,
   },
   {
@@ -172,13 +177,15 @@ export function TabBar() {
 
   const tabLink = (tab: Tab) => {
     const on = tab === active;
+    // Sell goes back to whichever workspace this device was last working in.
+    const to = tab.id === 'sell' ? workHome() : tab.to;
     return (
       <NavLink
         key={tab.id}
-        to={tab.to}
+        to={to}
         className={`tab-item${on ? ' is-on' : ''}`}
         aria-current={on ? 'page' : undefined}
-        onPointerDown={() => warmTab(tab.to)}
+        onPointerDown={() => warmTab(to)}
         onClick={(event) => {
           if (user || !tab.members) {
             if (!on) haptic();

@@ -59,7 +59,8 @@ export function buttonStateAt(
  * The seller's button on one rung of a timeline: the tick that reaches this
  * step, in the words the route gave it. The same button on a real order and
  * in the Route Studio's preview, so what a seller tries there is what they
- * press here. The next one is big; a pressed one is a small tick that undoes.
+ * press here. Only two are ever drawn: the one to press next, and a pressed
+ * one as a small tick that undoes.
  */
 export function StepButton({ step, state, undoable = state === 'done', busy = false, vars, onPress, children }: {
   step: Pick<RouteStep, 'trigger' | 'button' | 'name' | 'custom' | 'assignee'>;
@@ -72,16 +73,18 @@ export function StepButton({ step, state, undoable = state === 'done', busy = fa
   /** Anything else that belongs on this rung for the seller: courier details, a badge. */
   children?: ReactNode;
 }) {
+  /* A button further on is not drawn: it appears when it is the one to press. */
+  if (state === 'later') return null;
   const label = stepButtonLabel(step, vars);
-  const shut = state === 'later' || (state === 'done' && !undoable);
+  const shut = state === 'done' && !undoable;
   return (
     <span className="stepact">
       <button type="button" className={`stepact__btn is-${state}`} disabled={busy || shut} aria-pressed={state === 'done'}
         title={state === 'done'
           ? (undoable ? `${label} - pressed. Tap to undo.` : `${label} - pressed. Undo the steps after it first.`)
-          : state === 'later' ? 'Opens once the button before it is pressed' : `Press when this has happened: ${step.name}`}
+          : `Press when this has happened: ${step.name}`}
         onClick={onPress}>
-        <span aria-hidden="true">{state === 'done' ? '✓' : state === 'later' ? '🔒' : '⚡'}</span>
+        {state === 'done' && <span aria-hidden="true">✓</span>}
         {label}
         {state === 'done' && undoable && <span className="stepact__undo">undo</span>}
       </button>
@@ -138,6 +141,8 @@ export function useStepActs(
   const opened = useRef(false);
   const [courier, setCourier] = useState('');
   const [awb, setAwb] = useState('');
+  /** A step the route marked as a courier hand-over, being pressed: asking for its courier and AWB. */
+  const [handing, setHanding] = useState<RouteStep | null>(null);
 
   const order = state?.order;
   const offerUndo = useUndo();
@@ -164,6 +169,7 @@ export function useStepActs(
       setShipping(false);
       setAsking(false);
       setReceiving(false);
+      setHanding(null);
       await onDone();
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : 'That did not save.');
@@ -209,6 +215,7 @@ export function useStepActs(
     if (checkpoint === 'dispatched') { openShipping(); return; }
     if (checkpoint === 'china_received' && !inLot(order!) && !isDirect(order!)) { setReceiving(true); return; }
     if (checkpoint === 'delivered') { setAsking(true); return; }
+    if (step.forward) { setCourier(''); setAwb(''); setHanding(step); return; }
     void tick(checkpoint, true);
   }
 
@@ -300,6 +307,31 @@ export function useStepActs(
               {busy ? 'Saving…' : dispatched ? 'Save details' : '🚚 Mark dispatched'}
             </button>
             <button type="button" className="btn btn--quiet btn--block" onClick={() => setShipping(false)}>Cancel</button>
+          </form>
+        </Modal>
+      )}
+
+      {handing && (
+        <Modal title="🚚 Courier & AWB" onClose={() => setHanding(null)}>
+          <form className="stack" onSubmit={(event) => {
+            event.preventDefault();
+            void tick(stepTickKey(handing)!, true, { courier: courier.trim(), awb: awb.trim() });
+          }}>
+            <p style={{ margin: 0 }}>Add the courier and AWB for this leg, if you have them. The buyer sees what you fill in.</p>
+            <label className="field">
+              <span>Courier name</span>
+              <input value={courier} onChange={(event) => setCourier(event.target.value)} maxLength={80}
+                placeholder="DHL, Delhivery, Blue Dart…" autoFocus />
+            </label>
+            <label className="field">
+              <span>AWB / tracking number</span>
+              <input value={awb} onChange={(event) => setAwb(event.target.value)} maxLength={80}
+                placeholder="e.g. 1234567890" className="mono" />
+            </label>
+            <button type="submit" className="btn btn--block" disabled={busy}>
+              {busy ? 'Saving…' : `✓ ${stepButtonLabel(handing, vars)}`}
+            </button>
+            <button type="button" className="btn btn--quiet btn--block" onClick={() => setHanding(null)}>Cancel</button>
           </form>
         </Modal>
       )}

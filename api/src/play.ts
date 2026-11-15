@@ -1,10 +1,11 @@
 import type { Post } from '../../shared/models.js';
 import {
-  BADGE_META, LAST_CALL_MS, LEADER_POINTS, PLACE_LABELS, closestGuess, contestPhase,
+  BADGE_META, LAST_CALL_MS, LEADER_POINTS, PLACE_LABELS, VOTE_POINTS_CAP, closestGuess, contestPhase,
   type Badge, type BadgeKind, type ContestWinner, type GameStage, type PlayerRow, type StoreCredit,
 } from '../../shared/play.js';
 import { actorName, possessive } from '../../shared/notifications.js';
 import { rupees } from '../../shared/payments.js';
+import { monthKey } from '../../shared/quest.js';
 import { percentages } from '../../shared/social.js';
 import type { getRepository } from './data/index.js';
 import { notify, storeCrew } from './functions/notify.js';
@@ -529,43 +530,64 @@ export async function settleDueGames(repository: Repo, now = Date.now()): Promis
 
 /* ── The leaderboard ────────────────────────────────────────────────────── */
 
+/** Whether a post is one of the games: a competition, a debate or a guess-the-price. */
+export const isGamePost = (post: Post) => Boolean(post.contest || post.debate || post.guess);
+
 /**
- * Points from the games in these posts: wins weigh most, and every vote
- * counts one, so the people who show up every day are on it too.
+ * Points from the games in these posts, for one season (a monthKey, India
+ * time), so the board starts again on the 1st like the hobby boards do.
+ *
+ * - A win counts in the season it was decided in: a competition when it was
+ *   settled, a debate when its voters were told, a guess when it was revealed.
+ * - A vote counts in the season the game was posted, and only on a game:
+ *   a competition's entries or a debate's sides. Vote points stop at
+ *   VOTE_POINTS_CAP a season; the votes themselves are still shown.
  */
-export function leaderboardOf(posts: readonly Post[]): Map<string, Omit<PlayerRow, 'name' | 'handle'>> {
+export function leaderboardOf(posts: readonly Post[], season: string): Map<string, Omit<PlayerRow, 'name' | 'handle'>> {
   const rows = new Map<string, Omit<PlayerRow, 'name' | 'handle'>>();
   const row = (userId: string) => {
     let found = rows.get(userId);
     if (!found) rows.set(userId, (found = { userId, points: 0, wins: 0, votes: 0 }));
     return found;
   };
+  const inSeason = (at: string | null | undefined) => Boolean(at) && monthKey(at!) === season;
   const placePoints = { 1: LEADER_POINTS.first, 2: LEADER_POINTS.second, 3: LEADER_POINTS.third } as const;
+  const votePoints = new Map<string, number>();
   for (const post of posts) {
-    for (const option of post.poll?.options ?? []) {
-      for (const id of option.voterIds) {
-        if (id.startsWith('store:')) continue;
-        const entry = row(id);
-        entry.points += LEADER_POINTS.vote;
-        entry.votes += 1;
+    if (!isGamePost(post)) continue;
+    if ((post.contest || post.debate) && inSeason(post.createdAt)) {
+      for (const option of post.poll?.options ?? []) {
+        for (const id of option.voterIds) {
+          if (id.startsWith('store:')) continue;
+          const entry = row(id);
+          entry.votes += 1;
+          const earned = votePoints.get(id) ?? 0;
+          if (earned < VOTE_POINTS_CAP) {
+            entry.points += LEADER_POINTS.vote;
+            votePoints.set(id, earned + LEADER_POINTS.vote);
+          }
+        }
       }
     }
-    for (const winner of post.contest?.winners ?? []) {
-      const entry = row(winner.userId);
-      entry.points += placePoints[winner.place];
-      if (winner.place === 1) entry.wins += 1;
+    if (post.contest && inSeason(post.contest.settledAt ?? (post.contest.winners?.length ? post.contest.endsAt : null))) {
+      for (const winner of post.contest.winners ?? []) {
+        const entry = row(winner.userId);
+        entry.points += placePoints[winner.place];
+        if (winner.place === 1) entry.wins += 1;
+      }
     }
-    if (post.debate?.best) {
+    if (post.debate?.best && inSeason(post.resultsSentAt ?? post.poll?.closesAt ?? post.createdAt)) {
       const entry = row(post.debate.best.userId);
       entry.points += LEADER_POINTS.debate;
       entry.wins += 1;
     }
-    if (post.guess?.winner) {
+    if (post.guess?.winner && inSeason(post.guess.revealedAt ?? post.guess.revealAt)) {
       const entry = row(post.guess.winner.userId);
       entry.points += LEADER_POINTS.guess;
       entry.wins += 1;
     }
   }
+  for (const [id, entry] of rows) if (entry.points === 0) rows.delete(id);
   return rows;
 }
 

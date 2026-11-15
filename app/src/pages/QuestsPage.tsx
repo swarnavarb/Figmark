@@ -3,17 +3,20 @@ import { PageLoading } from '../components/Feedback';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
-  MAX_LEVEL, TASK_XP, XP, rankLadder, type StickerView, type TaskKind,
+  MAX_LEVEL, STREAK_REPAIR_BUMPS, STREAK_REPAIR_DAYS, TASK_XP, XP, rankLadder, type StickerView, type TaskKind,
 } from '@shared/quest';
 import type { StoreAccess } from '@shared/stores';
 import { api, type InviteSummary } from '../api';
-import type { PlayerRow } from '@shared/play';
+import { LEADER_POINTS, VOTE_POINTS_CAP, type PlayerRow } from '@shared/play';
+import { seasonLabel } from '@shared/boards';
 import { useShareSheet, type ShareSpec } from '../components/ShareKit';
 import { SkeletonText } from '../components/Feedback';
 import { Glyph, Sticker, StickerSheet, useQuest } from '../components/Quest';
 import { HobbyBoards } from '../components/HobbyBoards';
 import { BoardHead, InfoTip, InviteStrip, NoBumpsNotice, QuestHero, QuestRow, QuestTabs } from '../components/QuestKit';
 import { Avatar } from '../components/ui';
+import { PeriodTag, WinStrip } from '../components/WinStrip';
+import type { Badge } from '@shared/play';
 import { QuestShooter } from '../components/QuestShooter';
 import { ShopQuests } from '../components/ShopQuests';
 import { useSession } from '../session';
@@ -128,6 +131,7 @@ export function QuestsPage() {
               <InfoTip label="About streaks">
                 <b>Streaks</b>
                 <p>Check in once a day, India time, for {XP.checkIn} XP. Days in a row climb the On Fire milestone: 7, 30 and 100 days.</p>
+                <p>Missed a day? Spend {STREAK_REPAIR_BUMPS} bump point to save the streak, once every {STREAK_REPAIR_DAYS} days. A saved day keeps the streak but pays no check-in XP.</p>
               </InfoTip>
             </span>
             <span className="qweek">
@@ -145,6 +149,18 @@ export function QuestsPage() {
             </button>
           ) : <span className="qok qstreak__done">✓ Today</span>}
         </section>
+        {view.streakRepair && (
+          <p className="notice qstreak__save" role="status">
+            <span>
+              You missed yesterday. Save your {view.streakRepair.saves}-day streak for {view.streakRepair.cost} bump point
+              {view.streakRepair.affordable ? '.' : ' - weekly and monthly quests pay them.'}
+            </span>
+            <button type="button" className="btn btn--sm" disabled={!view.streakRepair.affordable}
+              onClick={() => void act(api.questRepair)}>
+              Save streak
+            </button>
+          </p>
+        )}
 
         <InvitePanel level={view.level} title={view.title} />
 
@@ -157,7 +173,8 @@ export function QuestsPage() {
               <b>Your quests</b>
               <p>Start: Getting started steps that set your account up, {TASK_XP.starter} XP each, once.</p>
               <p>Daily: Check in, Reveal and Share a find every day, plus two that change daily. They reset at midnight, India time.</p>
-              <p>Weekly: five check-ins and two people opening your links, plus three that change each Monday and one Grow quest about sharing. Monthly: bring a friend, plus three bigger goals that change on the 1st and one Grow quest.</p>
+              <p>Weekly: five check-ins and two people opening your links, plus three that change each Monday and one Grow quest about sharing. Monthly: bring a friend and climb a hobby leaderboard, plus three bigger goals that change on the 1st and one Grow quest.</p>
+              <p>Finished a quest but forgot to collect it? Rewards from the last week of days, four weeks and two months are collected for you.</p>
               <p>Each weekly quest pays 1 bump point and each monthly one pays 2. Milestones pay once a step, then a bigger step appears.</p>
             </>
           )} />
@@ -323,15 +340,30 @@ function RankLadder({ current }: { current: number }) {
 }
 
 /**
- * Who is winning the games: competitions, debates and guesses, with every
- * vote cast counting a point - from the same board Discover's "This week" reads.
+ * Who is winning the games this month: competitions, debates and guesses,
+ * with votes on them counting a point each up to a cap - from the same board
+ * Discover's "This week" reads.
  */
 function GamePlayers() {
   const { user } = useSession();
   const [players, setPlayers] = useState<PlayerRow[] | null>(null);
+  const [season, setSeason] = useState<string | null>(null);
+  const [mine, setMine] = useState<Badge[]>([]);
+  useEffect(() => {
+    if (!user) return;
+    let live = true;
+    api.myRewards().then(({ badges }) => live && setMine(badges)).catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [user]);
   useEffect(() => {
     let live = true;
-    api.weeklyBest().then((board) => live && setPlayers(board.players ?? [])).catch(() => live && setPlayers([]));
+    api.weeklyBest().then((board) => {
+      if (!live) return;
+      setPlayers(board.players ?? []);
+      setSeason(board.playersSeason ?? null);
+    }).catch(() => live && setPlayers([]));
     return () => {
       live = false;
     };
@@ -339,20 +371,22 @@ function GamePlayers() {
   return (
     <section className="qpanel">
       <div className="qpanel__head">
-        <h3>🏅 Top players</h3>
+        <h3>🏅 Top players{season ? ` · ${seasonLabel(season)}` : ''} <PeriodTag period="monthly" title="Starts again on the 1st, India time" /></h3>
         <Link to="/discover#competitions" className="faint">Play</Link>
         <InfoTip label="About top players">
           <b>Top players</b>
-          <p>Points from the games: 10 for a competition win, 6 and 4 for second and third, 5 for the best argument or the closest guess, and 1 for every vote.</p>
+          <p>Points from the games: {LEADER_POINTS.first} for a competition win, {LEADER_POINTS.second} and {LEADER_POINTS.third} for second and third, {LEADER_POINTS.debate} for the best argument or the closest guess, and {LEADER_POINTS.vote} for every vote on a competition or debate, up to {VOTE_POINTS_CAP} a month.</p>
+          <p>The board starts again on the 1st of every month, India time.</p>
         </InfoTip>
       </div>
+      {user && <WinStrip badges={mine} profileHref="/me?tab=wins" />}
       {!players ? <SkeletonText lines={3} /> : players.length === 0 ? (
-        <p className="faint" style={{ margin: 0 }}>Nobody has played yet. Vote in a poll or enter a competition to get on the board.</p>
+        <p className="faint" style={{ margin: 0 }}>Nobody has played this month yet. Vote in a competition or debate, or enter one, to get on the board.</p>
       ) : (
         <ol className="qleaders">
           {players.map((row, index) => (
             <li key={row.userId} className={row.userId === user?.id ? 'is-me' : ''}>
-              <span className={`qleaders__rank qboard__rank--${Math.min(index + 1, 4)}`}>#{index + 1}</span>
+              <span className={`qleaders__rank qboard__rank--${Math.min(row.rank ?? index + 1, 4)}`}>#{row.rank ?? index + 1}</span>
               <Avatar name={row.name} size={30} />
               <span className="qleaders__who">
                 {row.handle ? <Link to={`/${row.handle}`}>{row.name}</Link> : row.name}

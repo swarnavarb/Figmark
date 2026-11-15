@@ -6,7 +6,7 @@ import { currentStepOf, itemStepOn, lotEndIndex, lotNo, lotNumberFrom, lotOffset
 import { cardButtons, holdsLotBack, ladderBeforeLot, serialButtons, withLastMile, withReceivedAs } from '../../../shared/buttons.js';
 import { accessFor, can, managerEntry, type StoreAccess } from '../../../shared/stores.js';
 import { actionsFor, awaitingAcceptance, disputeSubjects, isCancelledLike, isPlaced } from '../../../shared/orders.js';
-import { creditIsLive, creditLeft, expiresSoon, isExpired, keptCreditMinor, orderMoney } from '../../../shared/payments.js';
+import { creditIsLive, creditLeft, expiresSoon, isExpired, isLowStock, keptCreditMinor, orderMoney } from '../../../shared/payments.js';
 import { orderTotalMinor } from '../../../shared/service-stores.js';
 import { payoutsOf } from '../../../shared/payouts.js';
 import { USERNAME_PROBLEMS, checkUsername, suggestUsername } from '../../../shared/handles.js';
@@ -286,84 +286,6 @@ async function updateStorefront(request: HttpRequest, _context: InvocationContex
   const saved = await repository.updateUser(record);
   forgetIndex();
   return json(200, { storefront: saved.sellerProfile });
-}
-
-/**
- * GET /api/me/dashboard - how the shop is doing.
- *
- * Every figure comes out of one pass over the orders: the daily chart and
- * the best sellers used to re-scan the whole book once per day and once per
- * listing.
- */
-async function dashboard(request: HttpRequest, _context: InvocationContext) {
-  const auth = await getAuthService();
-  const user = await auth.requireAuth(request);
-  const repository = await getRepository();
-
-  // The figures only: totals need no timeline, photos or shipment.
-  const [allOrders, listings] = await Promise.all([
-    repository.listOrderFiguresForSeller(user.id),
-    repository.listListings({ sellerId: user.id }),
-  ]);
-
-  /* Analytics: the numbers a seller checks, and nothing they cannot act on. */
-  // A booking the seller has not yet said yes to is a pledge, not a sale.
-  const orders = allOrders.filter((order) => !isCancelledLike(order.status) && !awaitingAcceptance(order));
-
-  // Thirty days of orders, so the shape of the last month is visible rather
-  // than just its total.
-  const dayMs = 86_400_000;
-  const start = Date.now() - 29 * dayMs;
-  const daily = Array.from({ length: 30 }, (_, index) => ({
-    date: new Date(start + index * dayMs).toISOString().slice(0, 10),
-    orders: 0,
-    revenueMinor: 0,
-  }));
-  const dayOf = new Map(daily.map((day) => [day.date, day]));
-  const unitsByListing = new Map<string, number>();
-
-  let revenueMinor = 0;
-  let unitsSold = 0;
-  for (const order of orders) {
-    const value = order.quantity * order.unitPriceMinor;
-    revenueMinor += value;
-    unitsSold += order.quantity;
-    unitsByListing.set(order.listingId, (unitsByListing.get(order.listingId) ?? 0) + order.quantity);
-    const day = dayOf.get(order.createdAt.slice(0, 10));
-    if (day) {
-      day.orders += 1;
-      day.revenueMinor += value;
-    }
-  }
-  const views = listings.reduce((sum, listing) => sum + listing.viewCount, 0);
-  const saves = listings.reduce((sum, listing) => sum + listing.likeCount, 0);
-
-  // The items actually earning their place in the storefront.
-  const topListings = listings
-    .map((listing) => ({
-      id: listing.id,
-      title: listing.title,
-      viewCount: listing.viewCount,
-      likeCount: listing.likeCount,
-      unitsSold: unitsByListing.get(listing.id) ?? 0,
-    }))
-    .sort((a, b) => b.unitsSold - a.unitsSold || b.viewCount - a.viewCount)
-    .slice(0, 5);
-
-  return json(200, {
-    analytics: {
-      revenueMinor,
-      unitsSold,
-      orderCount: orders.length,
-      activeListings: listings.length,
-      views,
-      saves,
-      // Views to orders. Zero views means no rate rather than a divide by zero.
-      conversion: views > 0 ? unitsSold / views : 0,
-      daily,
-      topListings,
-    },
-  });
 }
 
 /**
@@ -729,65 +651,15 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
 }
 
 /**
- * GET /api/me/sell/todo - the Sell tab's three counts.
+ * GET /api/me/sell/dashboard - the figures over the Sell tab, one card per tab,
+ * and what is waiting on the shop.
  *
- * Orders to answer, orders waiting for a lot, and lots still moving. The tab
- * used to fetch the whole sales book (every order drawn as a card, with its
- * buyers, lots and listings) and every lot with all its orders, to count
- * three numbers. Now it reads the orders' figures and the lots, and counts.
- * Each count is null where this person may not see it in this store.
- */
-async function sellTodo(request: HttpRequest, _context: InvocationContext) {
-  const auth = await getAuthService();
-  const user = await auth.requireAuth(request);
-  const repository = await getRepository();
-  const storeId = request.query.get('store') ?? user.id;
-
-  const owner = storeId === user.id ? null : await repository.getUserById(storeId);
-  // The same rights the sales book and the lots screen ask for.
-  const answers = storeId === user.id || Boolean(owner && can(owner, user.id, 'admin'));
-  const mayLots = await auth.requireCapability(request, ['sell']).then(() => true, () => false)
-    && (storeId === user.id || Boolean(owner?.sellerProfile && can(owner, user.id, 'lots')));
-  if (!answers && !mayLots) return error(403, 'forbidden', 'You cannot see that store’s work.');
-
-  const [figures, lots, listings] = await Promise.all([
-    answers ? repository.listOrderFiguresForSeller(storeId) : Promise.resolve(null),
-    mayLots ? repository.listLots({ sellerId: storeId, limit: 10_000 }) : Promise.resolve(null),
-    mayLots ? repository.listListings({ sellerId: storeId, limit: 10_000 }) : Promise.resolve(null),
-  ]);
-  const active = figures?.filter((order) => !isFinished(order)) ?? null;
-  const waitsOnShop = (order: NonNullable<typeof figures>[number]) =>
-    ((order.paymentStatus === 'claimed' || order.status === 'payment_reversal_pending') && !isCancelledLike(order.status))
-    || actionsFor(order, storeId).includes('accept');
-
-  const waiting = active ? active.filter(waitsOnShop) : null;
-  return json(200, {
-    answer: waiting ? waiting.length : null,
-    /* When each one started waiting - a claim, or the order itself - so the
-       Sell tab can mark the ones that arrived since the seller last looked. */
-    answerSince: waiting
-      ? waiting.map((order) => order.paymentClaim?.claimedAt ?? order.placedAt ?? order.createdAt)
-      : null,
-    noLot: active ? active.filter((order) => awaitingLot(order)).length : null,
-    /* Active imports on sale that no lot carries yet. An order is not the
-       first sign of one: a listing marked import and left out of every lot is
-       already the seller's next job, before anybody buys it. Sold out, expired
-       or archived ones are nobody's job. */
-    noLotListings: listings
-      ? listings.filter((listing) => !listing.lotId && listing.sourcing === 'import'
-        && listing.status === 'active' && !isExpired(listing)).length
-      : null,
-    lots: lots ? lots.filter((lot) => !lotIsDone(lot)).length : null,
-  });
-}
-
-/**
- * GET /api/me/sell/dashboard - the figures over the Sell tab, one card per tab.
- *
- * One read for every tab, so moving between Listings, Orders, Shipments, Data
- * and Shop settings swaps the card at once rather than waiting on the server.
- * The orders are read as figures, as the to-do counts are. A card is null
- * where this person may not see that part of the store.
+ * One read for every tab, so moving between Listings, Orders, Shipments and
+ * Insights swaps the card at once rather than waiting on the server. The
+ * "needs you" counts ride in the same answer: they are counted from the same
+ * orders, listings and lots, and used to be a second request that read all
+ * three again. A card is null where this person may not see that part of the
+ * store.
  */
 async function sellDashboard(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
@@ -807,13 +679,14 @@ async function sellDashboard(request: HttpRequest, _context: InvocationContext) 
     return error(403, 'forbidden', 'You cannot see that store’s work.');
   }
 
-  const [figures, listings, lots] = await Promise.all([
+  const [figures, listings, lots, drafts] = await Promise.all([
     seesOrders || seesMoney || seesLots ? repository.listOrderFiguresForSeller(storeId) : Promise.resolve([]),
-    // Every listing of theirs, not only those on sale: drafts and sold-out
+    // Every listing of theirs, not only those on sale: sold-out and expired
     // items are counted below, and the on-sale filter does the rest.
     repository.listListings({ sellerId: storeId, limit: 10_000, includeHidden: true })
       .then((rows) => rows.filter((listing) => listing.status !== 'archived')),
     seesLots ? repository.listLots({ sellerId: storeId, limit: 10_000 }) : Promise.resolve([]),
+    seesListings ? repository.listListingDrafts(storeId) : Promise.resolve([]),
   ]);
 
   const now = Date.now();
@@ -829,6 +702,15 @@ async function sellDashboard(request: HttpRequest, _context: InvocationContext) 
   const before = sold.filter((order) => order.createdAt >= twoMonthsAgo && order.createdAt < monthAgo);
   const active = placed.filter((order) => !isFinished(order));
   const onSale = listings.filter((listing) => listing.status === 'active' && !listing.unlisted && !isExpired(listing));
+  const shelf = listings.filter((listing) => !listing.unlisted);
+  /* Waiting on the shop: a payment to confirm, a reversal to make, an order to say yes to. */
+  const waiting = seesOrders
+    ? figures.filter((order) => !isFinished(order) && (
+      ((order.paymentStatus === 'claimed' || order.status === 'payment_reversal_pending') && !isCancelledLike(order.status))
+      || actionsFor(order, storeId).includes('accept')))
+    : null;
+  const ordersNoLot = figures.filter((order) => !isFinished(order) && awaitingLot(order)).length;
+  const listingsNoLot = onSale.filter((listing) => !listing.lotId && listing.sourcing === 'import').length;
 
   // Fourteen days of takings, oldest first, for the Data card's line.
   const start = now - 13 * dayMs;
@@ -854,8 +736,11 @@ async function sellDashboard(request: HttpRequest, _context: InvocationContext) 
     currency: listings[0]?.currency ?? 'INR',
     listings: seesListings ? {
       onSale: onSale.length,
-      drafts: listings.filter((listing) => listing.status === 'draft').length,
-      soldOut: listings.filter((listing) => listing.status === 'sold_out').length,
+      // Forms kept half-written, and any listing saved without being published.
+      drafts: drafts.length + shelf.filter((listing) => listing.status === 'draft').length,
+      soldOut: shelf.filter((listing) => listing.status === 'sold_out' && !isExpired(listing)).length,
+      expired: shelf.filter((listing) => listing.status !== 'draft' && isExpired(listing)).length,
+      lowStock: onSale.filter((listing) => isLowStock(listing)).length,
       endingSoon: onSale.filter((listing) => expiresSoon(listing)).length,
       views,
       saves: listings.reduce((sum, listing) => sum + listing.likeCount, 0),
@@ -875,9 +760,21 @@ async function sellDashboard(request: HttpRequest, _context: InvocationContext) 
       open: lots.filter((lot) => lot.status === 'open').length,
       moving: lots.filter((lot) => !lotIsDone(lot)).length,
       done: lots.filter((lot) => lotIsDone(lot)).length,
-      ordersNoLot: active.filter((order) => awaitingLot(order)).length,
-      listingsNoLot: onSale.filter((listing) => !listing.lotId && listing.sourcing === 'import').length,
+      ordersNoLot,
+      listingsNoLot,
     } : null,
+    /* What is waiting on the shop, on every tab. `answerSince` is when each
+       one started waiting - a claim, or the order itself - so the tab can
+       mark the ones that arrived since the seller last looked. */
+    todo: {
+      answer: waiting ? waiting.length : null,
+      answerSince: waiting
+        ? waiting.map((order) => order.paymentClaim?.claimedAt ?? order.placedAt ?? order.createdAt)
+        : null,
+      noLot: seesLots ? ordersNoLot : null,
+      noLotListings: seesLots ? listingsNoLot : null,
+      lowStock: seesListings ? onSale.filter((listing) => isLowStock(listing)).length : null,
+    },
     money: seesMoney ? {
       revenue30Minor: revenue,
       revenuePrev30Minor: before.reduce((sum, order) => sum + value(order), 0),
@@ -1068,9 +965,7 @@ export const storefrontRoute = handler(getStorefront);
 export const updateStorefrontRoute = handler(updateStorefront);
 export const storefrontPhotoRoute = handler(uploadStorefrontPhoto);
 export const regionGuessRoute = handler(regionGuess);
-export const dashboardRoute = handler(dashboard);
 export const salesRoute = handler(sales);
-export const sellTodoRoute = handler(sellTodo);
 export const sellDashboardRoute = handler(sellDashboard);
 
 const anon = { authLevel: 'anonymous' } as const;
@@ -1079,7 +974,6 @@ app.http('me-storefront', { ...anon, methods: ['GET'], route: 'me/storefront', h
 app.http('me-storefront-save', { ...anon, methods: ['POST'], route: 'me/storefront/save', handler: updateStorefrontRoute });
 app.http('me-region-guess', { ...anon, methods: ['GET'], route: 'me/region-guess', handler: regionGuessRoute });
 app.http('me-storefront-photo', { ...anon, methods: ['POST'], route: 'me/storefront/photo', handler: storefrontPhotoRoute });
-app.http('me-dashboard', { ...anon, methods: ['GET'], route: 'me/dashboard', handler: dashboardRoute });
 /**
  * GET /api/me/payouts?store=&days= - the shop's money: held, released, direct.
  *
@@ -1108,7 +1002,6 @@ export const payoutsRoute = handler(payouts);
 
 app.http('me-sales', { ...anon, methods: ['GET'], route: 'me/sales', handler: salesRoute });
 app.http('me-payouts', { ...anon, methods: ['GET'], route: 'me/payouts', handler: payoutsRoute });
-app.http('me-sell-todo', { ...anon, methods: ['GET'], route: 'me/sell/todo', handler: sellTodoRoute });
 app.http('me-sell-dashboard', { ...anon, methods: ['GET'], route: 'me/sell/dashboard', handler: sellDashboardRoute });
 app.http('me-storefront-orders', { ...anon, methods: ['POST'], route: 'me/storefront/orders', handler: orderStatusRoute });
 app.http('shop-pulse', { ...anon, methods: ['GET'], route: 'shops/{id}/pulse', handler: shopPulseRoute });

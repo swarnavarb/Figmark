@@ -207,6 +207,8 @@ export const XP = {
   checkIn: 3,
   /** Flipping the daily reveal. */
   reveal: 5,
+  /** A top-three finish in a hobby leaderboard season. */
+  podium: 100,
 } as const;
 export const ACTION_CAP = 100;
 /** What a periodic task pays; a Getting started step pays once, on the starter line. */
@@ -245,7 +247,9 @@ export function levelFor(xp: number): number {
  * nine steps with their own names. None of them says "verified": that word
  * belongs to the phone, email and ID checks, not to a level.
  *
- * Every XP source is capped, so the high levels come from a long, steady
+ * Every counted action is capped (ACTION_CAP of each kind), and the uncapped
+ * sources - check-ins, reveals and quest rewards - pay a few points at most
+ * once a day or once a period, so the high levels come from a long, steady
  * record rather than a burst; the ranks sit where real people can reach them.
  */
 export const TIER_FLOORS = [1, 3, 6, 10, 13, 16, 20, 25, 30] as const;
@@ -335,7 +339,11 @@ function hash(text: string): number {
  */
 export interface QuestFacts {
   /** Orders the person actually placed - checkouts nobody went ahead with are not orders. */
-  orders: { createdAt: string; status: string; totalMinor: number; preOrder: boolean; sellerId?: string; early?: boolean }[];
+  orders: {
+    createdAt: string; status: string; totalMinor: number; preOrder: boolean; sellerId?: string; early?: boolean;
+    /** When it arrived, for delivered orders. */
+    completedAt?: string | null;
+  }[];
   /** `detailed`: long enough to help the next buyer (see DETAILED_REVIEW_CHARS). */
   reviewsWritten: { createdAt: string; detailed?: boolean }[];
   /** Stars sellers gave this person after completed orders (revealed ones only), 1-5. */
@@ -383,6 +391,8 @@ export interface QuestFacts {
   emailVerified?: boolean;
   /** Hobby leaderboards joined. */
   boards?: number;
+  /** Points on the person's best hobby leaderboard, by season (YYYY-MM). */
+  boardPoints?: Record<string, number>;
 }
 
 /** A review this long tells the next buyer something. */
@@ -461,6 +471,44 @@ export function streakOf(checkIns: readonly string[], now: number = Date.now()):
 }
 
 
+/** What saving a streak costs, in bump points. */
+export const STREAK_REPAIR_BUMPS = 1;
+/** One save in this many days, so a streak still means showing up. */
+export const STREAK_REPAIR_DAYS = 30;
+
+export interface StreakRepair {
+  /** The missed day a save fills in. */
+  day: string;
+  cost: number;
+  /** Whether the person has the bump points. */
+  affordable: boolean;
+  /** The streak it would bring back, counting the saved day. */
+  saves: number;
+}
+
+/**
+ * A missed yesterday that can be filled in to keep a streak: the day before it
+ * was checked in, and no save was used in the last STREAK_REPAIR_DAYS days.
+ * Null when there is nothing to save.
+ */
+export function streakRepairFor(state: QuestState, now: number = Date.now()): StreakRepair | null {
+  const days = new Set(state.checkIns);
+  const today = dayKey(now);
+  const yesterday = previousDay(today);
+  const before = previousDay(yesterday);
+  if (days.has(yesterday) || !days.has(before)) return null;
+  const last = [...(state.repairs ?? [])].sort().at(-1);
+  if (last && Date.parse(`${today}T00:00:00Z`) - Date.parse(`${last}T00:00:00Z`) < STREAK_REPAIR_DAYS * DAY_MS) return null;
+  let saves = 1;
+  let cursor = before;
+  while (days.has(cursor)) {
+    saves += 1;
+    cursor = previousDay(cursor);
+  }
+  if (days.has(today)) saves += 1;
+  return { day: yesterday, cost: STREAK_REPAIR_BUMPS, affordable: (state.bumps ?? 0) >= STREAK_REPAIR_BUMPS, saves };
+}
+
 /* -------------------------------------------------------------------------- */
 /* Tasks                                                                      */
 /* -------------------------------------------------------------------------- */
@@ -491,13 +539,15 @@ export interface TaskView {
 }
 
 type Metric = 'order' | 'preorder' | 'review' | 'detailed' | 'save' | 'follow' | 'post' | 'want' | 'collect' | 'checkin'
-  | 'open' | 'sent' | 'sentHaul' | 'sentPage' | 'invite';
+  | 'open' | 'sent' | 'sentHaul' | 'sentPage' | 'invite' | 'board';
 
 interface MeasureContext {
   facts: QuestFacts;
   state: QuestState;
   streak: Streak;
   now: number;
+  /** The level just worked out, for the forum ladder; the cached one when absent. */
+  level?: number;
 }
 
 const HAUL_KINDS = new Set(['purchased', 'delivered', 'booked']);
@@ -514,12 +564,18 @@ function stampsFor(metric: Metric, { facts, state }: MeasureContext): string[] {
     case 'post': return facts.posts.map((post) => post.createdAt);
     case 'want': return facts.wants.map((want) => want.createdAt);
     case 'collect': return facts.collection.map((item) => item.addedAt);
-    case 'checkin': return state.checkIns.map((day) => `${day}T12:00:00+05:30`);
+    case 'checkin': {
+      // A repaired day keeps a streak alive; it was not a visit, so it fills no check-in quest.
+      const repaired = new Set(state.repairs ?? []);
+      return state.checkIns.filter((day) => !repaired.has(day)).map((day) => `${day}T12:00:00+05:30`);
+    }
     case 'open': return facts.shareOpens.map((open) => open.createdAt);
     case 'sent': return facts.sharesSent.map((sent) => sent.createdAt);
     case 'sentHaul': return facts.sharesSent.filter((sent) => HAUL_KINDS.has(sent.kind ?? '')).map((sent) => sent.createdAt);
     case 'sentPage': return facts.sharesSent.filter((sent) => sent.kind === 'profile').map((sent) => sent.createdAt);
     case 'invite': return facts.invites.map((invite) => invite.createdAt);
+    // Board points are not events with times: countIn reads them by season.
+    case 'board': return [];
   }
 }
 
@@ -531,6 +587,7 @@ function periodOf(kind: TaskKind, now: number): string {
 }
 
 function countIn(metric: Metric, kind: TaskKind, context: MeasureContext): number {
+  if (metric === 'board') return context.facts.boardPoints?.[monthKey(context.now)] ?? 0;
   const stamps = stampsFor(metric, context);
   if (kind === 'milestone' || kind === 'starter') return stamps.length;
   const period = periodOf(kind, context.now);
@@ -619,6 +676,13 @@ const OPENS_WEEKLY: Template = {
   key: 'opens2', title: 'Two people opened your links', blurb: 'Share something good enough that two people tap it this week.',
   metric: 'open', goal: 2, href: '/', marketing: true,
 };
+/** Every month: the hobby leaderboards, which start again on the 1st. */
+export const BOARD_QUEST_POINTS = 10;
+const BOARD_MONTHLY: Template = {
+  key: 'board10', title: 'Climb a leaderboard',
+  blurb: `Join a hobby leaderboard and score ${BOARD_QUEST_POINTS} points on it this month - one order in the hobby that arrives does it.`,
+  metric: 'board', goal: BOARD_QUEST_POINTS, href: '/quests#boards',
+};
 const INVITE_MONTHLY: Template = {
   key: 'invite1', title: 'Bring a friend', blurb: 'Someone joins Figmark with your invite link this month.',
   metric: 'invite', goal: 1, href: '/quests#invite', marketing: true,
@@ -668,7 +732,7 @@ const STARTERS: readonly Starter[] = [
 interface Ladder {
   key: string;
   name: string;
-  metric: Metric | 'streak' | 'profile' | 'refer' | 'scout' | 'level';
+  metric: Metric | 'streak' | 'profile' | 'refer' | 'scout' | 'level' | 'boards';
   steps: number[];
   blurb: (goal: number) => string;
   href: string | null;
@@ -708,6 +772,10 @@ const LADDERS: readonly Ladder[] = [
   { key: 'forums', name: 'Forum Founder', metric: 'level', steps: [...FORUM_UNLOCK_LEVELS],
     blurb: (n) => `Reach level ${n} to unlock forum #${FORUM_UNLOCK_LEVELS.indexOf(n as typeof FORUM_UNLOCK_LEVELS[number]) + 1}.`,
     href: '/social?view=forums' },
+  // The hobby leaderboards: join one, then compete on all three you can.
+  { key: 'boards', name: 'Contender', metric: 'boards', steps: [1, 3],
+    blurb: (n) => (n === 1 ? 'Join a hobby leaderboard - Action figures, Sneakers, Trading cards …' : `Compete on ${n} hobby leaderboards at once.`),
+    href: '/quests#boards' },
   { key: 'profile', name: 'Show Yourself', metric: 'profile', steps: [2],
     blurb: () => 'Add a bio and a tag to your page.', href: '/me?tab=settings' },
 ];
@@ -723,7 +791,7 @@ const KNOWN = new Map<string, KnownTask>();
 const PERIODIC: readonly (readonly [Exclude<TaskKind, 'milestone' | 'starter'>, readonly Template[]])[] = [
   ['daily', [...DAILY_POOL, SHARE_DAILY]],
   ['weekly', [...WEEKLY_POOL, CHECKIN5, OPENS_WEEKLY, ...MARKETING_WEEKLY]],
-  ['monthly', [...MONTHLY_POOL, INVITE_MONTHLY, ...MARKETING_MONTHLY]],
+  ['monthly', [...MONTHLY_POOL, INVITE_MONTHLY, BOARD_MONTHLY, ...MARKETING_MONTHLY]],
 ];
 for (const [kind, pool] of PERIODIC) {
   for (const template of pool) KNOWN.set(`${kind}-${template.key}`, { kind, xp: TASK_XP[kind], title: template.title });
@@ -749,7 +817,7 @@ function known(taskId: string): KnownTask | null {
  * the saves and the quest opens again and its claimed XP goes with it; redo
  * them and the same claim counts again, without claiming twice.
  */
-const UNDOABLE: ReadonlySet<Ladder['metric']> = new Set(['save', 'follow']);
+const UNDOABLE: ReadonlySet<Ladder['metric']> = new Set(['save', 'follow', 'boards']);
 
 const TEMPLATE_BY_ID = new Map<string, { kind: TaskKind; template: Template }>();
 for (const [kind, pool] of PERIODIC) {
@@ -780,13 +848,48 @@ export function claimKey(taskId: string, now: number = Date.now()): string | nul
   return `${taskId}:${periodOf(task.kind, now)}`;
 }
 
-/** A few from a pool, the same few for everybody all period, different next period. */
-function pick<T>(pool: readonly T[], count: number, seed: string): T[] {
-  return [...pool]
+/** The first instant of the period an instant falls in, India time. */
+function periodStart(kind: TaskKind, now: number): number {
+  const day = kind === 'daily' ? dayKey(now) : kind === 'weekly' ? weekKey(now) : `${monthKey(now)}-01`;
+  return Date.parse(`${day}T00:00:00+05:30`);
+}
+
+/** Quests that need something delivered first: there is nothing to review or shelve until an order arrives. */
+const NEEDS_DELIVERED: ReadonlySet<Metric> = new Set(['review', 'detailed', 'collect']);
+
+/**
+ * Whether somebody can do a pool quest this period. Judged by what had
+ * arrived before the period began, so the period's picks never reshuffle
+ * under somebody halfway through them when a parcel lands.
+ */
+function eligible(template: Template, kind: TaskKind, context: MeasureContext): boolean {
+  if (!NEEDS_DELIVERED.has(template.metric)) return true;
+  const start = periodStart(kind, context.now);
+  const arrived = context.facts.orders
+    .filter((order) => order.status === 'delivered' && Date.parse(order.completedAt ?? order.createdAt) < start).length;
+  return arrived >= template.goal;
+}
+
+/**
+ * A few from a pool, in the same order for everybody all period and a
+ * different one next period: the ones this person can do, and never two
+ * asking for the same thing ("save one" and "save three" on the same day).
+ */
+function pick(pool: readonly Template[], count: number, seed: string, kind: TaskKind, context: MeasureContext,
+  taken: ReadonlySet<Metric> = new Set()): Template[] {
+  const metrics = new Set(taken);
+  const out: Template[] = [];
+  const ordered = [...pool]
     .map((entry, index) => ({ entry, order: hash(`${seed}|${index}`) }))
     .sort((a, b) => a.order - b.order)
-    .slice(0, count)
     .map(({ entry }) => entry);
+  for (const entry of ordered) {
+    if (out.length >= count) break;
+    if (metrics.has(entry.metric) || !eligible(entry, kind, context)) continue;
+    metrics.add(entry.metric);
+    out.push(entry);
+  }
+  return out;
 }
 
 function view(
@@ -814,13 +917,85 @@ function ladderProgress(ladder: Ladder, context: MeasureContext): number {
   if (ladder.metric === 'refer') return context.facts.referredSales;
   if (ladder.metric === 'scout') return context.facts.invitedSellers;
   // The level last worked out: the one being worked out now includes this.
-  if (ladder.metric === 'level') return context.state.levelCache ?? 1;
+  if (ladder.metric === 'level') return context.level ?? context.state.levelCache ?? 1;
+  if (ladder.metric === 'boards') return context.facts.boards ?? 0;
   return countIn(ladder.metric, 'milestone', context);
 }
 
 /** Whether today's reveal has been flipped. */
 function revealedOn(state: QuestState, now: number): boolean {
   return (state.reveals ?? []).includes(dayKey(now));
+}
+
+/**
+ * The day's, week's and month's quests (bar check-in and the reveal), for
+ * the periods `context.now` falls in. Also used for periods already past, to
+ * collect what somebody finished there and never tapped (see autoCollect).
+ */
+function periodicTasks(context: MeasureContext): TaskView[] {
+  const { now } = context;
+  const tasks: TaskView[] = [];
+  const of = (kind: 'daily' | 'weekly' | 'monthly', always: Template[], picks: Template[]) => {
+    for (const template of [...always, ...picks]) tasks.push(view(context, kind, template));
+  };
+  const daily = [SHARE_DAILY];
+  of('daily', daily, pick(DAILY_POOL, 2, `daily|${dayKey(now)}`, 'daily', context, new Set(daily.map((t) => t.metric))));
+
+  const weekly = [CHECKIN5, OPENS_WEEKLY];
+  const weeklyPicks = pick(WEEKLY_POOL, 3, `weekly|${weekKey(now)}`, 'weekly', context, new Set(weekly.map((t) => t.metric)));
+  const weeklyMk = pick(MARKETING_WEEKLY, 1, `weekly-mk|${weekKey(now)}`, 'weekly', context,
+    new Set([...weekly, ...weeklyPicks].map((t) => t.metric)));
+  of('weekly', weekly, [...weeklyPicks, ...weeklyMk]);
+
+  const monthly = [INVITE_MONTHLY, BOARD_MONTHLY];
+  const monthlyPicks = pick(MONTHLY_POOL, 3, `monthly|${monthKey(now)}`, 'monthly', context, new Set(monthly.map((t) => t.metric)));
+  const monthlyMk = pick(MARKETING_MONTHLY, 1, `monthly-mk|${monthKey(now)}`, 'monthly', context,
+    new Set([...monthly, ...monthlyPicks].map((t) => t.metric)));
+  of('monthly', monthly, [...monthlyPicks, ...monthlyMk]);
+  return tasks;
+}
+
+/** How far back unclaimed rewards are collected for somebody who was away. */
+const AUTO_COLLECT_BACK = { daily: 7, weekly: 4, monthly: 2 } as const;
+
+/** An instant inside each of the last `count` periods of a kind before the current one. */
+function pastPeriods(kind: 'daily' | 'weekly' | 'monthly', now: number, count: number): number[] {
+  const out: number[] = [];
+  let cursor = periodStart(kind, now);
+  for (let index = 0; index < count; index += 1) {
+    // One minute before this period starts is inside the one before it.
+    const inside = cursor - 60_000;
+    out.push(inside);
+    cursor = periodStart(kind, inside);
+  }
+  return out;
+}
+
+/**
+ * Collects the rewards of quests somebody finished in a period that has since
+ * ended but never tapped - a finished quest is earned, and losing it to the
+ * clock turning over helps nobody. Looks back a week of days, four weeks and
+ * two months. Returns the new state (unchanged when there was nothing) and
+ * what was collected.
+ */
+export function autoCollect(facts: QuestFacts, stored: QuestState | undefined, now: number = Date.now()):
+  { state: QuestState; collected: { taskId: string; title: string; xp: number; bumps: number }[] } {
+  const state = stored ?? emptyQuestState();
+  const streak = streakOf(state.checkIns, now);
+  const claimed = { ...state.claimed };
+  let bumps = state.bumps ?? 0;
+  const collected: { taskId: string; title: string; xp: number; bumps: number }[] = [];
+  for (const kind of ['daily', 'weekly', 'monthly'] as const) {
+    for (const at of pastPeriods(kind, now, AUTO_COLLECT_BACK[kind])) {
+      const context: MeasureContext = { facts, state: { ...state, claimed }, streak, now: at };
+      for (const task of periodicTasks(context).filter((entry) => entry.kind === kind && entry.claimable)) {
+        claimed[`${task.id}:${periodOf(kind, at)}`] = new Date(now).toISOString();
+        bumps += task.bumps;
+        collected.push({ taskId: task.id, title: task.title, xp: task.xp, bumps: task.bumps });
+      }
+    }
+  }
+  return collected.length ? { state: { ...state, claimed, bumps }, collected } : { state, collected };
 }
 
 function tasksFor(context: MeasureContext): TaskView[] {
@@ -839,17 +1014,7 @@ function tasksFor(context: MeasureContext): TaskView[] {
     // The daily drop is flipped on the Shop page, at the top.
     href: revealed ? null : '/',
   });
-  tasks.push(view(context, 'daily', SHARE_DAILY));
-  for (const template of pick(DAILY_POOL, 2, `daily|${dayKey(now)}`)) tasks.push(view(context, 'daily', template));
-
-  tasks.push(view(context, 'weekly', CHECKIN5));
-  tasks.push(view(context, 'weekly', OPENS_WEEKLY));
-  for (const template of pick(WEEKLY_POOL, 3, `weekly|${weekKey(now)}`)) tasks.push(view(context, 'weekly', template));
-  for (const template of pick(MARKETING_WEEKLY, 1, `weekly-mk|${weekKey(now)}`)) tasks.push(view(context, 'weekly', template));
-
-  tasks.push(view(context, 'monthly', INVITE_MONTHLY));
-  for (const template of pick(MONTHLY_POOL, 3, `monthly|${monthKey(now)}`)) tasks.push(view(context, 'monthly', template));
-  for (const template of pick(MARKETING_MONTHLY, 1, `monthly-mk|${monthKey(now)}`)) tasks.push(view(context, 'monthly', template));
+  tasks.push(...periodicTasks(context));
 
   // Getting started: every step not yet collected, in the order they are worth doing.
   for (const starter of STARTERS) {
@@ -1096,6 +1261,8 @@ export interface QuestView {
   bumps: number;
   /** Why the level is lower than the XP would give, when the record is holding it back. */
   heldBack?: string | null;
+  /** A missed day that bump points can fill in to keep the streak, when there is one. */
+  streakRepair?: StreakRepair | null;
 }
 
 /**
@@ -1124,6 +1291,7 @@ function recordXp(facts: QuestFacts): XpLine[] {
     line('Friends who joined with your invite', facts.invites.length, XP.invite),
     { label: 'Shops you brought in', xp: actionXp(facts.invitedSellers, XP.invitedSeller), detail: `${facts.invitedSellers} × ${XP.invitedSeller}, up to ${ACTION_CAP}` },
     line('People who opened your links', facts.shareOpens.length, XP.shareOpen),
+    line('Leaderboard podiums', facts.podiums ?? 0, XP.podium),
     line('Social posts', facts.posts.length, XP.post),
     line('Wanted posts', facts.wants.length, XP.want),
     line('Shops followed', facts.follows.length, XP.follow),
@@ -1149,7 +1317,8 @@ export function questView(
   const context: MeasureContext = { facts, state, streak, now };
 
   // Every day checked in is one action; keeping a streak pays through On Fire.
-  const checkInDays = [...new Set(state.checkIns)];
+  const repaired = new Set(state.repairs ?? []);
+  const checkInDays = [...new Set(state.checkIns)].filter((day) => !repaired.has(day));
   const checkIn = checkInDays.length * XP.checkIn;
 
   // A claim whose quest has since been undone (the saves taken back) pays nothing.
@@ -1173,6 +1342,8 @@ export function questView(
   const levelFloor = xpForLevel(level);
   const nextLevelXp = xpForLevel(level + 1);
   const progress = level >= MAX_LEVEL || heldBack ? 1 : (xp - levelFloor) / (nextLevelXp - levelFloor);
+  // The forum ladder reads the level just worked out, not the one cached last time.
+  context.level = level;
 
   return {
     xp,
@@ -1189,6 +1360,7 @@ export function questView(
     penalty,
     bumps: state.bumps ?? 0,
     heldBack,
+    streakRepair: streakRepairFor(state, now),
   };
 }
 
@@ -1204,6 +1376,7 @@ export function tidyQuestState(state: QuestState): QuestState {
     ...state,
     checkIns: [...new Set(state.checkIns)].sort(),
     reveals: [...new Set(state.reveals ?? [])].sort(),
+    ...(state.repairs ? { repairs: [...new Set(state.repairs)].sort() } : {}),
     ...(state.bumpLog ? { bumpLog: state.bumpLog.slice(-100) } : {}),
   };
 }

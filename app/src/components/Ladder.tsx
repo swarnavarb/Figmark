@@ -1,5 +1,7 @@
 import { Fragment, useState, type ReactNode } from 'react';
 import { isLotEvent, kindOf, settledHistory } from '@shared/fulfilment';
+import { rangeForStep, type StepDayRanges } from '@shared/step-days';
+import { DaysChip } from './StepDays';
 import type { LotStage } from '@shared/enums';
 import type { StageEvent } from '@shared/models';
 import {
@@ -29,7 +31,7 @@ import '../styles/Ladder.css';
  */
 export function Ladder({
   steps, current, history, onMove, onNote, busy, whose, waitingFor, lotAction, vars, forwardExample,
-  leaveAt, leaveNote, actFor, lockFrom, zones, moveFrom = 0, moveUpTo, backTo, ended, brief = false,
+  leaveAt, leaveNote, actFor, lockFrom, zones, moveFrom = 0, moveUpTo, backTo, ended, brief = false, days,
 }: {
   steps: RouteStep[];
   current: number;
@@ -66,9 +68,9 @@ export function Ladder({
   forwardExample?: boolean;
   /**
    * Where the item stops riding its lot and is worked one at a time again -
-   * the index of the first rung past the crate's end. A thin line is drawn
-   * above it, and `leaveNote` (the seller's way to where that happens) hangs
-   * on it. Absent, or past the last rung, draws nothing.
+   * the index of the first rung past the crate's end. With a `leaveNote`
+   * (said to the seller only: who moves the tracking from here) one quiet
+   * line is drawn above it; without one, nothing.
    */
   leaveAt?: number;
   leaveNote?: ReactNode;
@@ -108,6 +110,12 @@ export function Ladder({
   ended?: { label: string; at?: string | null; note?: string | null } | null;
   /** Each step's description behind an ⓘ by its name, so the timeline reads as a list of steps. */
   brief?: boolean;
+  /**
+   * How long each step usually takes, as the system measured it. Drawn on the
+   * step it is on and the ones still to come; a step behind it already took
+   * what it took.
+   */
+  days?: StepDayRanges | null;
 }) {
   /** Which rung has its note box open. One at a time: this is a list, not a form. */
   const [noting, setNoting] = useState<number | null>(null);
@@ -174,21 +182,18 @@ export function Ladder({
         return (
           <Fragment key={step.id}>
           {stage && (
-            <li className="ladder__stage" aria-hidden="true">
+            <li className={`ladder__stage ladder__stage--${stage.icon}`} aria-hidden="true">
               <Icon name={STAGE_ICON_META[stage.icon].icon} size={14} />
               <span>{stage.name}</span>
             </li>
           )}
           {/* Where the crate is unpacked and this piece goes on alone. Quiet on
               purpose: it is a change of who moves the tracking, not a step. */}
-          {leaveAt === index && leaveAt > 0 && (
+          {leaveNote && leaveAt === index && leaveAt > 0 && (
             <li className={`ladder__leave${index <= current ? ' is-past' : ''}`}>
               <span className="ladder__leave-line" aria-hidden="true" />
               <span className="ladder__leave-body">
-                <span className="ladder__leave-text">
-                  <Icon name="box" size={11} /> Leaves the lot · tracked per item from here
-                </span>
-                {leaveNote}
+                <span className="ladder__leave-text">{leaveNote}</span>
               </span>
             </li>
           )}
@@ -208,6 +213,10 @@ export function Ladder({
                 )}
               </span>
               {!brief && step.description && <span className="faint">{renderStepText(step.description, vars ?? {})}</span>}
+              {!ended && index >= Math.max(0, current) && index < steps.length - 1 && (() => {
+                const range = rangeForStep(days, step.name);
+                return range ? <DaysChip range={range} lead={index === current ? 'Usually' : undefined} className="ladder__days" /> : null;
+              })()}
               {actFor?.(step, index, steps)}
               {/* Moving goes one rung at a time: the next rung's Move here
                   opens once the one before it is reached, and only the rung
@@ -231,16 +240,6 @@ export function Ladder({
                           title="Moved here. Tap to take the lot back one step."
                           onClick={() => void onMove(current - 1)}>
                           <span aria-hidden="true">✓</span> Moved here <span className="stepact__undo">undo</span>
-                        </button>
-                      </span>
-                    );
-                  }
-                  if (index > current + 1) {
-                    return (
-                      <span className="stepact">
-                        <button type="button" className="stepact__btn is-later" disabled
-                          title="Opens once the step before it is done">
-                          <span aria-hidden="true">🔒</span> Move here
                         </button>
                       </span>
                     );

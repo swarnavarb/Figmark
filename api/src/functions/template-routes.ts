@@ -24,6 +24,7 @@ import { buildLot, type NewLotBody } from './fulfilment-routes.js';
 import { notify, orderNames } from './notify.js';
 import { gistOf } from '../../../shared/notifications.js';
 import { error, handler, json } from './http.js';
+import { can } from '../../../shared/stores.js';
 
 /**
  * Quick Fill templates, photo uploads, and putting one order in a lot.
@@ -38,12 +39,33 @@ import { error, handler, json } from './http.js';
 
 /* ── Quick Fill templates ──────────────────────────────────────────────── */
 
-/** GET /api/templates - the stationery this shop lists from. */
+/**
+ * The shop a request is about: `?store=` when the caller holds the listings
+ * right there, their own otherwise. A quick fill and a draft belong to the
+ * shop, so a manager listing into one reads and writes that shop's - not
+ * their own, which is what they used to be shown.
+ */
+export async function listingShop(
+  request: HttpRequest, userId: string, repository: Awaited<ReturnType<typeof getRepository>>,
+): Promise<{ shopId: string } | { refusal: ReturnType<typeof error> }> {
+  const storeId = request.query.get('store');
+  if (!storeId || storeId === userId) return { shopId: userId };
+  const owner = await repository.getUserById(storeId);
+  if (!owner?.sellerProfile) return { refusal: error(404, 'not_found', 'No such store.') };
+  if (!can(owner, userId, 'listings')) {
+    return { refusal: error(403, 'forbidden', 'You cannot list items in that store.') };
+  }
+  return { shopId: owner.id };
+}
+
+/** GET /api/templates?store= - the stationery this shop lists from. */
 async function listTemplates(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   const user = await auth.requireCapability(request, ['sell']);
   const repository = await getRepository();
-  return json(200, { templates: await repository.listTemplates(user.id) });
+  const shop = await listingShop(request, user.id, repository);
+  if ('refusal' in shop) return shop.refusal;
+  return json(200, { templates: await repository.listTemplates(shop.shopId) });
 }
 
 interface TemplateBody {
@@ -114,7 +136,10 @@ async function saveTemplate(request: HttpRequest, _context: InvocationContext) {
   }
 
   const repository = await getRepository();
-  const existing = body.id ? await repository.getTemplate(user.id, body.id) : null;
+  const shop = await listingShop(request, user.id, repository);
+  if ('refusal' in shop) return shop.refusal;
+  const shopId = shop.shopId;
+  const existing = body.id ? await repository.getTemplate(shopId, body.id) : null;
   if (body.id && !existing) return error(404, 'not_found', 'No such template.');
 
   // The after-lot route is a pointer, not a copy: nothing is travelling it yet,
@@ -122,7 +147,7 @@ async function saveTemplate(request: HttpRequest, _context: InvocationContext) {
   let lotRouteId: string | null = null;
   let lotRouteName: string | null = null;
   if (body.lotRouteId) {
-    const route = await repository.getRoute(user.id, body.lotRouteId);
+    const route = await repository.getRoute(shopId, body.lotRouteId);
     if (!route) return error(404, 'not_found', 'No such route.');
     lotRouteId = route.id;
     lotRouteName = route.name;
@@ -144,7 +169,7 @@ async function saveTemplate(request: HttpRequest, _context: InvocationContext) {
 
   const template: PostTemplate = {
     id: existing?.id ?? `tpl_${randomUUID().slice(0, 12)}`,
-    sellerId: user.id,
+    sellerId: shopId,
     name,
     category,
     attributes,
@@ -177,7 +202,9 @@ async function deleteTemplate(request: HttpRequest, _context: InvocationContext)
   if (!id) return error(400, 'invalid_request', 'A template id is required.');
 
   const repository = await getRepository();
-  const gone = await repository.deleteTemplate(user.id, id);
+  const shop = await listingShop(request, user.id, repository);
+  if ('refusal' in shop) return shop.refusal;
+  const gone = await repository.deleteTemplate(shop.shopId, id);
   if (!gone) return error(404, 'not_found', 'No such template.');
   return json(200, { deleted: id });
 }

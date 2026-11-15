@@ -186,8 +186,17 @@
 .dropbatch__more > span:nth-child(2) { flex: 1 1 auto; }
 .dropbatch__more strong { color: var(--text); }
 .dropbatch__thumbs { display: flex; }
-.dropbatch__thumbs img, .dropbatch__blank {
+.dropbatch__thumbs img {
   width: 30px; height: 30px; border-radius: var(--r-sm); object-fit: cover;
   border: 2px solid var(--surface); margin-left: -8px; background: var(--surface-2);
 }
 .dropbatch__thumbs > :first-child { margin-left: 0; }
+
+/* Muted: who is kept out of the feed, each a tap from coming back. */
+.mutedlist { display: grid; gap: var(--s2); margin: 0; padding: 0; list-style: none; }
+.mutedlist__row {
+  display: flex; align-items: center; gap: var(--s3);
+  padding: var(--s3); border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface);
+}
+.mutedlist__who { display: grid; flex: 1 1 auto; min-width: 0; }
+.mutedlist__who a, .mutedlist__who strong { color: var(--text); font-weight: 700; }

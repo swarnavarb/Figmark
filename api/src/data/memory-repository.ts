@@ -5,7 +5,7 @@ import { AWAITING_LOT_ID } from '../../../shared/fulfilment.js';
 import { isCancelledLike, isPlaced } from '../../../shared/orders.js';
 import { ROUTE_TEMPLATES, stepForStage, type TrackingRoute } from '../../../shared/routes.js';
 import { withButtons } from '../../../shared/buttons.js';
-import type { PostTemplate } from '../../../shared/templates.js';
+import type { ListingDraft, PostTemplate } from '../../../shared/templates.js';
 import { randomUUID } from 'node:crypto';
 import type { BackendKind, DemoAccount } from '../../../shared/contracts.js';
 import type {
@@ -59,6 +59,7 @@ export class MemoryRepository implements Repository {
   private readonly lots = new Map<string, Lot>();
   private readonly routes = new Map<string, TrackingRoute>();
   private readonly templates = new Map<string, PostTemplate>();
+  private readonly listingDrafts = new Map<string, ListingDraft>();
   private readonly listings = new Map<string, Listing>();
   private readonly orders = new Map<string, Order>();
   private readonly comments = new Map<string, ListingComment>();
@@ -227,6 +228,29 @@ export class MemoryRepository implements Repository {
     return true;
   }
 
+  async listListingDrafts(sellerId: string): Promise<ListingDraft[]> {
+    return [...this.listingDrafts.values()]
+      .filter((draft) => draft.sellerId === sellerId)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
+  async getListingDraft(sellerId: string, draftId: string): Promise<ListingDraft | null> {
+    const draft = this.listingDrafts.get(draftId);
+    return draft && draft.sellerId === sellerId ? draft : null;
+  }
+
+  async saveListingDraft(draft: ListingDraft): Promise<ListingDraft> {
+    this.listingDrafts.set(draft.id, draft);
+    return draft;
+  }
+
+  async deleteListingDraft(sellerId: string, draftId: string): Promise<boolean> {
+    const draft = this.listingDrafts.get(draftId);
+    if (!draft || draft.sellerId !== sellerId) return false;
+    this.listingDrafts.delete(draftId);
+    return true;
+  }
+
   async listRoutes(sellerId: string): Promise<TrackingRoute[]> {
     return [...this.routes.values()]
       .filter((route) => route.sellerId === sellerId)
@@ -355,6 +379,9 @@ export class MemoryRepository implements Repository {
     if (query.kind && query.kind !== 'all') items = items.filter((l) => matchesKind(l, query.kind));
     if (query.maxPriceMinor !== undefined && query.maxPriceMinor > 0) {
       items = items.filter((l) => l.priceMinor <= query.maxPriceMinor!);
+    }
+    if (query.minPriceMinor !== undefined && query.minPriceMinor > 0) {
+      items = items.filter((l) => l.priceMinor >= query.minPriceMinor!);
     }
     if (query.search) items = items.filter((l) => matchesSearch(l, query.search!));
 
@@ -1182,6 +1209,13 @@ export class MemoryRepository implements Repository {
         || (post.debate && !post.resultsSentAt)
         || (post.poll.reward && !post.poll.reward.paidAt))),
     ).slice(0, limit).map((post) => structuredClone(post));
+  }
+
+  async listGamePostsSince(sinceIso: string, limit: number): Promise<Post[]> {
+    const after = (at: string | null | undefined) => Boolean(at) && at! >= sinceIso;
+    return [...this.posts.values()].filter((post) => (post.contest || post.debate || post.guess)
+      && (after(post.createdAt) || after(post.contest?.settledAt) || after(post.guess?.revealedAt) || after(post.resultsSentAt)))
+      .sort(newestFirst).slice(0, limit).map((post) => structuredClone(post));
   }
 
   async listRecentPosts(limit: number): Promise<Post[]> {

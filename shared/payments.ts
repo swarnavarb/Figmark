@@ -21,6 +21,15 @@ export function availabilityLabel(listing: Pick<Listing, 'quantityMode' | 'quant
   return isMultiple(listing) ? 'Multiple available' : `${listing.quantityAvailable} available`;
 }
 
+/** At or under this many left, a counted item is running low. */
+export const LOW_STOCK_AT = 2;
+
+/** On sale with a count, and nearly out: worth a restock before it sells out. */
+export function isLowStock(listing: Pick<Listing, 'quantityMode' | 'quantityAvailable' | 'status'>): boolean {
+  return listing.status === 'active' && !isMultiple(listing)
+    && listing.quantityAvailable > 0 && listing.quantityAvailable <= LOW_STOCK_AT;
+}
+
 /* ── Expiry ────────────────────────────────────────────────────────────── */
 
 /** Within this long of its expiry an item is flagged as closing soon. */

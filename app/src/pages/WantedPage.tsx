@@ -2,7 +2,7 @@ import { useToast } from '../components/Feedback';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { SkelCards } from '../components/PageSkeletons';
 import { Link, useSearchParams } from 'react-router-dom';
-import { CONDITION_TAGS } from '@shared/enums';
+import { CONDITION_TAGS, conditionWords } from '@shared/enums';
 import { CATEGORIES, CONDITION_BUCKETS } from '@shared/catalog';
 import { ApiRequestError, api, type WantCard, type WantDetail, type WantMatch } from '../api';
 import { EmptyState, ErrorNotice, Modal, PersonLink, Thumb } from '../components/ui';
@@ -101,12 +101,12 @@ export function WantedPage() {
       {/* The ask is the headline: a board nobody posts to is a board nobody
           reads, so posting is the biggest thing on it. */}
       <section className="wanthero">
-        <span className="wanthero__kicker"><Icon name="target" size={13} /> ISO · In search of</span>
+        <span className="wanthero__kicker"><Icon name="target" size={13} /> Wanted · in search of (ISO)</span>
         <h2 className="wanthero__title">What are you looking for?</h2>
         <div className="wanthero__row">
           {user && (
             <button type="button" className="wanthero__ask" onClick={() => setAsking(true)}>
-              <Icon name="plus" size={15} /> Post an ISO
+              <Icon name="plus" size={15} /> Post a want
             </button>
           )}
           <span className="wanthero__stat">
@@ -117,7 +117,7 @@ export function WantedPage() {
 
       {openMine.length > 0 && (
         <section className="wanted__section">
-          <h3 className="wanted__title">Your ISOs</h3>
+          <h3 className="wanted__title">Your wants</h3>
           <div className="wanted__list">
             {openMine.map((want) => (
               <WantRow key={want.id} want={want} mine onOpen={() => setOpenWant(want)}
@@ -141,7 +141,7 @@ export function WantedPage() {
       </div>
 
       {others.length === 0 ? (
-        <EmptyState title="No open ISOs yet">
+        <EmptyState title="No open wants yet">
           {category
             ? 'Nothing under that category yet. Try Everything.'
             : 'Be the first — what are you looking for that nobody has listed?'}
@@ -231,7 +231,7 @@ function WantRow({ want, mine, onOpen, onChanged }: {
 
   return (
     <div className="wantcard">
-      <span className="ctype ctype--iso">ISO request</span>
+      <span className="ctype ctype--iso">Wanted</span>
       <WantBody want={want} onOpen={onOpen} />
       <div className="alsome alsome--card">
         {mine || !user ? (
@@ -262,7 +262,7 @@ function WantBody({ want, onOpen }: { want: WantCard; onOpen: () => void }) {
         <span className="want__title">{want.title}</span>
         <span className="faint">
           {want.category}
-          {want.condition ? ` · ${want.condition}` : ''} · asked {timeAgo(want.createdAt)}
+          {want.condition ? ` · ${conditionWords(want.condition)!.words}` : ''} · asked {timeAgo(want.createdAt)}
         </span>
         {(want.matchCount ?? 0) > 0 && (
           <span className="want__matches">
@@ -342,7 +342,7 @@ function AskDialog({ onClose, onPosted }: { onClose: () => void; onPosted: () =>
   }
 
   return (
-    <Modal title="ISO - in search of" onClose={onClose}>
+    <Modal title="Wanted - in search of" onClose={onClose}>
       <label className="field">
         <span>The item</span>
         <input value={title} onChange={(e) => setTitle(e.target.value)}
@@ -506,7 +506,7 @@ function WantDialog({ card, onClose, onChanged }: {
     <Modal title={card.title} onClose={onClose}>
       <p className="faint" style={{ marginTop: 0 }}>
         <PersonLink party={card.buyer} /> · {card.category}
-        {card.condition ? ` · ${card.condition}` : ''} · {timeAgo(card.createdAt)}
+        {card.condition ? ` · ${conditionWords(card.condition)!.words}` : ''} · {timeAgo(card.createdAt)}
       </p>
 
       <div className="kv">
@@ -561,7 +561,7 @@ function WantDialog({ card, onClose, onChanged }: {
                         <Thumb seed={match.id} label={match.title} photo={match.photoUrl ? { url: match.photoUrl } : null}
                           className="thumb wantmatch__photo" />
                         <span className="wantmatch__name">{match.title}</span>
-                        <span className="faint">{formatMoney(match.priceMinor, match.currency)} · {match.condition}</span>
+                        <span className="faint">{formatMoney(match.priceMinor, match.currency)} · {conditionWords(match.condition)?.words}</span>
                       </Link>
                       {yours && !data.mine && card.status === 'open' && (
                         <button type="button" className="btn btn--sm" onClick={() => {
