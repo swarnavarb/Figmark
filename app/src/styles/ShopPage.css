@@ -1148,7 +1148,7 @@ button.statuspill:hover { border-color: var(--border-strong); color: var(--text)
 
 .sfset__bar {
   /* Rests at the end of the form; floats above the tab bar only once there is something to save. */
-  position: relative; bottom: calc(var(--tabbar-h, 0px) + var(--s2)); z-index: 5;
+  position: relative; z-index: 5;
   display: flex; flex-wrap: wrap; align-items: center; gap: var(--s3);
   margin-top: var(--s2); padding: var(--s2) var(--s2) var(--s2) var(--s4);
   border: 1px solid var(--border); border-radius: var(--r-pill);
@@ -1156,7 +1156,7 @@ button.statuspill:hover { border-color: var(--border-strong); color: var(--text)
   -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
   transition: border-color var(--dur-2) var(--ease), box-shadow var(--dur-2) var(--ease);
 }
-.sfset__bar.is-dirty { position: sticky; border-color: var(--border-strong); box-shadow: 0 10px 30px rgba(0, 0, 0, .28); }
+.sfset__bar.is-dirty { position: sticky; bottom: calc(var(--tabbar-h, 0px) + var(--s2)); border-color: var(--border-strong); box-shadow: 0 10px 30px rgba(0, 0, 0, .28); }
 .sfset__bar > .btn { margin-left: auto; border-radius: var(--r-pill); }
 .sfset__bar > .notice { flex-basis: 100%; order: 3; margin: 0 var(--s2) var(--s1) 0; }
 .sfset__state { display: inline-flex; align-items: center; gap: 6px; font-size: var(--t-sm); color: var(--text-faint); }
