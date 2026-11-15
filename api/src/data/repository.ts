@@ -397,6 +397,12 @@ export interface Repository {
   listHeldNotificationsDue(from: string, until: string): Promise<Notification[]>;
   /** Accounts holding this push endpoint: a browser belongs to whoever signed in on it last. */
   listUsersByPushEndpoint(endpoint: string): Promise<User[]>;
+  /**
+   * Accounts holding store credit that lapses between the two times and whose
+   * owner has not been told yet - for the reminder that rides on app traffic
+   * (see credit-reminders.ts). Ids only, at most `limit`.
+   */
+  listUserIdsWithLapsingCredit(fromIso: string, toIso: string, limit: number): Promise<string[]>;
   /** Every account's reported devices, for the operators' install figures. */
   listClientDevices(): Promise<Array<{ id: string; clientDevices: ClientDevice[] }>>;
   saveWantOffer(offer: WantOffer): Promise<WantOffer>;

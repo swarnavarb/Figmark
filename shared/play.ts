@@ -266,6 +266,18 @@ export interface StoreCredit {
   expiresAt?: string | null;
   /** Given by hand as a refund: money owed back, which never lapses. */
   refund?: boolean;
+  /** When the buyer was told it is about to lapse, so they are told once. */
+  remindedAt?: string | null;
+}
+
+/** How long before a credit lapses its owner is told. */
+export const LAPSE_REMINDER_MS = 3 * 86_400_000;
+
+/** Credit still worth something that lapses within the reminder window and nobody has been told about. */
+export function lapsingSoon(credit: StoreCredit, now = Date.now()): boolean {
+  if (!credit.expiresAt || credit.remindedAt) return false;
+  const at = Date.parse(credit.expiresAt);
+  return at > now && at - now <= LAPSE_REMINDER_MS && storeCreditLeft(credit, now) > 0;
 }
 
 /** Whether a credit's time is up. */

@@ -926,6 +926,14 @@ export class MemoryRepository implements Repository {
       .map((user) => ({ id: user.id, clientDevices: user.clientDevices! }));
   }
 
+  async listUserIdsWithLapsingCredit(fromIso: string, toIso: string, limit: number): Promise<string[]> {
+    return [...this.users.values()]
+      .filter((user) => (user.storeCredits ?? []).some((credit) => credit.expiresAt && credit.expiresAt > fromIso
+        && credit.expiresAt <= toIso && !credit.remindedAt && credit.amountMinor > credit.spentMinor))
+      .slice(0, limit)
+      .map((user) => user.id);
+  }
+
   async listUsersByPushEndpoint(endpoint: string): Promise<User[]> {
     return [...this.users.values()]
       .filter((user) => (user.pushEndpoints ?? []).some((entry) => entry.endpoint === endpoint));

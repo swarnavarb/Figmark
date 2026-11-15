@@ -111,6 +111,7 @@ const CATEGORY_OF: Record<NotificationKind, NotificationCategory> = {
   platform_fees: 'payments',
   pro_plan: 'payments',
   store_gift: 'payments',
+  credit_lapsing: 'payments',
   cancel_flag: 'payments',
   loyalty: 'payments',
   payment_dispute: 'payments',

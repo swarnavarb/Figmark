@@ -1496,6 +1496,21 @@ export class CosmosRepository implements Repository {
     return resources.map((row) => ({ id: row.id, clientDevices: row.clientDevices ?? [] }));
   }
 
+  /* Cross-partition over the rewards parts, but run at most every quarter of
+     an hour, on the back of somebody opening the app (credit-reminders.ts). */
+  async listUserIdsWithLapsingCredit(fromIso: string, toIso: string, limit: number): Promise<string[]> {
+    const { resources } = await this.container('userParts')
+      .items.query<string>({
+        query: "SELECT DISTINCT VALUE c.userId FROM c JOIN s IN c.storeCredits WHERE c.part = 'rewards'"
+          + ' AND IS_STRING(s.expiresAt) AND s.expiresAt > @from AND s.expiresAt <= @to'
+          + ' AND NOT IS_STRING(s.remindedAt) AND s.amountMinor > s.spentMinor'
+          + ' OFFSET 0 LIMIT @limit',
+        parameters: [{ name: '@from', value: fromIso }, { name: '@to', value: toIso }, { name: '@limit', value: limit }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
   /* Cross-partition over accounts, but only run when a device turns
      notifications on, which is once per device. */
   async listUsersByPushEndpoint(endpoint: string): Promise<User[]> {

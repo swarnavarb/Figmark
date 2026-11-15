@@ -342,4 +342,65 @@ await check('credit given by hand lapses when the shop says - but a refund never
   assert.equal(after.find((entry) => entry.id === kind.id).spentMinor, 0, 'the lapsed credit is left untouched');
 });
 
+await check('credit about to lapse is mentioned once, on a visit or by the pass that rides on anybody\'s visit', async () => {
+  const { remindLapsing, sweepLapsing, resetLapseSweep } = await import(new URL('../api/dist/api/src/credit-reminders.js', import.meta.url));
+  const soon = await newPerson('Soon Sana');
+  const later = await newPerson('Later Lalit');
+  const at = Date.now();
+  const credit = (id, lapsesIn, extra = {}) => ({
+    id, storeId: shop.id, storeName: 'Arjun Collects', amountMinor: 35000, spentMinor: 0, reason: 'Test', link: '/',
+    createdAt: new Date(at - DAY).toISOString(), spends: [], expiresAt: new Date(at + lapsesIn).toISOString(), ...extra,
+  });
+  for (const [person, credits] of [[soon, [credit('c_soon', 2 * DAY), credit('c_far', 20 * DAY)]], [later, [credit('c_later', 1 * DAY)]]]) {
+    const account = await repository.getUserById(person.id);
+    await repository.updateUser({ ...account, storeCredits: credits });
+  }
+  assert.equal(await remindLapsing(repository, soon.id, at), 1, 'only the one inside three days');
+  const stamped = (await repository.getUserById(soon.id)).storeCredits;
+  assert.ok(stamped.find((entry) => entry.id === 'c_soon').remindedAt);
+  assert.equal(stamped.find((entry) => entry.id === 'c_far').remindedAt, undefined);
+  assert.equal(await remindLapsing(repository, soon.id, at), 0, 'told once');
+  const bell = (await repository.listNotifications(soon.id, 20)).find((entry) => entry.kind === 'credit_lapsing');
+  assert.ok(bell, 'it reaches the bell');
+  assert.match(bell.title, /₹350 credit at Arjun Collects lapses on/);
+
+  // Somebody else opens the app: the pass finds Lalit, who has not.
+  resetLapseSweep();
+  assert.ok(await sweepLapsing(repository, at) >= 1);
+  assert.ok((await repository.getUserById(later.id)).storeCredits[0].remindedAt);
+  assert.equal(await sweepLapsing(repository, at + 60_000), 0, 'not again within the quarter hour');
+});
+
+await check('credit spent on a cancelled order comes back with exactly the time the order held it', async () => {
+  const { returnSpentStoreCredit, creditGraceMs } = await import(new URL('../api/dist/api/src/functions/placement.js', import.meta.url));
+  const now = Date.now();
+  assert.equal(creditGraceMs({ placedAt: new Date(now - 5 * DAY).toISOString(), createdAt: new Date(now - 6 * DAY).toISOString() }, now), 5 * DAY);
+  const buyer = await newPerson('Grace Gauri');
+  const lapsed = new Date(now - 2 * DAY).toISOString(); // lapsed two days ago, while the order held it
+  const account = await repository.getUserById(buyer.id);
+  await repository.updateUser({ ...account, storeCredits: [{
+    id: 'c_grace', storeId: shop.id, storeName: 'Arjun Collects', amountMinor: 50000, spentMinor: 30000, reason: 'Prize', link: '/',
+    createdAt: new Date(now - 30 * DAY).toISOString(), expiresAt: lapsed, remindedAt: new Date(now - 4 * DAY).toISOString(),
+    spends: [{ orderId: 'ord_grace', itemName: 'RG Nu Gundam', amountMinor: 30000, at: new Date(now - 5 * DAY).toISOString() }],
+  }] });
+  const order = {
+    id: 'ord_grace', buyerId: buyer.id, sellerId: shop.id, itemName: 'RG Nu Gundam', stage: 'placed', stageHistory: [],
+    placedAt: new Date(now - 5 * DAY).toISOString(), createdAt: new Date(now - 5 * DAY).toISOString(),
+    payments: [
+      { id: 'p1', kind: 'credit', amountMinor: 30000, reference: 'Store credit won', at: new Date(now - 5 * DAY).toISOString() },
+      { id: 'p2', kind: 'balance', amountMinor: 120000, reference: 'UPI', at: new Date(now - 5 * DAY).toISOString() },
+    ],
+  };
+  const back = await returnSpentStoreCredit(repository, order, shop.id);
+  assert.equal(back, 30000);
+  const credit = (await repository.getUserById(buyer.id)).storeCredits[0];
+  assert.equal(credit.spentMinor, 0);
+  const added = (Date.parse(credit.expiresAt) - Date.parse(lapsed)) / DAY;
+  assert.ok(Math.abs(added - 5) < 0.001, `pushed back by the five days the order held it, got ${added}`);
+  assert.ok(Date.parse(credit.expiresAt) > Date.now(), 'alive again: the three days it had left when the order was placed');
+  assert.equal(credit.remindedAt, null, 'a fresh reminder is owed');
+  assert.deepEqual(order.payments.map((payment) => payment.id), ['p2'], 'the refund is only what the buyer paid');
+  assert.match(order.stageHistory.at(-1).note, /5 days added/);
+});
+
 console.log(`\n${passed} spread checks passed`);

@@ -1,4 +1,5 @@
 import { repriceBasket } from '../offers.js';
+import { returnSpentStoreCredit } from './placement.js';
 import type { Listing, Order, Pledge, PreOrder, PreOrderFullRule, PreOrderShortRule } from '../../../shared/models.js';
 import { isCancelledLike } from '../../../shared/orders.js';
 import { personRef, type PartyRef } from '../../../shared/parties.js';
@@ -218,6 +219,8 @@ async function closeCampaign(work: Working, how: 'short' | 'called_off' | 'undec
   for (const order of work.orders) {
     // A checkout never placed is not a booking; the guard keeps it from becoming one.
     if (order.placedAt === null || !CALLABLE.has(order.status)) continue;
+    // Store credit spent on it goes back as credit, with the time it was held; the rest is a refund.
+    await returnSpentStoreCredit(repository, order, work.actorId ?? work.listing.sellerId);
     const owed = callOffOrder(order, reason, work.actorId ?? work.listing.sellerId);
     await repository.updateOrder(order);
     if (owed > 0) {

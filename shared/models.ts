@@ -3179,6 +3179,8 @@ export type NotificationKind =
   | 'pro_plan'
   /** A store paid you or gave you credit. */
   | 'store_gift'
+  /** Store credit or cashback you have is about to lapse. */
+  | 'credit_lapsing'
   /** Flagged for cancelling too often, an appeal, or the flag cleared. */
   | 'cancel_flag'
   /** A loyalty stamp, or a reward it earned. */
