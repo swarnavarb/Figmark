@@ -14,12 +14,16 @@ import { plural } from '../format';
 
 const PostStudio = lazy(() => import('./PostStudio').then((module) => ({ default: module.PostStudio })));
 
-const STARTS: { id: string; emoji: string; label: string; mode: StudioMode; presets?: { stock?: boolean; prize?: boolean } }[] = [
-  { id: 'contest', emoji: '🏆', label: 'Photo competition', mode: 'contest' },
-  { id: 'poll', emoji: '📊', label: 'Poll', mode: 'poll' },
-  { id: 'stock', emoji: '📦', label: 'What to stock next', mode: 'poll', presets: { stock: true } },
-  { id: 'debate', emoji: '🎤', label: 'Debate with a prize', mode: 'debate', presets: { prize: true } },
-  { id: 'guess', emoji: '🎯', label: 'Guess the price', mode: 'guess' },
+const STARTS: { id: string; emoji: string; label: string; line: string; hue: string; mode: StudioMode; presets?: { stock?: boolean; prize?: boolean } }[] = [
+  { id: 'contest', emoji: '🏆', label: 'Photo competition', line: 'You set prizes; they or you pick.', hue: 'gold', mode: 'contest' },
+  { id: 'guess', emoji: '🎯', label: 'Guess the price', line: 'Sealed till the reveal.', hue: 'violet', mode: 'guess' },
+  { id: 'poll', emoji: '📊', label: 'Poll', line: 'Reward whoever picks the winner.', hue: 'aqua', mode: 'poll' },
+  { id: 'stock', emoji: '📦', label: 'What to stock next', line: 'Voters get first dibs.', hue: 'lime', mode: 'poll', presets: { stock: true } },
+  { id: 'debate', emoji: '🎤', label: 'Debate with a prize', line: 'Credit for the best argument.', hue: 'pink', mode: 'debate', presets: { prize: true } },
+  { id: 'versus', emoji: '⚔️', label: 'Debate', line: 'Two sides, no prize.', hue: 'coral', mode: 'debate' },
+  { id: 'question', emoji: '❓', label: 'Ask your buyers', line: 'One question, open answers.', hue: 'blue', mode: 'question' },
+  { id: 'compare', emoji: '🎨', label: 'Before & after', line: 'A restore or a glow-up.', hue: 'pink', mode: 'compare' },
+  { id: 'photo', emoji: '📸', label: 'Photo post', line: 'New arrivals, a full shelf.', hue: 'violet', mode: 'photo' },
 ];
 
 /**
@@ -58,9 +62,11 @@ export function EngagePanel({ store }: { store: StoreAccess }) {
         </div>
         <div className="sengage__starts">
           {STARTS.map((entry, index) => (
-            <button key={entry.id} type="button" className="sengage__start" style={{ animationDelay: `${index * 40}ms` }}
-              onClick={() => setMaking(entry)}>
-              <span aria-hidden="true">{entry.emoji}</span> {entry.label}
+            <button key={entry.id} type="button" className={`sengage__start sengage__start--${entry.hue}`}
+              style={{ animationDelay: `${index * 35}ms` }} onClick={() => setMaking(entry)}>
+              <span className="sengage__emoji" aria-hidden="true">{entry.emoji}</span>
+              <strong>{entry.label}</strong>
+              <span className="sengage__line">{entry.line}</span>
             </button>
           ))}
         </div>
