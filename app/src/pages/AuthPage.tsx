@@ -9,6 +9,7 @@ import { PasswordInput } from '../components/PasswordInput';
 import { useToast } from '../components/Feedback';
 import { haptic } from '../haptics';
 import { AuthTour } from '../components/AuthTour';
+import { hasOnboarded } from '../onboarding';
 
 type Mode = 'signin' | 'signup';
 
@@ -40,6 +41,8 @@ const TOUR_KEY = 'figmark.authTourSkipped';
  */
 function useTour(): [boolean, (on: boolean) => void] {
   const [on, setOn] = useState(() => {
+    // Seen the welcome slides already: signing back in is just the form.
+    if (hasOnboarded()) return false;
     try {
       return window.sessionStorage.getItem(TOUR_KEY) !== '1';
     } catch {

@@ -49,6 +49,7 @@ export const loaders = {
   powerSale: () => import('./components/PowerSale'),
   billing: () => import('./pages/BillingPages'),
   notFound: () => import('./pages/NotFoundPage'),
+  welcome: () => import('./pages/WelcomePage'),
 } as const;
 
 type LoaderName = keyof typeof loaders;
@@ -56,6 +57,7 @@ type LoaderName = keyof typeof loaders;
 /** Which screen an address opens, as far as its first segment says. Most specific first. */
 const BY_PATH: [(path: string) => boolean, LoaderName][] = [
   [(path) => path === '/', 'feed'],
+  [(path) => path.startsWith('/welcome'), 'welcome'],
   [(path) => path.startsWith('/listing/'), 'listing'],
   [(path) => path.startsWith('/discover'), 'discover'],
   [(path) => path.startsWith('/social/f/'), 'forumRoom'],

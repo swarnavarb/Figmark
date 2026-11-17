@@ -1,4 +1,4 @@
-import { StrictMode, lazy, type ComponentType } from 'react';
+import { StrictMode, Suspense, lazy, type ComponentType } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AppShell } from './AppShell';
@@ -24,6 +24,7 @@ import { primeStartupReads } from './api';
 import { loaders, warmPage, warmTabsWhenIdle } from './pageLoaders';
 import './styles.css';
 import { watchMotion } from './motion';
+import { hasOnboarded } from './onboarding';
 
 // The stylesheet index.html fetched without blocking the loading screen's paint.
 applyDeferredStyles();
@@ -102,6 +103,7 @@ const PowerSaleBuilderPage = page(loaders.powerSale, 'PowerSaleBuilderPage');
 const ProPage = page(loaders.billing, 'ProPage');
 const FeesPage = page(loaders.billing, 'FeesPage');
 const NotFoundPage = page(loaders.notFound, 'NotFoundPage');
+const WelcomePage = page(loaders.welcome, 'WelcomePage');
 
 /** An old address, sent on to its new one with whatever it asked for (the tab, a highlight). */
 function MovedTo({ pathname }: { pathname: string }) {
@@ -116,6 +118,7 @@ function MovedTo({ pathname }: { pathname: string }) {
  */
 function App() {
   const { user, loading } = useSession();
+  const { pathname } = useLocation();
 
   if (loading) {
     return (
@@ -127,6 +130,11 @@ function App() {
   // locked page and asks you to sign in, without leaving the address.
   const members = (element: JSX.Element) => (user ? element : <GuestWall />);
 
+  // A first-time visitor opening the front door sees the welcome slides first.
+  // Links into the app (an item, a shop, a shared post) still open directly,
+  // and once the slides have been seen they never come back on their own.
+  if (!user && pathname === '/' && !hasOnboarded()) return <Navigate to="/welcome" replace />;
+
   return (
     <QuestProvider>
     {/* Notifications: the floating prompt, the steps, and where this copy is used. */}
@@ -135,6 +143,8 @@ function App() {
     <FreshOnNavigate />
     <PullToRefresh />
     <Routes>
+      {/* Full screen, outside the shell: the slides and the sign-up steps. */}
+      <Route path="/welcome" element={<Suspense fallback={<PageLoading />}><WelcomePage /></Suspense>} />
       <Route element={<AppShell />}>
         <Route path="/" element={<FeedPage />} />
         {/* Open to everybody, as the catalogue is: the community side, ranked. */}
