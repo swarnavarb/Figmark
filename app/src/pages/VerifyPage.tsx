@@ -473,7 +473,7 @@ interface Detector {
 type DetectorClass = new (options: { formats: string[] }) => Detector;
 
 /** The QR's text from an image or a video frame: the browser's own reader, else jsQR. */
-async function readQr(source: CanvasImageSource, width: number, height: number): Promise<string | null> {
+export async function readQr(source: CanvasImageSource, width: number, height: number): Promise<string | null> {
   const Native = (window as unknown as { BarcodeDetector?: DetectorClass }).BarcodeDetector;
   if (Native) {
     try {

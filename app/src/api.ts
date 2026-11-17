@@ -3019,6 +3019,8 @@ export const api = {
   verifyAadhaar: (qr: string) => post<{ status: VerificationStatus }>('/verify/aadhaar', { qr, consent: true }),
   requestReview: (stuckOn: ReviewStep, note: string) => post<{ status: VerificationStatus }>('/verify/review', { stuckOn, note }),
   withdrawReview: () => post<{ status: VerificationStatus }>('/verify/review', { withdraw: true }),
+  /** TEMPORARY: the /verify/aadhaar-test page. Saves nothing. */
+  testAadhaar: <T>(qr: string, phone: string, email: string) => post<T>('/verify/aadhaar/test', { qr, phone, email }),
 
   logout: () => post<{ ok: true }>('/auth/logout'),
   /** Ends every session this account has, on every device - this one too. */

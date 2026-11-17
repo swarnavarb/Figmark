@@ -42,6 +42,13 @@ export interface SecureQr {
   hasMobile: boolean;
   /** Hex, or null when no mobile is linked. */
   mobileHash: string | null;
+  hasEmail: boolean;
+  /** Hex, or null when no email is linked. */
+  emailHash: string | null;
+  /** Every text field as printed, by name (address parts included). */
+  fields: Record<string, string>;
+  /** The photo, JPEG 2000, as UIDAI stores it. */
+  photo: Buffer;
   signedData: Buffer;
   signature: Buffer;
 }
@@ -97,7 +104,11 @@ export function parseSecureQr(raw: string): SecureQr {
   const field = (name: string) => fields[name] ?? '';
   const status = Number(field('emailMobileStatus'));
   const hasMobile = status === 2 || status === 3;
+  const hasEmail = status === 1 || status === 3;
   const end = data.length - SIGNATURE_BYTES;
+  // After the fields: the photo, then the email hash, then the mobile hash, each only if linked.
+  const mobileStart = hasMobile ? end - HASH_BYTES : end;
+  const emailStart = hasEmail ? mobileStart - HASH_BYTES : mobileStart;
   return {
     version,
     name: field('name').trim(),
@@ -109,6 +120,10 @@ export function parseSecureQr(raw: string): SecureQr {
     // The mobile hash sits immediately before the signature, whether or not
     // an email hash precedes it.
     mobileHash: hasMobile ? data.subarray(end - HASH_BYTES, end).toString('hex') : null,
+    hasEmail,
+    emailHash: hasEmail ? data.subarray(emailStart, mobileStart).toString('hex') : null,
+    fields,
+    photo: data.subarray(start, Math.max(start, emailStart)),
     signedData: data.subarray(0, end),
     signature: data.subarray(end),
   };
@@ -169,12 +184,17 @@ function bundledCertificateDir(): string | null {
 }
 
 export function bundledUidaiKeys(): KeyObject[] {
+  return bundledUidaiCertificates().map((certificate) => certificate.key);
+}
+
+/** The bundled certificates with their file names, for saying which one signed a QR. */
+export function bundledUidaiCertificates(): { file: string; key: KeyObject }[] {
   const dir = bundledCertificateDir();
   if (!dir) return [];
   return readdirSync(dir)
     .filter((name) => name.endsWith('.cer'))
     .sort()
-    .map((name) => loadUidaiKey(readFileSync(join(dir, name), 'utf8')));
+    .map((file) => ({ file, key: loadUidaiKey(readFileSync(join(dir, file), 'utf8')) }));
 }
 
 let cached: { configured: string | null; keys: KeyObject[] } | null = null;

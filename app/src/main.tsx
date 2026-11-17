@@ -80,6 +80,8 @@ const DisputePage = page(loaders.dispute, 'DisputePage');
 const CommunityServicePage = page(loaders.communityService, 'CommunityServicePage');
 const ProfilePage = page(loaders.profile, 'ProfilePage');
 const VerifyPage = page(loaders.verify, 'VerifyPage');
+// TEMPORARY: the Aadhaar test page.
+const AadhaarTestPage = page(loaders.aadhaarTest, 'AadhaarTestPage');
 const PurchasesPage = page(loaders.purchases, 'PurchasesPage');
 const CartPage = page(loaders.purchases, 'CartPage');
 const BuyerLotPage = page(loaders.buyerLot, 'BuyerLotPage');
@@ -192,6 +194,7 @@ function App() {
         <Route path="/forwarders" element={<Navigate to="/services/forwarder" replace />} />
         <Route path="/me" element={members(<ProfilePage />)} />
         <Route path="/verify" element={members(<VerifyPage />)} />
+        <Route path="/verify/aadhaar-test" element={members(<AadhaarTestPage />)} />
         <Route path="/purchases" element={members(<PurchasesPage />)} />
         <Route path="/purchases/lot/:lotId" element={members(<BuyerLotPage />)} />
         <Route path="/cart" element={members(<CartPage />)} />
