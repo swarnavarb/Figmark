@@ -16,7 +16,7 @@ import { error } from './functions/http.js';
  * than an endpoint that fails closed.
  */
 export type Action = 'post' | 'seen' | 'feedpref' | 'comment' | 'react' | 'share' | 'message' | 'want' | 'offer' | 'push_test' | 'chatphoto' | 'photosearch' | 'photosales'
-  | 'verify_email' | 'verify_code' | 'verify_phone' | 'verify_aadhaar'
+  | 'verify_email' | 'verify_code' | 'verify_phone' | 'verify_aadhaar' | 'verify_review'
   | 'upload' | 'login' | 'signup' | 'login_fail' | 'login_fail_account' | 'handle_check'
   | 'reset' | 'reset_account' | 'export' | 'clienterror' | 'billing' | 'voucher' | 'gift';
 
@@ -55,6 +55,8 @@ const LIMITS: Record<Action, { max: number; ms: number }[]> = {
   verify_code: [{ max: 10, ms: 600_000 }],
   verify_phone: [{ max: 10, ms: HOUR }],
   verify_aadhaar: [{ max: 10, ms: HOUR }],
+  // Asking an operator to look: one is all it takes, a few allow for a corrected note.
+  verify_review: [{ max: 3, ms: HOUR }, { max: 6, ms: DAY }],
   // Every photo is stored, and paid for, until someone deletes it. A busy
   // shop listing forty items with six photos each stays well inside these.
   upload: [{ max: 30, ms: MINUTE }, { max: 400, ms: HOUR }, { max: 1500, ms: DAY }],

@@ -30,9 +30,10 @@ const {
   verifyStatusRoute: status, verifyEmailSendRoute: emailSend, verifyEmailConfirmRoute: emailConfirm,
   verifyPhoneStartRoute: phoneStart, verifyPhoneNumberRoute: phoneNumber, verifyAadhaarRoute: aadhaar,
   whatsappWebhookRoute: webhook, verifyEmailChangeRoute: emailChange, verifyEmailChangeConfirmRoute: emailChangeConfirm,
+  verifyReviewRoute: review,
 } = await import(new URL('verify-routes.js', fns));
 const { createOrderRoute: createOrder } = await import(new URL('catalog-routes.js', fns));
-const { adminRightsRoute: rights, adminUsersRoute: adminUsers } = await import(new URL('admin-routes.js', fns));
+const { adminRightsRoute: rights, adminUsersRoute: adminUsers, adminReviewsRoute: adminReviews } = await import(new URL('admin-routes.js', fns));
 const { publicProfileRoute: publicProfile } = await import(new URL('message-routes.js', fns));
 await useFixtures();
 const { getRepository } = await import(new URL('api/src/data/index.js', dist));
@@ -399,6 +400,72 @@ await check('and stop a verified one, then hand it back to verification', async 
 await check('only an operator can change rights', async () => {
   const self = await rights(req({ headers: ravi.headers, params: { id: ravi.id }, body: { buy: 'grant', sell: 'grant', reason: 'me' } }), ctx);
   assert.equal(self.status, 403);
+});
+
+/* ── Manual review ─────────────────────────────────────────────────────── */
+console.log('\nmanual review');
+
+const meera = await newAccount('Meera', '+91 91234 56780');
+const reviewQueue = async () => (await adminReviews(req({ method: 'GET', headers: operator }), ctx)).jsonBody.users;
+
+await check('asking for a review needs a step and a line about what is wrong', async () => {
+  const noStep = await review(req({ headers: meera.headers, body: { note: 'No WhatsApp on my phone at all' } }), ctx);
+  assert.equal(noStep.status, 400);
+  assert.equal(noStep.jsonBody.error, 'invalid_step');
+  const noNote = await review(req({ headers: meera.headers, body: { stuckOn: 'whatsapp', note: 'help' } }), ctx);
+  assert.equal(noNote.status, 400);
+  assert.equal(noNote.jsonBody.error, 'note_required');
+});
+
+await check('a request is recorded, marks nothing verified, and reaches the operator queue', async () => {
+  const asked = await review(req({ headers: meera.headers, body: { stuckOn: 'whatsapp', note: 'I do not use WhatsApp at all' } }), ctx);
+  assert.equal(asked.status, 200, JSON.stringify(asked.jsonBody));
+  assert.equal(asked.jsonBody.status.review.stuckOn, 'whatsapp');
+  assert.deepEqual(asked.jsonBody.status.checks, { email: false, phone: false, aadhaar: false });
+  assert.deepEqual(asked.jsonBody.status.access, { canBuy: false, canSell: false, byOperator: false });
+  const queue = await reviewQueue();
+  assert.equal(queue.find((row) => row.id === meera.id)?.reviewRequest.note, 'I do not use WhatsApp at all');
+});
+
+await check('it can be taken back', async () => {
+  const back = await review(req({ headers: meera.headers, body: { withdraw: true } }), ctx);
+  assert.equal(back.jsonBody.status.review, null);
+  assert.equal((await reviewQueue()).some((row) => row.id === meera.id), false);
+});
+
+await check('only an operator sees the queue', async () => {
+  const self = await adminReviews(req({ method: 'GET', headers: meera.headers }), ctx);
+  assert.equal(self.status, 403);
+});
+
+await check("an operator's grant answers it, opens trading and tells the person", async () => {
+  await review(req({ headers: meera.headers, body: { stuckOn: 'whatsapp', note: 'I do not use WhatsApp at all' } }), ctx);
+  const granted = await rights(req({ headers: operator, params: { id: meera.id }, body: { buy: 'grant', sell: 'auto', reason: 'Checked on a video call' } }), ctx);
+  assert.equal(granted.status, 200, JSON.stringify(granted.jsonBody));
+  assert.equal(granted.jsonBody.user.reviewRequest, null);
+  assert.equal((await reviewQueue()).some((row) => row.id === meera.id), false);
+  const now = await statusOf(meera);
+  assert.deepEqual(now.access, { canBuy: true, canSell: false, byOperator: true });
+  assert.equal(now.checks.phone, false, 'a grant is not a verification tick');
+  const [notice] = await repository.listNotifications(meera.id, 5);
+  assert.equal(notice.kind, 'verification_review');
+  assert.match(notice.title, /You can buy/);
+  assert.doesNotMatch(notice.body, /video call/, "a grant's reason is the operator's note, not shown");
+});
+
+await check('turning one down passes the reason on', async () => {
+  await rights(req({ headers: operator, params: { id: meera.id }, body: { buy: 'auto', sell: 'auto' } }), ctx);
+  await review(req({ headers: meera.headers, body: { stuckOn: 'aadhaar', note: 'My Aadhaar has no mobile linked' } }), ctx);
+  const declined = await rights(req({ headers: operator, params: { id: meera.id }, body: { buy: 'auto', sell: 'auto', reason: 'Please link a mobile first.' } }), ctx);
+  assert.equal(declined.jsonBody.user.reviewRequest, null);
+  const [notice] = await repository.listNotifications(meera.id, 5);
+  assert.match(notice.title, /not approved/);
+  assert.match(notice.body, /Please link a mobile first\./);
+});
+
+await check('a fully verified account has nothing to review', async () => {
+  const done = await review(req({ headers: priya.headers, body: { stuckOn: 'aadhaar', note: 'Just checking this out' } }), ctx);
+  assert.equal(done.status, 409);
 });
 
 /* ── The session key ───────────────────────────────────────────────────── */

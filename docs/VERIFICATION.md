@@ -34,10 +34,32 @@ each side to *By verification*, *Granted* or *Blocked*, with a required reason
 (kept with who and when). Use it for people who cannot finish - no WhatsApp, an
 Aadhaar without a linked mobile - and to stop a verified account.
 
+### Manual review requests
+
+Someone who cannot finish a check uses **Ask for a manual review** at the bottom
+of the Verification page: they pick the step they are stuck on and say what is
+wrong (`POST /api/verify/review`; `{ withdraw: true }` takes it back). Nothing is
+marked verified by asking.
+
+Requests wait at the top of Admin → Users ("Waiting for a manual review",
+`GET /api/ops/reviews`, oldest first), and the account carries an *asked for
+review* badge. Check who they are another way before granting. Saving
+**Buying and selling** answers the request, whatever you chose, and notifies
+them:
+
+- **Granted** on either side: they are told they can buy or sell. The reason is
+  your note and is not shown to them.
+- Both left on *By verification*: the request is turned down and **the reason
+  is shown to them**, so write it for them.
+
+A grant does not give the Email / WhatsApp / Aadhaar ticks. Those come only from
+the checks themselves, so a granted account still reads as unverified on its
+public page. Finishing all three checks clears a waiting request.
+
 ## Settings
 
 Each piece switches on when its settings are present. Until then its step says
-it is not set up yet, and an operator can grant rights instead.
+it is not set up yet and points to a manual review, which an operator answers by granting rights.
 
 | Setting | What |
 |---|---|

@@ -114,6 +114,16 @@ export interface AadhaarProof {
  */
 export type TradeRight = 'auto' | 'grant' | 'block';
 
+/** Which check a manual-review request is about. */
+export type ReviewStep = 'email' | 'whatsapp' | 'aadhaar';
+
+export interface ReviewRequest {
+  stuckOn: ReviewStep;
+  /** What went wrong, in the person's words. */
+  note: string;
+  at: string;
+}
+
 export interface TradeOverride {
   buy: TradeRight;
   sell: TradeRight;
@@ -325,6 +335,12 @@ export interface User extends BaseDocument {
   sessionsValidAfter?: string | null;
   /** An operator's say over buying and selling; absent means verification decides. */
   tradeOverride?: TradeOverride | null;
+  /**
+   * The person asked an operator to look at their account because a check
+   * cannot be finished (no WhatsApp, no mobile on their Aadhaar, a step this
+   * server cannot run). Cleared when an operator saves a decision on it.
+   */
+  reviewRequest?: ReviewRequest | null;
   /** Verification codes in flight. Never leaves the API. */
   challenges?: VerificationChallenges | null;
   /**
@@ -3210,6 +3226,8 @@ export type NotificationKind =
   | 'order_received'
   /** Somebody disputed a review or comment, or asked for one to be validated, and it was decided. */
   | 'content_report_settled'
+  /** An operator answered the manual review of your verification you asked for. */
+  | 'verification_review'
   | 'preorder_nearly'
   | 'preorder_filled'
   | 'preorder_due'

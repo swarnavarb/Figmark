@@ -80,7 +80,20 @@ function row(user: User) {
     canBuy: capabilities.canBuy,
     canSell: capabilities.canSell,
     tradeOverride: user.tradeOverride ?? null,
+    // Asked for a manual review of their verification, and still waiting.
+    reviewRequest: user.reviewRequest ?? null,
   };
+}
+
+/**
+ * GET /api/ops/reviews - people who cannot finish verifying and asked an
+ * operator to look, oldest first. Deciding is the rights panel: saving it on
+ * the account answers the request.
+ */
+async function reviews(request: HttpRequest, _context: InvocationContext) {
+  await operator(request);
+  const waiting = await (await getRepository()).listReviewRequests();
+  return json(200, { users: waiting.map(row) });
 }
 
 /** GET /api/ops/email-usage - how much of each free email tier today has used. */
@@ -128,8 +141,25 @@ async function rights(request: HttpRequest, _context: InvocationContext) {
   user.tradeOverride = buy === 'auto' && sell === 'auto'
     ? null
     : { buy, sell, reason, by: admin.id, at: new Date().toISOString() };
+  // A saved decision is the answer to a manual-review request, whichever way it went.
+  const answering = Boolean(user.reviewRequest);
+  user.reviewRequest = null;
   user.updatedAt = new Date().toISOString();
-  return json(200, { user: row(await repository.updateUser(user)) });
+  const saved = await repository.updateUser(user);
+  if (answering) {
+    const opened = [buy === 'grant' && 'buy', sell === 'grant' && 'sell'].filter(Boolean).join(' and ');
+    await notify(repository, [user.id], {
+      kind: 'verification_review',
+      title: opened ? `You can ${opened} on Figmark now` : 'Your manual review was not approved',
+      // The reason is only passed on when it is a refusal: a grant's reason is
+      // the operator's note of how they checked, not something said to the person.
+      body: opened
+        ? 'An operator reviewed your account and approved it. Your verification ticks stay as they are until you finish the checks.'
+        : `An operator looked at your request.${reason ? ` ${reason}` : ''} You can finish the checks, or ask again with more detail.`,
+      link: '/verify',
+    });
+  }
+  return json(200, { user: row(saved) });
 }
 
 /**
@@ -628,10 +658,12 @@ export const adminActionsRoute = handler(actions);
 export const adminDecideActionRoute = audited('dispute.action.decide', handler(decideAction));
 export const adminAuditRoute = handler(auditTrail);
 export const adminLedgerRoute = handler(ledger);
+export const adminReviewsRoute = handler(reviews);
 
 const anon = { authLevel: 'anonymous' } as const;
 
 app.http('admin-users', { ...anon, methods: ['GET'], route: 'ops/users', handler: adminUsersRoute });
+app.http('admin-reviews', { ...anon, methods: ['GET'], route: 'ops/reviews', handler: adminReviewsRoute });
 app.http('admin-user', { ...anon, methods: ['GET'], route: 'ops/users/{id}', handler: adminUserDetailRoute });
 app.http('admin-suspend', { ...anon, methods: ['POST'], route: 'ops/users/{id}/suspend', handler: adminSuspendRoute });
 app.http('admin-delete-user', { ...anon, methods: ['POST'], route: 'ops/users/{id}/delete', handler: adminDeleteUserRoute });

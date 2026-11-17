@@ -45,6 +45,7 @@ const CATEGORY_OF: Record<NotificationKind, NotificationCategory> = {
   message_reacted: 'messages',
   channel_message: 'messages',
   channel_announcement: 'messages',
+  verification_review: 'messages',
 
   forum_moderation: 'social',
   post_reacted: 'social',

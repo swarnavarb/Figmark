@@ -11,6 +11,7 @@ import type { ContentReport, ModerationMark, ReportTarget } from '@shared/modera
 import type { NotificationCategory } from '@shared/notifications';
 import type { FirstDibsView, NotificationPrefs, OrderPhoto, PhotoAudience } from '@shared/models';
 import type { VerifiedChecks } from '@shared/verification';
+import type { ReviewRequest, ReviewStep } from '@shared/models';
 import type {
   ApiError,
   AuthUser,
@@ -2507,6 +2508,10 @@ export interface VerificationStatus {
   emailCodePending: boolean;
   aadhaar: { name: string; last4: string; at: string } | null;
   ready: { email: boolean; whatsapp: boolean; aadhaar: boolean };
+  /** A manual review asked for and not yet decided. */
+  review: ReviewRequest | null;
+  /** What the account may do now; `byOperator` when an operator decided it rather than the checks. */
+  access: { canBuy: boolean; canSell: boolean; byOperator: boolean };
 }
 
 /** Whether a shop takes orders now, and when a pause lifts. */
@@ -3012,6 +3017,8 @@ export const api = {
     post<{ link: string; message: string; businessNumber: string; expiresAt: string; status: VerificationStatus }>('/verify/phone/start'),
   changePhone: (phone: string) => post<{ status: VerificationStatus }>('/verify/phone/number', { phone }),
   verifyAadhaar: (qr: string) => post<{ status: VerificationStatus }>('/verify/aadhaar', { qr, consent: true }),
+  requestReview: (stuckOn: ReviewStep, note: string) => post<{ status: VerificationStatus }>('/verify/review', { stuckOn, note }),
+  withdrawReview: () => post<{ status: VerificationStatus }>('/verify/review', { withdraw: true }),
 
   logout: () => post<{ ok: true }>('/auth/logout'),
   /** Ends every session this account has, on every device - this one too. */
