@@ -9,6 +9,8 @@
 .wel--blue     { --tone: var(--blue);       --tone-text: var(--blue-pale);   --tone-soft: var(--blue-soft);   --tone-ink: #FFFFFF; }
 .wel--pink     { --tone: var(--pink);       --tone-text: var(--pink-pale);   --tone-soft: var(--pink-soft);   --tone-ink: var(--pink-ink); }
 .wel--gold     { --tone: var(--gold);       --tone-text: var(--gold-text);   --tone-soft: rgba(245, 158, 11, 0.16); --tone-ink: var(--gold-ink); }
+.wel--lime     { --tone: var(--lime);       --tone-text: var(--lime-pale);   --tone-soft: var(--lime-soft);   --tone-ink: var(--lime-ink); }
+.wel--orange   { --tone: #F97316;           --tone-text: #FDBA74;            --tone-soft: rgba(249, 115, 22, 0.16); --tone-ink: #2A1200; }
 .wel--whatsapp { --tone: #25D366;           --tone-text: #86EFAC;            --tone-soft: rgba(37, 211, 102, 0.16); --tone-ink: #052E16; }
 
 .wel {

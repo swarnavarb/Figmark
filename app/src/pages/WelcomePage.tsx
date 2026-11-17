@@ -123,7 +123,7 @@ export function WelcomePage() {
 
 /* ── The slides ──────────────────────────────────────────────────────────── */
 
-type Tone = 'violet' | 'aqua' | 'coral' | 'blue' | 'pink' | 'gold';
+type Tone = 'violet' | 'aqua' | 'coral' | 'blue' | 'pink' | 'gold' | 'lime' | 'orange';
 
 interface Slide {
   id: string;
@@ -141,7 +141,7 @@ const SLIDES: Slide[] = [
     tone: 'violet',
     kicker: 'Welcome to Figmark',
     title: 'Buy, sell, ship and create - with trust built in.',
-    lede: 'One marketplace for imports, pre-orders, group-buys and original art. Your money is held safe until the order arrives, and verified people carry a blue tick.',
+    lede: 'A marketplace and a community in one: imports, group-buys, drops and original art, plus the people who love them. Your money is held safe until the order arrives.',
     art: GistArt,
   },
   {
@@ -194,23 +194,79 @@ const SLIDES: Slide[] = [
     lede: 'A home for original work, where collectors pay with confidence and you get paid on time.',
     points: [
       ['image', 'A portfolio that sells', 'your page, your prints, your originals'],
-      ['spark', 'Drops & limited editions', 'take pre-orders before you print'],
+      ['spark', 'Limited editions', 'take pre-orders for a print run before you print'],
       ['message', 'Commissions, safely', 'advances held by Figmark until you deliver'],
       ['users', 'Your community', 'followers, posts and channels in one place'],
     ],
     art: ArtistArt,
   },
   {
-    id: 'unique',
+    id: 'discover',
+    tone: 'lime',
+    kicker: 'Discover',
+    title: "Find things you didn't know to search for.",
+    lede: 'Finds, shelves and conversations, ranked for you.',
+    points: [
+      ['spark', 'Five ways to browse', 'For you, Live, Debates, Shelves and Finds'],
+      ['eye', 'Seen it? Buy it', 'tap a photo in a post to see if it is for sale'],
+      ['camera', 'Search with a photo', 'snap a picture, get matching items and shops'],
+      ['trophy', "The week's best", 'the top posts and shelves, one tap away'],
+    ],
+    art: DiscoverArt,
+  },
+  {
+    id: 'social',
+    tone: 'violet',
+    kicker: 'Social',
+    title: 'Your hobby, with your people.',
+    lede: 'Follow collectors and shops, talk about what you love, and buy from people you already know.',
+    points: [
+      ['home', 'Your feed', 'posts and shelves from people you follow'],
+      ['megaphone', 'Shop channels', 'news, restocks and prices only members get'],
+      ['forum', 'Forums & debates', 'join the conversations everyone is having'],
+      ['target', 'Wanted board', 'post what you are hunting; sellers reply "I can get this"'],
+    ],
+    art: SocialArt,
+  },
+  {
+    id: 'drops',
+    tone: 'orange',
+    kicker: 'Drops & sales',
+    title: 'Drops worth turning up for.',
+    lede: 'Shops run sales on Figmark, and the people who show up get rewarded.',
+    points: [
+      ['bolt', 'Power sales', 'channel-only prices, item by item'],
+      ['box', 'Pre-order drops', 'join a group-buy lot before it fills up'],
+      ['tag', 'Offers & loyalty', 'shop offers and loyalty cards that reward coming back'],
+      ['bell', 'Never miss one', 'alerts on your phone the moment a drop goes live'],
+    ],
+    art: DropsArt,
+  },
+  {
+    id: 'play',
     tone: 'gold',
+    kicker: 'Collect & play',
+    title: 'Show off your collection. Level up.',
+    lede: 'Every buy, review and share counts.',
+    points: [
+      ['star', 'A collection that is real', 'your showcase is built from delivered orders'],
+      ['trophy', 'Quests & streaks', 'earn XP, levels and stickers'],
+      ['rising', 'Hobby leaderboards', 'sneakers, figures, cards and more'],
+      ['users', 'Spread the word', 'your invite link counts every friend who joins'],
+    ],
+    art: PlayArt,
+  },
+  {
+    id: 'unique',
+    tone: 'aqua',
     kicker: 'Why Figmark is different',
     title: 'Trust is the product.',
     lede: 'Other marketplaces list things. Figmark makes sure both sides can rely on each other.',
     points: [
-      ['check', 'Blue tick people', 'WhatsApp and Aadhaar verified, shown on every profile'],
+      ['check', 'Blue tick people', 'WhatsApp and Aadhaar verified'],
       ['lock', 'Money held, not sent', 'released only when the order is delivered'],
       ['star', 'Reviews you can believe', 'two-sided, and only from completed orders'],
-      ['users', 'The whole chain, one app', 'buyers, sellers, forwarders and artists together'],
+      ['users', 'Shopping and community, together', 'buyers, sellers, forwarders and artists in one app'],
     ],
     art: TrustArt,
   },
@@ -992,6 +1048,38 @@ function ArtistArt() {
     <Orb icon="image">
       <Float at="tl" delay={100}><Icon name="spark" size={13} /> Drop · 50 prints</Float>
       <Float at="br" delay={300}>Commission advance <b>held</b></Float>
+    </Orb>
+  );
+}
+function DiscoverArt() {
+  return (
+    <Orb icon="spark">
+      <Float at="tl" delay={100}><Icon name="eye" size={13} /> Seen for sale · 3 shops</Float>
+      <Float at="br" delay={300}><Icon name="rising" size={13} /> Trending in Sneakers</Float>
+    </Orb>
+  );
+}
+function SocialArt() {
+  return (
+    <Orb icon="forum">
+      <Float at="tl" delay={100}><Icon name="heart" size={13} /> 128 love this shelf</Float>
+      <Float at="br" delay={300}><Icon name="target" size={13} /> Wanted · 4 sellers replied</Float>
+    </Orb>
+  );
+}
+function DropsArt() {
+  return (
+    <Orb icon="bolt">
+      <Float at="tl" delay={100}><Icon name="bolt" size={13} /> Drop live · 10:00 PM</Float>
+      <Float at="br" delay={300}>Channel price <b>-20% for 15 min</b></Float>
+    </Orb>
+  );
+}
+function PlayArt() {
+  return (
+    <Orb icon="trophy">
+      <Float at="tl" delay={100}><Icon name="spark" size={13} /> +40 XP · 7-day streak</Float>
+      <Float at="br" delay={300}><Icon name="rising" size={13} /> #12 on Action figures</Float>
     </Orb>
   );
 }
