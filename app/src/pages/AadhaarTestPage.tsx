@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ApiRequestError, api } from '../api';
 import { useSession } from '../session';
-import { readQr } from './VerifyPage';
+import { readQrFrame, readQrPicture } from '../qr-reader';
 
 /**
  * TEMPORARY - /verify/aadhaar-test, for trying a real Aadhaar QR end to end on the
@@ -95,14 +95,16 @@ export function AadhaarTestPage() {
     let stopped = false;
     void (async () => {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 } } });
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 2560 }, height: { ideal: 1440 } } });
         const video = videoRef.current;
         if (!video || stopped) return;
         video.srcObject = stream;
         await video.play();
+        let attempt = 0;
         while (!stopped) {
           if (video.videoWidth > 0) {
-            const text = await readQr(video, video.videoWidth, video.videoHeight);
+            const text = await readQrFrame(video, attempt);
+            attempt += 1;
             if (text) {
               setQr(text);
               setScanning(false);
@@ -126,9 +128,7 @@ export function AadhaarTestPage() {
     if (!file) return;
     setError(null);
     try {
-      const bitmap = await createImageBitmap(file);
-      const text = await readQr(bitmap, bitmap.width, bitmap.height);
-      bitmap.close();
+      const text = await readQrPicture(file);
       if (text) setQr(text);
       else setError('No QR code found in that picture. Crop it to the QR and make sure it is sharp, then try again.');
     } catch {

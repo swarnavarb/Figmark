@@ -10,6 +10,7 @@ import { PageLoading, useToast } from '../components/Feedback';
 import { SuccessMoment } from '../components/SuccessMoment';
 import { haptic } from '../haptics';
 import { useNavigate } from 'react-router-dom';
+import { readQrFrame, readQrPicture } from '../qr-reader';
 
 /**
  * Verification: email, then WhatsApp, then Aadhaar.
@@ -467,35 +468,6 @@ function WhatsAppStep({ status, onChange, reload }: {
 
 /* ── Aadhaar ───────────────────────────────────────────────────────────── */
 
-interface Detector {
-  detect: (source: CanvasImageSource) => Promise<{ rawValue: string }[]>;
-}
-type DetectorClass = new (options: { formats: string[] }) => Detector;
-
-/** The QR's text from an image or a video frame: the browser's own reader, else jsQR. */
-export async function readQr(source: CanvasImageSource, width: number, height: number): Promise<string | null> {
-  const Native = (window as unknown as { BarcodeDetector?: DetectorClass }).BarcodeDetector;
-  if (Native) {
-    try {
-      const found = await new Native({ formats: ['qr_code'] }).detect(source);
-      if (found[0]?.rawValue) return found[0].rawValue;
-    } catch {
-      /* fall through to jsQR */
-    }
-  }
-  // Large enough for the densest Aadhaar QR, small enough to stay quick.
-  const scale = Math.min(1, 2000 / Math.max(width, height));
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.round(width * scale);
-  canvas.height = Math.round(height * scale);
-  const context = canvas.getContext('2d', { willReadFrequently: true });
-  if (!context) return null;
-  context.drawImage(source, 0, 0, canvas.width, canvas.height);
-  const { default: jsQR } = await import('jsqr');
-  const image = context.getImageData(0, 0, canvas.width, canvas.height);
-  return jsQR(image.data, image.width, image.height, { inversionAttempts: 'attemptBoth' })?.data ?? null;
-}
-
 function AadhaarStep({ status, onChange }: { status: VerificationStatus; onChange: (status: VerificationStatus) => void }) {
   const [consent, setConsent] = useState(false);
   const [qr, setQr] = useState<string | null>(null);
@@ -512,14 +484,16 @@ function AadhaarStep({ status, onChange }: { status: VerificationStatus; onChang
     let stopped = false;
     void (async () => {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 } } });
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 2560 }, height: { ideal: 1440 } } });
         const video = videoRef.current;
         if (!video || stopped) return;
         video.srcObject = stream;
         await video.play();
+        let attempt = 0;
         while (!stopped) {
           if (video.videoWidth > 0) {
-            const text = await readQr(video, video.videoWidth, video.videoHeight);
+            const text = await readQrFrame(video, attempt);
+            attempt += 1;
             if (text) {
               setQr(text);
               setScanning(false);
@@ -543,9 +517,7 @@ function AadhaarStep({ status, onChange }: { status: VerificationStatus; onChang
     if (!file) return;
     setError(null);
     try {
-      const bitmap = await createImageBitmap(file);
-      const text = await readQr(bitmap, bitmap.width, bitmap.height);
-      bitmap.close();
+      const text = await readQrPicture(file);
       if (text) setQr(text);
       else setError('No QR code found in that picture. Crop it to the QR and make sure it is sharp, then try again.');
     } catch {
