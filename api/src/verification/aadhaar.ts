@@ -51,6 +51,9 @@ export interface SecureQr {
   photo: Buffer;
   signedData: Buffer;
   signature: Buffer;
+  /** The whole QR after decompression, and before: for diagnosing a signature that does not check. */
+  decompressed: Buffer;
+  compressed: Buffer;
 }
 
 export class AadhaarError extends Error {
@@ -87,7 +90,8 @@ export function parseSecureQr(raw: string): SecureQr {
       'That is not an Aadhaar Secure QR. Scan the large QR code on your Aadhaar letter, e-Aadhaar PDF or mAadhaar app.',
     );
   }
-  const data = decompress(decimalToBytes(decimal));
+  const compressed = decimalToBytes(decimal);
+  const data = decompress(compressed);
   if (data.length < SIGNATURE_BYTES + 64) throw new AadhaarError('aadhaar_unreadable', 'The QR was cut short. Scan it again.');
 
   const version = data.subarray(0, 2).toString('latin1') === 'V2' ? 'V2' : 'V1';
@@ -126,6 +130,8 @@ export function parseSecureQr(raw: string): SecureQr {
     photo: data.subarray(start, Math.max(start, emailStart)),
     signedData: data.subarray(0, end),
     signature: data.subarray(end),
+    decompressed: data,
+    compressed,
   };
 }
 

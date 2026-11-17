@@ -17,13 +17,40 @@ interface TestResult {
   readable: boolean;
   error?: string;
   version?: 'V1' | 'V2';
-  signature?: { valid: boolean; signedBy: string | null };
+  signature?: { valid: boolean; signedBy: string | null; bytes: number; diagnosis: KeyDiagnosis[] };
   details?: { name: string; dob: string; gender: string; aadhaarLast4: string; generatedAt: string | null };
   address?: Record<string, string>;
   mobile?: { linked: boolean; last4OnQr: string | null; entered: string | null; enteredValid: boolean; matches: boolean | null };
   email?: { linked: boolean; entered: string | null; matches: boolean | null };
   photo?: { bytes: number; jp2Base64: string } | null;
   wouldVerify?: boolean;
+}
+
+interface KeyDiagnosis {
+  certificate: string;
+  keyBits: number;
+  outcome: 'pkcs1' | 'pss' | 'none';
+  hash: string | null;
+  digestOf: string | null;
+}
+
+const STANDARD = 'everything before the signature (the standard)';
+
+/** One sentence on why the signature failed, from what each key revealed. */
+function diagnosisSummary(diagnosis: KeyDiagnosis[]): string {
+  const made = diagnosis.find((entry) => entry.outcome !== 'none');
+  if (!made) {
+    return `None of our ${diagnosis.length} UIDAI certificates made this signature. It was signed by a UIDAI key we do not have, ` +
+      'so we need that certificate. The QR itself is not the problem.';
+  }
+  if (made.outcome === 'pss') return `${made.certificate} made it, with PSS padding instead of the usual kind. Fixable on our side.`;
+  if (!made.digestOf) {
+    return `${made.certificate} made it (${made.hash}), but over bytes we could not identify. The scan may have misread part ` +
+      'of the QR: try a sharper picture.';
+  }
+  if (made.digestOf === STANDARD && made.hash === 'sha256') return `${made.certificate} made it, and it checks.`;
+  return `${made.certificate} made it, using ${made.hash} over ${made.digestOf}. Our checker expects SHA-256 over ${STANDARD}, ` +
+    'so this is fixable on our side.';
 }
 
 const ADDRESS_LABELS: Record<string, string> = {
@@ -208,8 +235,27 @@ export function AadhaarTestPage() {
               ['Mobile on QR', result.mobile.linked ? (result.mobile.last4OnQr ? `ends ${result.mobile.last4OnQr}` : 'linked (V1 QRs do not print digits)') : 'none linked'],
               ['Email on QR', result.email.linked ? 'linked' : 'none linked'],
               ['Email entered', result.email.entered],
+              ['QR generated', result.details.generatedAt],
             ]} />
           </section>
+
+          {!result.signature.valid && (
+            <section className="card card--pad stack">
+              <span className="card__title">Why the signature failed</span>
+              <p className="notice notice--info" style={{ margin: 0 }}>{diagnosisSummary(result.signature.diagnosis)}</p>
+              <Rows rows={[
+                ['Signature size', `${result.signature.bytes} bytes`],
+                ...result.signature.diagnosis.map((entry): [string, string] => [
+                  entry.certificate,
+                  entry.outcome === 'none'
+                    ? `not this key (${entry.keyBits}-bit)`
+                    : entry.outcome === 'pss'
+                      ? 'made it (PSS padding)'
+                      : `made it: ${entry.hash} over ${entry.digestOf ?? 'unidentified bytes'}`,
+                ]),
+              ]} />
+            </section>
+          )}
 
           <section className="card card--pad stack">
             <span className="card__title">Details</span>
