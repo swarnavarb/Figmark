@@ -130,7 +130,10 @@ interface Slide {
   tone: Tone;
   kicker: string;
   title: string;
+  /** The words in the title drawn in the slide's colour. */
+  hl: string;
   lede: string;
+  /** Up to four benefits: icon, the gain in a few words, how. */
   points?: Array<[IconName, string, string]>;
   art: () => JSX.Element;
 }
@@ -140,8 +143,9 @@ const SLIDES: Slide[] = [
     id: 'gist',
     tone: 'violet',
     kicker: 'Welcome to Figmark',
-    title: 'Buy, sell, ship and create - with trust built in.',
-    lede: 'A marketplace and a community in one: imports, group-buys, drops and original art, plus the people who love them. Your money is held safe until the order arrives.',
+    title: 'The safest way to buy, sell and collect.',
+    hl: 'safest way',
+    lede: 'Imports, group-buys, drops and original art, with your money held safe until it arrives and real, verified people behind every shop.',
     art: GistArt,
   },
   {
@@ -149,12 +153,13 @@ const SLIDES: Slide[] = [
     tone: 'aqua',
     kicker: 'For buyers',
     title: 'Pre-order from anywhere. Never get ghosted.',
-    lede: 'Figmark stands between you and the seller until the order is in your hands.',
+    hl: 'Never get ghosted.',
+    lede: 'Figmark holds your money until the order is in your hands.',
     points: [
-      ['lock', 'Buyer Protection', 'the seller is paid only after your order arrives'],
-      ['truck', 'Live tracking', 'every stage from overseas to your door, with photos'],
-      ['star', 'Honest reviews', 'only from orders that really happened'],
-      ['search', 'Find it faster', 'search with a photo, or post a Wanted and let sellers come to you'],
+      ['lock', 'Buyer Protection', 'sellers are paid after delivery'],
+      ['truck', 'Live tracking', 'every stage, with photos'],
+      ['star', 'Honest reviews', 'only from real orders'],
+      ['camera', 'Photo search', 'snap it, find who sells it'],
     ],
     art: BuyerArt,
   },
@@ -163,12 +168,13 @@ const SLIDES: Slide[] = [
     tone: 'coral',
     kicker: 'For sellers',
     title: 'Run group-buys without the spreadsheets.',
-    lede: 'Lots, manifests and payments in one place - and buyers who trust you from day one.',
+    hl: 'without the spreadsheets.',
+    lede: 'Lots, manifests and payments in one place, and buyers who trust you from day one.',
     points: [
-      ['box', 'Lots & manifests', 'see who ordered, who paid and who still owes'],
-      ['bank', 'Get paid your way', 'full payment, an advance or a booking'],
-      ['bell', 'Update once', 'move a stage and every buyer in the lot is told'],
-      ['rising', 'Grow', 'storefront, offers, loyalty cards and insights'],
+      ['box', 'Lots & manifests', 'who paid, who still owes'],
+      ['bank', 'Paid your way', 'full, advance or booking'],
+      ['bell', 'Update once', 'every buyer is told'],
+      ['rising', 'Grow', 'offers, loyalty, insights'],
     ],
     art: SellerArt,
   },
@@ -177,12 +183,13 @@ const SLIDES: Slide[] = [
     tone: 'blue',
     kicker: 'For freight forwarders',
     title: 'Fill every consignment with ready lots.',
-    lede: 'Sellers on Figmark book their shipments with you directly - no chasing in group chats.',
+    hl: 'ready lots.',
+    lede: 'Sellers book space on your routes directly, with no chasing in group chats.',
     points: [
-      ['plane', 'Bookings come to you', 'sellers request space on your routes'],
-      ['tag', 'Your rates, visible', 'publish rates and send quotes in a tap'],
-      ['truck', 'One update reaches all', 'consignment stages flow to every buyer waiting'],
-      ['star', 'Reputation that travels', 'reviews from every seller you ship for'],
+      ['plane', 'Bookings come in', 'on the routes you run'],
+      ['tag', 'Rates, visible', 'quotes in a tap'],
+      ['truck', 'One update', 'reaches every buyer'],
+      ['star', 'Reputation', 'reviews from every seller'],
     ],
     art: ForwarderArt,
   },
@@ -190,13 +197,14 @@ const SLIDES: Slide[] = [
     id: 'artists',
     tone: 'pink',
     kicker: 'For artists & creators',
-    title: 'Sell your art, drops and commissions.',
+    title: 'Your art, sold to collectors who care.',
+    hl: 'collectors who care.',
     lede: 'A home for original work, where collectors pay with confidence and you get paid on time.',
     points: [
-      ['image', 'A portfolio that sells', 'your page, your prints, your originals'],
-      ['spark', 'Limited editions', 'take pre-orders for a print run before you print'],
-      ['message', 'Commissions, safely', 'advances held by Figmark until you deliver'],
-      ['users', 'Your community', 'followers, posts and channels in one place'],
+      ['image', 'Portfolio shop', 'prints and originals'],
+      ['spark', 'Limited editions', 'pre-sell the print run'],
+      ['message', 'Commissions', 'advance held till delivery'],
+      ['users', 'Your fans', 'followers and channels'],
     ],
     art: ArtistArt,
   },
@@ -204,13 +212,14 @@ const SLIDES: Slide[] = [
     id: 'discover',
     tone: 'lime',
     kicker: 'Discover',
-    title: "Find things you didn't know to search for.",
+    title: "Find things you didn't know you wanted.",
+    hl: "didn't know you wanted.",
     lede: 'Finds, shelves and conversations, ranked for you.',
     points: [
-      ['spark', 'Five ways to browse', 'For you, Live, Debates, Shelves and Finds'],
-      ['eye', 'Seen it? Buy it', 'tap a photo in a post to see if it is for sale'],
-      ['camera', 'Search with a photo', 'snap a picture, get matching items and shops'],
-      ['trophy', "The week's best", 'the top posts and shelves, one tap away'],
+      ['spark', 'Five lenses', 'For you, Live, Shelves…'],
+      ['eye', 'Seen it? Buy it', 'tap a photo in any post'],
+      ['camera', 'Photo search', 'snap, match, buy'],
+      ['trophy', "Week's best", 'the top of the week'],
     ],
     art: DiscoverArt,
   },
@@ -219,12 +228,13 @@ const SLIDES: Slide[] = [
     tone: 'violet',
     kicker: 'Social',
     title: 'Your hobby, with your people.',
-    lede: 'Follow collectors and shops, talk about what you love, and buy from people you already know.',
+    hl: 'your people.',
+    lede: 'Follow collectors and shops, talk about what you love, and buy from people you know.',
     points: [
-      ['home', 'Your feed', 'posts and shelves from people you follow'],
-      ['megaphone', 'Shop channels', 'news, restocks and prices only members get'],
-      ['forum', 'Forums & debates', 'join the conversations everyone is having'],
-      ['target', 'Wanted board', 'post what you are hunting; sellers reply "I can get this"'],
+      ['home', 'Your feed', 'people and shops you follow'],
+      ['megaphone', 'Shop channels', 'member-only prices'],
+      ['forum', 'Forums', 'debates worth joining'],
+      ['target', 'Wanted board', 'sellers reply "I can get this"'],
     ],
     art: SocialArt,
   },
@@ -232,13 +242,14 @@ const SLIDES: Slide[] = [
     id: 'drops',
     tone: 'orange',
     kicker: 'Drops & sales',
-    title: 'Drops worth turning up for.',
-    lede: 'Shops run sales on Figmark, and the people who show up get rewarded.',
+    title: 'Drops worth setting an alarm for.',
+    hl: 'setting an alarm for.',
+    lede: 'Shops run sales on Figmark, and the people who show up get the best price.',
     points: [
-      ['bolt', 'Power sales', 'channel-only prices, item by item'],
-      ['box', 'Pre-order drops', 'join a group-buy lot before it fills up'],
-      ['tag', 'Offers & loyalty', 'shop offers and loyalty cards that reward coming back'],
-      ['bell', 'Never miss one', 'alerts on your phone the moment a drop goes live'],
+      ['bolt', 'Power sales', 'channel price, item by item'],
+      ['box', 'Pre-order drops', 'join a lot before it fills'],
+      ['tag', 'Offers & loyalty', 'rewards for coming back'],
+      ['bell', 'Drop alerts', 'on your phone, on time'],
     ],
     art: DropsArt,
   },
@@ -247,12 +258,13 @@ const SLIDES: Slide[] = [
     tone: 'gold',
     kicker: 'Collect & play',
     title: 'Show off your collection. Level up.',
+    hl: 'Level up.',
     lede: 'Every buy, review and share counts.',
     points: [
-      ['star', 'A collection that is real', 'your showcase is built from delivered orders'],
-      ['trophy', 'Quests & streaks', 'earn XP, levels and stickers'],
-      ['rising', 'Hobby leaderboards', 'sneakers, figures, cards and more'],
-      ['users', 'Spread the word', 'your invite link counts every friend who joins'],
+      ['star', 'Real showcase', 'built from delivered orders'],
+      ['trophy', 'Quests & streaks', 'XP, levels, stickers'],
+      ['rising', 'Leaderboards', 'one for every hobby'],
+      ['users', 'Invite friends', 'your link counts them'],
     ],
     art: PlayArt,
   },
@@ -260,25 +272,33 @@ const SLIDES: Slide[] = [
     id: 'unique',
     tone: 'aqua',
     kicker: 'Why Figmark is different',
-    title: 'Trust is the product.',
+    title: 'Trust, built into every order.',
+    hl: 'every order.',
     lede: 'Other marketplaces list things. Figmark makes sure both sides can rely on each other.',
     points: [
-      ['check', 'Blue tick people', 'WhatsApp and Aadhaar verified'],
-      ['lock', 'Money held, not sent', 'released only when the order is delivered'],
-      ['star', 'Reviews you can believe', 'two-sided, and only from completed orders'],
-      ['users', 'Shopping and community, together', 'buyers, sellers, forwarders and artists in one app'],
+      ['check', 'Blue tick people', 'WhatsApp + Aadhaar verified'],
+      ['lock', 'Money held', 'released on delivery'],
+      ['star', 'Real reviews', 'from completed orders only'],
+      ['users', 'All in one app', 'shopping and community'],
     ],
     art: TrustArt,
   },
   {
     id: 'ready',
     tone: 'violet',
-    kicker: "You're all set",
-    title: 'Create your account in under two minutes.',
-    lede: 'Four quick steps. Verify once and the blue tick is yours.',
+    kicker: 'Free to join',
+    title: 'Get your blue tick in minutes.',
+    hl: 'blue tick',
+    lede: 'Four quick steps, and your verified profile is live.',
     art: ReadyArt,
   },
 ];
+
+function Title({ text, hl }: { text: string; hl: string }) {
+  const at = text.indexOf(hl);
+  if (at < 0) return <>{text}</>;
+  return <>{text.slice(0, at)}<em className="welslide__hl">{hl}</em>{text.slice(at + hl.length)}</>;
+}
 
 function Slides({ onSignIn }: { onSignIn: () => void }) {
   const [index, setIndex] = useState(0);
@@ -312,9 +332,18 @@ function Slides({ onSignIn }: { onSignIn: () => void }) {
 
   return (
     <section className={`welslides wel--${slide.tone}`} aria-roledescription="carousel" aria-label="What Figmark is" onKeyDown={onKey}>
+      <div className="welslides__blobs" aria-hidden="true"><span /><span /></div>
+
+      <div className="welslides__progress" aria-label={`Slide ${index + 1} of ${count}`}>
+        {SLIDES.map((item, at) => (
+          <button key={item.id} type="button" className={`welslides__seg${at < index ? ' is-done' : at === index ? ' is-on' : ''}`}
+            aria-label={`Go to ${item.kicker}`} aria-current={at === index} onClick={() => go(at)} />
+        ))}
+      </div>
       <header className="welslides__bar">
         <span className="welslides__brand"><span className="brand__mark welslides__mark" aria-hidden="true" />Figmark</span>
-        {!last && <button type="button" className="welslides__skip" onClick={onSignIn}>Skip</button>}
+        {!last && index > 0 && <button type="button" className="welslides__join" onClick={onSignIn}>Join free</button>}
+        {index === 0 && <button type="button" className="welslides__skip" onClick={onSignIn}>Log in</button>}
       </header>
 
       <div className="welslides__stage" onPointerDown={onPointerDown} onPointerUp={onPointerUp}
@@ -326,14 +355,15 @@ function Slides({ onSignIn }: { onSignIn: () => void }) {
               <div className="welslide__art" aria-hidden="true">{at === index && <item.art />}</div>
               <div className="welslide__copy">
                 <span className="welslide__kicker">{item.kicker}</span>
-                <h1 className="welslide__title">{item.title}</h1>
+                <h1 className="welslide__title"><Title text={item.title} hl={item.hl} /></h1>
                 <p className="welslide__lede">{item.lede}</p>
                 {item.points && (
-                  <ul className="welslide__points">
+                  <ul className="welslide__grid">
                     {item.points.map(([icon, lead, detail]) => (
                       <li key={lead}>
-                        <span className="welslide__pointicon"><Icon name={icon} size={16} /></span>
-                        <span><strong>{lead}</strong><span>{detail}</span></span>
+                        <span className="welslide__gicon"><Icon name={icon} size={15} /></span>
+                        <strong>{lead}</strong>
+                        <span>{detail}</span>
                       </li>
                     ))}
                   </ul>
@@ -349,26 +379,24 @@ function Slides({ onSignIn }: { onSignIn: () => void }) {
       <footer className="welslides__foot">
         {index === 0 ? (
           <>
-            <button type="button" className="welbtn welbtn--primary welbtn--wide" onClick={() => go(1)} tabIndex={0}>
-              Get started <Icon name="right" size={16} />
+            <button type="button" className="welbtn welbtn--primary welbtn--wide welbtn--big" onClick={() => go(1)}>
+              Get started <span className="welbtn__sub">it's free</span> <Icon name="right" size={16} />
             </button>
             <button type="button" className="welbtn welbtn--quiet" onClick={onSignIn}>I already have an account</button>
           </>
         ) : (
           <div className="welslides__nav">
-            <button type="button" className="welbtn welbtn--ghost" onClick={() => go(index - 1)} aria-label="Previous">
-              <Icon name="left" size={16} /> Back
+            <button type="button" className="welround" onClick={() => go(index - 1)} aria-label="Previous">
+              <Icon name="left" size={18} />
             </button>
-            <span className="welslides__dots" aria-label={`Slide ${index + 1} of ${count}`}>
-              {SLIDES.map((item, at) => (
-                <button key={item.id} type="button" className={`welslides__dot${at === index ? ' is-on' : ''}`}
-                  aria-label={`Go to ${item.kicker}`} aria-current={at === index} onClick={() => go(at)} />
-              ))}
-            </span>
             {last ? (
-              <button type="button" className="welbtn welbtn--primary" onClick={onSignIn}>Sign in <Icon name="right" size={16} /></button>
+              <button type="button" className="welbtn welbtn--primary welbtn--big welbtn--glow" onClick={onSignIn}>
+                Sign in &amp; join free <Icon name="right" size={16} />
+              </button>
             ) : (
-              <button type="button" className="welbtn welbtn--primary" onClick={() => go(index + 1)}>Next <Icon name="right" size={16} /></button>
+              <button type="button" className="welbtn welbtn--primary welbtn--big" onClick={() => go(index + 1)}>
+                Next <Icon name="right" size={16} />
+              </button>
             )}
           </div>
         )}
@@ -378,19 +406,19 @@ function Slides({ onSignIn }: { onSignIn: () => void }) {
 }
 
 function GistTiles() {
-  const tiles: Array<[IconName, string, string, Tone]> = [
-    ['heart', 'Buy', 'protected pre-orders', 'aqua'],
-    ['box', 'Sell', 'lots & manifests', 'coral'],
-    ['plane', 'Ship', 'freight forwarders', 'blue'],
-    ['image', 'Create', 'art & commissions', 'pink'],
+  const tiles: Array<[IconName, string, Tone]> = [
+    ['heart', 'Buy', 'aqua'],
+    ['box', 'Sell', 'coral'],
+    ['plane', 'Ship', 'blue'],
+    ['image', 'Create', 'pink'],
+    ['users', 'Connect', 'lime'],
   ];
   return (
     <ul className="welgist">
-      {tiles.map(([icon, title, sub, tone]) => (
+      {tiles.map(([icon, title, tone]) => (
         <li key={title} className={`welgist__tile wel--${tone}`}>
-          <span className="welgist__icon"><Icon name={icon} size={18} /></span>
-          <strong>{title}</strong>
-          <span>{sub}</span>
+          <Icon name={icon} size={15} />
+          {title}
         </li>
       ))}
     </ul>
@@ -399,15 +427,15 @@ function GistTiles() {
 
 function ReadySteps() {
   const steps: Array<[string, string]> = [
-    ['Sign in with Google', 'your name and email'],
-    ['Verify WhatsApp', 'order updates, straight to your phone'],
-    ['Verify Aadhaar', 'earns your blue tick'],
-    ['Your profile', 'a few details to personalise Figmark'],
+    ['Sign in with Google', 'name and email, no password'],
+    ['Verify WhatsApp', 'order updates on your phone'],
+    ['Verify Aadhaar', 'unlocks your blue tick'],
+    ['Your profile', 'so Figmark fits you'],
   ];
   return (
     <ol className="welready">
       {steps.map(([title, sub], at) => (
-        <li key={title}>
+        <li key={title} style={{ animationDelay: `${200 + at * 90}ms` }}>
           <span className="welready__n">{at + 1}</span>
           <span><strong>{title}</strong><span>{sub}</span></span>
           {at === 2 && <BlueTick size={18} />}
@@ -991,113 +1019,253 @@ function verhoeffValid(digits: string): boolean {
   return check === 0;
 }
 
-/* ── Slide art: small scenes in the slide's tone ─────────────────────────── */
+/* ── Slide art: little screens from the app, in the slide's tone ─────────────
+ * Each one shows the feature itself - the tracking timeline, the manifest,
+ * the countdown - so the slide reads as "this is what you get". Names,
+ * prices and counts are examples. */
 
-function Orb({ icon, children }: { icon: IconName; children?: ReactNode }) {
+function Thumb({ hue, icon, size = 44 }: { hue: number; icon: IconName; size?: number }) {
   return (
-    <div className="welart">
-      <div className="welart__ring" />
-      <div className="welart__orb"><Icon name={icon} size={44} /></div>
-      {children}
-    </div>
+    <span className="welm__thumb" style={{ width: size, height: size, background: `linear-gradient(135deg, hsl(${hue} 85% 62%), hsl(${hue + 40} 80% 45%))` }}>
+      <Icon name={icon} size={Math.round(size * 0.45)} />
+    </span>
   );
 }
 
-function Float({ at, children, delay = 0 }: { at: string; children: ReactNode; delay?: number }) {
-  return <span className={`welfloat welfloat--${at}`} style={{ animationDelay: `${delay}ms` }}>{children}</span>;
+function Chip({ className = '', children, delay = 0 }: { className?: string; children: ReactNode; delay?: number }) {
+  return <span className={`welm__chip ${className}`} style={{ animationDelay: `${delay}ms` }}>{children}</span>;
 }
 
 function GistArt() {
+  const cards: Array<[number, IconName, string, string, string]> = [
+    [200, 'box', 'Mecha kit 1/100', '@tokyo.toys', '₹3,450'],
+    [320, 'tag', 'Retro high-tops', '@kicks.import', '₹12,900'],
+    [30, 'image', 'Monsoon City print', '@inkbyriya', '₹1,200'],
+  ];
   return (
-    <div className="welart">
-      <div className="welart__ring" />
-      <span className="brand__mark welart__logo" />
-      <Float at="tl" delay={100}><Icon name="lock" size={13} /> ₹4,200 held safely</Float>
-      <Float at="tr" delay={250}><BlueTick size={14} /> Verified seller</Float>
-      <Float at="bl" delay={400}><Icon name="plane" size={13} /> Shipped from Tokyo</Float>
-      <Float at="br" delay={550}><Icon name="star" size={13} /> 4.9 · 212 reviews</Float>
+    <div className="welm welm--gist">
+      {cards.map(([hue, icon, name, shop, price], at) => (
+        <div key={name} className={`welm__card welm__fan welm__fan--${at}`}>
+          <span className="welm__hero" style={{ background: `linear-gradient(140deg, hsl(${hue} 85% 64%), hsl(${hue + 50} 75% 42%))` }}>
+            <Icon name={icon} size={30} />
+          </span>
+          <strong>{name}</strong>
+          <span className="welm__seller">{shop} <BlueTick size={11} /></span>
+          <span className="welm__price">{price}</span>
+        </div>
+      ))}
+      <Chip className="welm__chip--tl" delay={500}><Icon name="lock" size={12} /> Held safely until delivery</Chip>
+      <Chip className="welm__chip--br" delay={700}><Icon name="star" size={12} /> 4.9 · real orders only</Chip>
     </div>
   );
 }
+
 function BuyerArt() {
+  const steps = ['Ordered', 'Paid', 'Shipped', 'In customs', 'Delivered'];
   return (
-    <Orb icon="lock">
-      <Float at="tl" delay={100}>Payment held <b>until delivery</b></Float>
-      <Float at="br" delay={300}><Icon name="truck" size={13} /> Stage 4 of 5 · In customs</Float>
-    </Orb>
+    <div className="welm">
+      <div className="welm__card welm__panel">
+        <div className="welm__row">
+          <Thumb hue={200} icon="box" />
+          <span className="welm__grow"><strong>Mecha kit 1/100</strong><span>Lot #24 · @tokyo.toys</span></span>
+        </div>
+        <ol className="welm__steps">
+          {steps.map((step, at) => (
+            <li key={step} className={at < 3 ? 'is-done' : at === 3 ? 'is-now' : ''} style={{ animationDelay: `${150 + at * 120}ms` }}>
+              <span className="welm__dot" />{step}
+            </li>
+          ))}
+        </ol>
+      </div>
+      <Chip className="welm__chip--br welm__chip--tone" delay={800}><Icon name="lock" size={12} /> ₹3,450 held by Figmark</Chip>
+    </div>
   );
 }
+
 function SellerArt() {
+  const rows: Array<[string, string, boolean]> = [['Aarav', '×2', true], ['Meera', '×1', true], ['Kabir', '×3', false]];
   return (
-    <Orb icon="box">
-      <Float at="tl" delay={100}><Icon name="check" size={13} /> 18 of 20 paid</Float>
-      <Float at="br" delay={300}><Icon name="bell" size={13} /> 20 buyers notified</Float>
-    </Orb>
+    <div className="welm">
+      <div className="welm__card welm__panel">
+        <div className="welm__row welm__row--between"><strong>Lot #24 · Mecha kits</strong><span className="welm__muted">18 / 20 paid</span></div>
+        <span className="welm__bar"><span style={{ width: '90%' }} /></span>
+        <ul className="welm__list">
+          {rows.map(([name, qty, paid], at) => (
+            <li key={name} style={{ animationDelay: `${200 + at * 120}ms` }}>
+              <span className="welm__avatar" style={{ background: `hsl(${at * 90 + 20} 70% 55%)` }}>{name[0]}</span>
+              <span className="welm__grow">{name} <span className="welm__muted">{qty}</span></span>
+              <span className={`welm__pill${paid ? ' is-ok' : ' is-due'}`}>{paid ? 'Paid' : 'Due'}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+      <Chip className="welm__chip--tr welm__chip--tone" delay={700}><Icon name="bell" size={12} /> 20 buyers notified</Chip>
+    </div>
   );
 }
+
 function ForwarderArt() {
+  const route = 'M30 70 C 90 0, 190 0, 250 70';
   return (
-    <Orb icon="plane">
-      <Float at="tl" delay={100}>New booking · 42 kg</Float>
-      <Float at="br" delay={300}><Icon name="tag" size={13} /> ₹780/kg · Tokyo → Mumbai</Float>
-    </Orb>
+    <div className="welm">
+      <div className="welm__card welm__panel">
+        <div className="welm__route">
+          <span className="welm__city"><strong>TYO</strong>Tokyo</span>
+          <svg viewBox="0 0 280 80" className="welm__arc">
+            <path d={route} />
+            <g className="welm__plane" style={{ offsetPath: `path('${route}')` }}>
+              <circle r="11" />
+              <path d="M-5 0h10M1 -4l4 4-4 4" />
+            </g>
+          </svg>
+          <span className="welm__city welm__city--end"><strong>BOM</strong>Mumbai</span>
+        </div>
+        <div className="welm__row">
+          <Thumb hue={215} icon="box" size={36} />
+          <span className="welm__grow"><strong>New booking · 42 kg</strong><span>from @tokyo.toys</span></span>
+          <span className="welm__btn">Accept</span>
+        </div>
+      </div>
+      <Chip className="welm__chip--tl welm__chip--tone" delay={600}><Icon name="tag" size={12} /> ₹780 / kg</Chip>
+    </div>
   );
 }
+
 function ArtistArt() {
   return (
-    <Orb icon="image">
-      <Float at="tl" delay={100}><Icon name="spark" size={13} /> Drop · 50 prints</Float>
-      <Float at="br" delay={300}>Commission advance <b>held</b></Float>
-    </Orb>
-  );
-}
-function DiscoverArt() {
-  return (
-    <Orb icon="spark">
-      <Float at="tl" delay={100}><Icon name="eye" size={13} /> Seen for sale · 3 shops</Float>
-      <Float at="br" delay={300}><Icon name="rising" size={13} /> Trending in Sneakers</Float>
-    </Orb>
-  );
-}
-function SocialArt() {
-  return (
-    <Orb icon="forum">
-      <Float at="tl" delay={100}><Icon name="heart" size={13} /> 128 love this shelf</Float>
-      <Float at="br" delay={300}><Icon name="target" size={13} /> Wanted · 4 sellers replied</Float>
-    </Orb>
-  );
-}
-function DropsArt() {
-  return (
-    <Orb icon="bolt">
-      <Float at="tl" delay={100}><Icon name="bolt" size={13} /> Drop live · 10:00 PM</Float>
-      <Float at="br" delay={300}>Channel price <b>-20% for 15 min</b></Float>
-    </Orb>
-  );
-}
-function PlayArt() {
-  return (
-    <Orb icon="trophy">
-      <Float at="tl" delay={100}><Icon name="spark" size={13} /> +40 XP · 7-day streak</Float>
-      <Float at="br" delay={300}><Icon name="rising" size={13} /> #12 on Action figures</Float>
-    </Orb>
-  );
-}
-function TrustArt() {
-  return (
-    <div className="welart">
-      <div className="welart__ring" />
-      <div className="welart__orb welart__orb--tick"><BlueTick size={64} /></div>
-      <Float at="tl" delay={100}><Icon name="message" size={13} /> WhatsApp ✓</Float>
-      <Float at="br" delay={300}>Aadhaar ✓</Float>
+    <div className="welm">
+      <div className="welm__card welm__panel welm__art">
+        <span className="welm__canvas" />
+        <div className="welm__grow">
+          <strong>Monsoon City</strong>
+          <span className="welm__muted">A3 giclée print · limited</span>
+          <span className="welm__bar"><span style={{ width: '26%' }} /></span>
+          <span className="welm__muted"><b className="welm__tone">37 of 50</b> left</span>
+        </div>
+      </div>
+      <Chip className="welm__chip--br welm__chip--tone" delay={700}><Icon name="lock" size={12} /> Commission advance held</Chip>
     </div>
   );
 }
+
+function DiscoverArt() {
+  const tiles: Array<[number, IconName]> = [[95, 'tag'], [260, 'box'], [20, 'image'], [180, 'star']];
+  return (
+    <div className="welm">
+      <div className="welm__card welm__panel">
+        <div className="welm__lenses">
+          {['For you', 'Live', 'Shelves', 'Finds'].map((lens, at) => <span key={lens} className={at === 0 ? 'is-on' : ''}>{lens}</span>)}
+        </div>
+        <div className="welm__tiles">
+          {tiles.map(([hue, icon], at) => (
+            <span key={hue} className="welm__tile" style={{ background: `linear-gradient(140deg, hsl(${hue} 80% 60%), hsl(${hue + 50} 70% 38%))`, animationDelay: `${150 + at * 100}ms` }}>
+              <Icon name={icon} size={20} />
+              {at === 0 && <span className="welm__seen"><Icon name="eye" size={10} /> For sale · 3 shops</span>}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SocialArt() {
+  return (
+    <div className="welm">
+      <div className="welm__card welm__panel">
+        <div className="welm__row">
+          <span className="welm__avatar welm__avatar--lg" style={{ background: 'var(--grad-warm)' }}>R</span>
+          <span className="welm__grow"><strong>Riya <BlueTick size={12} /></strong><span>posted a shelf · 2h</span></span>
+        </div>
+        <span className="welm__post">
+          {[30, 200, 280].map((hue) => <span key={hue} style={{ background: `linear-gradient(160deg, hsl(${hue} 80% 62%), hsl(${hue + 40} 70% 40%))` }} />)}
+        </span>
+        <div className="welm__row welm__acts">
+          <span className="welm__like"><Icon name="heart" size={14} /> 128</span>
+          <span><Icon name="message" size={14} /> 24</span>
+          <span><Icon name="share" size={14} /></span>
+        </div>
+      </div>
+      <Chip className="welm__chip--tr welm__chip--bubble" delay={700}>"I can get this!" · @kicks.import</Chip>
+    </div>
+  );
+}
+
+function DropsArt() {
+  const [left, setLeft] = useState(14 * 60 + 32);
+  useEffect(() => {
+    const timer = window.setInterval(() => setLeft((value) => (value > 0 ? value - 1 : 15 * 60)), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const mm = String(Math.floor(left / 60)).padStart(2, '0');
+  const ss = String(left % 60).padStart(2, '0');
+  return (
+    <div className="welm">
+      <div className="welm__card welm__panel">
+        <div className="welm__row welm__row--between">
+          <span className="welm__live"><span />Power sale · live</span>
+          <span className="welm__muted">@tokyo.toys</span>
+        </div>
+        <div className="welm__clock" aria-label="Channel price ends in">
+          {[mm[0], mm[1], ':', ss[0], ss[1]].map((char, at) => <span key={at} className={char === ':' ? 'is-sep' : ''}>{char}</span>)}
+        </div>
+        <div className="welm__row">
+          <Thumb hue={25} icon="bolt" size={36} />
+          <span className="welm__grow"><strong>Limited figure · #3 of 8</strong><span><s>₹2,400</s> <b className="welm__tone">₹1,920</b> channel price</span></span>
+        </div>
+      </div>
+      <Chip className="welm__chip--tl welm__chip--tone" delay={600}><Icon name="bell" size={12} /> Drop alert sent</Chip>
+    </div>
+  );
+}
+
+function PlayArt() {
+  return (
+    <div className="welm">
+      <div className="welm__card welm__panel">
+        <div className="welm__row">
+          <span className="welm__ring" style={{ ['--p' as string]: '72%' }}><span>12</span></span>
+          <span className="welm__grow">
+            <strong>Level 12 · Collector</strong>
+            <span className="welm__bar"><span style={{ width: '72%' }} /></span>
+            <span className="welm__muted">720 / 1,000 XP · <b className="welm__tone">7-day streak</b></span>
+          </span>
+        </div>
+        <div className="welm__stickers">
+          {(['trophy', 'star', 'heart', 'spark', 'bolt'] as IconName[]).map((icon, at) => (
+            <span key={icon} style={{ animationDelay: `${250 + at * 90}ms` }}><Icon name={icon} size={16} /></span>
+          ))}
+        </div>
+      </div>
+      <Chip className="welm__chip--br welm__chip--tone" delay={800}><Icon name="rising" size={12} /> #12 on Action figures</Chip>
+    </div>
+  );
+}
+
+function TrustArt() {
+  return (
+    <div className="welm">
+      <div className="welm__card welm__panel welm__profile">
+        <span className="welm__avatar welm__avatar--xl" style={{ background: 'var(--grad-cool)' }}>T</span>
+        <strong className="welm__name">tokyo.toys <BlueTick size={16} /></strong>
+        <ul className="welm__checks">
+          <li style={{ animationDelay: '200ms' }}><Icon name="check" size={12} /> WhatsApp verified</li>
+          <li style={{ animationDelay: '320ms' }}><Icon name="check" size={12} /> Aadhaar verified</li>
+          <li style={{ animationDelay: '440ms' }}><Icon name="star" size={12} /> 4.9 · 212 completed orders</li>
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 function ReadyArt() {
   return (
-    <div className="welart">
-      <div className="welart__ring" />
-      <div className="welart__orb"><Icon name="spark" size={44} /></div>
+    <div className="welm welm--ready">
+      <div className="welm__card welm__panel welm__profile welm__you">
+        <span className="welm__avatar welm__avatar--xl" style={{ background: 'var(--grad-hero)' }}>You</span>
+        <strong className="welm__name">Your name <span className="welm__shine"><BlueTick size={18} /></span></strong>
+        <span className="welm__muted">Verified on Figmark</span>
+      </div>
     </div>
   );
 }
