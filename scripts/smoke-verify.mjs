@@ -484,7 +484,7 @@ await check('with no signing key, nothing is issued or accepted', async () => {
 
 await check("UIDAI's signing certificates ship with the API, old ones included", async () => {
   // DS 03 (2017) through DS 06 (2026-2029): a card printed under any of them still checks.
-  assert.equal(bundledUidaiKeys().length, 7);
+  assert.equal(bundledUidaiKeys().length, 9);
   for (const key of bundledUidaiKeys()) assert.equal(key.asymmetricKeyType, 'rsa');
 });
 
@@ -502,11 +502,11 @@ await check('a QR signed with any one of several keys is accepted, and only thos
 });
 
 await check('the setting adds to the bundled keys, and a bad one does not switch them off', async () => {
-  assert.equal(uidaiKeys(process.env.AADHAAR_QR_CERT).length, 8);
+  assert.equal(uidaiKeys(process.env.AADHAAR_QR_CERT).length, 10);
   const quiet = console.error;
   console.error = () => {};
   try {
-    assert.equal(uidaiKeys('not a certificate').length, 7);
+    assert.equal(uidaiKeys('not a certificate').length, 9);
   } finally {
     console.error = quiet;
   }
