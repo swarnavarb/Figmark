@@ -101,8 +101,16 @@ export interface AadhaarProof {
   dob: string;
   gender: string;
   last4: string;
-  /** The verified phone the QR's mobile hash matched, E.164. */
+  /** The verified phone the QR's mobile matched, E.164. */
   mobile: string;
+  /**
+   * How the QR's mobile was matched: `hash`, the whole number (legacy QRs),
+   * or `last4`, its last four digits (2022+ QRs carry nothing more). Absent
+   * on proofs made before newer QRs were accepted, which were all `hash`.
+   */
+  mobileMatch?: 'hash' | 'last4';
+  /** The QR's layout: "V1" for legacy, else its marker ("V2", "V3", ...). */
+  qrVersion?: string;
   via: 'secure_qr' | 'seed';
   at: string;
 }

@@ -8,7 +8,7 @@ three checks below, or an operator's grant.
 |---|---|---|
 | Email | A 6-digit code is emailed at sign-up and typed back. | Free (Brevo: 300 emails/day) |
 | WhatsApp number | The person taps **Verify on WhatsApp**; WhatsApp opens with a message holding a one-time code; they send it to Figmark's WhatsApp number. WhatsApp tells us which number sent it, so it must be the account's number. | Free (messages people send you cost nothing) |
-| Aadhaar | The person scans their Aadhaar **Secure QR** (letter, e-Aadhaar PDF or mAadhaar). The API checks UIDAI's RSA signature offline, then hashes the WhatsApp-verified number the way UIDAI does and compares it with the mobile hash in the QR. | Free (offline, no licence) |
+| Aadhaar | The person scans their Aadhaar **Secure QR** (letter, e-Aadhaar PDF or mAadhaar). The API checks UIDAI's RSA signature offline, then matches the Aadhaar-linked mobile to the WhatsApp-verified number: QRs from 2022 on (V2, V3, V5) carry only its last 4 digits, which must be the same; older QRs carry a hash of the whole number, which the API recomputes the way UIDAI does. The proof records which (`mobileMatch`: `last4` or `hash`). | Free (offline, no licence) |
 
 **The WhatsApp number and the Aadhaar-linked mobile must be the same number.**
 That match is what ties the Aadhaar to the person holding the SIM. The app says

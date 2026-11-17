@@ -66,15 +66,23 @@ const repository = await getRepository();
 
 /* ── Helpers ───────────────────────────────────────────────────────────── */
 
-/** A Secure QR as UIDAI makes one, for `mobile` (ten digits), signed by `key`. */
-function secureQr({ mobile, last4 = '5678', key = privateKey, withMobile = true, name = 'Priya Nair' }) {
-  const fields = ['V2', withMobile ? '2' : '0', `${last4}20260101120000000`, name, '01-02-1990', 'F',
-    'D/O Someone', 'Pune', '', '12', 'Kothrud', '411038', 'Kothrud', 'Maharashtra', 'Main Road', 'Pune', 'Pune',
-    withMobile ? mobile.slice(-4) : ''];
+/**
+ * A Secure QR as UIDAI makes one, for `mobile` (ten digits), signed by `key`.
+ *
+ * `version` 'legacy' is the pre-2022 layout: no version marker, and hashes of
+ * the linked email and mobile after the photo. 'V2', 'V3', 'V5' are the newer
+ * layout: the marker first, the mobile's last four digits as the last field,
+ * and no hashes at all.
+ */
+function secureQr({ mobile, last4 = '5678', key = privateKey, withMobile = true, name = 'Priya Nair', version = 'legacy' }) {
+  const legacy = version === 'legacy';
+  const fields = [withMobile ? '2' : '0', `${last4}20260101120000000`, name, '01-02-1990', 'F',
+    'D/O Someone', 'Pune', '', '12', 'Kothrud', '411038', 'Kothrud', 'Maharashtra', 'Main Road', 'Pune', 'Pune'];
+  if (!legacy) fields.unshift(version), fields.push(withMobile ? mobile.slice(-4) : '');
   const body = Buffer.concat([
     Buffer.from(fields.join('\xff') + '\xff', 'latin1'),
     Buffer.from('fake-jp2-photo-bytes', 'latin1'),
-    withMobile ? Buffer.from(aadhaarMobileHash(mobile, last4), 'hex') : Buffer.alloc(0),
+    legacy && withMobile ? Buffer.from(aadhaarMobileHash(mobile, last4), 'hex') : Buffer.alloc(0),
   ]);
   const signed = Buffer.concat([body, sign('sha256', body, key)]);
   return BigInt(`0x${gzipSync(signed).toString('hex')}`).toString(10);
@@ -238,11 +246,33 @@ await check('an Aadhaar with no linked mobile is refused', async () => {
 });
 
 await check("an Aadhaar linked to another mobile is refused, naming that number's last digits", async () => {
-  const mismatch = await aadhaar(req({ headers: priya.headers, body: { qr: secureQr({ mobile: '9123456789' }), consent: true } }), ctx);
+  // A newer QR prints the last four digits, so the refusal can name them.
+  const mismatch = await aadhaar(req({ headers: priya.headers, body: { qr: secureQr({ mobile: '9123456789', version: 'V3' }), consent: true } }), ctx);
   assert.equal(mismatch.status, 400);
   assert.equal(mismatch.jsonBody.error, 'aadhaar_mobile_mismatch');
   assert.match(mismatch.jsonBody.message, /6789/);
   assert.match(mismatch.jsonBody.message, /same number/);
+  // A legacy QR is matched by the hash of the whole number.
+  const legacy = await aadhaar(req({ headers: priya.headers, body: { qr: secureQr({ mobile: '9123456789' }), consent: true } }), ctx);
+  assert.equal(legacy.jsonBody.error, 'aadhaar_mobile_mismatch');
+});
+
+await check('every QR layout puts each field in its place: legacy, V2, V3 and V5', async () => {
+  for (const version of ['legacy', 'V2', 'V3', 'V5']) {
+    const qr = parseSecureQr(secureQr({ mobile: '9876543210', version }));
+    assert.equal(qr.name, 'Priya Nair', version);
+    assert.equal(qr.dob, '01-02-1990', version);
+    assert.equal(qr.gender, 'F', version);
+    assert.equal(qr.last4, '5678', version);
+    assert.equal(qr.fields.pincode, '411038', version);
+    assert.equal(qr.hasMobile, true, version);
+    assert.equal(qr.version, version === 'legacy' ? 'V1' : version);
+    assert.equal(qr.versioned, version !== 'legacy');
+    // Newer layouts carry the last four in the clear and no hash; the photo runs to the signature.
+    assert.equal(qr.mobileLast4, version === 'legacy' ? null : '3210', version);
+    assert.equal(qr.mobileHash === null, version !== 'legacy', version);
+    assert.equal(qr.photo.toString('latin1'), 'fake-jp2-photo-bytes', version);
+  }
 });
 
 await check('the hash is checked for every last digit (one round for 0 and 1, n for the rest)', async () => {
@@ -264,10 +294,23 @@ await check('the matching Aadhaar verifies, keeping only name, birth date, gende
   assert.equal(ok.status, 200, JSON.stringify(ok.jsonBody));
   assert.equal(ok.jsonBody.status.checks.aadhaar, true);
   const stored = (await repository.getUserById(priya.id)).verification.proofs.aadhaar;
-  assert.deepEqual(Object.keys(stored).sort(), ['at', 'dob', 'gender', 'last4', 'mobile', 'name', 'via']);
+  assert.deepEqual(Object.keys(stored).sort(), ['at', 'dob', 'gender', 'last4', 'mobile', 'mobileMatch', 'name', 'qrVersion', 'via']);
   assert.equal(stored.last4, '5678');
   assert.equal(stored.name, 'Priya Nair');
+  assert.equal(stored.mobileMatch, 'hash');
   assert.ok(!JSON.stringify(stored).includes('Kothrud'), 'no address kept');
+});
+
+await check('a newer QR verifies on the last four digits, and the proof says so', async () => {
+  const user = await repository.getUserById(priya.id);
+  user.verification = { ...user.verification, governmentId: 'unverified', proofs: { ...user.verification.proofs, aadhaar: null } };
+  await repository.updateUser(user);
+  const ok = await aadhaar(req({ headers: priya.headers, body: { qr: secureQr({ mobile: '9876543210', version: 'V3' }), consent: true } }), ctx);
+  assert.equal(ok.status, 200, JSON.stringify(ok.jsonBody));
+  const stored = (await repository.getUserById(priya.id)).verification.proofs.aadhaar;
+  assert.equal(stored.mobileMatch, 'last4');
+  assert.equal(stored.qrVersion, 'V3');
+  assert.equal(stored.name, 'Priya Nair');
 });
 
 await check('all three open buying and selling', async () => {

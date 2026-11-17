@@ -68,16 +68,26 @@ export function testAadhaarQr(qrText: string, phone: string, email: string) {
       last4OnQr: qr.mobileLast4,
       entered: mobile,
       enteredValid: Boolean(mobile) || !phone.trim(),
-      matches: mobile && qr.mobileHash ? aadhaarMobileHash(mobileDigits(mobile), qr.last4) === qr.mobileHash : null,
+      // Legacy QRs hash the whole number; versioned ones only print its last four digits.
+      method: qr.versioned ? 'last4' as const : 'hash' as const,
+      matches: !mobile
+        ? null
+        : qr.versioned
+          ? (qr.mobileLast4 ? mobile.endsWith(qr.mobileLast4) : null)
+          : (qr.mobileHash ? aadhaarMobileHash(mobileDigits(mobile), qr.last4) === qr.mobileHash : null),
     },
     email: {
       linked: qr.hasEmail,
       entered: email.trim() || null,
+      // Versioned QRs carry no email hash, so an email cannot be checked against them.
+      checkable: !qr.versioned,
       matches: email.trim() && qr.emailHash ? emailHash(email.trim(), qr.last4) === qr.emailHash : null,
     },
     photo: qr.photo.length > 0 ? { bytes: qr.photo.length, jp2Base64: qr.photo.toString('base64') } : null,
     /** What real verification would answer for this QR and number. */
-    wouldVerify: signedBy !== null && qr.hasMobile && Boolean(mobile) && qr.mobileHash === aadhaarMobileHash(mobileDigits(mobile ?? ''), qr.last4),
+    wouldVerify: signedBy !== null && qr.hasMobile && Boolean(mobile) && (qr.versioned
+      ? Boolean(qr.mobileLast4 && mobile?.endsWith(qr.mobileLast4))
+      : qr.mobileHash === aadhaarMobileHash(mobileDigits(mobile ?? ''), qr.last4)),
   };
 }
 
@@ -122,8 +132,8 @@ export function diagnoseSignature(qr: ReturnType<typeof parseSecureQr>): KeyDiag
   const candidates: [string, Buffer][] = [
     ['everything before the signature (the standard)', qr.signedData],
     ['the whole decompressed QR', data],
-    ['the text fields and photo, without the email/mobile hashes', data.subarray(0, sigStart - (qr.hasMobile ? 32 : 0) - (qr.hasEmail ? 32 : 0))],
-    ['the text fields only', data.subarray(0, sigStart - qr.photo.length - (qr.hasMobile ? 32 : 0) - (qr.hasEmail ? 32 : 0))],
+    ['the text fields and photo, without the email/mobile hashes', data.subarray(0, sigStart - (qr.mobileHash ? 32 : 0) - (qr.emailHash ? 32 : 0))],
+    ['the text fields only', data.subarray(0, sigStart - qr.photo.length - (qr.mobileHash ? 32 : 0) - (qr.emailHash ? 32 : 0))],
     ['the compressed bytes', qr.compressed],
   ];
 

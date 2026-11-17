@@ -8,13 +8,15 @@ import { gunzipSync, inflateRawSync, inflateSync } from 'node:zlib';
  *
  * The QR on every Aadhaar letter, e-Aadhaar PDF and the mAadhaar app holds one
  * long decimal number. Turned into bytes and decompressed, it is a run of
- * fields separated by 0xFF, then the photo, then SHA-256 hashes of the linked
- * email and mobile, then a 256-byte RSA signature by UIDAI over everything
+ * fields separated by 0xFF, then the photo, then (legacy QRs only) SHA-256
+ * hashes of the linked email and mobile, then a 256-byte RSA signature by UIDAI over everything
  * before it. Checking that signature against UIDAI's published certificate
  * proves the fields are UIDAI's and unedited - no network call, no fee, no
  * licence. (UIDAI, "Secure QR Code - Specification", and pyaadhaar's reader.)
  *
- * The mobile hash is the part that matters here. It is SHA-256 applied to the
+ * The linked mobile is the part that matters here. QRs from 2022 on ("V2",
+ * "V3", "V5"...) print only its last four digits, which are matched as they
+ * are. Legacy QRs carry its hash instead: SHA-256 applied to the
  * ten-digit number N times, N being the last digit of the Aadhaar number (0 and
  * 1 both mean once). Hashing the account's WhatsApp-verified number the same
  * way and comparing is what ties this Aadhaar to the person holding that SIM.
@@ -27,23 +29,31 @@ const FIELDS_V1 = [
   'emailMobileStatus', 'referenceId', 'name', 'dob', 'gender', 'careOf', 'district', 'landmark',
   'house', 'location', 'pincode', 'postOffice', 'state', 'street', 'subDistrict', 'vtc',
 ] as const;
-/** 2022 onwards: a leading "V2" and the mobile's last four digits in the clear. */
-const FIELDS_V2 = ['version', ...FIELDS_V1, 'mobileLast4'] as const;
+/**
+ * 2022 onwards ("V2", "V3", "V5", ...): a leading version, the same fields, and
+ * the mobile's last four digits in the clear - and no email or mobile hash.
+ * (Layout from the aadhaar-offline reader, which supports V2, V3 and V5.)
+ */
+const FIELDS_VERSIONED = ['version', ...FIELDS_V1, 'mobileLast4'] as const;
 
 export interface SecureQr {
-  version: 'V1' | 'V2';
+  /** "V1" for the legacy layout (no marker), else the marker as printed: "V2", "V3", ... */
+  version: string;
+  /** Versioned QRs carry the mobile's last four digits and no hashes. */
+  versioned: boolean;
   name: string;
   dob: string;
   gender: string;
   /** The last four digits of the Aadhaar number. */
   last4: string;
-  /** Only V2 prints these; null on older QRs. */
+  /** Versioned QRs print these; null on legacy ones. */
   mobileLast4: string | null;
+  /** A mobile is linked to this Aadhaar (from the QR's email/mobile indicator). */
   hasMobile: boolean;
-  /** Hex, or null when no mobile is linked. */
+  /** Hex. Legacy QRs only, when a mobile is linked; versioned QRs carry none. */
   mobileHash: string | null;
   hasEmail: boolean;
-  /** Hex, or null when no email is linked. */
+  /** Hex. Legacy QRs only, when an email is linked. */
   emailHash: string | null;
   /** Every text field as printed, by name (address parts included). */
   fields: Record<string, string>;
@@ -94,8 +104,11 @@ export function parseSecureQr(raw: string): SecureQr {
   const data = decompress(compressed);
   if (data.length < SIGNATURE_BYTES + 64) throw new AadhaarError('aadhaar_unreadable', 'The QR was cut short. Scan it again.');
 
-  const version = data.subarray(0, 2).toString('latin1') === 'V2' ? 'V2' : 'V1';
-  const names = version === 'V2' ? FIELDS_V2 : FIELDS_V1;
+  // "V" and digits, then the field separator: a versioned layout. Anything else is the legacy one.
+  const marker = /^V(\d{1,2})\xff/.exec(data.subarray(0, 4).toString('latin1'));
+  const versioned = marker !== null;
+  const version = marker ? `V${marker[1]}` : 'V1';
+  const names = versioned ? FIELDS_VERSIONED : FIELDS_V1;
   const fields: Record<string, string> = {};
   let start = 0;
   for (const name of names) {
@@ -110,22 +123,25 @@ export function parseSecureQr(raw: string): SecureQr {
   const hasMobile = status === 2 || status === 3;
   const hasEmail = status === 1 || status === 3;
   const end = data.length - SIGNATURE_BYTES;
-  // After the fields: the photo, then the email hash, then the mobile hash, each only if linked.
-  const mobileStart = hasMobile ? end - HASH_BYTES : end;
-  const emailStart = hasEmail ? mobileStart - HASH_BYTES : mobileStart;
+  // Legacy: after the fields, the photo, then the email hash, then the mobile
+  // hash, each only if linked. Versioned: the photo runs up to the signature.
+  const mobileStart = hasMobile && !versioned ? end - HASH_BYTES : end;
+  const emailStart = hasEmail && !versioned ? mobileStart - HASH_BYTES : mobileStart;
+  if (emailStart < start) throw new AadhaarError('aadhaar_unreadable', 'The QR was cut short. Scan it again.');
   return {
     version,
+    versioned,
     name: field('name').trim(),
     dob: field('dob').trim(),
     gender: field('gender').trim(),
     last4: field('referenceId').slice(0, 4),
-    mobileLast4: version === 'V2' && /^\d{4}$/.test(field('mobileLast4')) ? field('mobileLast4') : null,
+    mobileLast4: versioned && /^\d{4}$/.test(field('mobileLast4')) ? field('mobileLast4') : null,
     hasMobile,
     // The mobile hash sits immediately before the signature, whether or not
     // an email hash precedes it.
-    mobileHash: hasMobile ? data.subarray(end - HASH_BYTES, end).toString('hex') : null,
+    mobileHash: hasMobile && !versioned ? data.subarray(mobileStart, end).toString('hex') : null,
     hasEmail,
-    emailHash: hasEmail ? data.subarray(emailStart, mobileStart).toString('hex') : null,
+    emailHash: hasEmail && !versioned ? data.subarray(emailStart, mobileStart).toString('hex') : null,
     fields,
     photo: data.subarray(start, Math.max(start, emailStart)),
     signedData: data.subarray(0, end),

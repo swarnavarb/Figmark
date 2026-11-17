@@ -528,7 +528,9 @@ export async function verifyAadhaar(repository: Repository, user: User, qrText: 
     if (!signedByAny(qr, keys)) {
       throw new AadhaarError('aadhaar_signature', 'This QR is not signed by UIDAI, or it has been altered. Scan the QR on your original Aadhaar.');
     }
-    if (!qr.hasMobile || !qr.mobileHash) {
+    // Legacy QRs carry a hash of the whole linked number; 2022+ QRs carry only
+    // its last four digits, so those are what can be matched.
+    if (!qr.hasMobile || (qr.versioned ? !qr.mobileLast4 : !qr.mobileHash)) {
       throw new AadhaarError(
         'aadhaar_no_mobile',
         'No mobile number is linked to this Aadhaar, so it cannot be matched to your WhatsApp number. ' +
@@ -536,7 +538,10 @@ export async function verifyAadhaar(repository: Repository, user: User, qrText: 
           'If you cannot, ask for a manual review at the bottom of this page.',
       );
     }
-    if (aadhaarMobileHash(mobileDigits(mobile), qr.last4) !== qr.mobileHash) {
+    const mobileMatches = qr.versioned
+      ? mobile.endsWith(qr.mobileLast4 ?? '-')
+      : aadhaarMobileHash(mobileDigits(mobile), qr.last4) === qr.mobileHash;
+    if (!mobileMatches) {
       const hint = qr.mobileLast4 ? ` Your Aadhaar is linked to a number ending ${qr.mobileLast4};` : '';
       throw new AadhaarError(
         'aadhaar_mobile_mismatch',
@@ -552,7 +557,7 @@ export async function verifyAadhaar(repository: Repository, user: User, qrText: 
         ...user.verification.proofs,
         aadhaar: {
           name: qr.name.slice(0, 120), dob: qr.dob.slice(0, 20), gender: qr.gender.slice(0, 10), last4: qr.last4,
-          mobile, via: 'secure_qr', at: now(),
+          mobile, mobileMatch: qr.versioned ? 'last4' : 'hash', qrVersion: qr.version, via: 'secure_qr', at: now(),
         },
       },
     };

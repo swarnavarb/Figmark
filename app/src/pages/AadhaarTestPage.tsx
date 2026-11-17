@@ -16,12 +16,12 @@ import { readQrFrame, readQrPicture } from '../qr-reader';
 interface TestResult {
   readable: boolean;
   error?: string;
-  version?: 'V1' | 'V2';
+  version?: string;
   signature?: { valid: boolean; signedBy: string | null; bytes: number; diagnosis: KeyDiagnosis[] };
   details?: { name: string; dob: string; gender: string; aadhaarLast4: string; generatedAt: string | null };
   address?: Record<string, string>;
-  mobile?: { linked: boolean; last4OnQr: string | null; entered: string | null; enteredValid: boolean; matches: boolean | null };
-  email?: { linked: boolean; entered: string | null; matches: boolean | null };
+  mobile?: { linked: boolean; last4OnQr: string | null; entered: string | null; enteredValid: boolean; method: 'hash' | 'last4'; matches: boolean | null };
+  email?: { linked: boolean; entered: string | null; checkable: boolean; matches: boolean | null };
   photo?: { bytes: number; jp2Base64: string } | null;
   wouldVerify?: boolean;
 }
@@ -216,7 +216,9 @@ export function AadhaarTestPage() {
         <>
           <p className={`notice ${result.wouldVerify ? 'notice--ok' : 'notice--error'}`} style={{ margin: 0 }}>
             {result.wouldVerify
-              ? '✓ Real verification would pass: genuine UIDAI QR, and its mobile is this number.'
+              ? (result.mobile.method === 'last4'
+                ? '✓ Genuine UIDAI QR, and its mobile ends in the same 4 digits as this number. Newer QRs carry only those 4 digits, not the full number.'
+                : '✓ Real verification would pass: genuine UIDAI QR, and its mobile is this number.')
               : '✗ Real verification would not pass. See below for which check failed.'}
           </p>
 
@@ -225,15 +227,15 @@ export function AadhaarTestPage() {
             <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
               <Verdict ok={result.signature.valid} label="Signed by UIDAI" />
               <Verdict ok={result.mobile.linked} label="Mobile linked" />
-              <Verdict ok={result.mobile.matches} label="Mobile matches" />
-              <Verdict ok={result.email.matches} label="Email matches" />
+              <Verdict ok={result.mobile.matches} label={result.mobile.method === 'last4' ? 'Mobile last 4 match' : 'Mobile matches'} />
+              {result.email.checkable && <Verdict ok={result.email.matches} label="Email matches" />}
             </div>
             <Rows rows={[
               ['Signature', result.signature.valid ? `Valid, by ${result.signature.signedBy}` : 'Not signed by any UIDAI key we hold, or altered'],
-              ['QR format', result.version === 'V2' ? 'V2 (2022 onwards)' : 'V1 (older)'],
+              ['QR format', result.version === 'V1' ? 'Legacy (no version marker; carries full mobile and email hashes)' : `${result.version} (2022 onwards; mobile's last 4 digits only, no hashes)`],
               ['Mobile entered', result.mobile.entered ?? (result.mobile.enteredValid ? '—' : 'Not a valid Indian mobile')],
-              ['Mobile on QR', result.mobile.linked ? (result.mobile.last4OnQr ? `ends ${result.mobile.last4OnQr}` : 'linked (V1 QRs do not print digits)') : 'none linked'],
-              ['Email on QR', result.email.linked ? 'linked' : 'none linked'],
+              ['Mobile on QR', result.mobile.linked ? (result.mobile.last4OnQr ? `ends ${result.mobile.last4OnQr}` : 'linked (checked by full-number hash)') : 'none linked'],
+              ['Email on QR', result.email.linked ? (result.email.checkable ? 'linked' : 'linked (this format cannot check it)') : 'none linked'],
               ['Email entered', result.email.entered],
               ['QR generated', result.details.generatedAt],
             ]} />
