@@ -1,4 +1,6 @@
 import { X509Certificate, createHash, createPublicKey, verify, type KeyObject } from 'node:crypto';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { gunzipSync, inflateRawSync, inflateSync } from 'node:zlib';
 
 /**
@@ -112,7 +114,7 @@ export function parseSecureQr(raw: string): SecureQr {
   };
 }
 
-/** UIDAI's key from configuration: a PEM certificate, a PEM public key, or base64 DER of either. */
+/** UIDAI's key from one certificate: a PEM certificate, a PEM public key, or base64 DER of either. */
 export function loadUidaiKey(configured: string): KeyObject {
   const text = configured.replace(/\\n/g, '\n').trim();
   const candidates: (string | Buffer)[] = [text];
@@ -132,6 +134,73 @@ export function loadUidaiKey(configured: string): KeyObject {
     }
   }
   throw new AadhaarError('aadhaar_unconfigured', 'AADHAAR_QR_CERT is set but is not a certificate or public key.');
+}
+
+/**
+ * Every key in one setting: several PEM blocks one after another, or several
+ * base64 values separated by commas or semicolons. One value on its own still works.
+ */
+export function loadUidaiKeys(configured: string): KeyObject[] {
+  const text = configured.replace(/\\n/g, '\n').trim();
+  const pems = text.match(/-----BEGIN [A-Z ]+-----[\s\S]*?-----END [A-Z ]+-----/g);
+  const parts = pems ?? text.split(/[,;]/);
+  return parts.map((part) => part.trim()).filter(Boolean).map(loadUidaiKey);
+}
+
+/**
+ * UIDAI's signing certificates, shipped in api/assets/uidai.
+ *
+ * UIDAI changes its signing key every two or three years, and a QR keeps the
+ * signature of the key in use when it was made. A PVC card or printed letter
+ * from 2020 is still signed with that year's key, so every key UIDAI has used
+ * is kept, expired or not. An expired certificate only means UIDAI has stopped
+ * signing with that key. Signatures it made before then are still genuine.
+ * Add a new key's .cer to that folder when UIDAI publishes one, or put it in
+ * AADHAAR_QR_CERT until the next deploy.
+ */
+function bundledCertificateDir(): string | null {
+  const candidates = [
+    resolve(__dirname, '../../../../assets/uidai'), // api/dist/api/src/verification -> api/assets/uidai
+    resolve(__dirname, '../../assets/uidai'), // api/src/verification, run from source
+    join(process.cwd(), 'assets', 'uidai'),
+    join(process.cwd(), 'api', 'assets', 'uidai'),
+  ];
+  return candidates.find((dir) => existsSync(dir)) ?? null;
+}
+
+export function bundledUidaiKeys(): KeyObject[] {
+  const dir = bundledCertificateDir();
+  if (!dir) return [];
+  return readdirSync(dir)
+    .filter((name) => name.endsWith('.cer'))
+    .sort()
+    .map((name) => loadUidaiKey(readFileSync(join(dir, name), 'utf8')));
+}
+
+let cached: { configured: string | null; keys: KeyObject[] } | null = null;
+
+/**
+ * The keys bundled with the API plus any in AADHAAR_QR_CERT. Empty means Aadhaar cannot be checked.
+ * A setting that cannot be read is logged and skipped, so a bad paste does not switch off the bundled keys.
+ */
+export function uidaiKeys(configured: string | null): KeyObject[] {
+  if (cached && cached.configured === configured) return cached.keys;
+  let extra: KeyObject[] = [];
+  if (configured) {
+    try {
+      extra = loadUidaiKeys(configured);
+    } catch (err) {
+      console.error('AADHAAR_QR_CERT is set but could not be read; using the bundled UIDAI certificates only.', err instanceof Error ? err.message : err);
+    }
+  }
+  const keys = [...bundledUidaiKeys(), ...extra];
+  cached = { configured, keys };
+  return keys;
+}
+
+/** True when any one of UIDAI's keys made this signature. */
+export function signedByAny(qr: SecureQr, keys: readonly KeyObject[]): boolean {
+  return keys.some((key) => signatureValid(qr, key));
 }
 
 export function signatureValid(qr: SecureQr, key: KeyObject): boolean {

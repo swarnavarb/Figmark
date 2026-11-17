@@ -7,7 +7,7 @@ import { config } from '../config.js';
 import { EmailUnavailableError, sendEmail } from './email-providers.js';
 import type { Repository } from '../data/repository.js';
 import {
-  AadhaarError, aadhaarMobileHash, loadUidaiKey, parseSecureQr, signatureValid,
+  AadhaarError, aadhaarMobileHash, parseSecureQr, signedByAny, uidaiKeys,
 } from './aadhaar.js';
 
 /**
@@ -71,7 +71,7 @@ export function statusOf(user: User): VerificationStatus {
     ready: {
       email: config.verification.email !== null || devCodesAllowed(),
       whatsapp: config.verification.whatsapp !== null,
-      aadhaar: config.verification.aadhaarCertificate !== null,
+      aadhaar: aadhaarReady(),
     },
   };
 }
@@ -446,12 +446,17 @@ export async function handleWhatsAppMessage(repository: Repository, message: Inb
 
 /* ── Aadhaar Secure QR ─────────────────────────────────────────────────── */
 
+/** Whether there is any UIDAI key to check a QR against. */
+function aadhaarReady(): boolean {
+  return uidaiKeys(config.verification.aadhaarCertificate).length > 0;
+}
+
 export async function verifyAadhaar(repository: Repository, user: User, qrText: string, consent: boolean): Promise<void> {
   if (!consent) {
     throw new VerificationError(400, 'consent_required', 'Tick the consent box to let Figmark read your Aadhaar QR.');
   }
-  const certificate = config.verification.aadhaarCertificate;
-  if (!certificate) {
+  const keys = uidaiKeys(config.verification.aadhaarCertificate);
+  if (keys.length === 0) {
     throw new VerificationError(503, 'aadhaar_unconfigured', 'Aadhaar verification is not set up on this server yet. An operator can approve you meanwhile.');
   }
   const checks = verifiedChecks(user);
@@ -463,7 +468,7 @@ export async function verifyAadhaar(repository: Repository, user: User, qrText: 
 
   try {
     const qr = parseSecureQr(qrText);
-    if (!signatureValid(qr, loadUidaiKey(certificate))) {
+    if (!signedByAny(qr, keys)) {
       throw new AadhaarError('aadhaar_signature', 'This QR is not signed by UIDAI, or it has been altered. Scan the QR on your original Aadhaar.');
     }
     if (!qr.hasMobile || !qr.mobileHash) {

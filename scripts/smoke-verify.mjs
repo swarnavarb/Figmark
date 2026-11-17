@@ -38,7 +38,8 @@ await useFixtures();
 const { getRepository } = await import(new URL('api/src/data/index.js', dist));
 const { MemoryRepository } = await import(new URL('api/src/data/memory-repository.js', dist));
 const { MockAuthProvider } = await import(new URL('api/src/auth/mock-provider.js', dist));
-const { aadhaarMobileHash, parseSecureQr } = await import(new URL('api/src/verification/aadhaar.js', dist));
+const { aadhaarMobileHash, parseSecureQr, bundledUidaiKeys, loadUidaiKeys, signedByAny, uidaiKeys } =
+  await import(new URL('api/src/verification/aadhaar.js', dist));
 
 const ctx = { error: () => {}, log: () => {}, warn: () => {}, info: () => {} };
 const req = ({ headers = {}, body, query = {}, params = {}, method = 'POST', raw } = {}) => ({
@@ -412,6 +413,36 @@ await check('with no signing key, nothing is issued or accepted', async () => {
   const keyed = new MockAuthProvider(store, '', 3600);
   const forged = `${Buffer.from(JSON.stringify({ sub: 'usr_demo', exp: Date.now() / 1000 + 600 })).toString('base64url')}.x`;
   assert.equal(await keyed.getCurrentUser(req({ method: 'GET', headers: { authorization: `Bearer ${forged}` } })), null);
+});
+
+await check("UIDAI's signing certificates ship with the API, old ones included", async () => {
+  // DS 03 (2017) through DS 06 (2026-2029): a card printed under any of them still checks.
+  assert.equal(bundledUidaiKeys().length, 5);
+  for (const key of bundledUidaiKeys()) assert.equal(key.asymmetricKeyType, 'rsa');
+});
+
+await check('a QR signed with any one of several keys is accepted, and only those', async () => {
+  const { publicKey: older, privateKey: olderPrivate } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const pems = [older, publicKey].map((key) => key.export({ type: 'spki', format: 'pem' })).join('\n');
+  const base64 = [older, publicKey].map((key) => key.export({ type: 'spki', format: 'der' }).toString('base64')).join(',');
+  for (const setting of [pems, base64]) {
+    const keys = loadUidaiKeys(setting);
+    assert.equal(keys.length, 2);
+    assert.ok(signedByAny(parseSecureQr(secureQr({ mobile: '9876543210', key: olderPrivate })), keys));
+    assert.ok(signedByAny(parseSecureQr(secureQr({ mobile: '9876543210' })), keys));
+    assert.ok(!signedByAny(parseSecureQr(secureQr({ mobile: '9876543210', key: otherKey })), keys));
+  }
+});
+
+await check('the setting adds to the bundled keys, and a bad one does not switch them off', async () => {
+  assert.equal(uidaiKeys(process.env.AADHAAR_QR_CERT).length, 6);
+  const quiet = console.error;
+  console.error = () => {};
+  try {
+    assert.equal(uidaiKeys('not a certificate').length, 5);
+  } finally {
+    console.error = quiet;
+  }
 });
 
 console.log(`\n${passed} verification checks passed`);

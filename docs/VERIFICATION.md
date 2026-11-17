@@ -53,7 +53,7 @@ it is not set up yet, and an operator can grant rights instead.
 | `WHATSAPP_VERIFY_TOKEN` | Any string; typed into Meta's webhook settings too. |
 | `WHATSAPP_APP_SECRET` | Meta app → App settings → Basic → App secret. Checks each webhook's signature. |
 | `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` | Optional: lets Figmark reply "verified" in the chat. |
-| `AADHAAR_QR_CERT` | UIDAI's offline-verification certificate (`uidai_offline_publickey_*.cer`), as PEM or base64. Download it from UIDAI's "Secure QR Code" reader page. |
+| `AADHAAR_QR_CERT` | Optional. UIDAI's Secure QR certificates ship with the API in `api/assets/uidai/` (DS 03 to DS 06, 2017 to 2029), so Aadhaar works without this. Use it only for a new key UIDAI publishes before the next deploy: PEM blocks one after another, or base64 values separated by commas. It adds to the shipped keys, and a value that can't be read is logged and skipped. |
 
 ### Email: three free tiers, one after another
 
