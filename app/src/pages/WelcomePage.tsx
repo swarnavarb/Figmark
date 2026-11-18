@@ -4,6 +4,8 @@ import { suggestUsername } from '@shared/handles';
 import { Icon, type IconName } from '../components/ui';
 import { useSession } from '../session';
 import { haptic } from '../haptics';
+import { ApiRequestError, api } from '../api';
+import { readQrFrame, readQrPicture } from '../qr-reader';
 import { hasOnboarded, markOnboarded, readWelcomeDraft, saveWelcomeDraft } from '../onboarding';
 import '../styles/Welcome.css';
 
@@ -21,9 +23,12 @@ import '../styles/Welcome.css';
  *  - Google: with VITE_GOOGLE_CLIENT_ID set this uses Google Identity Services
  *    and reads name and email from the ID token; the token still has to be
  *    verified server-side. Without it, the person confirms name and email here.
- *  - WhatsApp and Aadhaar OTPs are simulated: any six digits pass, and Aadhaar
- *    returns the Google name with a sample date of birth and gender. The real
- *    checks live behind /verify and need a signed-in account.
+ *  - The WhatsApp code is simulated: any six digits pass.
+ *  - Aadhaar is real: the Secure QR is scanned or uploaded and checked by
+ *    POST /api/verify/aadhaar/signup (UIDAI signature, linked mobile = the
+ *    WhatsApp number), which answers with name, date of birth and gender and
+ *    saves nothing. Creating the account must send the QR again so the server
+ *    re-checks it; nothing the browser holds is trusted.
  *  - "Create account" keeps the profile on this device and does not call the
  *    API yet: there is no password-free sign-up endpoint.
  */
@@ -653,35 +658,95 @@ function WhatsAppStep({ initial, verified, onDone }: { initial: string; verified
   );
 }
 
+/** UIDAI writes the date of birth as DD-MM-YYYY (or a year alone); the profile wants YYYY-MM-DD. */
+function isoDob(raw: string): string {
+  const day = /^(\d{2})[-/](\d{2})[-/](\d{4})$/.exec(raw.trim());
+  if (day) return `${day[3]}-${day[2]}-${day[1]}`;
+  return /^\d{4}-\d{2}-\d{2}$/.test(raw.trim()) ? raw.trim() : '';
+}
+
+const GENDERS: Record<string, string> = { M: 'Male', F: 'Female', T: 'Transgender' };
+
+/**
+ * Aadhaar by its Secure QR, the same way /verify does it: scan the QR on the
+ * Aadhaar letter, e-Aadhaar or mAadhaar (or upload a picture of it), and the
+ * server checks UIDAI's signature and that the mobile linked to it is the
+ * WhatsApp number just verified. No OTP and no Aadhaar number typed in.
+ */
 function AadhaarStep({ draft, onDone, onLater }: { draft: Draft; onDone: (details: AadhaarDetails) => void; onLater: () => void }) {
-  const [number, setNumber] = useState('');
   const [consent, setConsent] = useState(false);
-  const [sent, setSent] = useState(false);
-  const [code, setCode] = useState('');
+  const [scanning, setScanning] = useState(false);
+  const [pasted, setPasted] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [found, setFound] = useState<AadhaarDetails | null>(draft.aadhaar);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const masked = `+91 ${draft.phone.slice(0, 2)}xxxxxx${draft.phone.slice(-2)}`;
 
-  async function send(event: FormEvent) {
-    event.preventDefault();
-    if (number.length !== 12 || !verhoeffValid(number)) return setError('That is not a valid Aadhaar number. Check the 12 digits.');
-    if (!consent) return setError('Please give consent to verify with UIDAI.');
-    setError(null);
+  async function check(qr: string) {
     setBusy(true);
-    await pause(800); // Simulated: UIDAI sends an OTP to the Aadhaar-linked mobile.
-    setBusy(false);
-    setSent(true);
+    setError(null);
+    try {
+      const result = await api.checkAadhaarForSignup(qr, draft.phone);
+      haptic('success');
+      setFound({ name: result.name, dob: isoDob(result.dob) || result.dob, gender: GENDERS[result.gender] ?? result.gender, last4: result.last4 });
+    } catch (err) {
+      haptic('error');
+      setError(err instanceof ApiRequestError ? err.message : 'The check did not go through. Check your connection and try again.');
+    } finally {
+      setBusy(false);
+    }
   }
-  async function verify(event: FormEvent) {
-    event.preventDefault();
-    if (code.length !== 6) return setError('Enter the 6-digit code sent by UIDAI.');
+
+  // The camera, read a few times a second until a QR turns up.
+  useEffect(() => {
+    if (!scanning) return;
+    let stream: MediaStream | null = null;
+    let stopped = false;
+    void (async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 2560 }, height: { ideal: 1440 } } });
+        const video = videoRef.current;
+        if (!video || stopped) return;
+        video.srcObject = stream;
+        await video.play();
+        let attempt = 0;
+        while (!stopped) {
+          if (video.videoWidth > 0) {
+            const text = await readQrFrame(video, attempt);
+            attempt += 1;
+            if (text) {
+              setScanning(false);
+              void check(text);
+              return;
+            }
+          }
+          await pause(350);
+        }
+      } catch {
+        setError('Could not open the camera. Upload a photo or screenshot of the QR instead.');
+        setScanning(false);
+      }
+    })();
+    return () => {
+      stopped = true;
+      stream?.getTracks().forEach((track) => track.stop());
+    };
+  }, [scanning]);
+
+  async function fromFile(file: File | undefined) {
+    if (!file) return;
     setError(null);
     setBusy(true);
-    await pause(900); // Simulated: UIDAI's eKYC answer. Sample date of birth and gender.
-    setBusy(false);
-    haptic('success');
-    setFound({ name: draft.name, dob: '1997-08-14', gender: 'Female', last4: number.slice(-4) });
+    try {
+      const text = await readQrPicture(file);
+      if (text) await check(text);
+      else setError('No QR code found in that picture. Crop it to the QR and make sure it is sharp, then try again.');
+    } catch {
+      setError('That file could not be read as a picture.');
+    } finally {
+      setBusy(false);
+    }
   }
 
   if (found) {
@@ -700,7 +765,7 @@ function AadhaarStep({ draft, onDone, onLater }: { draft: Draft; onDone: (detail
             <div><dt>Date of birth</dt><dd>{formatDob(found.dob)}</dd></div>
             <div><dt>Gender</dt><dd>{found.gender}</dd></div>
           </dl>
-          <p className="welfine">We keep only these and the last 4 digits. Your Aadhaar number is never stored or shown.</p>
+          <p className="welfine">Signed by UIDAI and matched to your WhatsApp number. We keep only these and the last 4 digits - never the full number, your address or your photo.</p>
         </div>
         <button type="button" className="welbtn welbtn--primary welbtn--wide" onClick={() => onDone(found)}>
           Continue to your profile <Icon name="right" size={16} />
@@ -714,40 +779,73 @@ function AadhaarStep({ draft, onDone, onLater }: { draft: Draft; onDone: (detail
       <div className="welhead">
         <span className="welhead__icon wel--blue"><BlueTick size={28} /></span>
         <h1>Get your blue tick</h1>
-        <p>Verify your Aadhaar to complete the blue tick. Verified people get more orders, and their buyers worry less.</p>
+        <p>Scan the QR on your Aadhaar. Verified people get more orders, and their buyers worry less.</p>
       </div>
       <TickMeter phone aadhaar={false} />
 
-      {!sent ? (
-        <form className="welform" onSubmit={send} noValidate>
-          <Field label="Aadhaar number">
-            <input className="welinput welinput--spaced" inputMode="numeric" autoComplete="off" value={groupAadhaar(number)}
-              placeholder="0000 0000 0000" onChange={(e) => setNumber(e.target.value.replace(/\D/g, '').slice(0, 12))} />
-          </Field>
-          <div className="welnote">
-            <Icon name="phone" size={16} />
-            <span>UIDAI sends a code to your Aadhaar-linked mobile. It must be your WhatsApp number, <strong>{masked}</strong>.</span>
+      <div className="welform">
+        <div className="welqrwhere">
+          <span className="welqrwhere__code" aria-hidden="true"><QrGlyph /></span>
+          <span>
+            <strong>Use the large QR code</strong> on your Aadhaar letter, your e-Aadhaar PDF (from myaadhaar.uidai.gov.in)
+            or the mAadhaar app. It's signed by UIDAI and checked on our server, so there's no OTP and no card upload.
+          </span>
+        </div>
+        <div className="welnote">
+          <Icon name="phone" size={16} />
+          <span>The mobile linked to your Aadhaar must be your WhatsApp number, <strong>{masked}</strong>.</span>
+        </div>
+        <label className="welcheck">
+          <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
+          <span>I agree to Figmark reading my Aadhaar Secure QR to verify who I am. Figmark keeps only my name, date of birth,
+            gender and the last 4 digits of my Aadhaar - never the full number, my address or my photo.</span>
+        </label>
+
+        {scanning ? (
+          <div className="welcam">
+            <video ref={videoRef} playsInline muted />
+            <span className="welcam__frame" aria-hidden="true" />
+            <span className="welcam__hint">Hold the QR inside the frame</span>
+            <button type="button" className="welbtn welbtn--ghost welbtn--sm welcam__stop" onClick={() => setScanning(false)}>Stop</button>
           </div>
-          <label className="welcheck">
-            <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
-            <span>I agree to Figmark verifying my Aadhaar with UIDAI to confirm my name, date of birth and gender.</span>
-          </label>
-          {error && <p className="welerror" role="alert">{error}</p>}
-          <button type="submit" className="welbtn welbtn--primary welbtn--wide" disabled={busy}>{busy ? 'Sending…' : 'Send OTP'}</button>
-          <button type="button" className="welbtn welbtn--quiet" onClick={onLater}>Do this later</button>
-          <p className="welfine">You can buy without it. Selling, and the blue tick, need Aadhaar.</p>
-        </form>
-      ) : (
-        <form className="welform" onSubmit={verify} noValidate>
-          <p className="welsent">Code sent to <strong>{masked}</strong>{' '}
-            <button type="button" className="welbtn welbtn--link" onClick={() => { setSent(false); setCode(''); }}>Change</button>
-          </p>
-          <OtpInput value={code} onChange={setCode} label="Aadhaar OTP" />
-          {error && <p className="welerror" role="alert">{error}</p>}
-          <button type="submit" className="welbtn welbtn--primary welbtn--wide" disabled={busy}>{busy ? 'Verifying…' : 'Verify Aadhaar'}</button>
-        </form>
-      )}
+        ) : busy ? (
+          <div className="welchecking" role="status"><span className="welchecking__spin" aria-hidden="true" /> Checking UIDAI's signature…</div>
+        ) : (
+          <div className="welqrbtns">
+            <button type="button" className="welbtn welbtn--primary welbtn--wide" disabled={!consent} onClick={() => { setError(null); setScanning(true); }}>
+              <Icon name="camera" size={16} /> Scan with camera
+            </button>
+            <label className={`welbtn welbtn--outline welbtn--wide${consent ? '' : ' is-off'}`}>
+              <Icon name="image" size={16} /> Upload a photo or screenshot
+              <input type="file" accept="image/*" hidden disabled={!consent} onChange={(event) => { void fromFile(event.target.files?.[0]); event.target.value = ''; }} />
+            </label>
+          </div>
+        )}
+        {!consent && !scanning && <p className="welfine">Tick the box above to scan.</p>}
+
+        {error && <p className="welerror" role="alert">{error}</p>}
+
+        <details className="welpaste">
+          <summary>Have the QR's text from another scanner app?</summary>
+          <textarea className="welinput welpaste__box" value={pasted} onChange={(e) => setPasted(e.target.value)}
+            placeholder="A long number, thousands of digits" rows={3} />
+          <button type="button" className="welbtn welbtn--outline welbtn--sm" disabled={!consent || busy || pasted.trim().length < 100}
+            onClick={() => void check(pasted.trim())}>Check this</button>
+        </details>
+
+        <button type="button" className="welbtn welbtn--quiet" onClick={onLater}>Do this later</button>
+        <p className="welfine">You can buy without it. Selling, and the blue tick, need Aadhaar.</p>
+      </div>
     </>
+  );
+}
+
+function QrGlyph() {
+  return (
+    <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round">
+      <rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" />
+      <path d="M14 14h3v3h-3zM18 18h3v3h-3zM14 20h2M20 14v2" />
+    </svg>
   );
 }
 
@@ -763,7 +861,9 @@ const LANGUAGES = ['English', 'हिन्दी Hindi', 'தமிழ் Tamil
 function ProfileStep({ draft, onDone }: { draft: Draft; onDone: (profile: Profile, name: string) => void }) {
   const fromAadhaar = draft.aadhaar;
   const [name, setName] = useState(fromAadhaar?.name ?? draft.name);
-  const [dob, setDob] = useState(fromAadhaar?.dob ?? '');
+  // Older QRs carry only a birth year: then the date is asked for, not locked.
+  const dobLocked = !!fromAadhaar && /^\d{4}-\d{2}-\d{2}$/.test(fromAadhaar.dob);
+  const [dob, setDob] = useState(dobLocked ? fromAadhaar!.dob : '');
   const [gender, setGender] = useState(fromAadhaar?.gender ?? '');
   const suggestion = useMemo(() => suggestUsername(name || draft.email.split('@')[0] || 'figmarker'), [name, draft.email]);
   const [profile, setProfile] = useState<Profile>(draft.profile ?? {
@@ -776,7 +876,7 @@ function ProfileStep({ draft, onDone }: { draft: Draft; onDone: (profile: Profil
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (!fromAadhaar && (!name.trim() || !dob || !gender)) return setError('Fill in your name, date of birth and gender.');
+    if (!name.trim() || !dob || !gender) return setError('Fill in your name, date of birth and gender.');
     if (profile.roles.length === 0) return setError('Pick at least one thing you are here to do.');
     if (profile.pin && !/^[1-9]\d{5}$/.test(profile.pin)) return setError('A PIN code is 6 digits.');
     if (!agreed) return setError('Please accept the Terms to create your account.');
@@ -802,7 +902,7 @@ function ProfileStep({ draft, onDone }: { draft: Draft; onDone: (profile: Profil
           </Field>
           <div className="welrow">
             <Field label="Date of birth">
-              <input className="welinput" type="date" value={dob} readOnly={!!fromAadhaar} onChange={(e) => setDob(e.target.value)} />
+              <input className="welinput" type="date" value={dob} readOnly={dobLocked} onChange={(e) => setDob(e.target.value)} />
             </Field>
             <Field label="Gender">
               {fromAadhaar ? <input className="welinput" value={gender} readOnly /> : (
@@ -993,31 +1093,12 @@ function useCountdown(running: boolean) {
 
 const pause = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
-const groupAadhaar = (digits: string) => digits.replace(/(\d{4})(?=\d)/g, '$1 ');
 
 function formatDob(iso: string) {
   const date = new Date(`${iso}T00:00:00`);
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
-/** Aadhaar's own check digit (Verhoeff), so a typo is caught before UIDAI is asked. */
-function verhoeffValid(digits: string): boolean {
-  const d = [
-    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], [1, 2, 3, 4, 0, 6, 7, 8, 9, 5], [2, 3, 4, 0, 1, 7, 8, 9, 5, 6],
-    [3, 4, 0, 1, 2, 8, 9, 5, 6, 7], [4, 0, 1, 2, 3, 9, 5, 6, 7, 8], [5, 9, 8, 7, 6, 0, 4, 3, 2, 1],
-    [6, 5, 9, 8, 7, 1, 0, 4, 3, 2], [7, 6, 5, 9, 8, 2, 1, 0, 4, 3], [8, 7, 6, 5, 9, 3, 2, 1, 0, 4], [9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
-  ];
-  const p = [
-    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], [1, 5, 7, 6, 2, 8, 3, 0, 9, 4], [5, 8, 0, 3, 7, 9, 6, 1, 4, 2], [8, 9, 1, 6, 0, 4, 3, 5, 2, 7],
-    [9, 4, 5, 3, 1, 2, 6, 8, 7, 0], [4, 2, 8, 6, 5, 7, 3, 9, 0, 1], [2, 7, 9, 3, 8, 0, 6, 4, 1, 5], [7, 0, 4, 6, 9, 1, 3, 2, 5, 8],
-  ];
-  if (!/^[2-9]\d{11}$/.test(digits)) return false;
-  let check = 0;
-  digits.split('').reverse().forEach((char, at) => {
-    check = d[check]![p[at % 8]![Number(char)]!]!;
-  });
-  return check === 0;
-}
 
 /* ── Slide art: little screens from the app, in the slide's tone ─────────────
  * Each one shows the feature itself - the tracking timeline, the manifest,

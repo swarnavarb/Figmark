@@ -3,10 +3,11 @@ import type { User } from '../../../shared/models.js';
 import { getAuthService } from '../auth/index.js';
 import { config } from '../config.js';
 import { getRepository } from '../data/index.js';
-import { tooFast } from '../rate-limit.js';
+import { clientIp, tooFast } from '../rate-limit.js';
 import {
   VerificationError, changePhone, confirmEmail, confirmEmailChange, handleWhatsAppMessage, inboundMessages, startEmail,
   requestReview, startEmailChange, startPhone, statusOf, verifyAadhaar, whatsappSignatureValid, withdrawReview,
+  checkAadhaarForSignup,
 } from '../verification/index.js';
 import { MockAuthProvider } from '../auth/mock-provider.js';
 import { aadhaarTestAllowed, testAadhaarQr } from '../verification/aadhaar-test.js';
@@ -147,6 +148,20 @@ async function aadhaar(request: HttpRequest) {
 }
 
 /**
+ * POST /api/verify/aadhaar/signup - { qr, phone, consent }: sign-up's Aadhaar
+ * step, before the account exists. The same checks as /verify/aadhaar against
+ * the WhatsApp number just verified; answers with name, date of birth, gender
+ * and the last four digits. Saves nothing, and counted per address since there
+ * is no account to count it against.
+ */
+async function aadhaarSignup(request: HttpRequest) {
+  const slow = await tooFast(`ip:${clientIp(request)}`, 'verify_aadhaar');
+  if (slow) return slow;
+  const body = await readJson(request);
+  return json(200, checkAadhaarForSignup(String(body.qr ?? ''), String(body.phone ?? ''), body.consent === true));
+}
+
+/**
  * POST /api/verify/aadhaar/test - { qr, phone, email? }. TEMPORARY test page
  * support (see verification/aadhaar-test.ts): reads and checks a QR, saves nothing.
  */
@@ -231,6 +246,7 @@ export const verifyPhoneNumberRoute = verifying(phoneNumber);
 export const verifyAadhaarRoute = verifying(aadhaar);
 export const verifyReviewRoute = verifying(review);
 export const verifyAadhaarTestRoute = verifying(aadhaarTest);
+export const verifyAadhaarSignupRoute = verifying(aadhaarSignup);
 export const whatsappWebhookRoute = handler(whatsappWebhook);
 
 const anon = { authLevel: 'anonymous' as const };
@@ -242,6 +258,7 @@ app.http('verify-email-change-confirm', { ...anon, methods: ['POST'], route: 've
 app.http('verify-phone-start', { ...anon, methods: ['POST'], route: 'verify/phone/start', handler: verifyPhoneStartRoute });
 app.http('verify-phone-number', { ...anon, methods: ['POST'], route: 'verify/phone/number', handler: verifyPhoneNumberRoute });
 app.http('verify-aadhaar', { ...anon, methods: ['POST'], route: 'verify/aadhaar', handler: verifyAadhaarRoute });
+app.http('verify-aadhaar-signup', { ...anon, methods: ['POST'], route: 'verify/aadhaar/signup', handler: verifyAadhaarSignupRoute });
 app.http('verify-aadhaar-test', { ...anon, methods: ['POST'], route: 'verify/aadhaar/test', handler: verifyAadhaarTestRoute });
 app.http('verify-review', { ...anon, methods: ['POST'], route: 'verify/review', handler: verifyReviewRoute });
 app.http('verify-whatsapp-webhook', { ...anon, methods: ['GET', 'POST'], route: 'verify/whatsapp/webhook', handler: whatsappWebhookRoute });

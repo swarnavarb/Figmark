@@ -37,7 +37,7 @@ const {
 const {
   verifyStatusRoute, verifyEmailSendRoute, verifyEmailConfirmRoute, verifyPhoneStartRoute, verifyPhoneNumberRoute,
   verifyEmailChangeRoute, verifyEmailChangeConfirmRoute,
-  verifyAadhaarRoute, verifyReviewRoute, verifyAadhaarTestRoute, whatsappWebhookRoute,
+  verifyAadhaarRoute, verifyReviewRoute, verifyAadhaarTestRoute, verifyAadhaarSignupRoute, whatsappWebhookRoute,
 } = await import(new URL('verify-routes.js', apiRoot));
 const {
   feedRoute, listingDetailRoute, createListingRoute, toggleLikeRoute, bumpListingRoute,
@@ -208,6 +208,7 @@ const routes = [
   ['POST', '/api/verify/phone/start', verifyPhoneStartRoute],
   ['POST', '/api/verify/phone/number', verifyPhoneNumberRoute],
   ['POST', '/api/verify/aadhaar/test', verifyAadhaarTestRoute],
+  ['POST', '/api/verify/aadhaar/signup', verifyAadhaarSignupRoute],
   ['POST', '/api/verify/aadhaar', verifyAadhaarRoute],
   ['POST', '/api/verify/review', verifyReviewRoute],
   ['GET', '/api/verify/whatsapp/webhook', whatsappWebhookRoute],

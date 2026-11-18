@@ -437,7 +437,6 @@
 }
 .welinput:focus { outline: none; border-color: var(--violet-lit); box-shadow: 0 0 0 3px var(--violet-soft); }
 .welinput[readonly] { background: color-mix(in srgb, var(--surface) 60%, var(--bg)); color: var(--text-dim); }
-.welinput--spaced { letter-spacing: 0.12em; font-variant-numeric: tabular-nums; font-size: var(--t-lg); }
 select.welinput { appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--text-dim) 50%), linear-gradient(135deg, var(--text-dim) 50%, transparent 50%); background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%; background-size: 5px 5px; background-repeat: no-repeat; padding-right: 32px; }
 .welrow { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .welerror { margin: 0; padding: 10px 12px; border-radius: var(--r-md); background: var(--danger-soft); color: var(--danger-text); font-size: var(--t-sm); }
@@ -609,3 +608,39 @@ select.welinput { appearance: none; background-image: linear-gradient(45deg, tra
   .welstep__body, .welearned__tick, .weldone__card, .welbtn--glow { animation: none !important; }
   .welm__plane { display: none; }
 }
+
+/* Aadhaar by Secure QR: where to find it, the camera, the check. */
+.welbtn--outline { background: transparent; color: var(--text); border: 1px solid var(--border-strong); }
+.welbtn--outline:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
+.welbtn--outline.is-off { opacity: 0.5; cursor: not-allowed; }
+.welqrbtns { display: grid; gap: 8px; }
+.welqrwhere {
+  display: flex; gap: 12px; align-items: flex-start; padding: 12px;
+  border-radius: var(--r-md); background: var(--surface); border: 1px solid var(--border);
+  color: var(--text-dim); font-size: var(--t-sm); line-height: 1.45;
+}
+.welqrwhere strong { color: var(--text); }
+.welqrwhere__code {
+  flex: none; width: 48px; height: 48px; border-radius: 12px; display: grid; place-items: center;
+  background: var(--blue-soft); color: var(--blue-pale);
+}
+.welcam { position: relative; border-radius: var(--r-lg); overflow: hidden; background: #000; aspect-ratio: 4 / 3; }
+.welcam video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.welcam__frame {
+  position: absolute; inset: 14% 22%; border-radius: 14px;
+  box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.45); border: 2px solid var(--blue-pale);
+  animation: wel-scan-pulse 1.6s ease-in-out infinite;
+}
+@keyframes wel-scan-pulse { 50% { border-color: var(--blue); } }
+.welcam__hint { position: absolute; left: 0; right: 0; bottom: 10px; text-align: center; color: #fff; font-size: var(--t-sm); font-weight: var(--w-semi); }
+.welcam__stop { position: absolute; top: 8px; right: 8px; background: rgba(0, 0, 0, 0.55); color: #fff; }
+.welchecking {
+  display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 52px;
+  border-radius: var(--r-pill); background: var(--blue-soft); color: var(--blue-pale); font-weight: var(--w-semi);
+}
+.welchecking__spin { width: 18px; height: 18px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: wel-spin 0.8s linear infinite; }
+@keyframes wel-spin { to { transform: rotate(360deg); } }
+.welpaste { color: var(--text-dim); font-size: var(--t-sm); }
+.welpaste summary { cursor: pointer; padding: 4px 0; }
+.welpaste[open] { display: grid; gap: 8px; }
+.welpaste__box { min-height: 0; padding: 10px 14px; font-family: var(--mono); font-size: var(--t-sm); resize: vertical; }

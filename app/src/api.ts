@@ -3017,6 +3017,9 @@ export const api = {
     post<{ link: string; message: string; businessNumber: string; expiresAt: string; status: VerificationStatus }>('/verify/phone/start'),
   changePhone: (phone: string) => post<{ status: VerificationStatus }>('/verify/phone/number', { phone }),
   verifyAadhaar: (qr: string) => post<{ status: VerificationStatus }>('/verify/aadhaar', { qr, consent: true }),
+  /** Sign-up's Aadhaar step, before the account exists: checks the QR against the WhatsApp number, saves nothing. */
+  checkAadhaarForSignup: (qr: string, phone: string) =>
+    post<{ name: string; dob: string; gender: string; last4: string; mobileMatch: 'hash' | 'last4' }>('/verify/aadhaar/signup', { qr, phone, consent: true }),
   requestReview: (stuckOn: ReviewStep, note: string) => post<{ status: VerificationStatus }>('/verify/review', { stuckOn, note }),
   withdrawReview: () => post<{ status: VerificationStatus }>('/verify/review', { withdraw: true }),
   /** TEMPORARY: the /verify/aadhaar-test page. Saves nothing. */

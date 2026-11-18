@@ -30,7 +30,7 @@ const {
   verifyStatusRoute: status, verifyEmailSendRoute: emailSend, verifyEmailConfirmRoute: emailConfirm,
   verifyPhoneStartRoute: phoneStart, verifyPhoneNumberRoute: phoneNumber, verifyAadhaarRoute: aadhaar,
   whatsappWebhookRoute: webhook, verifyEmailChangeRoute: emailChange, verifyEmailChangeConfirmRoute: emailChangeConfirm,
-  verifyReviewRoute: review,
+  verifyReviewRoute: review, verifyAadhaarSignupRoute: aadhaarSignup,
 } = await import(new URL('verify-routes.js', fns));
 const { createOrderRoute: createOrder } = await import(new URL('catalog-routes.js', fns));
 const { adminRightsRoute: rights, adminUsersRoute: adminUsers, adminReviewsRoute: adminReviews } = await import(new URL('admin-routes.js', fns));
@@ -221,6 +221,35 @@ await check('email and phone open buying, but not selling', async () => {
 
 /* ── Aadhaar ───────────────────────────────────────────────────────────── */
 console.log('\nAadhaar');
+
+/* Sign-up's Aadhaar step runs before there is an account: the same checks,
+   against the WhatsApp number just verified, answering with what the profile
+   is filled from and saving nothing. */
+await check('sign-up Aadhaar check: a matching QR answers name, birth date, gender and last four, and saves nothing', async () => {
+  const before = (await repository.listUsers?.())?.length;
+  const ok = await aadhaarSignup(req({ body: { qr: secureQr({ mobile: '9876543210' }), phone: '+91 98765 43210', consent: true } }), ctx);
+  assert.equal(ok.status, 200, JSON.stringify(ok.jsonBody));
+  assert.equal(ok.jsonBody.name, 'Priya Nair');
+  assert.equal(ok.jsonBody.last4, '5678');
+  assert.equal(ok.jsonBody.mobileMatch, 'hash');
+  assert.ok(ok.jsonBody.dob && ok.jsonBody.gender);
+  assert.equal(Object.keys(ok.jsonBody).sort().join(), 'dob,gender,last4,mobileMatch,name');
+  if (before !== undefined) assert.equal((await repository.listUsers()).length, before);
+  const v3 = await aadhaarSignup(req({ body: { qr: secureQr({ mobile: '9876543210', version: 'V3' }), phone: '9876543210', consent: true } }), ctx);
+  assert.equal(v3.jsonBody.mobileMatch, 'last4');
+});
+
+await check('sign-up Aadhaar check refuses no consent, a forged QR and another mobile, as the account check does', async () => {
+  const noConsent = await aadhaarSignup(req({ body: { qr: secureQr({ mobile: '9876543210' }), phone: '9876543210', consent: false } }), ctx);
+  assert.equal(noConsent.jsonBody.error, 'consent_required');
+  const forged = await aadhaarSignup(req({ body: { qr: secureQr({ mobile: '9876543210', key: otherKey }), phone: '9876543210', consent: true } }), ctx);
+  assert.equal(forged.jsonBody.error, 'aadhaar_signature');
+  const mismatch = await aadhaarSignup(req({ body: { qr: secureQr({ mobile: '9123456789', version: 'V3' }), phone: '9876543210', consent: true } }), ctx);
+  assert.equal(mismatch.jsonBody.error, 'aadhaar_mobile_mismatch');
+  assert.match(mismatch.jsonBody.message, /ending 6789/);
+  const noPhone = await aadhaarSignup(req({ body: { qr: secureQr({ mobile: '9876543210' }), phone: '', consent: true } }), ctx);
+  assert.equal(noPhone.jsonBody.error, 'phone_first');
+});
 
 await check('nothing is read without consent', async () => {
   const noConsent = await aadhaar(req({ headers: priya.headers, body: { qr: secureQr({ mobile: '9876543210' }), consent: false } }), ctx);

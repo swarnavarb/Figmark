@@ -508,6 +508,72 @@ function aadhaarReady(): boolean {
   return uidaiKeys(config.verification.aadhaarCertificate).length > 0;
 }
 
+/**
+ * The Secure QR, once it is shown to be UIDAI's and its linked mobile to be
+ * `mobile`. Every Aadhaar check goes through here - the account's own and the
+ * one in sign-up before the account exists - so they cannot drift apart.
+ * Throws an AadhaarError that says what to do when a check fails.
+ */
+function checkedSecureQr(qrText: string, keys: ReturnType<typeof uidaiKeys>, mobile: string, shownMobile: string, where: 'account' | 'signup') {
+  const qr = parseSecureQr(qrText);
+  if (!signedByAny(qr, keys)) {
+    throw new AadhaarError('aadhaar_signature', 'This QR is not signed by UIDAI, or it has been altered. Scan the QR on your original Aadhaar.');
+  }
+  // Legacy QRs carry a hash of the whole linked number; 2022+ QRs carry only
+  // its last four digits, so those are what can be matched.
+  if (!qr.hasMobile || (qr.versioned ? !qr.mobileLast4 : !qr.mobileHash)) {
+    throw new AadhaarError(
+      'aadhaar_no_mobile',
+      'No mobile number is linked to this Aadhaar, so it cannot be matched to your WhatsApp number. ' +
+        'Link your mobile at an Aadhaar centre, download a fresh e-Aadhaar, and try again.' +
+        (where === 'account' ? ' If you cannot, ask for a manual review at the bottom of this page.' : ''),
+    );
+  }
+  const mobileMatches = qr.versioned
+    ? mobile.endsWith(qr.mobileLast4 ?? '-')
+    : aadhaarMobileHash(mobileDigits(mobile), qr.last4) === qr.mobileHash;
+  if (!mobileMatches) {
+    const hint = qr.mobileLast4 ? ` Your Aadhaar is linked to a number ending ${qr.mobileLast4}.` : '';
+    throw new AadhaarError(
+      'aadhaar_mobile_mismatch',
+      `The mobile linked to this Aadhaar is not your verified WhatsApp number (${shownMobile}).${hint} ` +
+        'They must be the same number. ' +
+        (where === 'account'
+          ? 'Change your number in Verification to your Aadhaar-linked mobile, verify it on WhatsApp, then scan again.'
+          : 'Go back, verify your Aadhaar-linked mobile on WhatsApp, then scan again.'),
+    );
+  }
+  return qr;
+}
+
+/**
+ * Sign-up's Aadhaar step, before there is an account: the same checks as
+ * verifyAadhaar against the WhatsApp number just verified, answering with the
+ * details the profile is filled from. Saves nothing - creating the account
+ * must send the QR again and be checked again, so nothing here is trusted later.
+ */
+export function checkAadhaarForSignup(qrText: string, phone: string, consent: boolean) {
+  if (!consent) {
+    throw new VerificationError(400, 'consent_required', 'Tick the consent box to let Figmark read your Aadhaar QR.');
+  }
+  const keys = uidaiKeys(config.verification.aadhaarCertificate);
+  if (keys.length === 0) {
+    throw new VerificationError(503, 'aadhaar_unconfigured', 'Aadhaar verification is not set up on this server yet. You can do it later from your profile.');
+  }
+  const mobile = normalizeIndianMobile(phone);
+  if (!mobile) throw new VerificationError(400, 'phone_first', 'Verify your WhatsApp number first: your Aadhaar is matched against it.');
+  try {
+    const qr = checkedSecureQr(qrText, keys, mobile, maskMobile(mobile), 'signup');
+    return {
+      name: qr.name.slice(0, 120), dob: qr.dob.slice(0, 20), gender: qr.gender.slice(0, 10), last4: qr.last4,
+      mobileMatch: qr.versioned ? ('last4' as const) : ('hash' as const),
+    };
+  } catch (err) {
+    if (err instanceof AadhaarError) throw new VerificationError(400, err.code, err.message);
+    throw err;
+  }
+}
+
 export async function verifyAadhaar(repository: Repository, user: User, qrText: string, consent: boolean): Promise<void> {
   if (!consent) {
     throw new VerificationError(400, 'consent_required', 'Tick the consent box to let Figmark read your Aadhaar QR.');
@@ -524,32 +590,7 @@ export async function verifyAadhaar(repository: Repository, user: User, qrText: 
   }
 
   try {
-    const qr = parseSecureQr(qrText);
-    if (!signedByAny(qr, keys)) {
-      throw new AadhaarError('aadhaar_signature', 'This QR is not signed by UIDAI, or it has been altered. Scan the QR on your original Aadhaar.');
-    }
-    // Legacy QRs carry a hash of the whole linked number; 2022+ QRs carry only
-    // its last four digits, so those are what can be matched.
-    if (!qr.hasMobile || (qr.versioned ? !qr.mobileLast4 : !qr.mobileHash)) {
-      throw new AadhaarError(
-        'aadhaar_no_mobile',
-        'No mobile number is linked to this Aadhaar, so it cannot be matched to your WhatsApp number. ' +
-          'Link your mobile at an Aadhaar centre, download a fresh e-Aadhaar, and try again. ' +
-          'If you cannot, ask for a manual review at the bottom of this page.',
-      );
-    }
-    const mobileMatches = qr.versioned
-      ? mobile.endsWith(qr.mobileLast4 ?? '-')
-      : aadhaarMobileHash(mobileDigits(mobile), qr.last4) === qr.mobileHash;
-    if (!mobileMatches) {
-      const hint = qr.mobileLast4 ? ` Your Aadhaar is linked to a number ending ${qr.mobileLast4};` : '';
-      throw new AadhaarError(
-        'aadhaar_mobile_mismatch',
-        `The mobile linked to this Aadhaar is not your verified WhatsApp number (${maskMobile(user.phone)}).${hint} ` +
-          'They must be the same number. Change your number in Verification to your Aadhaar-linked mobile, verify it on WhatsApp, then scan again.',
-      );
-    }
-
+    const qr = checkedSecureQr(qrText, keys, mobile, maskMobile(user.phone), 'account');
     user.verification = {
       ...user.verification,
       governmentId: 'verified',
