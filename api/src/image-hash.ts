@@ -593,6 +593,11 @@ function segment(raw: Raw, given?: View): Segmented {
   return { subject, items: merged.length >= 2 ? merged : [] };
 }
 
+/** Where the thing in a photo is - everything that is not backdrop - or null when that cannot be told. */
+export function subjectBox(raw: Raw): RegionBox | null {
+  return segment(workingCopy(raw)).subject;
+}
+
 /** The separate items in a photo, largest first; empty when it shows one thing, or nothing can be told apart. */
 export function detectItems(raw: Raw): RegionBox[] {
   return segment(workingCopy(raw)).items;
@@ -646,7 +651,7 @@ function silhouette(thing: Raw, view: View): string {
         for (let y = y0; y < y1; y += stepY) {
           for (let x = x0; x < x1; x += stepX) {
             const at = (y * thing.width + x) * 4;
-            if (!backdropAt(view, x / thing.width, y / thing.height, thing.data[at]!, thing.data[at + 1]!, thing.data[at + 2]!, true)) count += 1;
+            if (!backdropAt(view, x / thing.width, y / thing.height, thing.data[at]!, thing.data[at + 1]!, thing.data[at + 2]!)) count += 1;
             n += 1;
           }
         }
@@ -1034,6 +1039,8 @@ const PARTS_STRENGTH = 3;
 const OTHER_PARTS = 0.4;
 /** The most two things made differently can score: a look-alike, never a match. */
 const LOOK_ALIKE_CAP = 0.7;
+/** How alike two shapes must be, colours aside, for one to be another colourway of the other. */
+const VARIANT_FORM = 0.78;
 /** Silhouette cells apart, of 64, at or under which two subjects have the same outline. */
 const SAME_OUTLINE_BITS = 9;
 
@@ -1051,6 +1058,13 @@ export interface Likeness {
   look: number | null;
   /** 0 to 1: how alike which colours of the subjects touch which; null when either hash predates it. */
   parts: number | null;
+  /** 0 to 1: how alike the subjects' shapes are, colours aside. */
+  shape: number;
+  /**
+   * Not the same item, but the same shape in other colours: another colourway
+   * of a shoe, a figure's repaint or variant. Worth suggesting, never a match.
+   */
+  variant: boolean;
 }
 
 /** How alike two fingerprints are; null when either is unreadable. */
@@ -1068,6 +1082,9 @@ export function likeness(a: string, b: string): Likeness | null {
   let samePhoto = bits <= SAME_PHOTO_BITS && colour >= 0.5;
   let score = 0.65 * shape + 0.35 * colour;
   let sameItem = samePhoto;
+  // Shape alone, colours aside: what tells another colourway of the same thing.
+  let form = shape;
+  let sameForm = false;
   // A thing of one colour, or one shade of brown all over, has few parts that
   // meet: what it has is noise, and says nothing either way.
   const rich = left.adjacency && right.adjacency && Math.min(left.partsStrength, right.partsStrength) >= PARTS_STRENGTH;
@@ -1085,6 +1102,8 @@ export function likeness(a: string, b: string): Likeness | null {
     const subject = Math.max(0, 1 - subjectBits / 32);
     const edges = edgeLikeness(left.edges, right.edges);
     const hue = look ?? colour;
+    form = 0.55 * outline + 0.3 * edges + 0.15 * subject;
+    sameForm = form >= VARIANT_FORM;
     // The frame alike is not enough when what is in it is not: two product shots
     // on the same white sweep share almost all their shape.
     samePhoto &&= outlineBits <= SAME_OUTLINE_BITS;
@@ -1114,7 +1133,7 @@ export function likeness(a: string, b: string): Likeness | null {
       }
     }
   }
-  return { samePhoto, sameItem, score, look, parts };
+  return { samePhoto, sameItem, score, look, parts, shape: form, variant: !sameItem && sameForm };
 }
 
 /** A colour as a shopper would say it: "Red", "Brown", "Navy", "Silver". */

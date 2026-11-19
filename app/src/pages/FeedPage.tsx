@@ -15,8 +15,8 @@ import {
 } from '@shared/catalog';
 import { isTakingBookings, preOrderView } from '@shared/preorder';
 import { RARITY_LABELS, XP, dayKey, listingRarity, type ListingRarity, type RarityTier } from '@shared/quest';
-import { api, type FeedListing, type FeedResponse, type PhotoBox, type PhotoItem, type ShopCard } from '../api';
-import { PhotoFocus } from '../components/PhotoFocus';
+import { api, type FeedListing, type FeedResponse, type PhotoBox, type PhotoItem, type PhotoSuggestion, type ShopCard } from '../api';
+import { PhotoFocus, PhotoSuggestions } from '../components/PhotoFocus';
 import { ShopStrip, ShopsForYou, useShopsForYou } from '../components/ShopCards';
 import {
   ServiceCard, ServiceGrid, ServiceStrip, placeServices, searchWants, useProviders, useStudioSearch,
@@ -89,6 +89,7 @@ export function useCatalog() {
   const photoId = params.get('photo') ?? '';
   const photo = usePhotoQuery(photoId);
   const [photoFound, setPhotoFound] = useState<FeedListing[] | null>(null);
+  const [photoSuggested, setPhotoSuggested] = useState<PhotoSuggestion[]>([]);
   // Which part of the photo is searched with, and the things found in it -
   // both belong to one photo, so a new photo starts from the whole of it.
   const [focus, setFocus] = useState<{ photoId: string; box: PhotoBox | null }>({ photoId: '', box: null });
@@ -111,6 +112,7 @@ export function useCatalog() {
   // filters below narrow what came back without sending the photo again.
   useEffect(() => {
     setPhotoFound(null);
+    setPhotoSuggested([]);
     if (!photo) return;
     let cancelled = false;
     setLoading(true);
@@ -119,6 +121,7 @@ export function useCatalog() {
       .then((result) => {
         if (cancelled) return;
         setPhotoFound(result.listings);
+        setPhotoSuggested(result.suggested ?? []);
         // The things in the photo come from a look at all of it; a look at one keeps them.
         if (!photoRegion) setFound({ photoId: photo.id, items: result.items ?? [] });
         setError(null);
@@ -259,7 +262,7 @@ export function useCatalog() {
     // More to come: the server said this is not every match, and there is room to ask for more.
     canShowMore: !photoId && data?.complete === false && pages < CATALOG_MAX_PAGES, showMore,
     search, group, category, condition, type, size, authenticity, kind, sort, maxPrice, minPrice, minTrust, maxDays,
-    photo, clearPhoto, photoItems, photoRegion, pickRegion,
+    photo, clearPhoto, photoItems, photoRegion, pickRegion, photoSuggested,
     toggle, chooseGroup, chooseKind, set, activeFilters,
   };
 }
@@ -287,7 +290,7 @@ export function FeedPage() {
   const {
     params, setParams, data, error, loading,
     search, group, category, condition, type, size, authenticity, kind, sort, maxPrice, minPrice, minTrust, maxDays,
-    photo, clearPhoto, photoItems, photoRegion, pickRegion,
+    photo, clearPhoto, photoItems, photoRegion, pickRegion, photoSuggested,
     chooseGroup, chooseKind, set, activeFilters,
     canShowMore, showMore,
   } = useCatalog();
@@ -528,6 +531,7 @@ export function FeedPage() {
       {photo && (
         <PhotoFocus photo={photo} items={photoItems} region={photoRegion} onPick={pickRegion} onClear={clearPhoto} busy={loading} />
       )}
+      {photo && !loading && <PhotoSuggestions listings={photoSuggested} />}
       <div className="qrow__head">
         {photo ? (
           <h2>{photoRegion ? 'Matches for your pick' : 'Matches for your photo'}</h2>

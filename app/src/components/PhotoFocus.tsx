@@ -1,7 +1,9 @@
 import { useRef, useState, type PointerEvent } from 'react';
-import type { PhotoBox, PhotoItem } from '../api';
+import { Link } from 'react-router-dom';
+import type { PhotoBox, PhotoItem, PhotoSuggestion } from '../api';
+import { formatMoney } from '../format';
 import type { PhotoQuery } from '../photoQuery';
-import { Icon } from './ui';
+import { Icon, Thumb, leadPhoto } from './ui';
 
 /**
  * The photo being searched with, and which part of it.
@@ -142,6 +144,41 @@ export function PhotoFocus({ photo, items, region, onPick, onClear, busy }: {
             <Icon name="target" size={14} /> {drawMode ? 'Cancel' : 'Draw'}
           </button>
         </div>
+      </div>
+    </section>
+  );
+}
+
+const BECAUSE: Record<PhotoSuggestion['because'], string> = { colour: 'Other colour', name: 'Similar name' };
+
+/**
+ * Listings suggested beside a photo's matches: the same thing in other colours
+ * - a repaint, a variant, another colourway - and listings named almost the
+ * same as a match, typos and all. Each says which it is, so a shopper hunting
+ * one colourway sees the others without mistaking them for it.
+ */
+export function PhotoSuggestions({ listings }: { listings: PhotoSuggestion[] }) {
+  if (listings.length === 0) return null;
+  const colours = listings.filter((listing) => listing.because === 'colour').length;
+  return (
+    <section className="psug" aria-label="Suggested">
+      <div className="psug__head">
+        <h2>Also suggested</h2>
+        <span className="faint">
+          {colours === listings.length ? 'Other colours of it'
+            : colours === 0 ? 'Named almost the same'
+              : 'Other colours, and names almost the same'}
+        </span>
+      </div>
+      <div className="psug__row">
+        {listings.map((listing) => (
+          <Link key={listing.id} to={`/listing/${listing.id}`} className="psug__card">
+            <Thumb seed={listing.id} label={listing.title} photo={leadPhoto(listing)} className="thumb psug__art" />
+            <span className={`psug__why psug__why--${listing.because}`}>{BECAUSE[listing.because]}</span>
+            <span className="psug__name">{listing.title}</span>
+            <b className="psug__price">{formatMoney(listing.priceMinor, listing.currency)}</b>
+          </Link>
+        ))}
       </div>
     </section>
   );

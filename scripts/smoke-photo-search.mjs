@@ -475,6 +475,45 @@ await check('an action figure posed another way - arms up, kicking, sitting, lyi
   }
 });
 
+await check('beside the matches, other colours of the figure and listings named almost the same are suggested', async () => {
+  const repository = await getRepository();
+  const store = await getPhotoStore();
+  const [template] = await repository.listListings({});
+  const now = new Date().toISOString();
+  const make = async (id, title, category, paint) => {
+    const photo = await store.upload(camera(500, 600, paint, { seed: id.length * 7 }), 'image/jpeg');
+    await repository.createListing({
+      ...template, id, title, category, tags: [], createdAt: now, updatedAt: now, privateFor: null, expiresAt: null,
+      unlisted: false, status: 'active', photos: [{ blobName: photo.blobName, url: photo.url, imageHash: null, isPrimary: true }],
+    });
+  };
+  const standing = (colours) => onGround(actionFigure({ aspect: 500 / 600, colours }));
+  await make('lst_sug_hero', 'Qorvex Prime 6-inch action figure', 'Figures', standing(HERO));
+  // A gold repaint of the same mould, under a name that shares nothing: only the picture knows.
+  await make('lst_sug_gold', 'Sunburst hero, gold repaint', 'Figures', standing({ ...HERO, torso: [225, 180, 40], legs: [225, 180, 40], belt: [140, 30, 35] }));
+  // Named almost the same, typo and all, but another kind of thing.
+  await make('lst_sug_keychain', 'Qorvex Prmie acrylic keychain', 'Anime merch', shape(block(0.5, 0.5, 0.2), [150, 90, 220]));
+  // Another figure in another pose and other colours, named nothing alike.
+  await make('lst_sug_other', 'Zentha Moss 6-inch action figure', 'Figures',
+    onGround(actionFigure({ aspect: 500 / 600, pose: { lArm: 70, rArm: -10 }, colours: { ...HERO, torso: [40, 150, 70], legs: [90, 60, 40] } })));
+
+  // The figure mid-kick, on a desk: a pose no listing shows.
+  const kick = camera(600, 600, onGround(actionFigure({ size: 0.4, pose: { lArm: 150, lElbow: 20, rArm: -70, rElbow: -90, lHip: 75, lKnee: -40 } }), [205, 185, 150]), { seed: 77 });
+  const response = await photoSearchRoute(req({ body: { dataUrl: dataUrl(kick) } }), ctx);
+  assert.equal(response.status, 200, JSON.stringify(response.jsonBody));
+  const { listings, suggested } = response.jsonBody;
+  assert.equal(listings[0].id, 'lst_sug_hero', 'the figure itself is the match');
+  const why = Object.fromEntries(suggested.map((entry) => [entry.id, entry.because]));
+  assert.equal(why.lst_sug_gold, 'colour', `the repaint is another colour of it: ${JSON.stringify(why)}`);
+  assert.equal(why.lst_sug_keychain, 'name', `the keychain is named almost the same: ${JSON.stringify(why)}`);
+  assert.equal(why.lst_sug_other, undefined, 'another figure is not suggested');
+  assert.equal(why.lst_sug_hero, undefined, 'the match is not suggested again');
+  // Suggested listings are cards like any other, and not listed twice.
+  assert.ok(suggested.every((entry) => entry.title && entry.priceMinor >= 0 && entry.costSheet === undefined));
+  const ids = listings.map((listing) => listing.id);
+  assert.ok(suggested.every((entry) => !ids.includes(entry.id)), 'nothing both suggested and listed');
+});
+
 /** A shelf: a red disc, a blue block and a boot, apart on a pale ground. */
 const shelf = (x, y) => {
   if (roundel(0.2, 0.5, 0.12)(x, y)) return [200, 40, 50];

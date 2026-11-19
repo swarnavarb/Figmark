@@ -54,7 +54,7 @@ import {
 } from '../image-hash.js';
 import { decodeJpeg, encodeJpeg, type Raw } from '../storage/compress.js';
 import {
-  PHOTO_RESULTS, onlyAlike, pictureLooksEach, rankMatches, relatedItems, type LearnedHash,
+  PHOTO_RESULTS, looksBesideMatches, onlyAlike, pictureLooksEach, rankMatches, relatedItems, suggestionsFor, type LearnedHash,
 } from '../photo-search.js';
 import { alreadyRead, everListed, findSales, onSale, type PhotoSales } from '../photo-sales.js';
 import { announceFirstDibs, firstDibsView, restockView, startFirstDibs, tellPriceDropped, tellRestocked } from './stock-alert-routes.js';
@@ -499,7 +499,10 @@ async function photoSearch(request: HttpRequest, _context: InvocationContext) {
     pool, [[...searched.hashes, ...searched.items.flatMap((item) => item.hashes)], ...searched.items.map((item) => item.hashes)], learned,
   );
   const matches = rankMatches(pool, onlyAlike(looks!), descriptions, PHOTO_RESULTS);
-  const found = [...matches, ...relatedItems(pool, matches, descriptions[0] ?? null)];
+  // Beside the matches: listings named almost the same, and the same shape in other colours.
+  const suggested = suggestionsFor(pool, matches, looks!, await looksBesideMatches(pool, matches, looks!, learned));
+  const suggestedIds = new Set(suggested.map((entry) => entry.listing.id));
+  const found = [...matches, ...relatedItems(pool, matches, descriptions[0] ?? null).filter((listing) => !suggestedIds.has(listing.id))];
   const items = searched.items.map((item, at) => {
     const alike = onlyAlike(itemLooks[at]!);
     const hits = rankMatches(pool, alike, item.description ? [item.description] : [], PHOTO_RESULTS);
@@ -513,17 +516,21 @@ async function photoSearch(request: HttpRequest, _context: InvocationContext) {
   const storing = storeLearned(repository, learned);
 
   const likedIds = viewer ? new Set(await repository.listLikedListingIds(viewer.id)) : new Set<string>();
-  const sellers = await repository.listUsersByIds([...new Set(found.map((listing) => listing.sellerId))]);
+  const shown = [...found, ...suggested.map((entry) => entry.listing)];
+  const sellers = await repository.listUsersByIds([...new Set(shown.map((listing) => listing.sellerId))]);
   const sellerById = new Map(sellers.map((seller) => [seller.id, toSellerCard(seller)]));
   await storing;
+  const card = (listing: Listing) => ({
+    ...publicListing(listing),
+    liked: likedIds.has(listing.id),
+    seller: sellerById.get(listing.sellerId) ?? null,
+    estimatedDispatchAt: null,
+  });
   // One list, best first: what matches the photo, then what is related to it.
   return json(200, {
-    listings: found.map((listing) => ({
-      ...publicListing(listing),
-      liked: likedIds.has(listing.id),
-      seller: sellerById.get(listing.sellerId) ?? null,
-      estimatedDispatchAt: null,
-    })),
+    listings: found.map(card),
+    // Suggested beside them, each saying why: almost the same name, or another colour.
+    suggested: suggested.map(({ listing, because }) => ({ ...card(listing), because })),
     vision: visionAvailable(),
     // What was searched with: one item, or the whole photo (null).
     region,

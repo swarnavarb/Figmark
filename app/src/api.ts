@@ -2379,7 +2379,15 @@ export interface PhotoSearchResponse {
   region: PhotoBox | null;
   /** The things in the photo, when it shows more than one; empty when searching with one part. */
   items: PhotoItem[];
+  /**
+   * Shown beside the matches, each saying why: named almost the same as a
+   * match, or the same thing in other colours - a repaint, a colourway.
+   */
+  suggested?: PhotoSuggestion[];
 }
+
+/** A listing suggested beside a photo's matches. */
+export type PhotoSuggestion = FeedListing & { because: 'name' | 'colour' };
 
 /** One item read in a photo, and the listings it is or was for sale under. */
 export interface PhotoSalesItem {

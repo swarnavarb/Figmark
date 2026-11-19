@@ -1,4 +1,5 @@
 import type { Listing, PhotoRegion } from '../../shared/models.js';
+import { wordKeys } from '../../shared/shop-tags.js';
 import { isCurrent, isFingerprinted, likeness, storedPrints, type Prints } from './image-hash.js';
 import { ownPhotoName } from './storage/index.js';
 import type { PhotoDescription } from './vision.js';
@@ -87,6 +88,10 @@ export interface PictureMatch {
   sameItem?: boolean;
   /** One of its photos as a whole - not an item among others in it - is the same thing. */
   wholeItem?: boolean;
+  /** One of its photos is the same shape in other colours: another colourway or variant. */
+  variant?: boolean;
+  /** 0 to 1: how alike its closest photo's shape is, colours aside. */
+  shape?: number;
   /** 0 to 1: how alike its closest photo looks. */
   visual: number;
 }
@@ -162,16 +167,18 @@ function compareAll(entries: ListingPrints[], hashes: string[]): Map<string, Pic
       for (const their of theirs) {
         const alike = likeness(mine, their);
         if (!alike) continue;
-        entry ??= { same: false, sameItem: false, wholeItem: false, visual: 0, look: 0 };
+        entry ??= { same: false, sameItem: false, wholeItem: false, variant: false, shape: 0, visual: 0, look: 0 };
         // A recoloured copy is the same picture, but for a shopper it is another variant, not this one.
         entry.same ||= alike.samePhoto && alike.sameItem;
         entry.sameItem ||= alike.sameItem;
         entry.wholeItem ||= (alike.sameItem || alike.samePhoto) && wholes.has(their);
+        entry.variant ||= alike.variant;
+        entry.shape = Math.max(entry.shape ?? 0, alike.shape);
         entry.visual = Math.max(entry.visual, alike.score);
         entry.look = Math.max(entry.look, alike.look ?? 0);
       }
     }
-    if (entry && (entry.visual > 0 || entry.look > 0)) found.set(listing.id, entry);
+    if (entry && (entry.visual > 0 || entry.look > 0 || entry.variant)) found.set(listing.id, entry);
   }
   return found;
 }
@@ -286,4 +293,142 @@ function relatedTo(pool: Listing[], matches: Listing[], description: PhotoDescri
     .sort((a, b) => b.score - a.score || b.listing.createdAt.localeCompare(a.listing.createdAt))
     .slice(0, RELATED)
     .map((entry) => entry.listing);
+}
+
+/* ── Suggestions: the same name, another colour ─────────────────────────── */
+
+/**
+ * How the catalogue compares with the photos of the listings the photo was
+ * sure of. Their own photos are clean shots of the thing, so the same shape in
+ * other colours - a repaint, a colourway - shows there far more plainly than
+ * in a shopper's picture taken on a desk at a slant.
+ */
+export async function looksBesideMatches(
+  pool: Listing[], matches: Listing[], looks: Map<string, PictureLook>, learned: LearnedHash[] = [],
+): Promise<Map<string, PictureLook>> {
+  const sure = matches.filter((listing) => looks.get(listing.id)?.same || looks.get(listing.id)?.sameItem).slice(0, NAMED_FROM);
+  if (sure.length === 0) return new Map();
+  const entries = await catalogPrints(pool, learned);
+  const theirs = new Map(entries.map((entry) => [entry.listing.id, entry]));
+  // Their whole photos only: an item among others in a bundle photo is not what the listing is.
+  const hashes = sure.flatMap((listing) => [...(theirs.get(listing.id)?.wholes ?? [])]);
+  return hashes.length > 0 ? compareAll(entries, hashes) : new Map();
+}
+
+/** Why a listing is suggested beside the matches. */
+export type SuggestedBecause = 'name' | 'colour';
+
+export interface Suggested {
+  listing: Listing;
+  because: SuggestedBecause;
+}
+
+const SUGGESTED = 12;
+/** Subject colours in common under which a listing named alike is another colourway. */
+const OTHER_COLOURS = 0.45;
+/** Matches whose names are looked for in other titles. */
+const NAMED_FROM = 3;
+
+/** Words that say what kind of thing it is, or how big, not which one: never enough to share alone. */
+const GENERIC = new Set([
+  'figure', 'action', 'inch', 'scale', 'kit', 'model', 'plush', 'sneaker', 'shoe', 'card', 'set', 'bundle', 'pack',
+  'edition', 'version', 'ver', 'new', 'the', 'and', 'with', 'for', 'of', 'cm', 'mm', 'pcs', 'piece', 'lot', 'box',
+  'figurine', 'statue', 'toy', 'doll', 'mg', 'hg', 'rg', 'pg', 'sh', 'figuart', 'nendoroid', 'figma', 'variant',
+]);
+
+/** The words of a title worth comparing: no kinds of thing, no bare numbers. */
+function nameWords(title: string): string[] {
+  return [...new Set(wordKeys(title).filter((word) => word.length > 1 && !GENERIC.has(word) && !/^\d+$/.test(word)))];
+}
+
+/** One letter apart, two swapped, or one a short stem of the other: "volt" and "volts", "pikachu" and "pickachu". */
+function nearlyWord(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (Math.min(a.length, b.length) >= 4 && (a.startsWith(b) || b.startsWith(a)) && Math.abs(a.length - b.length) <= 2) return true;
+  if (Math.min(a.length, b.length) < 5 || Math.abs(a.length - b.length) > 1) return false;
+  // Two letters swapped: "captian" for "captain".
+  if (a.length === b.length) {
+    const differ = [...a].map((letter, at) => (letter === b[at] ? -1 : at)).filter((at) => at >= 0);
+    if (differ.length === 2 && differ[1] === differ[0]! + 1 && a[differ[0]!] === b[differ[1]!] && a[differ[1]!] === b[differ[0]!]) return true;
+  }
+  // Edit distance of at most one.
+  let i = 0; let j = 0; let edits = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) { i += 1; j += 1; continue; }
+    edits += 1;
+    if (edits > 1) return false;
+    if (a.length > b.length) i += 1; else if (b.length > a.length) j += 1; else { i += 1; j += 1; }
+  }
+  return edits + (a.length - i) + (b.length - j) <= 1;
+}
+
+/**
+ * Listings to suggest beside the photo's matches: those named almost the same
+ * as a match - "Captain Volt 6-inch figure" and "Captain Volt - Shadow
+ * variant" - and those the picture says are the same shape in other colours.
+ * A name counts by its telling words: a word few titles carry counts for much,
+ * one every figure has ("figure", "6-inch") for nothing.
+ */
+export function suggestionsFor(
+  pool: Listing[], matches: Listing[], looks: Map<string, PictureLook>,
+  beside: Map<string, PictureLook> = new Map(), limit = SUGGESTED,
+): Suggested[] {
+  const taken = new Set(matches.map((listing) => listing.id));
+  const words = new Map(pool.map((listing) => [listing.id, nameWords(listing.title)]));
+  const seen = new Map<string, number>();
+  for (const list of words.values()) for (const word of list) seen.set(word, (seen.get(word) ?? 0) + 1);
+  const weight = (word: string) => Math.log(1 + pool.length / (seen.get(word) ?? 1));
+
+  const scored = new Map<string, { listing: Listing; because: SuggestedBecause; score: number }>();
+  const offer = (listing: Listing, because: SuggestedBecause, score: number) => {
+    if (taken.has(listing.id)) return;
+    const was = scored.get(listing.id);
+    // Both at once is the strongest suggestion there is: named alike and shaped alike.
+    if (was) {
+      was.score += score;
+      // Named alike and another colour: "another colour" is the more telling of the two.
+      if (because === 'colour') was.because = 'colour';
+      return;
+    }
+    scored.set(listing.id, { listing, because, score });
+  };
+
+  for (const match of matches.slice(0, NAMED_FROM)) {
+    const mine = words.get(match.id) ?? nameWords(match.title);
+    const total = mine.reduce((sum, word) => sum + weight(word), 0);
+    if (total <= 0) continue;
+    for (const listing of pool) {
+      if (listing.id === match.id) continue;
+      const theirs = words.get(listing.id) ?? [];
+      const shared = mine.filter((word) => theirs.some((their) => nearlyWord(word, their)));
+      if (shared.length === 0) continue;
+      const share = shared.reduce((sum, word) => sum + weight(word), 0) / total;
+      // Most of what names the match, and something only a few titles carry.
+      const telling = shared.some((word) => (seen.get(word) ?? 0) <= Math.max(3, pool.length * 0.02));
+      // A name of two or more words shares at least two: "Astra Mech" is not "HG Mecha".
+      const enough = shared.length >= Math.min(2, mine.length);
+      if (share >= 0.5 && telling && enough) offer(listing, 'name', 1 + share);
+    }
+  }
+  for (const listing of pool) {
+    // Another colourway, by the photo searched with or by the matches' own photos.
+    for (const look of [looks.get(listing.id), beside.get(listing.id)]) {
+      if (look?.variant && !look.same && !look.sameItem) { offer(listing, 'colour', 1 + (look.shape ?? 0)); break; }
+    }
+  }
+  // Named alike, the same kind of thing, but coloured nothing like the photo or
+  // the match: another colourway of it. A keychain of the same character is
+  // named alike too, but is not a colourway of the figure.
+  const kinds = new Set(matches.slice(0, NAMED_FROM).map((listing) => listing.category));
+  for (const entry of scored.values()) {
+    const id = entry.listing.id;
+    const seen = [looks.get(id)?.look, beside.get(id)?.look].filter((value) => value !== undefined);
+    const shaped = Math.max(looks.get(id)?.shape ?? 0, beside.get(id)?.shape ?? 0);
+    const sameKind = kinds.has(entry.listing.category) || shaped >= 0.6;
+    if (entry.because === 'name' && sameKind && seen.length > 0 && Math.max(...seen) < OTHER_COLOURS) entry.because = 'colour';
+  }
+  return [...scored.values()]
+    .sort((a, b) => b.score - a.score || b.listing.createdAt.localeCompare(a.listing.createdAt))
+    .slice(0, limit)
+    .map(({ listing, because }) => ({ listing, because }));
 }
