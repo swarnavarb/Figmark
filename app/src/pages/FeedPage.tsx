@@ -15,7 +15,8 @@ import {
 } from '@shared/catalog';
 import { isTakingBookings, preOrderView } from '@shared/preorder';
 import { RARITY_LABELS, XP, dayKey, listingRarity, type ListingRarity, type RarityTier } from '@shared/quest';
-import { api, type FeedListing, type FeedResponse, type ShopCard } from '../api';
+import { api, type FeedListing, type FeedResponse, type PhotoBox, type PhotoItem, type ShopCard } from '../api';
+import { PhotoFocus } from '../components/PhotoFocus';
 import { ShopStrip, ShopsForYou, useShopsForYou } from '../components/ShopCards';
 import {
   ServiceCard, ServiceGrid, ServiceStrip, placeServices, searchWants, useProviders, useStudioSearch,
@@ -88,6 +89,15 @@ export function useCatalog() {
   const photoId = params.get('photo') ?? '';
   const photo = usePhotoQuery(photoId);
   const [photoFound, setPhotoFound] = useState<FeedListing[] | null>(null);
+  // Which part of the photo is searched with, and the things found in it -
+  // both belong to one photo, so a new photo starts from the whole of it.
+  const [focus, setFocus] = useState<{ photoId: string; box: PhotoBox | null }>({ photoId: '', box: null });
+  const [found, setFound] = useState<{ photoId: string; items: PhotoItem[] }>({ photoId: '', items: [] });
+  const photoRegion = photo && focus.photoId === photo.id ? focus.box : null;
+  const photoItems = photo && found.photoId === photo.id ? found.items : [];
+  const pickRegion = useCallback((box: PhotoBox | null) => {
+    if (photo) setFocus({ photoId: photo.id, box });
+  }, [photo]);
 
   // A reload forgets the photo; the catalogue it leaves behind is the ordinary one.
   useEffect(() => {
@@ -97,18 +107,20 @@ export function useCatalog() {
     setParams(next, { replace: true });
   }, [photoId, photo, params, setParams]);
 
-  // Sent once per photo; the filters below narrow what came back without
-  // sending the photo again.
+  // Sent once per photo, and again when another part of it is picked; the
+  // filters below narrow what came back without sending the photo again.
   useEffect(() => {
     setPhotoFound(null);
     if (!photo) return;
     let cancelled = false;
     setLoading(true);
     void api
-      .photoSearch(photo.dataUrl)
+      .photoSearch(photo.dataUrl, photoRegion)
       .then((result) => {
         if (cancelled) return;
         setPhotoFound(result.listings);
+        // The things in the photo come from a look at all of it; a look at one keeps them.
+        if (!photoRegion) setFound({ photoId: photo.id, items: result.items ?? [] });
         setError(null);
       })
       .catch((err: Error) => !cancelled && setError(err.message))
@@ -116,7 +128,7 @@ export function useCatalog() {
     return () => {
       cancelled = true;
     };
-  }, [photo]);
+  }, [photo, photoRegion]);
 
   const photoData: FeedResponse | null = useMemo(() => {
     if (!photoFound) return null;
@@ -247,7 +259,7 @@ export function useCatalog() {
     // More to come: the server said this is not every match, and there is room to ask for more.
     canShowMore: !photoId && data?.complete === false && pages < CATALOG_MAX_PAGES, showMore,
     search, group, category, condition, type, size, authenticity, kind, sort, maxPrice, minPrice, minTrust, maxDays,
-    photo, clearPhoto,
+    photo, clearPhoto, photoItems, photoRegion, pickRegion,
     toggle, chooseGroup, chooseKind, set, activeFilters,
   };
 }
@@ -275,7 +287,7 @@ export function FeedPage() {
   const {
     params, setParams, data, error, loading,
     search, group, category, condition, type, size, authenticity, kind, sort, maxPrice, minPrice, minTrust, maxDays,
-    photo, clearPhoto,
+    photo, clearPhoto, photoItems, photoRegion, pickRegion,
     chooseGroup, chooseKind, set, activeFilters,
     canShowMore, showMore,
   } = useCatalog();
@@ -513,15 +525,12 @@ export function FeedPage() {
       <>
       {showGrid && error && <ErrorNotice message={error} />}
 
+      {photo && (
+        <PhotoFocus photo={photo} items={photoItems} region={photoRegion} onPick={pickRegion} onClear={clearPhoto} busy={loading} />
+      )}
       <div className="qrow__head">
         {photo ? (
-          <h2 className="qphoto">
-            <img loading="lazy" decoding="async" src={photo.dataUrl} alt="" />
-            Your photo
-            <button type="button" className="qphoto__clear" aria-label="Clear photo search" onClick={clearPhoto}>
-              <Icon name="close" size={12} />
-            </button>
-          </h2>
+          <h2>{photoRegion ? 'Matches for your pick' : 'Matches for your photo'}</h2>
         ) : (
           <h2>{search ? `“${search}”` : rarityFilter ? `${RARITY_LABELS[rarityFilter]} finds` : feedView ? FEED_VIEW_TITLES[feedView] : 'All items'}</h2>
         )}
@@ -535,11 +544,13 @@ export function FeedPage() {
         <SkeletonGrid count={6} />
       ) : shown.length === 0 ? (
         <>
-        <EmptyState title={photo ? 'Nothing like your photo yet'
+        <EmptyState title={photo ? (photoRegion ? 'Nothing like that yet' : 'Nothing like your photo yet')
           : rarityFilter ? `Nothing ${RARITY_LABELS[rarityFilter].toLowerCase()} right now`
           : browsing ? 'Nothing for sale yet' : 'Nothing matches those filters'}>
           {photo
-            ? 'Try another photo, or search with words instead.'
+            ? photoRegion
+              ? 'Try another part of the photo, the whole photo, or search with words instead.'
+              : 'Try drawing round one thing in it, another photo, or search with words instead.'
             : rarityFilter
             ? 'Rarity moves with demand. Check back as things sell and fill.'
             : search

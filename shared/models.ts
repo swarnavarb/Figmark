@@ -1080,9 +1080,26 @@ export interface ListingPhoto {
   url?: string;
   /** A small copy for cards and grids; absent on photos stored before these were made, and on pasted links. */
   thumbUrl?: string;
-  /** Perceptual hash, reserved for reverse-image search. */
+  /** Perceptual hash of the whole picture, for reverse-image search. */
   imageHash: string | null;
+  /**
+   * One hash per item found in the picture, when it shows more than one - a
+   * lot, a bundle, a shelf. A shopper's photo of one of those items then finds
+   * this listing even though the listing's picture shows several. Absent on
+   * photos fingerprinted before items were told apart, and on single-item photos
+   * it is an empty list.
+   */
+  regions?: PhotoRegion[];
   isPrimary: boolean;
+}
+
+/** Where an item sits in a photo, as fractions of its width and height: left, top, width, height. */
+export type RegionBox = [number, number, number, number];
+
+/** One item in a photo, and its own fingerprint. */
+export interface PhotoRegion {
+  box: RegionBox;
+  imageHash: string;
 }
 
 export interface Listing extends BaseDocument {

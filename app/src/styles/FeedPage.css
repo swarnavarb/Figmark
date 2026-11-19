@@ -195,7 +195,6 @@
 .qgrid__more { grid-column: 1 / -1; height: 1px; }
 .qgrid__showmore { display: flex; justify-content: center; margin: 18px 0 var(--s2); }
 /* A photo search: the photo stands where the heading's words would. */
-.qrow__head h2.qphoto { gap: var(--s2); }
 .qseller__pic.is-in { opacity: 1; }
 .qseller__lv .lvtag { font-size: var(--t-2xs); }
 /* On a half-width card the shop mark pushed the level title off; the crest already says store. */
@@ -500,3 +499,65 @@
 }
 /* Room on the right of the open card for its fold arrow. */
 .qdrop.is-revealed .qdrop__body { padding-right: 34px; }
+/* ── A photo search: the photo, the things in it, and which is searched with ─ */
+.pfocus {
+  display: flex; flex-wrap: wrap; gap: var(--s3); align-items: flex-start;
+  margin: var(--s2) 0 var(--s3); padding: var(--s3);
+  border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface);
+}
+.pfocus__frame {
+  position: relative; flex: none; max-width: 100%; line-height: 0;
+  border-radius: var(--r-sm); overflow: hidden; user-select: none; -webkit-user-select: none;
+}
+.pfocus__frame img { display: block; max-width: 100%; max-height: 260px; width: auto; height: auto; }
+.pfocus__frame.is-drawing { touch-action: none; cursor: crosshair; }
+.pfocus__frame.is-drawing .pfocus__box { pointer-events: none; }
+/* Everything but the part searched with steps back. */
+.pfocus__shade {
+  position: absolute; pointer-events: none; border-radius: 4px;
+  box-shadow: 0 0 0 9999px rgba(8, 11, 18, 0.5);
+  transition: left var(--dur-2) var(--ease), top var(--dur-2) var(--ease),
+    width var(--dur-2) var(--ease), height var(--dur-2) var(--ease);
+}
+.pfocus__box {
+  position: absolute; padding: 0; margin: 0; cursor: pointer; background: transparent;
+  border: 2px dashed rgba(255, 255, 255, 0.85); border-radius: 4px;
+  box-shadow: 0 0 0 1px rgba(8, 11, 18, 0.45);
+  transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+}
+.pfocus__box:hover { background: rgba(255, 255, 255, 0.08); }
+.pfocus__box:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pfocus__box.is-on { border-style: solid; border-color: var(--accent); }
+.pfocus__box.is-drag { border-color: var(--accent); background: rgba(255, 255, 255, 0.12); pointer-events: none; }
+.pfocus__box.is-drawn { pointer-events: none; }
+.pfocus__box > .pfocus__num { position: absolute; top: 4px; left: 4px; }
+.pfocus__num {
+  display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px;
+  border-radius: 9px; font-size: var(--t-2xs); font-weight: 700; line-height: 1;
+  background: rgba(8, 11, 18, 0.75); color: #fff;
+}
+.pfocus__box.is-on > .pfocus__num, .pfocus__chip.is-on .pfocus__num { background: var(--accent); color: var(--accent-ink); }
+.pfocus__side { flex: 1 1 220px; min-width: 0; }
+.pfocus__title { display: flex; align-items: center; gap: var(--s2); margin: 0 0 4px; }
+.pfocus__hint { margin: 0 0 var(--s2); font-size: var(--t-sm); }
+.pfocus__chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.pfocus__chip {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+  padding: 5px 10px; border: 1px solid var(--border); border-radius: var(--r-pill);
+  background: var(--surface-2); color: var(--text-dim); font-size: var(--t-sm); cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
+}
+.pfocus__chip:active { transform: scale(0.96); }
+.pfocus__chip.is-on { border-color: var(--accent); color: var(--text); }
+.pfocus__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 16ch; }
+.pfocus__peek { display: inline-flex; }
+.pfocus__peek img {
+  width: 18px; height: 18px; border-radius: 4px; object-fit: cover;
+  border: 1px solid var(--surface-2); margin-left: -6px;
+}
+.pfocus__peek img:first-child { margin-left: 0; }
+.pfocus.is-busy .pfocus__frame { opacity: 0.85; }
+@media (prefers-reduced-motion: reduce) {
+  .pfocus__shade, .pfocus__box, .pfocus__chip { transition: none; }
+  .pfocus__chip:active { transform: none; }
+}

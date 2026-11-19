@@ -1,5 +1,5 @@
-import type { Listing } from '../../shared/models.js';
-import { hasLook, isFingerprinted, likeness, storedFingerprint } from './image-hash.js';
+import type { Listing, PhotoRegion } from '../../shared/models.js';
+import { RECOLOURED, isCurrent, isFingerprinted, likeness, storedPrints, type Prints } from './image-hash.js';
 import { ownPhotoName } from './storage/index.js';
 import type { PhotoDescription } from './vision.js';
 
@@ -13,6 +13,10 @@ import type { PhotoDescription } from './vision.js';
  * - what Claude read in it, when vision is on, as words matched against the
  *   item's title, tags, description and category - the same item in a
  *   different picture.
+ *
+ * A listing photo of several things - a lot, a bundle - carries a fingerprint
+ * for each of them, and a shopper's photo of several does too, so any one item
+ * finds any listing that shows it, alone or among others.
  *
  * The same photo always comes first: it is close to certain, and it is what a
  * reseller who saved a supplier's picture is looking for. After the matches
@@ -29,6 +33,8 @@ const LOOKS_ALIKE = 0.78;
 /** Photos fingerprinted for the first time per search, at most: bounds a cold start. */
 const FRESH_PER_SEARCH = 150;
 const RESULTS = 24;
+/** Matches a photo search shows before the related items. */
+export const PHOTO_RESULTS = RESULTS;
 const RELATED = 24;
 
 /** Photos read at once when fingerprints have to be worked out. */
@@ -77,6 +83,8 @@ export function describedScore(listing: Listing, description: PhotoDescription):
 export interface PictureMatch {
   /** One of its photos is the same picture. */
   same: boolean;
+  /** One of its photos, or an item in one, is likely the same thing in another picture. */
+  sameItem?: boolean;
   /** 0 to 1: how alike its closest photo looks. */
   visual: number;
 }
@@ -92,52 +100,92 @@ export interface LearnedHash {
   listing: Listing;
   blobName: string;
   hash: string;
+  /** The fingerprint of each item in the photo, when it shows several. */
+  regions: PhotoRegion[];
+}
+
+/** Every fingerprint a listing's photos carry - each whole photo, then each item in one. */
+interface ListingPrints {
+  listing: Listing;
+  hashes: string[];
+}
+
+/**
+ * The fingerprints of every listing in the pool, whole photos and the items in
+ * them. Stored ones, and whatever this instance has already worked out, cost
+ * nothing. A photo with neither - or with a fingerprint of an older kind - is
+ * read and worked out after, a few at a time, up to a budget, in pool order so
+ * the likeliest go first. What is worked out along the way is pushed onto
+ * `learned`, for the caller to store, so the next instance does not have to
+ * read the photo again.
+ */
+async function catalogPrints(pool: Listing[], learned: LearnedHash[]): Promise<ListingPrints[]> {
+  const entries = new Map<string, ListingPrints>();
+  const add = (listing: Listing, hashes: string[]) => {
+    const entry = entries.get(listing.id) ?? { listing, hashes: [] };
+    entry.hashes.push(...hashes);
+    entries.set(listing.id, entry);
+  };
+  const settle = (listing: Listing, name: string, theirs: string | null, worked: Prints | null) => {
+    if (worked && worked.hash !== theirs) learned.push({ listing, blobName: name, hash: worked.hash, regions: worked.regions });
+    if (worked) add(listing, [worked.hash, ...worked.regions.map((region) => region.imageHash)]);
+    else if (theirs) add(listing, [theirs]);
+  };
+  const toRead: { listing: Listing; name: string; theirs: string | null }[] = [];
+  for (const listing of pool) {
+    for (const name of await storedPhotos(listing)) {
+      const photo = listing.photos.find((entry) => entry.blobName === name);
+      const theirs = photo?.imageHash ?? null;
+      if (theirs && isCurrent(theirs) && photo?.regions) add(listing, [theirs, ...photo.regions.map((region) => region.imageHash)]);
+      else if (isFingerprinted(name)) settle(listing, name, theirs, await storedPrints(name));
+      else if (toRead.length < FRESH_PER_SEARCH) toRead.push({ listing, name, theirs });
+      else if (theirs) add(listing, [theirs]);
+    }
+  }
+  await inBatches(toRead, async ({ listing, name, theirs }) =>
+    settle(listing, name, theirs, await storedPrints(name).catch(() => null)));
+  return [...entries.values()];
+}
+
+/** How each listing compares with any of the photo's fingerprints, by id, keeping the best of each. */
+function compareAll(entries: ListingPrints[], hashes: string[]): Map<string, PictureLook> {
+  const found = new Map<string, PictureLook>();
+  for (const { listing, hashes: theirs } of entries) {
+    let entry: PictureLook | null = null;
+    for (const mine of hashes) {
+      for (const their of theirs) {
+        const alike = likeness(mine, their);
+        if (!alike) continue;
+        entry ??= { same: false, sameItem: false, visual: 0, look: 0 };
+        // A recoloured copy is the same picture, but for a shopper it is another variant, not this one.
+        entry.same ||= alike.samePhoto && (alike.look === null || alike.look >= RECOLOURED);
+        entry.sameItem ||= alike.sameItem;
+        entry.visual = Math.max(entry.visual, alike.score);
+        entry.look = Math.max(entry.look, alike.look ?? 0);
+      }
+    }
+    if (entry && (entry.visual > 0 || entry.look > 0)) found.set(listing.id, entry);
+  }
+  return found;
 }
 
 /**
  * How every listing in the pool compares with this photo, by id - including
  * those that look nothing like it, so a probable match can be ranked from them.
- * Fingerprints worked out along the way are pushed onto `learned`, for the
- * caller to store, so the next instance does not have to read the photo again.
+ * `hash` may be several: a photo and the items in it, any of which may match.
  */
 export async function pictureLooks(
-  pool: Listing[], hash: string, learned: LearnedHash[] = [],
+  pool: Listing[], hash: string | string[], learned: LearnedHash[] = [],
 ): Promise<Map<string, PictureLook>> {
-  const found = new Map<string, PictureLook>();
-  const compare = (listing: Listing, theirs: string) => {
-    const alike = likeness(hash, theirs);
-    if (!alike) return;
-    const was = found.get(listing.id) ?? { same: false, visual: 0, look: 0 };
-    found.set(listing.id, {
-      same: was.same || alike.samePhoto,
-      visual: Math.max(was.visual, alike.score),
-      look: Math.max(was.look, alike.look ?? 0),
-    });
-  };
+  return compareAll(await catalogPrints(pool, learned), Array.isArray(hash) ? hash : [hash]);
+}
 
-  const settle = (listing: Listing, name: string, theirs: string | null, worked: string | null) => {
-    if (worked && worked !== theirs) learned.push({ listing, blobName: name, hash: worked });
-    const use = worked ?? theirs;
-    if (use) compare(listing, use);
-  };
-  // Stored hashes, and whatever this instance has already worked out, cost
-  // nothing: they are compared first. A photo with neither - or a stored hash
-  // from before the look - is read and worked out after, a few at a time, up
-  // to a budget, in pool order so the likeliest go first.
-  const toRead: { listing: Listing; name: string; theirs: string | null }[] = [];
-  for (const listing of pool) {
-    for (const name of await storedPhotos(listing)) {
-      const theirs = listing.photos.find((photo) => photo.blobName === name)?.imageHash ?? null;
-      if (theirs && hasLook(theirs)) compare(listing, theirs);
-      else if (isFingerprinted(name)) settle(listing, name, theirs, await storedFingerprint(name));
-      else if (toRead.length < FRESH_PER_SEARCH) toRead.push({ listing, name, theirs });
-      else if (theirs) compare(listing, theirs);
-    }
-  }
-  await inBatches(toRead, async ({ listing, name, theirs }) =>
-    settle(listing, name, theirs, await storedFingerprint(name).catch(() => null)));
-  for (const [id, entry] of found) if (entry.visual <= 0 && entry.look <= 0) found.delete(id);
-  return found;
+/** `pictureLooks` for several photos at once - a whole and each item in it - reading the catalogue once. */
+export async function pictureLooksEach(
+  pool: Listing[], hashes: (string | string[])[], learned: LearnedHash[] = [],
+): Promise<Map<string, PictureLook>[]> {
+  const entries = await catalogPrints(pool, learned);
+  return hashes.map((hash) => compareAll(entries, Array.isArray(hash) ? hash : [hash]));
 }
 
 /**
@@ -145,43 +193,65 @@ export async function pictureLooks(
  * nothing that looks alike are left out.
  */
 export async function pictureMatches(
-  pool: Listing[], hash: string, learned: LearnedHash[] = [],
+  pool: Listing[], hash: string | string[], learned: LearnedHash[] = [],
 ): Promise<Map<string, PictureMatch>> {
   return onlyAlike(await pictureLooks(pool, hash, learned));
 }
 
 /** The looks that are close enough to be the picture itself, or very like it. */
 export function onlyAlike(looks: Map<string, PictureLook>): Map<string, PictureMatch> {
-  return new Map([...looks].filter(([, match]) => match.same || match.visual >= LOOKS_ALIKE));
+  return new Map([...looks].filter(([, match]) => match.same || match.sameItem || match.visual >= LOOKS_ALIKE));
 }
 
-/** The score a picture match is worth, on the same scale as `describedScore`. */
+/**
+ * The score a picture match is worth, on the same scale as `describedScore`:
+ * the same photo far above all, then the same thing in another photo, then a
+ * look-alike.
+ */
 export function pictureScore(match: PictureMatch | undefined): number {
   if (!match) return 0;
-  return match.same ? 100 + match.visual * 10 : match.visual * 6;
+  if (match.same) return 100 + match.visual * 10;
+  return match.sameItem ? 40 + match.visual * 10 : match.visual * 6;
+}
+
+/** How a listing scores against a photo: its best picture match and its best words. */
+function photoScore(listing: Listing, pictures: Map<string, PictureMatch>, descriptions: PhotoDescription[]): number {
+  const words = Math.max(0, ...descriptions.map((description) => describedScore(listing, description)));
+  return pictureScore(pictures.get(listing.id)) + words;
 }
 
 /** Matches for the photo, best first, then items related to them. */
 export async function rankByPhoto(
   pool: Listing[],
-  hash: string | null,
-  description: PhotoDescription | null,
+  hash: string | string[] | null,
+  description: PhotoDescription | PhotoDescription[] | null,
   learned: LearnedHash[] = [],
 ): Promise<Listing[]> {
-  const pictures = hash ? await pictureMatches(pool, hash, learned) : new Map<string, PictureMatch>();
-  const ranked: Scored[] = [];
+  const hashes = hash === null ? [] : Array.isArray(hash) ? hash : [hash];
+  const descriptions = description === null ? [] : Array.isArray(description) ? description : [description];
+  const pictures = hashes.length > 0 ? await pictureMatches(pool, hashes, learned) : new Map<string, PictureMatch>();
+  const matches = rankMatches(pool, pictures, descriptions, RESULTS);
+  return [...matches, ...relatedTo(pool, matches, descriptions[0] ?? null)];
+}
 
+/** The listings that match, best first, at most `limit`. */
+export function rankMatches(
+  pool: Listing[], pictures: Map<string, PictureMatch>, descriptions: PhotoDescription[], limit: number,
+): Listing[] {
+  const ranked: Scored[] = [];
   for (const listing of pool) {
-    const words = description ? describedScore(listing, description) : 0;
-    const score = pictureScore(pictures.get(listing.id)) + words;
+    const score = photoScore(listing, pictures, descriptions);
     if (score > 0) ranked.push({ listing, score });
   }
-
-  const matches = ranked
+  return ranked
     .sort((a, b) => b.score - a.score || b.listing.createdAt.localeCompare(a.listing.createdAt))
-    .slice(0, RESULTS)
+    .slice(0, limit)
     .map((entry) => entry.listing);
-  return [...matches, ...relatedTo(pool, matches, description)];
+}
+
+/** Related items, for callers that rank matches themselves. */
+export function relatedItems(pool: Listing[], matches: Listing[], description: PhotoDescription | null): Listing[] {
+  return relatedTo(pool, matches, description);
 }
 
 /**

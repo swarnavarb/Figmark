@@ -2358,10 +2358,27 @@ export interface PhotoDraft {
 }
 
 /** A photo search: what matches the photo, best first, then what is related to it - one list. */
+/** Where something sits in a photo, as fractions of its width and height: left, top, width, height. */
+export type PhotoBox = [number, number, number, number];
+
+/** One thing told apart in a search photo, and a peek at what matches it. */
+export interface PhotoItem {
+  box: PhotoBox;
+  /** What it was read as, or null when the picture alone told it apart. */
+  label: string | null;
+  /** How many listings match it alone. */
+  matches: number;
+  preview: { id: string; title: string; photoUrl: string | null }[];
+}
+
 export interface PhotoSearchResponse {
   listings: FeedListing[];
   /** Whether this deployment reads photos at all, or only matches the picture. */
   vision: boolean;
+  /** The part of the photo searched with, or null for all of it. */
+  region: PhotoBox | null;
+  /** The things in the photo, when it shows more than one; empty when searching with one part. */
+  items: PhotoItem[];
 }
 
 /** One item read in a photo, and the listings it is or was for sale under. */
@@ -3054,8 +3071,12 @@ export const api = {
     const suffix = query.toString();
     return request<ListingDetail>(`/listings/${encodeURIComponent(id)}${suffix ? `?${suffix}` : ''}`);
   },
-  /** Items like the one in the photo. The photo is read and dropped, never stored. */
-  photoSearch: (dataUrl: string) => ask<PhotoSearchResponse>('/search/photo', { dataUrl }),
+  /**
+   * Items like what is in the photo - all of it, or one part when `region` is
+   * given. The photo is read and dropped, never stored.
+   */
+  photoSearch: (dataUrl: string, region?: PhotoBox | null) =>
+    ask<PhotoSearchResponse>('/search/photo', region ? { dataUrl, region } : { dataUrl }),
   /** Where the items in a photo already on Figmark are, or were, for sale. */
   photoSales: (url: string, about?: string, by?: string) =>
     ask<PhotoSalesResponse>('/search/photo/sales', { url, about, by }),

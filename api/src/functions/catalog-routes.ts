@@ -14,7 +14,9 @@ import { PERSON_FOLLOW, isPersonFollow, storeTag } from '../../../shared/storefr
 import { can } from '../../../shared/stores.js';
 import { AWAITING_LOT_ID, DIRECT_LOT_ID, lotIsDone } from '../../../shared/fulfilment.js';
 import { lotNo, lotNumberFrom, normaliseSteps } from '../../../shared/routes.js';
-import type { FirstDibs, Listing, ListingComment, Order, PreOrderFullRule, PreOrderShortRule, StageEvent } from '../../../shared/models.js';
+import type {
+  FirstDibs, Listing, ListingComment, Order, PreOrderFullRule, PreOrderShortRule, RegionBox, StageEvent,
+} from '../../../shared/models.js';
 import { personRef } from '../../../shared/parties.js';
 import { REACTIONS, REACTION_META, isReaction, type ReactionKind } from '../../../shared/social.js';
 import { actorName, andOthers, gistOf, toWhom, whose } from '../../../shared/notifications.js';
@@ -47,12 +49,17 @@ import { FULL_RULES, SHORT_RULES, cutoffProblem, thresholdProblem } from '../../
 import { ALLOWED_TYPES, MAX_PHOTO_BYTES } from './template-routes.js';
 import { thumbNameOf } from '../storage/types.js';
 import { sniffImageType } from '../storage/sanitize.js';
-import { fingerprint, storedFingerprint } from '../image-hash.js';
-import { rankByPhoto, type LearnedHash } from '../photo-search.js';
+import {
+  MAX_REGIONS, cropPixels, detectItems, overlapOfBoxes, printsOfPixels, readBox, storedPrints, tiltedFingerprints,
+} from '../image-hash.js';
+import { decodeJpeg, encodeJpeg, type Raw } from '../storage/compress.js';
+import {
+  PHOTO_RESULTS, onlyAlike, pictureLooksEach, rankMatches, relatedItems, type LearnedHash,
+} from '../photo-search.js';
 import { alreadyRead, everListed, findSales, onSale, type PhotoSales } from '../photo-sales.js';
 import { announceFirstDibs, firstDibsView, restockView, startFirstDibs, tellPriceDropped, tellRestocked } from './stock-alert-routes.js';
 import { tooFast, clientIp } from '../rate-limit.js';
-import { describePhoto, visionAvailable } from '../vision.js';
+import { describeItems, describePhoto, visionAvailable, type PhotoDescription } from '../vision.js';
 import { refreshIdentity } from '../shop-identity.js';
 import { refreshIfStale } from '../seller-stats.js';
 import { isViewSource, searchTerm } from '../../../shared/seller-data.js';
@@ -424,6 +431,13 @@ async function similarListings(request: HttpRequest, _context: InvocationContext
 /**
  * POST /api/search/photo - the catalogue, ranked against a photo.
  *
+ * A photo of several things is told apart into its items - by Claude, which
+ * names them and says where each is, and by the picture itself, where each
+ * thing stands off its backdrop - and the answer lists them, each with a peek
+ * at its best matches, so the shopper can tap one. The whole photo searches
+ * with every item in it at once; `region` (left, top, width, height, as
+ * fractions) searches with one item, or any box the shopper draws.
+ *
  * The photo arrives as a data URL and is never stored - not in the photo store,
  * not in the database, not in a log. It is fingerprinted and, when vision is
  * on, described by Claude, in memory, and dropped when the request ends.
@@ -437,7 +451,7 @@ async function photoSearch(request: HttpRequest, _context: InvocationContext) {
   const slow = await tooFast(who, 'photosearch');
   if (slow) return slow;
 
-  let body: { dataUrl?: string };
+  let body: { dataUrl?: string; region?: unknown };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -459,20 +473,42 @@ async function photoSearch(request: HttpRequest, _context: InvocationContext) {
   if (sniffImageType(bytes) !== contentType) {
     return error(400, 'invalid_photo', 'That file is not the kind of picture it says it is.');
   }
+  const region = body.region === undefined || body.region === null ? null : readBox(body.region);
+  if (body.region != null && !region) return error(400, 'invalid_region', 'Pick an item inside the photo.');
 
-  const hash = fingerprint(bytes, contentType);
+  let raw: Raw | null = null;
+  if (contentType === 'image/jpeg') {
+    try { raw = decodeJpeg(bytes); } catch { raw = null; }
+  }
+  if (region && !raw) return error(422, 'unreadable_photo', 'Could not read that photo to pick an item in it. Try a JPEG.');
+
   // The whole catalogue, from the copy kept for photo answers: no read of its
   // own, and every listing rather than the newest hundred.
-  const [description, all] = await Promise.all([
-    describePhoto(bytes, contentType),
-    everyListing(repository),
-  ]);
-  if (!hash && !description) {
+  const searched = region
+    ? await searchOneItem(cropPixels(raw!, region))
+    : await searchWholePhoto(bytes, contentType, raw);
+  const all = await everyListing(repository);
+  if (searched.hashes.length === 0 && searched.descriptions === null) {
     return error(422, 'unreadable_photo', 'Could not read that photo. Try a JPEG, or a clearer picture.');
   }
   const pool = all.filter((listing) => onSale(listing) && everListed(listing));
   const learned: LearnedHash[] = [];
-  const found = await rankByPhoto(pool, hash, description, learned);
+  const descriptions = searched.descriptions ?? [];
+  // The photo as a whole first, then each item in it, against one read of the catalogue's fingerprints.
+  const [looks, ...itemLooks] = await pictureLooksEach(
+    pool, [searched.hashes, ...searched.items.map((item) => item.hashes)], learned,
+  );
+  const matches = rankMatches(pool, onlyAlike(looks!), descriptions, PHOTO_RESULTS);
+  const found = [...matches, ...relatedItems(pool, matches, descriptions[0] ?? null)];
+  const items = searched.items.map((item, at) => {
+    const hits = rankMatches(pool, onlyAlike(itemLooks[at]!), item.description ? [item.description] : [], PHOTO_RESULTS);
+    return {
+      box: item.box,
+      label: item.description?.query || null,
+      matches: hits.length,
+      preview: hits.slice(0, 3).map((listing) => ({ id: listing.id, title: listing.title, photoUrl: cardPhoto(listing) })),
+    };
+  });
   const storing = storeLearned(repository, learned);
 
   const likedIds = viewer ? new Set(await repository.listLikedListingIds(viewer.id)) : new Set<string>();
@@ -488,7 +524,76 @@ async function photoSearch(request: HttpRequest, _context: InvocationContext) {
       estimatedDispatchAt: null,
     })),
     vision: visionAvailable(),
+    // What was searched with: one item, or the whole photo (null).
+    region,
+    items,
   });
+}
+
+/** An item found in a search photo: where it is, its fingerprint, and what Claude read it as. */
+interface FoundItem {
+  box: RegionBox;
+  /** Its fingerprint, then the same tilted each way; empty when the photo could not be decoded. */
+  hashes: string[];
+  description: PhotoDescription | null;
+}
+
+interface Searched {
+  hashes: string[];
+  /** Null when Claude could not read the photo, or vision is off. */
+  descriptions: PhotoDescription[] | null;
+  items: FoundItem[];
+}
+
+/** Items smaller than this share of the photo are not worth offering on their own when they are the only one. */
+const LONE_ITEM_MAX = 0.5;
+
+/**
+ * The whole photo: its fingerprint, and each item in it - those Claude names
+ * and boxes first, then any thing standing off the backdrop that Claude did
+ * not mention - each fingerprinted on its own.
+ */
+async function searchWholePhoto(bytes: Uint8Array, contentType: string, raw: Raw | null): Promise<Searched> {
+  const read = visionAvailable() ? await describeItems(bytes, contentType) : null;
+  const boxes: { box: RegionBox; description: PhotoDescription | null }[] = [];
+  for (const item of read ?? []) if (item.box) boxes.push({ box: item.box, description: item });
+  for (const box of raw ? detectItems(raw) : []) {
+    if (boxes.length >= MAX_REGIONS) break;
+    if (!boxes.some((known) => overlapOfBoxes(known.box, box) >= 0.5)) boxes.push({ box, description: null });
+  }
+  // One item filling most of the photo is the photo: nothing to choose between.
+  const offered = boxes.length >= 2 || (boxes.length === 1 && boxes[0]!.box[2] * boxes[0]!.box[3] < LONE_ITEM_MAX)
+    ? boxes.slice(0, MAX_REGIONS)
+    : [];
+  // Numbered as the shopper reads the photo: left to right, then top to bottom.
+  offered.sort((a, b) => a.box[0] + a.box[2] / 2 - (b.box[0] + b.box[2] / 2) || a.box[1] - b.box[1]);
+  const prints = raw ? printsOfPixels(raw, offered.map((item) => item.box)) : null;
+  const items = offered.map((item) => ({
+    ...item, hash: prints?.regions.find((region) => region.box === item.box)?.imageHash ?? null,
+  }));
+  // A tilted look at each item too, for its peek.
+  const itemHashes = (item: { box: RegionBox; hash: string | null }) =>
+    item.hash && raw ? [item.hash, ...tiltedFingerprints(cropPixels(raw, item.box))] : item.hash ? [item.hash] : [];
+  return {
+    // The photo, each item in it, and the photo as if shot at a slant each way.
+    hashes: prints ? [prints.hash, ...prints.regions.map((entry) => entry.imageHash), ...tiltedFingerprints(raw!)] : [],
+    // Read as items, but a photo Claude saw nothing for sale in is still worth one look as a whole.
+    descriptions: read === null ? null : read.length > 0 ? read : await describePhoto(bytes, contentType).then((one) => (one ? [one] : [])),
+    items: items.map((item) => ({ ...item, hashes: itemHashes(item) })),
+  };
+}
+
+/** One item, cut from the photo: its own fingerprint, and Claude's reading of just that part. */
+async function searchOneItem(crop: Raw): Promise<Searched> {
+  const prints = printsOfPixels(crop);
+  const description = visionAvailable() ? await describePhoto(encodeJpeg(crop, 85), 'image/jpeg') : null;
+  return { hashes: prints ? [prints.hash, ...tiltedFingerprints(crop)] : [], descriptions: description ? [description] : null, items: [] };
+}
+
+/** The small picture a card shows for a listing, or null when it has none. */
+function cardPhoto(listing: Listing): string | null {
+  const lead = listing.photos.find((photo) => photo.isPrimary) ?? listing.photos[0];
+  return lead?.thumbUrl ?? lead?.url ?? null;
 }
 
 /**
@@ -546,22 +651,24 @@ const LEARNED_PER_ANSWER = 25;
  * listing changed or gone meanwhile is simply left for next time.
  */
 async function storeLearned(repository: Awaited<ReturnType<typeof getRepository>>, learned: LearnedHash[]): Promise<void> {
-  const byListing = new Map<string, { listing: Listing; hashes: Map<string, string> }>();
-  for (const { listing, blobName, hash } of learned.slice(0, LEARNED_PER_ANSWER)) {
-    const entry = byListing.get(listing.id) ?? { listing, hashes: new Map<string, string>() };
-    entry.hashes.set(blobName, hash);
-    byListing.set(listing.id, entry);
+  const byListing = new Map<string, { listing: Listing; hashes: Map<string, LearnedHash> }>();
+  for (const entry of learned.slice(0, LEARNED_PER_ANSWER)) {
+    const kept = byListing.get(entry.listing.id) ?? { listing: entry.listing, hashes: new Map<string, LearnedHash>() };
+    kept.hashes.set(entry.blobName, entry);
+    byListing.set(entry.listing.id, kept);
   }
+  const apply = (photos: Listing['photos'], hashes: Map<string, LearnedHash>) => photos.map((photo) => {
+    const learnt = hashes.get(photo.blobName);
+    return learnt ? { ...photo, imageHash: learnt.hash, regions: learnt.regions } : photo;
+  });
   await Promise.all([...byListing.values()].map(async ({ listing, hashes }) => {
     const stored = await repository.changeListing(listing.id, listing.sellerId, (current) => ({
       ...current,
-      photos: current.photos.map((photo) => (hashes.has(photo.blobName) ? { ...photo, imageHash: hashes.get(photo.blobName)! } : photo)),
+      photos: apply(current.photos, hashes),
     })).catch(() => null);
     // The kept copy of the catalogue learns it too, rather than being read
     // again: otherwise every look until the next read would store it again.
-    if (stored) {
-      listing.photos = listing.photos.map((photo) => (hashes.has(photo.blobName) ? { ...photo, imageHash: hashes.get(photo.blobName)! } : photo));
-    }
+    if (stored) listing.photos = apply(listing.photos, hashes);
   }));
 }
 
@@ -1743,9 +1850,11 @@ async function sellerPhotos(
       ours = other === listingId || (await repository.getListing(other))?.sellerId === sellerId;
     }
     if (!ours) return null;
-    // Fingerprinted now, so photo search and "seen for sale" never have to read it again.
+    // Fingerprinted now - the whole photo and each item in it - so photo
+    // search and "seen for sale" never have to read it again.
+    const prints = await storedPrints(name);
     rows.push({
-      blobName: name, url, imageHash: await storedFingerprint(name), isPrimary,
+      blobName: name, url, imageHash: prints?.hash ?? null, regions: prints?.regions ?? [], isPrimary,
       ...(info.hasThumb ? { thumbUrl: store.urlFor(thumbNameOf(name)) ?? undefined } : {}),
     });
   }

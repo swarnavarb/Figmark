@@ -5925,8 +5925,7 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
 .qrarity--common { background: var(--surface-hover); color: var(--text-dim); }
 .qrow__head h2 { font-size: var(--t-md); display: inline-flex; align-items: center; gap: 6px; }
 .qrow__head h2 svg { color: var(--coral); }
-.qphoto img { width: 32px; height: 32px; border-radius: var(--r-sm); object-fit: cover; }
-.qrow__head .qphoto__clear svg { color: inherit; }
+.qphoto__clear svg { color: inherit; }
 
 /* ── The loot card ─────────────────────────────────────────────────────── */
 
