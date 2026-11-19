@@ -262,7 +262,7 @@ await check('a different photo of the same thing, with a caption that names noth
   assert.ok(!redGuess || redGuess.chance < 0.2, `other colours are not probable: ${redGuess?.chance}`);
   // What had to be worked out from the listing's photo is kept on the listing.
   const stored = await repository.getListing('lst_probable_figure');
-  assert.match(stored.photos[0].imageHash ?? '', /^v2:[0-9a-f]{16}:[0-9a-f]{64}:[0-9a-f]{28}(:[0-9a-f]{16}){3}:[0-9a-f]{12}:[0-9a-f]{16}$/);
+  assert.match(stored.photos[0].imageHash ?? '', /^v2:[0-9a-f]{16}:[0-9a-f]{64}:[0-9a-f]{28}(:[0-9a-f]{16}){3}:[0-9a-f]{12}:[0-9a-f]{16}:[0-9a-f]{106}$/);
   assert.ok(Array.isArray(stored.photos[0].regions), 'and so are its items');
 
   // The poster's own listing is a fair guess even when the colours say little.
@@ -285,7 +285,7 @@ await check('several photos are answered in one request, in order, and an answer
   const listed = (await repository.listListings({})).find((listing) => listing.id === 'lst_sales_live');
   assert.ok(listed, 'the listing from the check above');
   // Its fingerprint was stored on it by the first look, so no instance reads its photo again.
-  assert.match(listed.photos[0].imageHash ?? '', /^v2:[0-9a-f]{16}:[0-9a-f]{64}:[0-9a-f]{28}(:[0-9a-f]{16}){3}:[0-9a-f]{12}:[0-9a-f]{16}$/);
+  assert.match(listed.photos[0].imageHash ?? '', /^v2:[0-9a-f]{16}:[0-9a-f]{64}:[0-9a-f]{28}(:[0-9a-f]{16}){3}:[0-9a-f]{12}:[0-9a-f]{16}:[0-9a-f]{106}$/);
   forgetCatalogue();
   const other = await store.upload(picture(640, 480, (x, y) => (Math.floor((x + y) * 6) % 2 ? [40, 170, 60] : [230, 210, 40]), 80), 'image/jpeg');
   const response = await photoSalesRoute(req({ body: { photos: [
@@ -404,6 +404,75 @@ await check('a camera held at a slant still finds the thing; another colour of i
     return colour[0] === 200 ? [30, 60, 200] : colour;
   }), 'image/jpeg'));
   assert.equal(blue.sameItem, false, JSON.stringify(blue));
+});
+
+/** An action figure made of limbs, in any pose: angles in degrees from hanging straight down. */
+const HERO = { skin: [236, 188, 150], hair: [30, 24, 20], torso: [200, 35, 45], belt: [240, 200, 40], legs: [35, 70, 190], boots: [25, 25, 30] };
+function actionFigure({ cx = 0.5, cy = 0.55, size = 0.45, pose = {}, colours = HERO, turn = 0, aspect = 1 } = {}) {
+  const at = { lArm: 20, lElbow: 10, rArm: -20, rElbow: -10, lHip: 8, lKnee: 0, rHip: -8, rKnee: 0, ...pose };
+  const rad = (degrees) => (degrees * Math.PI) / 180;
+  const capsules = [];
+  const limb = (x, y, a1, l1, a2, l2, r, upper, lower, endR, end) => {
+    const ex = x + Math.sin(rad(a1)) * l1; const ey = y + Math.cos(rad(a1)) * l1;
+    const fx = ex + Math.sin(rad(a1 + a2)) * l2; const fy = ey + Math.cos(rad(a1 + a2)) * l2;
+    capsules.push([x, y, ex, ey, r, upper], [ex, ey, fx, fy, r * 0.9, lower], [fx, fy, fx, fy, endR, end]);
+  };
+  const c = colours;
+  limb(-0.07, 0.02, at.rHip, 0.32, at.rKnee, 0.3, 0.065, c.legs, c.legs, 0.07, c.boots);
+  limb(0.07, 0.02, at.lHip, 0.32, at.lKnee, 0.3, 0.065, c.legs, c.legs, 0.07, c.boots);
+  capsules.push([0, -0.05, 0, -0.42, 0.13, c.torso], [-0.11, 0, 0.11, 0, 0.045, c.belt]);
+  limb(-0.15, -0.38, at.rArm, 0.24, at.rElbow, 0.22, 0.05, c.torso, c.skin, 0.055, c.skin);
+  limb(0.15, -0.38, at.lArm, 0.24, at.lElbow, 0.22, 0.05, c.torso, c.skin, 0.055, c.skin);
+  capsules.push([0, -0.66, 0, -0.66, 0.13, c.hair], [0, -0.58, 0, -0.58, 0.115, c.skin]);
+  const cos = Math.cos(rad(turn)); const sin = Math.sin(rad(turn));
+  return (x, y) => {
+    let u = ((x - cx) * aspect) / size; let v = (y - cy) / size;
+    [u, v] = [cos * u + sin * v, -sin * u + cos * v];
+    let hit = null;
+    for (const [x1, y1, x2, y2, r, colour] of capsules) {
+      const dx = x2 - x1; const dy = y2 - y1; const length = dx * dx + dy * dy;
+      const t = length ? Math.max(0, Math.min(1, ((u - x1) * dx + (v - y1) * dy) / length)) : 0;
+      const px = x1 + t * dx - u; const py = y1 + t * dy - v;
+      if (px * px + py * py < r * r) hit = colour;
+    }
+    return hit;
+  };
+}
+const onGround = (thing, ground = [238, 236, 232]) => (x, y) => thing(x, y) ?? ground;
+
+await check('an action figure posed another way - arms up, kicking, sitting, lying down - is the same figure', async () => {
+  const listed = fingerprint(camera(500, 600, onGround(actionFigure({ aspect: 500 / 600 }))), 'image/jpeg');
+  const poses = [
+    ['arms up', { pose: { lArm: 160, lElbow: 10, rArm: -160, rElbow: -10 } }],
+    ['punching and kicking', { pose: { lArm: 95, lElbow: 0, rArm: -40, rElbow: -100, lHip: 70, lKnee: -60 } }],
+    ['walking', { pose: { lArm: -25, rArm: 25, lHip: -25, lKnee: 20, rHip: 25, rKnee: 15 } }],
+    ['sitting', { pose: { lHip: 85, lKnee: -85, rHip: 80, rKnee: -80, lArm: 40, rArm: -40 } }],
+    ['lying down', { turn: 90, size: 0.36 }],
+    ['tilted, arms out', { pose: { lArm: 90, rArm: -90 }, turn: 25, size: 0.38 }],
+  ];
+  for (const [at, [name, posed]] of poses.entries()) {
+    const ground = at % 2 ? [200, 205, 215] : [238, 236, 232];
+    const shot = camera(600, 600, onGround(actionFigure({ cx: 0.42 + at * 0.03, size: 0.4, ...posed }), ground), { seed: 40 + at, light: [at - 3, 3 - at] });
+    const alike = likeness(listed, fingerprint(shot, 'image/jpeg'));
+    assert.equal(alike.sameItem, true, `${name}: ${JSON.stringify(alike)}`);
+    assert.ok(alike.score >= 0.78, `${name} looks alike: ${alike.score}`);
+  }
+  // Another figure is not this one: the same colours on other parts, another
+  // paint job, or the same mould painted differently in the very same pose.
+  const others = [
+    ['the same colours on other parts', { ...HERO, torso: HERO.legs, legs: HERO.torso }],
+    ['another paint job', { ...HERO, torso: [40, 150, 70], legs: [90, 60, 40], hair: [240, 220, 120] }],
+    ['the same mould, belt and boots painted over', { ...HERO, belt: HERO.torso, boots: HERO.legs, hair: [140, 70, 30] }],
+  ];
+  for (const [at, [name, colours]] of others.entries()) {
+    const shot = camera(500, 600, onGround(actionFigure({ aspect: 500 / 600, colours })), { seed: 60 + at });
+    const alike = likeness(listed, fingerprint(shot, 'image/jpeg'));
+    assert.equal(alike.sameItem, false, `${name}: ${JSON.stringify(alike)}`);
+    assert.equal(alike.samePhoto && alike.sameItem, false, `${name} is not ranked as this photo`);
+    // Another paint job of the same mould may still show as a look-alike, as the
+    // blue boot does beside the red one; the same colours on other parts may not.
+    if (at !== 1) assert.ok(alike.score < 0.78, `${name} is no look-alike match: ${alike.score}`);
+  }
 });
 
 /** A shelf: a red disc, a blue block and a boot, apart on a pale ground. */

@@ -1,5 +1,5 @@
 import type { Listing, PhotoRegion } from '../../shared/models.js';
-import { RECOLOURED, isCurrent, isFingerprinted, likeness, storedPrints, type Prints } from './image-hash.js';
+import { isCurrent, isFingerprinted, likeness, storedPrints, type Prints } from './image-hash.js';
 import { ownPhotoName } from './storage/index.js';
 import type { PhotoDescription } from './vision.js';
 
@@ -164,7 +164,7 @@ function compareAll(entries: ListingPrints[], hashes: string[]): Map<string, Pic
         if (!alike) continue;
         entry ??= { same: false, sameItem: false, wholeItem: false, visual: 0, look: 0 };
         // A recoloured copy is the same picture, but for a shopper it is another variant, not this one.
-        entry.same ||= alike.samePhoto && (alike.look === null || alike.look >= RECOLOURED);
+        entry.same ||= alike.samePhoto && alike.sameItem;
         entry.sameItem ||= alike.sameItem;
         entry.wholeItem ||= (alike.sameItem || alike.samePhoto) && wholes.has(their);
         entry.visual = Math.max(entry.visual, alike.score);

@@ -140,8 +140,14 @@ function lookBin(r: number, g: number, b: number): number {
 
 type Colour = [number, number, number];
 
-/** How far a colour may be from the backdrop and still be backdrop. */
-const BACKDROP_REACH = 60;
+/**
+ * How far a colour may be from the backdrop and still be backdrop, at most and
+ * at least. Within that it follows how much the backdrop itself varies: a
+ * clean studio sweep is held tight, so a cream panel or a pale face on it is
+ * still the thing; a grainy desk is given more room.
+ */
+const REACH_MAX = 60;
+const REACH_MIN = 30;
 /** How much darker than the backdrop a shadow on it can be, as a share of its brightness. */
 const SHADOW_DEPTH = 0.75;
 
@@ -161,6 +167,8 @@ const SIDE_POINTS = 24;
 interface Backdrop {
   colours: Colour[];
   sides: { top: Colour[]; bottom: Colour[]; left: Colour[]; right: Colour[] } | null;
+  /** How far from it a colour may be and still be it. */
+  reach: number;
 }
 
 /** Whether anything is known about the backdrop at all. */
@@ -190,7 +198,18 @@ function backdropOf(raw: Raw): Backdrop {
     for (const i of group) { r += raw.data[i]!; g += raw.data[i + 1]!; b += raw.data[i + 2]!; }
     colours.push([r / group.length, g / group.length, b / group.length]);
   }
-  return { colours, sides: sidesOf(raw, inX, inY) };
+  // How much the backdrop varies from one point to the next along each side:
+  // grain and noise, not the slow change of a gradient. Most of the edge is
+  // backdrop, so a thing touching it here and there does not move this much.
+  const steps: number[] = [];
+  for (let k = 2; k < edge.length; k += 1) {
+    const a = edge[k]!; const b = edge[k - 2]!;
+    steps.push(Math.abs(raw.data[a]! - raw.data[b]!) + Math.abs(raw.data[a + 1]! - raw.data[b + 1]!) + Math.abs(raw.data[a + 2]! - raw.data[b + 2]!));
+  }
+  steps.sort((a, b) => a - b);
+  const grain = steps.length > 0 ? steps[Math.floor(steps.length * 0.8)]! : REACH_MAX;
+  const reach = Math.max(REACH_MIN, Math.min(REACH_MAX, 12 + 2.5 * grain));
+  return { colours, sides: sidesOf(raw, inX, inY), reach };
 }
 
 /** The colour along each side, smoothed past small things that touch it; null when a side is busy. */
@@ -244,14 +263,15 @@ function sideAt(side: Colour[], t: number): Colour {
  * backdrop: close to a colour the edge carries much of, or to the colour the
  * sides say belongs there.
  */
-function isBackdrop(backdrop: Backdrop, u: number, v: number, r: number, g: number, b: number): boolean {
+function isBackdrop(backdrop: Backdrop, u: number, v: number, r: number, g: number, b: number, reach = backdrop.reach): boolean {
   const near = ([br, bg, bb]: Colour) => {
-    if (Math.abs(r - br) + Math.abs(g - bg) + Math.abs(b - bb) < BACKDROP_REACH) return true;
+    if (Math.abs(r - br) + Math.abs(g - bg) + Math.abs(b - bb) < reach) return true;
     // A shadow: the backdrop's own colour, a little darker. A thing is a
     // different colour, or a lot darker, so neither is taken for one.
     const shade = (r + g + b) / Math.max(1, br + bg + bb);
     if (shade < SHADOW_DEPTH || shade > 1) return false;
-    return Math.abs(r / shade - br) + Math.abs(g / shade - bg) + Math.abs(b / shade - bb) < BACKDROP_REACH * 0.6;
+    // A shadow's edge is soft and its colour a little off, however clean the backdrop.
+    return Math.abs(r / shade - br) + Math.abs(g / shade - bg) + Math.abs(b / shade - bb) < REACH_MAX * 0.6;
   };
   if (backdrop.colours.some(near)) return true;
   const sides = backdrop.sides;
@@ -291,9 +311,17 @@ const within = (view: View, box: RegionBox): View => ({
   ],
 });
 
-/** Whether a colour at (u, v) of the picture in view is backdrop. */
-const backdropAt = (view: View, u: number, v: number, r: number, g: number, b: number) =>
-  isBackdrop(view.backdrop, view.frame[0] + u * view.frame[2], view.frame[1] + v * view.frame[3], r, g, b);
+/**
+ * Whether a colour at (u, v) of the picture in view is backdrop. For the
+ * outline of a thing (`shape`) a little more room is given: a turned or
+ * resized edge blends with the backdrop, and the outline should not wobble
+ * with it. For its colours the backdrop's own reach is kept, so a pale face on
+ * a pale desk is still the face.
+ */
+const SHAPE_REACH = 40;
+const backdropAt = (view: View, u: number, v: number, r: number, g: number, b: number, shape = false) =>
+  isBackdrop(view.backdrop, view.frame[0] + u * view.frame[2], view.frame[1] + v * view.frame[3], r, g, b,
+    shape ? Math.max(view.backdrop.reach, SHAPE_REACH) : view.backdrop.reach);
 
 /** A colour that stands for the backdrop, for filling corners a turn uncovers. */
 function backdropFill(backdrop: Backdrop): Colour {
@@ -355,6 +383,88 @@ function edgeHistogram(raw: Raw): string {
   return hexBins(bins);
 }
 
+/**
+ * Kinds of colour the adjacency tells apart: black, grey, white, then six hues
+ * each pale or vivid. Pale against vivid is what tells skin from a red jacket,
+ * or a plush's belly from its fur; light against dark is mostly how the light
+ * fell, so it is not told apart.
+ */
+const PARTS = 15;
+const PAIRS = (PARTS * (PARTS - 1)) / 2;
+
+function partOf(r: number, g: number, b: number): number {
+  const max = Math.max(r, g, b); const min = Math.min(r, g, b);
+  const value = max / 255; const saturation = max ? (max - min) / max : 0;
+  if (value < 0.2) return 0;
+  if (saturation < 0.2) return value < 0.7 ? 1 : 2;
+  let hue: number;
+  if (max === r) hue = ((g - b) / (max - min) + 6) % 6;
+  else if (max === g) hue = (b - r) / (max - min) + 2;
+  else hue = (r - g) / (max - min) + 4;
+  return 3 + (Math.floor(hue + 0.5) % 6) * 2 + (saturation >= 0.5 ? 1 : 0);
+}
+
+/** Where the pair (a, b), a < b, sits in the list of pairs. */
+const pairIndex = (a: number, b: number) => a * PARTS - (a * (a + 1)) / 2 + (b - a - 1);
+
+
+
+/**
+ * Which colours of the thing touch which, and how much: hair against face,
+ * face against a red jacket, a yellow belt between red and blue, blue legs
+ * ending in black boots. An action figure posed another way, a plush lying on
+ * its side or a box turned round moves its outline and its edges, but the same
+ * parts still meet the same parts.
+ */
+function adjacency(thing: Raw, view: View): string {
+  const grid = 48;
+  const parts = new Int8Array(grid * grid).fill(-1);
+  const votes = new Array<number>(PARTS);
+  for (let row = 0; row < grid; row += 1) {
+    for (let col = 0; col < grid; col += 1) {
+      const x0 = Math.floor((col * thing.width) / grid);
+      const x1 = Math.max(x0 + 1, Math.floor(((col + 1) * thing.width) / grid));
+      const y0 = Math.floor((row * thing.height) / grid);
+      const y1 = Math.max(y0 + 1, Math.floor(((row + 1) * thing.height) / grid));
+      const stepX = Math.max(1, Math.floor((x1 - x0) / 3));
+      const stepY = Math.max(1, Math.floor((y1 - y0) / 3));
+      // Each cell is the part most of its pixels are, not the average of
+      // them: red beside blue is red and blue, never a purple between.
+      votes.fill(0);
+      let ground = 0; let n = 0;
+      for (let y = y0; y < y1; y += stepY) {
+        for (let x = x0; x < x1; x += stepX) {
+          const at = (y * thing.width + x) * 4;
+          const r = thing.data[at]!; const g = thing.data[at + 1]!; const b = thing.data[at + 2]!;
+          n += 1;
+          if (backdropAt(view, x / thing.width, y / thing.height, r, g, b)) ground += 1;
+          else votes[partOf(r, g, b)]! += 1;
+        }
+      }
+      if (ground * 2 >= n) continue;
+      parts[row * grid + col] = votes.indexOf(Math.max(...votes));
+    }
+  }
+  const bins = new Array<number>(PAIRS).fill(0);
+  let things = 0;
+  for (const part of parts) if (part >= 0) things += 1;
+  for (let row = 0; row < grid; row += 1) {
+    for (let col = 0; col < grid; col += 1) {
+      const here = parts[row * grid + col]!;
+      if (here < 0) continue;
+      for (const next of [col + 1 < grid ? parts[row * grid + col + 1]! : -1, row + 1 < grid ? parts[(row + 1) * grid + col]! : -1]) {
+        if (next < 0 || next === here) continue;
+        bins[pairIndex(Math.min(here, next), Math.max(here, next))]! += 1;
+      }
+    }
+  }
+  // How much there is to go on, first: boundaries between parts per cell of
+  // the thing. A plush that is one brown all over has next to none.
+  const boundaries = bins.reduce((sum, count) => sum + count, 0);
+  const strength = Math.min(15, Math.round((boundaries / Math.max(1, things)) * 60));
+  return strength.toString(16) + hexBins(bins);
+}
+
 /* ── Telling the items in a photo apart ─────────────────────────────────── */
 
 /** Cells across the longer side of the grid items are found on. */
@@ -411,7 +521,7 @@ function segment(raw: Raw, given?: View): Segmented {
   for (let i = 0; i < mask.length; i += 1) {
     const at = i * 4;
     const u = ((i % width) + 0.5) / width; const v = (Math.floor(i / width) + 0.5) / height;
-    mask[i] = backdropAt(view, u, v, small.data[at]!, small.data[at + 1]!, small.data[at + 2]!) ? 0 : 1;
+    mask[i] = backdropAt(view, u, v, small.data[at]!, small.data[at + 1]!, small.data[at + 2]!, true) ? 0 : 1;
   }
   // The separate shapes, by flood fill.
   const label = new Int32Array(width * height).fill(-1);
@@ -437,8 +547,10 @@ function segment(raw: Raw, given?: View): Segmented {
         }
       }
     }
-    // A cell of margin each way, so the crop holds the whole outline.
-    if (cells >= minCells) {
+    // A cell of margin each way, so the crop holds the whole outline. Small
+    // pieces are kept for now: a head cut off from its body by a face the
+    // colour of the desk is small, and goes back on the body below.
+    if (cells >= 2) {
       boxes.push({ box: clampBox([(x0 - 1) / width, (y0 - 1) / height, (x1 - x0 + 3) / width, (y1 - y0 + 3) / height]), cells });
     }
   }
@@ -454,20 +566,23 @@ function segment(raw: Raw, given?: View): Segmented {
   );
   const oneThing = (a: RegionBox, b: RegionBox) => overlapOfBoxes(a, b) >= 0.4
     || (gap(a, b) <= near && Math.min(area(a), area(b)) <= 0.3 * Math.max(area(a), area(b)));
-  let merged = boxes.map((entry) => entry.box);
+  const pieces = boxes.map((entry) => ({ ...entry }));
   for (let again = true; again;) {
     again = false;
-    outer: for (let i = 0; i < merged.length; i += 1) {
-      for (let j = i + 1; j < merged.length; j += 1) {
-        if (oneThing(merged[i]!, merged[j]!)) {
-          merged[i] = clampBox(union(merged[i]!, merged[j]!));
-          merged.splice(j, 1);
+    outer: for (let i = 0; i < pieces.length; i += 1) {
+      for (let j = i + 1; j < pieces.length; j += 1) {
+        if (oneThing(pieces[i]!.box, pieces[j]!.box)) {
+          pieces[i] = { box: clampBox(union(pieces[i]!.box, pieces[j]!.box)), cells: pieces[i]!.cells + pieces[j]!.cells };
+          pieces.splice(j, 1);
           again = true;
           break outer;
         }
       }
     }
   }
+  // What is still small on its own is a speck: noise, a crumb, a reflection.
+  let merged = pieces.filter((piece) => piece.cells >= minCells).map((piece) => piece.box);
+  if (merged.length === 0) return { subject: null, items: [] };
   const subject = clampBox(merged.reduce(union));
   // Nothing stands out from a backdrop that is barely there: the photo is all subject.
   if (area(subject) > 0.95) return { subject: null, items: [] };
@@ -531,7 +646,7 @@ function silhouette(thing: Raw, view: View): string {
         for (let y = y0; y < y1; y += stepY) {
           for (let x = x0; x < x1; x += stepX) {
             const at = (y * thing.width + x) * 4;
-            if (!backdropAt(view, x / thing.width, y / thing.height, thing.data[at]!, thing.data[at + 1]!, thing.data[at + 2]!)) count += 1;
+            if (!backdropAt(view, x / thing.width, y / thing.height, thing.data[at]!, thing.data[at + 1]!, thing.data[at + 2]!, true)) count += 1;
             n += 1;
           }
         }
@@ -594,7 +709,7 @@ function tighten(raw: Raw, box: RegionBox, view: View): RegionBox {
   for (let y = y0; y < y1; y += step) {
     for (let x = x0; x < x1; x += step) {
       const at = (y * raw.width + x) * 4;
-      if (backdropAt(view, x / raw.width, y / raw.height, raw.data[at]!, raw.data[at + 1]!, raw.data[at + 2]!)) continue;
+      if (backdropAt(view, x / raw.width, y / raw.height, raw.data[at]!, raw.data[at + 1]!, raw.data[at + 2]!, true)) continue;
       left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y);
     }
   }
@@ -659,7 +774,7 @@ function hashWorking(raw: Raw, view: View = ownView(raw)): string | null {
   const [subjectShape, subjectMirror] = dHashes(thing);
   return [
     HASH_VERSION, shape, colourHistogram(raw), look(raw, view), mirror, subjectShape, subjectMirror,
-    edgeHistogram(thing), silhouette(thing, within(view, frame)),
+    edgeHistogram(thing), silhouette(thing, within(view, frame)), adjacency(thing, within(view, frame)),
   ].join(':');
 }
 
@@ -791,6 +906,10 @@ interface Parsed {
   edges: number[] | null;
   silhouette: Bits | null;
   silhouetteMirror: Bits | null;
+  /** Which colours touch which; absent on hashes from before it was kept. */
+  adjacency: number[] | null;
+  /** How many part boundaries the adjacency rests on, 0 to 15. */
+  partsStrength: number;
 }
 
 /**
@@ -821,7 +940,7 @@ function mirrorRows(hex: string): string {
 function parse(hash: string): Parsed | null {
   const kept = parsed.get(hash);
   if (kept !== undefined) return kept;
-  const [version, shape, colour, lookPart, mirror, subject, subjectMirror, edges, outline] = hash.split(':');
+  const [version, shape, colour, lookPart, mirror, subject, subjectMirror, edges, outline, touching] = hash.split(':');
   let value: Parsed | null = null;
   if ((version === 'v1' || version === 'v2') && shape && SHAPE.test(shape) && colour?.length === 64) {
     const v2 = version === 'v2' && SHAPE.test(mirror ?? '') && SHAPE.test(subject ?? '') && SHAPE.test(subjectMirror ?? '')
@@ -837,6 +956,8 @@ function parse(hash: string): Parsed | null {
       edges: v2 ? digits(edges!) : null,
       silhouette: v2 ? bitsOf(outline!) : null,
       silhouetteMirror: v2 ? bitsOf(mirrorRows(outline!)) : null,
+      adjacency: v2 && touching?.length === PAIRS + 1 ? digits(touching.slice(1)) : null,
+      partsStrength: v2 && touching?.length === PAIRS + 1 ? parseInt(touching[0]!, 16) : 0,
     };
   }
   if (parsed.size >= PARSED_MAX) parsed.delete(parsed.keys().next().value!);
@@ -846,7 +967,8 @@ function parse(hash: string): Parsed | null {
 
 /** Whether a stored hash is the current kind, or is worth working out again from the photo. */
 export function isCurrent(hash: string): boolean {
-  return parse(hash)?.version === HASH_VERSION;
+  const known = parse(hash);
+  return known?.version === HASH_VERSION && known.adjacency !== null;
 }
 
 /** Whether a stored hash carries the look, or predates it. */
@@ -903,6 +1025,15 @@ function closest(a: Bits, b: Bits, bMirror: Bits | null): number {
 export const SAME_PHOTO_BITS = 10;
 /** Under this much of the subject's colours in common, the same picture is a recoloured copy. */
 export const RECOLOURED = 0.3;
+/** Subject colours and colour adjacency at or over which a thing is the same thing posed another way. */
+const POSED_LOOK = 0.7;
+const POSED_PARTS = 0.45;
+/** Part boundaries both things need before which colours touch which is evidence. */
+const PARTS_STRENGTH = 3;
+/** Colour adjacency under which two things are made differently, whatever their outlines say. */
+const OTHER_PARTS = 0.4;
+/** The most two things made differently can score: a look-alike, never a match. */
+const LOOK_ALIKE_CAP = 0.7;
 /** Silhouette cells apart, of 64, at or under which two subjects have the same outline. */
 const SAME_OUTLINE_BITS = 9;
 
@@ -918,6 +1049,8 @@ export interface Likeness {
   score: number;
   /** 0 to 1: how alike the subjects' colours are, backdrop aside; null when either hash predates it. */
   look: number | null;
+  /** 0 to 1: how alike which colours of the subjects touch which; null when either hash predates it. */
+  parts: number | null;
 }
 
 /** How alike two fingerprints are; null when either is unreadable. */
@@ -935,6 +1068,10 @@ export function likeness(a: string, b: string): Likeness | null {
   let samePhoto = bits <= SAME_PHOTO_BITS && colour >= 0.5;
   let score = 0.65 * shape + 0.35 * colour;
   let sameItem = samePhoto;
+  // A thing of one colour, or one shade of brown all over, has few parts that
+  // meet: what it has is noise, and says nothing either way.
+  const rich = left.adjacency && right.adjacency && Math.min(left.partsStrength, right.partsStrength) >= PARTS_STRENGTH;
+  const parts = rich ? overlap(left.adjacency!, right.adjacency!) : null;
 
   if (left.subject && right.subject && left.edges && right.edges && left.silhouette && right.silhouette) {
     // The thing itself, wherever it sits in the frame and whichever way it faces.
@@ -955,15 +1092,29 @@ export function likeness(a: string, b: string): Likeness | null {
     // The shading inside counts for little: on a plain-coloured thing it is
     // mostly noise and which way the light fell.
     const item = 0.35 * outline + 0.1 * subject + 0.2 * edges + 0.35 * hue;
-    score = Math.max(score, item);
+    score = Math.min(1, Math.max(score, item));
     // The same picture recoloured is the same photo, but a red one is not the blue one.
     // Or everything agrees well without the outline being exact: a white sole
     // vanishes on a white sweep and shows on a desk, and moves the outline.
     sameItem = (samePhoto && hue >= RECOLOURED)
       || (outlineBits <= SAME_OUTLINE_BITS && hue >= 0.45 && edges >= 0.7)
       || (item >= 0.68 && hue >= 0.7 && edges >= 0.75 && outlineBits <= 22);
+    if (parts !== null) {
+      // Posed another way: an action figure with its arms up, a plush on its
+      // side. The outline and edges have moved, but the colours are the same
+      // and the same parts meet the same parts.
+      const posed = hue >= POSED_LOOK && parts >= POSED_PARTS;
+      if (posed) score = Math.max(score, Math.min(1, 0.4 * hue + 0.6 * parts + 0.15));
+      sameItem ||= posed;
+      // And the other way: the same mould in another paint job has the same
+      // outline, but its parts meet differently - it is not this one.
+      if (parts < OTHER_PARTS) {
+        sameItem = false;
+        score = Math.min(score, LOOK_ALIKE_CAP);
+      }
+    }
   }
-  return { samePhoto, sameItem, score, look };
+  return { samePhoto, sameItem, score, look, parts };
 }
 
 /** A colour as a shopper would say it: "Red", "Brown", "Navy", "Silver". */
