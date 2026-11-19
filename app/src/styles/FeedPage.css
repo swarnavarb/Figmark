@@ -549,7 +549,7 @@
 }
 .pfocus__chip:active { transform: scale(0.96); }
 .pfocus__chip.is-on { border-color: var(--accent); color: var(--text); }
-.pfocus__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 16ch; }
+.pfocus__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 26ch; }
 .pfocus__peek { display: inline-flex; }
 .pfocus__peek img {
   width: 18px; height: 18px; border-radius: 4px; object-fit: cover;

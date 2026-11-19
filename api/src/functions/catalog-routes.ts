@@ -50,7 +50,7 @@ import { ALLOWED_TYPES, MAX_PHOTO_BYTES } from './template-routes.js';
 import { thumbNameOf } from '../storage/types.js';
 import { sniffImageType } from '../storage/sanitize.js';
 import {
-  MAX_REGIONS, cropPixels, detectItems, overlapOfBoxes, printsOfPixels, readBox, storedPrints, tiltedFingerprints,
+  MAX_REGIONS, cropPixels, detectItems, overlapOfBoxes, isolatedFingerprints, itemColour, printsOfPixels, readBox, regionFingerprint, storedPrints, tiltedFingerprints,
 } from '../image-hash.js';
 import { decodeJpeg, encodeJpeg, type Raw } from '../storage/compress.js';
 import {
@@ -485,7 +485,7 @@ async function photoSearch(request: HttpRequest, _context: InvocationContext) {
   // The whole catalogue, from the copy kept for photo answers: no read of its
   // own, and every listing rather than the newest hundred.
   const searched = region
-    ? await searchOneItem(cropPixels(raw!, region))
+    ? await searchOneItem(raw!, region)
     : await searchWholePhoto(bytes, contentType, raw);
   const all = await everyListing(repository);
   if (searched.hashes.length === 0 && searched.descriptions === null) {
@@ -494,17 +494,18 @@ async function photoSearch(request: HttpRequest, _context: InvocationContext) {
   const pool = all.filter((listing) => onSale(listing) && everListed(listing));
   const learned: LearnedHash[] = [];
   const descriptions = searched.descriptions ?? [];
-  // The photo as a whole first, then each item in it, against one read of the catalogue's fingerprints.
+  // The photo as a whole - any item in it may match - then each item alone, against one read of the catalogue's fingerprints.
   const [looks, ...itemLooks] = await pictureLooksEach(
-    pool, [searched.hashes, ...searched.items.map((item) => item.hashes)], learned,
+    pool, [[...searched.hashes, ...searched.items.flatMap((item) => item.hashes)], ...searched.items.map((item) => item.hashes)], learned,
   );
   const matches = rankMatches(pool, onlyAlike(looks!), descriptions, PHOTO_RESULTS);
   const found = [...matches, ...relatedItems(pool, matches, descriptions[0] ?? null)];
   const items = searched.items.map((item, at) => {
-    const hits = rankMatches(pool, onlyAlike(itemLooks[at]!), item.description ? [item.description] : [], PHOTO_RESULTS);
+    const alike = onlyAlike(itemLooks[at]!);
+    const hits = rankMatches(pool, alike, item.description ? [item.description] : [], PHOTO_RESULTS);
     return {
       box: item.box,
-      label: item.description?.query || null,
+      label: item.description?.query || nameOf(item.colour, hits.find((hit) => alike.get(hit.id)?.wholeItem)?.title),
       matches: hits.length,
       preview: hits.slice(0, 3).map((listing) => ({ id: listing.id, title: listing.title, photoUrl: cardPhoto(listing) })),
     };
@@ -533,6 +534,8 @@ async function photoSearch(request: HttpRequest, _context: InvocationContext) {
 /** An item found in a search photo: where it is, its fingerprint, and what Claude read it as. */
 interface FoundItem {
   box: RegionBox;
+  /** What colour it mostly is, as a word; null when the photo could not be decoded. */
+  colour: string | null;
   /** Its fingerprint, then the same tilted each way; empty when the photo could not be decoded. */
   hashes: string[];
   description: PhotoDescription | null;
@@ -573,21 +576,37 @@ async function searchWholePhoto(bytes: Uint8Array, contentType: string, raw: Raw
   }));
   // A tilted look at each item too, for its peek.
   const itemHashes = (item: { box: RegionBox; hash: string | null }) =>
-    item.hash && raw ? [item.hash, ...tiltedFingerprints(cropPixels(raw, item.box))] : item.hash ? [item.hash] : [];
+    item.hash && raw ? [item.hash, ...isolatedFingerprints(raw, item.box)] : item.hash ? [item.hash] : [];
   return {
     // The photo, each item in it, and the photo as if shot at a slant each way.
     hashes: prints ? [prints.hash, ...prints.regions.map((entry) => entry.imageHash), ...tiltedFingerprints(raw!)] : [],
     // Read as items, but a photo Claude saw nothing for sale in is still worth one look as a whole.
     descriptions: read === null ? null : read.length > 0 ? read : await describePhoto(bytes, contentType).then((one) => (one ? [one] : [])),
-    items: items.map((item) => ({ ...item, hashes: itemHashes(item) })),
+    items: items.map((item) => ({ ...item, hashes: itemHashes(item), colour: raw ? itemColour(raw, item.box) : null })),
   };
 }
 
-/** One item, cut from the photo: its own fingerprint, and Claude's reading of just that part. */
-async function searchOneItem(crop: Raw): Promise<Searched> {
-  const prints = printsOfPixels(crop);
+/**
+ * One item, cut from the photo: its fingerprint read against the whole photo's
+ * backdrop, and against the margin round it (a box the shopper drew loosely
+ * has one), lifted onto a plain backdrop and tilted each way, and Claude's
+ * reading of just that part.
+ */
+async function searchOneItem(raw: Raw, box: RegionBox): Promise<Searched> {
+  const crop = cropPixels(raw, box);
+  const hashes = [regionFingerprint(raw, box), printsOfPixels(crop)?.hash ?? null, ...isolatedFingerprints(raw, box)]
+    .filter((hash): hash is string => hash !== null);
   const description = visionAvailable() ? await describePhoto(encodeJpeg(crop, 85), 'image/jpeg') : null;
-  return { hashes: prints ? [prints.hash, ...tiltedFingerprints(crop)] : [], descriptions: description ? [description] : null, items: [] };
+  return { hashes, descriptions: description ? [description] : null, items: [] };
+}
+
+/**
+ * What to call an item nobody read: the listing whose own photo the picture is
+ * sure is this thing, or else its colour ("Brown item"), so the chips are not
+ * just numbers.
+ */
+function nameOf(colour: string | null, sure: string | undefined): string | null {
+  return sure ?? (colour ? `${colour} item` : null);
 }
 
 /** The small picture a card shows for a listing, or null when it has none. */

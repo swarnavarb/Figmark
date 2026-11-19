@@ -134,19 +134,39 @@ function lookBin(r: number, g: number, b: number): number {
   if (max === r) hue = ((g - b) / (max - min) + 6) % 6;
   else if (max === g) hue = (b - r) / (max - min) + 2;
   else hue = (r - g) / (max - min) + 4;
-  return Math.min(11, Math.floor(hue * 2)) * 2 + (saturation < 0.55 ? 0 : 1);
+  // Twelve hues, each centred on its colour: red runs either side of 0.
+  return (Math.floor(hue * 2 + 0.5) % 12) * 2 + (saturation < 0.55 ? 0 : 1);
 }
 
 type Colour = [number, number, number];
 
 /** How far a colour may be from the backdrop and still be backdrop. */
 const BACKDROP_REACH = 60;
+/** How much darker than the backdrop a shadow on it can be, as a share of its brightness. */
+const SHADOW_DEPTH = 0.75;
+
+/** Points read along each side of the frame, for a backdrop that shades from one side to another. */
+const SIDE_POINTS = 24;
 
 /**
- * The backdrop: whatever colours the edge carries much of. A plain sweep is
- * one, a shelf or a gradient a few. Empty when the edge is too busy to say.
+ * The backdrop, two ways:
+ *
+ * - the colours the edge carries much of: a plain sweep is one, a shelf a few;
+ * - the colour along each side, for a backdrop that shades across the frame -
+ *   a desk lit from one side, a gradient sweep - where no one colour is much of
+ *   the edge. A pixel is backdrop when it is close to the colour the sides
+ *   say should be there, blended in from all four (a Coons patch). Only kept
+ *   when the sides change smoothly: a busy edge says nothing about the middle.
  */
-function backdropOf(raw: Raw): Colour[] {
+interface Backdrop {
+  colours: Colour[];
+  sides: { top: Colour[]; bottom: Colour[]; left: Colour[]; right: Colour[] } | null;
+}
+
+/** Whether anything is known about the backdrop at all. */
+const knownBackdrop = (backdrop: Backdrop) => backdrop.colours.length > 0 || backdrop.sides !== null;
+
+function backdropOf(raw: Raw): Backdrop {
   const at = (x: number, y: number) => (y * raw.width + x) * 4;
   const edge: number[] = [];
   const stepX = Math.max(1, Math.floor(raw.width / 64));
@@ -163,32 +183,149 @@ function backdropOf(raw: Raw): Colour[] {
     list.push(i);
     coarse.set(key, list);
   }
-  const backdrop: Colour[] = [];
+  const colours: Colour[] = [];
   for (const group of coarse.values()) {
     if (group.length < edge.length * 0.08) continue;
     let r = 0; let g = 0; let b = 0;
     for (const i of group) { r += raw.data[i]!; g += raw.data[i + 1]!; b += raw.data[i + 2]!; }
-    backdrop.push([r / group.length, g / group.length, b / group.length]);
+    colours.push([r / group.length, g / group.length, b / group.length]);
   }
-  return backdrop;
+  return { colours, sides: sidesOf(raw, inX, inY) };
 }
 
-const isBackdrop = (backdrop: Colour[], r: number, g: number, b: number) =>
-  backdrop.some(([br, bg, bb]) => Math.abs(r - br) + Math.abs(g - bg) + Math.abs(b - bb) < BACKDROP_REACH);
+/** The colour along each side, smoothed past small things that touch it; null when a side is busy. */
+function sidesOf(raw: Raw, inX: number, inY: number): Backdrop['sides'] {
+  if (raw.width < 8 || raw.height < 8) return null;
+  const read = (x: number, y: number): Colour => {
+    // A small patch, so one noisy pixel is not the side's colour.
+    let r = 0; let g = 0; let b = 0; let n = 0;
+    for (let dy = -1; dy <= 1; dy += 1) {
+      for (let dx = -1; dx <= 1; dx += 1) {
+        const px = Math.max(0, Math.min(raw.width - 1, x + dx));
+        const py = Math.max(0, Math.min(raw.height - 1, y + dy));
+        const i = (py * raw.width + px) * 4;
+        r += raw.data[i]!; g += raw.data[i + 1]!; b += raw.data[i + 2]!; n += 1;
+      }
+    }
+    return [r / n, g / n, b / n];
+  };
+  const along = (point: (t: number) => [number, number]) => {
+    const raw = Array.from({ length: SIDE_POINTS }, (_, k) => read(...point(k / (SIDE_POINTS - 1))));
+    // A running median: a thing that pokes into the side for a point or two is passed over.
+    return raw.map((_, k) => {
+      const near = raw.slice(Math.max(0, k - 2), k + 3);
+      return [0, 1, 2].map((c) => near.map((colour) => colour[c]!).sort((a, b) => a - b)[Math.floor(near.length / 2)]!) as Colour;
+    });
+  };
+  const right = raw.width - 1 - inX; const bottom = raw.height - 1 - inY;
+  const sides = {
+    top: along((t) => [Math.round(inX + t * (right - inX)), inY]),
+    bottom: along((t) => [Math.round(inX + t * (right - inX)), bottom]),
+    left: along((t) => [inX, Math.round(inY + t * (bottom - inY))]),
+    right: along((t) => [right, Math.round(inY + t * (bottom - inY))]),
+  };
+  // Smooth means each point is close to the next: a gradient, not a cluttered shelf.
+  const jumps = Object.values(sides).flatMap((side) => side.slice(1).map((colour, k) =>
+    Math.abs(colour[0] - side[k]![0]) + Math.abs(colour[1] - side[k]![1]) + Math.abs(colour[2] - side[k]![2])));
+  jumps.sort((a, b) => a - b);
+  return jumps[Math.floor(jumps.length * 0.8)]! < 24 ? sides : null;
+}
+
+/** The colour a side says is at `t` along it, 0 to 1. */
+function sideAt(side: Colour[], t: number): Colour {
+  const at = Math.max(0, Math.min(1, t)) * (side.length - 1);
+  const k = Math.min(side.length - 2, Math.floor(at));
+  const f = at - k;
+  return [0, 1, 2].map((c) => side[k]![c]! * (1 - f) + side[k + 1]![c]! * f) as Colour;
+}
+
+/**
+ * Whether a colour at (u, v) - fractions across and down the frame - is the
+ * backdrop: close to a colour the edge carries much of, or to the colour the
+ * sides say belongs there.
+ */
+function isBackdrop(backdrop: Backdrop, u: number, v: number, r: number, g: number, b: number): boolean {
+  const near = ([br, bg, bb]: Colour) => {
+    if (Math.abs(r - br) + Math.abs(g - bg) + Math.abs(b - bb) < BACKDROP_REACH) return true;
+    // A shadow: the backdrop's own colour, a little darker. A thing is a
+    // different colour, or a lot darker, so neither is taken for one.
+    const shade = (r + g + b) / Math.max(1, br + bg + bb);
+    if (shade < SHADOW_DEPTH || shade > 1) return false;
+    return Math.abs(r / shade - br) + Math.abs(g / shade - bg) + Math.abs(b / shade - bb) < BACKDROP_REACH * 0.6;
+  };
+  if (backdrop.colours.some(near)) return true;
+  const sides = backdrop.sides;
+  if (!sides) return false;
+  const top = sideAt(sides.top, u); const bottom = sideAt(sides.bottom, u);
+  const left = sideAt(sides.left, v); const right = sideAt(sides.right, v);
+  const corner = (side: Colour[], end: number) => side[end === 0 ? 0 : side.length - 1]!;
+  const expected = [0, 1, 2].map((c) =>
+    (1 - v) * top[c]! + v * bottom[c]! + (1 - u) * left[c]! + u * right[c]!
+    - ((1 - u) * (1 - v) * corner(sides.top, 0)[c]! + u * (1 - v) * corner(sides.top, 1)[c]!
+      + (1 - u) * v * corner(sides.bottom, 0)[c]! + u * v * corner(sides.bottom, 1)[c]!)) as Colour;
+  return near(expected);
+}
+
+/**
+ * A backdrop, and where a picture sits within the frame it was read from. An
+ * item cut out of a photo has little backdrop of its own round it; the whole
+ * photo's, read at the item's place in it, is what tells item from backdrop.
+ */
+interface View {
+  backdrop: Backdrop;
+  /** Where the picture being read sits in the backdrop's frame. */
+  frame: RegionBox;
+}
+
+const FULL: RegionBox = [0, 0, 1, 1];
+
+/** A picture read against its own backdrop. */
+const ownView = (raw: Raw): View => ({ backdrop: backdropOf(raw), frame: FULL });
+
+/** The view of a part of a picture: the same backdrop, a smaller frame. */
+const within = (view: View, box: RegionBox): View => ({
+  backdrop: view.backdrop,
+  frame: [
+    view.frame[0] + box[0] * view.frame[2], view.frame[1] + box[1] * view.frame[3],
+    box[2] * view.frame[2], box[3] * view.frame[3],
+  ],
+});
+
+/** Whether a colour at (u, v) of the picture in view is backdrop. */
+const backdropAt = (view: View, u: number, v: number, r: number, g: number, b: number) =>
+  isBackdrop(view.backdrop, view.frame[0] + u * view.frame[2], view.frame[1] + v * view.frame[3], r, g, b);
+
+/** A colour that stands for the backdrop, for filling corners a turn uncovers. */
+function backdropFill(backdrop: Backdrop): Colour {
+  if (backdrop.colours[0]) return backdrop.colours[0];
+  const sides = backdrop.sides;
+  if (!sides) return [255, 255, 255];
+  const all = [...sides.top, ...sides.bottom, ...sides.left, ...sides.right];
+  return [0, 1, 2].map((c) => all.reduce((sum, colour) => sum + colour[c]!, 0) / all.length) as Colour;
+}
 
 /** The colours of the subject: every pixel close to the backdrop is left out. */
-function look(raw: Raw): string {
-  const backdrop = backdropOf(raw);
+function look(raw: Raw, view: View): string {
   const bins = new Array<number>(LOOK_BINS).fill(0);
   const pixels = raw.width * raw.height;
   const step = Math.max(1, Math.floor(pixels / 8192));
   for (let index = 0; index < pixels; index += step) {
     const i = index * 4;
     const r = raw.data[i]!; const g = raw.data[i + 1]!; const b = raw.data[i + 2]!;
-    if (isBackdrop(backdrop, r, g, b)) continue;
+    const u = (index % raw.width) / raw.width; const v = Math.floor(index / raw.width) / raw.height;
+    if (backdropAt(view, u, v, r, g, b)) continue;
     bins[lookBin(r, g, b)]! += 1;
   }
-  return hexBins(bins);
+  // Colours are scaled against the strongest colour, greys against everything:
+  // a card that is mostly cream panel is still the pink and blue of its frame.
+  const colours = bins.slice(0, 24);
+  const greys = bins.slice(24);
+  const all = Math.max(1e-9, ...bins);
+  const colourTop = Math.max(...colours);
+  // A few stray coloured pixels in a grey thing are noise, not its colour.
+  const coloured = colourTop >= all * 0.08 ? colourTop : Infinity;
+  const digit = (value: number, top: number) => Math.round(Math.min(1, value / top) * 15).toString(16);
+  return [...colours.map((value) => digit(value, coloured)), ...greys.map((value) => digit(value, all))].join('');
 }
 
 /** Directions an outline can run, over half a turn. */
@@ -259,41 +396,23 @@ function union(a: RegionBox, b: RegionBox): RegionBox {
 }
 
 /**
- * Where the things in the photo are: everything far from the backdrop's
- * colours, closed over small gaps so a figure's dark joints do not cut it in
- * two, then split into the separate shapes that are left.
+ * Where the things in the photo are: everything far from the backdrop, split
+ * into the separate shapes it makes, with the pieces of one thing put back
+ * together.
  */
-function segment(raw: Raw): Segmented {
+function segment(raw: Raw, given?: View): Segmented {
   const scale = SEGMENT_CELLS / Math.max(raw.width, raw.height);
   const small = shrinkRaw(raw, Math.min(1, scale));
   const { width, height } = small;
-  const backdrop = backdropOf(small);
-  if (backdrop.length === 0 || width < 4 || height < 4) return { subject: null, items: [] };
+  const view = given ?? ownView(small);
+  if (!knownBackdrop(view.backdrop) || width < 4 || height < 4) return { subject: null, items: [] };
 
-  let mask = new Uint8Array(width * height);
+  const mask = new Uint8Array(width * height);
   for (let i = 0; i < mask.length; i += 1) {
     const at = i * 4;
-    mask[i] = isBackdrop(backdrop, small.data[at]!, small.data[at + 1]!, small.data[at + 2]!) ? 0 : 1;
+    const u = ((i % width) + 0.5) / width; const v = (Math.floor(i / width) + 0.5) / height;
+    mask[i] = backdropAt(view, u, v, small.data[at]!, small.data[at + 1]!, small.data[at + 2]!) ? 0 : 1;
   }
-  const morph = (source: Uint8Array, grow: boolean) => {
-    const out = new Uint8Array(source.length);
-    for (let y = 0; y < height; y += 1) {
-      for (let x = 0; x < width; x += 1) {
-        let any = false; let all = true;
-        for (let dy = -1; dy <= 1; dy += 1) {
-          for (let dx = -1; dx <= 1; dx += 1) {
-            const nx = x + dx; const ny = y + dy;
-            const on = nx >= 0 && ny >= 0 && nx < width && ny < height ? source[ny * width + nx] === 1 : false;
-            any ||= on; all &&= on;
-          }
-        }
-        out[y * width + x] = (grow ? any : all) ? 1 : 0;
-      }
-    }
-    return out;
-  };
-  mask = morph(morph(mask, true), false);
-
   // The separate shapes, by flood fill.
   const label = new Int32Array(width * height).fill(-1);
   const boxes: { box: RegionBox; cells: number }[] = [];
@@ -308,8 +427,9 @@ function segment(raw: Raw): Segmented {
       const cx = cell % width; const cy = Math.floor(cell / width);
       cells += 1;
       x0 = Math.min(x0, cx); y0 = Math.min(y0, cy); x1 = Math.max(x1, cx); y1 = Math.max(y1, cy);
-      for (let dy = -1; dy <= 1; dy += 1) {
-        for (let dx = -1; dx <= 1; dx += 1) {
+      // Side by side only, not corner to corner: two things a cell apart on a diagonal are two things.
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        {
           const nx = cx + dx; const ny = cy + dy;
           if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
           const next = ny * width + nx;
@@ -324,13 +444,22 @@ function segment(raw: Raw): Segmented {
   }
   if (boxes.length === 0) return { subject: null, items: [] };
 
-  // Shapes that mostly sit inside one another are one thing: a box and the figure printed on it.
+  // Shapes that mostly sit inside one another are one thing: a box and the
+  // figure printed on it. So is a small piece right beside a much larger one:
+  // the dark sole under a white-soled shoe, a head over a body, cut off by a
+  // band the colour of the backdrop. Two things of a size side by side stay two.
+  const near = 4 / Math.max(width, height);
+  const gap = (a: RegionBox, b: RegionBox) => Math.max(
+    0, Math.max(a[0], b[0]) - Math.min(a[0] + a[2], b[0] + b[2]), Math.max(a[1], b[1]) - Math.min(a[1] + a[3], b[1] + b[3]),
+  );
+  const oneThing = (a: RegionBox, b: RegionBox) => overlapOfBoxes(a, b) >= 0.4
+    || (gap(a, b) <= near && Math.min(area(a), area(b)) <= 0.3 * Math.max(area(a), area(b)));
   let merged = boxes.map((entry) => entry.box);
   for (let again = true; again;) {
     again = false;
     outer: for (let i = 0; i < merged.length; i += 1) {
       for (let j = i + 1; j < merged.length; j += 1) {
-        if (overlapOfBoxes(merged[i]!, merged[j]!) >= 0.4) {
+        if (oneThing(merged[i]!, merged[j]!)) {
           merged[i] = clampBox(union(merged[i]!, merged[j]!));
           merged.splice(j, 1);
           again = true;
@@ -383,26 +512,56 @@ export function readBox(value: unknown): RegionBox | null {
  * Which cells of an 8x8 grid over the subject are mostly the thing, as 64 bits.
  * With no backdrop to tell it from, the brighter-than-average cells stand in.
  */
-function silhouette(thing: Raw, backdrop: Colour[]): string {
+function silhouette(thing: Raw, view: View): string {
   const cells: number[] = [];
-  if (backdrop.length > 0) {
-    for (let row = 0; row < 8; row += 1) {
-      for (let col = 0; col < 8; col += 1) {
-        const x0 = Math.floor((col * thing.width) / 8);
-        const x1 = Math.max(x0 + 1, Math.floor(((col + 1) * thing.width) / 8));
-        const y0 = Math.floor((row * thing.height) / 8);
-        const y1 = Math.max(y0 + 1, Math.floor(((row + 1) * thing.height) / 8));
-        const stepX = Math.max(1, Math.floor((x1 - x0) / 8));
-        const stepY = Math.max(1, Math.floor((y1 - y0) / 8));
-        let on = 0; let n = 0;
+  if (knownBackdrop(view.backdrop)) {
+    // Read finer than the hash, so a hole can be told from the outside: a light
+    // belly or a printed panel the colour of the backdrop is still the thing.
+    const fine = 24;
+    const on = new Uint8Array(fine * fine);
+    for (let row = 0; row < fine; row += 1) {
+      for (let col = 0; col < fine; col += 1) {
+        const x0 = Math.floor((col * thing.width) / fine);
+        const x1 = Math.max(x0 + 1, Math.floor(((col + 1) * thing.width) / fine));
+        const y0 = Math.floor((row * thing.height) / fine);
+        const y1 = Math.max(y0 + 1, Math.floor(((row + 1) * thing.height) / fine));
+        const stepX = Math.max(1, Math.floor((x1 - x0) / 4));
+        const stepY = Math.max(1, Math.floor((y1 - y0) / 4));
+        let count = 0; let n = 0;
         for (let y = y0; y < y1; y += stepY) {
           for (let x = x0; x < x1; x += stepX) {
             const at = (y * thing.width + x) * 4;
-            if (!isBackdrop(backdrop, thing.data[at]!, thing.data[at + 1]!, thing.data[at + 2]!)) on += 1;
+            if (!backdropAt(view, x / thing.width, y / thing.height, thing.data[at]!, thing.data[at + 1]!, thing.data[at + 2]!)) count += 1;
             n += 1;
           }
         }
-        cells.push(on / n);
+        on[row * fine + col] = count * 2 >= n ? 1 : 0;
+      }
+    }
+    // Backdrop is what can be reached from the edge; anything else is the thing.
+    const outside = new Uint8Array(fine * fine);
+    const queue: number[] = [];
+    for (let k = 0; k < fine; k += 1) {
+      for (const cell of [k, (fine - 1) * fine + k, k * fine, k * fine + fine - 1]) {
+        if (!on[cell] && !outside[cell]) { outside[cell] = 1; queue.push(cell); }
+      }
+    }
+    while (queue.length > 0) {
+      const cell = queue.pop()!;
+      const cx = cell % fine; const cy = Math.floor(cell / fine);
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const nx = cx + dx; const ny = cy + dy;
+        if (nx < 0 || ny < 0 || nx >= fine || ny >= fine) continue;
+        const next = ny * fine + nx;
+        if (!on[next] && !outside[next]) { outside[next] = 1; queue.push(next); }
+      }
+    }
+    const per = fine / 8;
+    for (let row = 0; row < 8; row += 1) {
+      for (let col = 0; col < 8; col += 1) {
+        let inside = 0;
+        for (let y = 0; y < per; y += 1) for (let x = 0; x < per; x += 1) inside += outside[(row * per + y) * fine + col * per + x] ? 0 : 1;
+        cells.push(inside / (per * per));
       }
     }
   } else {
@@ -424,8 +583,8 @@ function silhouette(thing: Raw, backdrop: Colour[]): string {
  * coarse grid items are found on leaves a margin, and the same thing should
  * crop the same however large it was in its photo.
  */
-function tighten(raw: Raw, box: RegionBox, backdrop: Colour[]): RegionBox {
-  if (backdrop.length === 0) return box;
+function tighten(raw: Raw, box: RegionBox, view: View): RegionBox {
+  if (!knownBackdrop(view.backdrop)) return box;
   const x0 = Math.floor(box[0] * raw.width);
   const y0 = Math.floor(box[1] * raw.height);
   const x1 = Math.min(raw.width, Math.ceil((box[0] + box[2]) * raw.width));
@@ -435,7 +594,7 @@ function tighten(raw: Raw, box: RegionBox, backdrop: Colour[]): RegionBox {
   for (let y = y0; y < y1; y += step) {
     for (let x = x0; x < x1; x += step) {
       const at = (y * raw.width + x) * 4;
-      if (isBackdrop(backdrop, raw.data[at]!, raw.data[at + 1]!, raw.data[at + 2]!)) continue;
+      if (backdropAt(view, x / raw.width, y / raw.height, raw.data[at]!, raw.data[at + 1]!, raw.data[at + 2]!)) continue;
       left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y);
     }
   }
@@ -483,22 +642,83 @@ const TILTS = [-22.5, -15, -7.5, 7.5, 15, 22.5];
 export function tiltedFingerprints(raw: Raw): string[] {
   if (raw.width < 2 || raw.height < 2) return [];
   const work = workingCopy(raw);
-  const fill = backdropOf(work)[0] ?? [255, 255, 255];
+  const fill = backdropFill(backdropOf(work));
   return TILTS.flatMap((degrees) => hashWorking(turnPixels(work, (degrees * Math.PI) / 180, fill)) ?? []);
 }
 
-/** The fingerprint of pixels already at working size. */
-function hashWorking(raw: Raw): string | null {
+/**
+ * The fingerprint of pixels already at working size, read against `view`: its
+ * own backdrop for a whole photo, the photo's for an item cut from it.
+ */
+function hashWorking(raw: Raw, view: View = ownView(raw)): string | null {
   if (raw.width < 2 || raw.height < 2) return null;
   const [shape, mirror] = dHashes(raw);
-  const backdrop = backdropOf(raw);
-  const { subject } = segment(raw);
-  const thing = subject ? cropPixels(raw, tighten(raw, subject, backdrop)) : raw;
+  const { subject } = segment(raw, view);
+  const frame: RegionBox = subject ? tighten(raw, subject, view) : FULL;
+  const thing = subject ? cropPixels(raw, frame) : raw;
   const [subjectShape, subjectMirror] = dHashes(thing);
   return [
-    HASH_VERSION, shape, colourHistogram(raw), look(raw), mirror, subjectShape, subjectMirror,
-    edgeHistogram(thing), silhouette(thing, backdrop),
+    HASH_VERSION, shape, colourHistogram(raw), look(raw, view), mirror, subjectShape, subjectMirror,
+    edgeHistogram(thing), silhouette(thing, within(view, frame)),
   ].join(':');
+}
+
+/** One part of a photo's fingerprint, read against the whole photo's backdrop. */
+export function regionFingerprint(raw: Raw, box: RegionBox): string | null {
+  const work = workingCopy(raw);
+  return hashWorking(cropPixels(work, box), within(ownView(work), box));
+}
+
+/**
+ * One item lifted out of its photo onto a plain backdrop with a margin round
+ * it: everything the photo's backdrop says is not the item - the desk, a slice
+ * of the thing beside it - is painted over. A neighbour's edge cannot creep into
+ * the item's fingerprint, and the item can be turned with nothing to drag in.
+ */
+function isolate(raw: Raw, box: RegionBox): Raw {
+  const work = workingCopy(raw);
+  const view = within(ownView(work), box);
+  const crop = cropPixels(work, box);
+  const fill = backdropFill(view.backdrop);
+  const padX = Math.round(crop.width * 0.2); const padY = Math.round(crop.height * 0.2);
+  const width = crop.width + 2 * padX; const height = crop.height + 2 * padY;
+  const data = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const out = (y * width + x) * 4;
+      const cx = x - padX; const cy = y - padY;
+      let colour: Colour = fill;
+      if (cx >= 0 && cy >= 0 && cx < crop.width && cy < crop.height) {
+        const at = (cy * crop.width + cx) * 4;
+        const here: Colour = [crop.data[at]!, crop.data[at + 1]!, crop.data[at + 2]!];
+        if (!backdropAt(view, cx / crop.width, cy / crop.height, ...here)) colour = here;
+      }
+      data[out] = colour[0]; data[out + 1] = colour[1]; data[out + 2] = colour[2]; data[out + 3] = 255;
+    }
+  }
+  // Only the shape the item makes is kept: a stray patch at the edge of the box is painted over too.
+  const lifted = { data, width, height };
+  const { items, subject } = segment(lifted);
+  const keep = items[0] ?? subject;
+  if (!keep) return lifted;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const u = x / width; const v = y / height;
+      if (u >= keep[0] && u <= keep[0] + keep[2] && v >= keep[1] && v <= keep[1] + keep[3]) continue;
+      const out = (y * width + x) * 4;
+      data[out] = fill[0]; data[out + 1] = fill[1]; data[out + 2] = fill[2];
+    }
+  }
+  return lifted;
+}
+
+/**
+ * Fingerprints of one item in a photo, to search with: lifted onto a plain
+ * backdrop (`isolate`), as it is and turned a little each way.
+ */
+export function isolatedFingerprints(raw: Raw, box: RegionBox): string[] {
+  const lifted = isolate(raw, box);
+  return [hashWorking(lifted), ...tiltedFingerprints(lifted)].filter((hash): hash is string => hash !== null);
 }
 
 /** The fingerprint of a JPEG, or null for anything this cannot decode. */
@@ -531,11 +751,12 @@ export interface Prints {
 export function printsOfPixels(raw: Raw, boxes?: RegionBox[]): Prints | null {
   if (raw.width < 2 || raw.height < 2) return null;
   const work = workingCopy(raw);
-  const hash = hashWorking(work);
+  const view = ownView(work);
+  const hash = hashWorking(work, view);
   if (!hash) return null;
   const regions: PhotoRegion[] = [];
   for (const box of (boxes ?? segment(work).items).slice(0, MAX_REGIONS)) {
-    const imageHash = hashWorking(cropPixels(work, box));
+    const imageHash = hashWorking(cropPixels(work, box), within(view, box));
     if (imageHash) regions.push({ box, imageHash });
   }
   return { hash, regions };
@@ -736,9 +957,60 @@ export function likeness(a: string, b: string): Likeness | null {
     const item = 0.35 * outline + 0.1 * subject + 0.2 * edges + 0.35 * hue;
     score = Math.max(score, item);
     // The same picture recoloured is the same photo, but a red one is not the blue one.
-    sameItem = (samePhoto && hue >= RECOLOURED) || (outlineBits <= SAME_OUTLINE_BITS && hue >= 0.45 && edges >= 0.7);
+    // Or everything agrees well without the outline being exact: a white sole
+    // vanishes on a white sweep and shows on a desk, and moves the outline.
+    sameItem = (samePhoto && hue >= RECOLOURED)
+      || (outlineBits <= SAME_OUTLINE_BITS && hue >= 0.45 && edges >= 0.7)
+      || (item >= 0.68 && hue >= 0.7 && edges >= 0.75 && outlineBits <= 22);
   }
   return { samePhoto, sameItem, score, look };
+}
+
+/** A colour as a shopper would say it: "Red", "Brown", "Navy", "Silver". */
+function colourWord(r: number, g: number, b: number): string {
+  const max = Math.max(r, g, b); const min = Math.min(r, g, b);
+  const value = max / 255; const saturation = max ? (max - min) / max : 0;
+  if (value < 0.18) return 'Black';
+  if (saturation < 0.18) return value < 0.45 ? 'Grey' : value < 0.8 ? 'Silver' : 'White';
+  let hue: number;
+  if (max === r) hue = ((g - b) / (max - min) + 6) % 6;
+  else if (max === g) hue = (b - r) / (max - min) + 2;
+  else hue = (r - g) / (max - min) + 4;
+  const degrees = hue * 60;
+  if (degrees >= 15 && degrees < 50) {
+    if (saturation < 0.4 && value > 0.7) return 'Beige';
+    return value < 0.65 ? 'Brown' : 'Orange';
+  }
+  if (degrees < 15 || degrees >= 345) return value < 0.45 ? 'Maroon' : 'Red';
+  if (degrees < 70) return value < 0.55 ? 'Olive' : 'Yellow';
+  if (degrees < 165) return 'Green';
+  if (degrees < 195) return 'Teal';
+  if (degrees < 255) return value < 0.5 ? 'Navy' : 'Blue';
+  if (degrees < 290) return 'Purple';
+  return 'Pink';
+}
+
+/**
+ * The colour an item in a photo mostly is, as a word - what it is called when
+ * nothing else names it. Read off its own pixels, the photo's backdrop aside.
+ */
+export function itemColour(raw: Raw, box: RegionBox): string | null {
+  const work = workingCopy(raw);
+  const view = within(ownView(work), box);
+  const crop = cropPixels(work, box);
+  const votes = new Map<string, number>();
+  const step = Math.max(1, Math.floor((crop.width * crop.height) / 4096));
+  for (let index = 0; index < crop.width * crop.height; index += step) {
+    const at = index * 4;
+    const r = crop.data[at]!; const g = crop.data[at + 1]!; const b = crop.data[at + 2]!;
+    if (backdropAt(view, (index % crop.width) / crop.width, Math.floor(index / crop.width) / crop.height, r, g, b)) continue;
+    const word = colourWord(r, g, b);
+    // A colour says more than a grey of the same size: the grey is often shadow, print or packaging.
+    votes.set(word, (votes.get(word) ?? 0) + (['Black', 'Grey', 'Silver', 'White'].includes(word) ? 0.6 : 1));
+  }
+  let best: string | null = null; let most = 0;
+  for (const [word, count] of votes) if (count > most) { best = word; most = count; }
+  return best;
 }
 
 /* ── Stored photos ──────────────────────────────────────────────────────── */

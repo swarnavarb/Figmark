@@ -85,6 +85,8 @@ export interface PictureMatch {
   same: boolean;
   /** One of its photos, or an item in one, is likely the same thing in another picture. */
   sameItem?: boolean;
+  /** One of its photos as a whole - not an item among others in it - is the same thing. */
+  wholeItem?: boolean;
   /** 0 to 1: how alike its closest photo looks. */
   visual: number;
 }
@@ -108,6 +110,8 @@ export interface LearnedHash {
 interface ListingPrints {
   listing: Listing;
   hashes: string[];
+  /** Those of whole photos, rather than of items in one. */
+  wholes: Set<string>;
 }
 
 /**
@@ -122,7 +126,9 @@ interface ListingPrints {
 async function catalogPrints(pool: Listing[], learned: LearnedHash[]): Promise<ListingPrints[]> {
   const entries = new Map<string, ListingPrints>();
   const add = (listing: Listing, hashes: string[]) => {
-    const entry = entries.get(listing.id) ?? { listing, hashes: [] };
+    const entry = entries.get(listing.id) ?? { listing, hashes: [], wholes: new Set<string>() };
+    // The first of each photo's fingerprints is the whole photo's.
+    if (hashes[0]) entry.wholes.add(hashes[0]);
     entry.hashes.push(...hashes);
     entries.set(listing.id, entry);
   };
@@ -150,16 +156,17 @@ async function catalogPrints(pool: Listing[], learned: LearnedHash[]): Promise<L
 /** How each listing compares with any of the photo's fingerprints, by id, keeping the best of each. */
 function compareAll(entries: ListingPrints[], hashes: string[]): Map<string, PictureLook> {
   const found = new Map<string, PictureLook>();
-  for (const { listing, hashes: theirs } of entries) {
+  for (const { listing, hashes: theirs, wholes } of entries) {
     let entry: PictureLook | null = null;
     for (const mine of hashes) {
       for (const their of theirs) {
         const alike = likeness(mine, their);
         if (!alike) continue;
-        entry ??= { same: false, sameItem: false, visual: 0, look: 0 };
+        entry ??= { same: false, sameItem: false, wholeItem: false, visual: 0, look: 0 };
         // A recoloured copy is the same picture, but for a shopper it is another variant, not this one.
         entry.same ||= alike.samePhoto && (alike.look === null || alike.look >= RECOLOURED);
         entry.sameItem ||= alike.sameItem;
+        entry.wholeItem ||= (alike.sameItem || alike.samePhoto) && wholes.has(their);
         entry.visual = Math.max(entry.visual, alike.score);
         entry.look = Math.max(entry.look, alike.look ?? 0);
       }
@@ -211,7 +218,8 @@ export function onlyAlike(looks: Map<string, PictureLook>): Map<string, PictureM
 export function pictureScore(match: PictureMatch | undefined): number {
   if (!match) return 0;
   if (match.same) return 100 + match.visual * 10;
-  return match.sameItem ? 40 + match.visual * 10 : match.visual * 6;
+  // A listing whose own photo is the thing comes before one where it is one of several.
+  return match.sameItem ? 40 + match.visual * 10 + (match.wholeItem ? 5 : 0) : match.visual * 6;
 }
 
 /** How a listing scores against a photo: its best picture match and its best words. */

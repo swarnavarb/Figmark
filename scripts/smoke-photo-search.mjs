@@ -464,6 +464,9 @@ await check('a photo search names each item, and the shopper can search with one
   assert.ok(peek.includes('lst_item_boot'), `the boot's own listing is in its peek: ${peek}`);
   assert.ok(peek.includes('lst_item_bundle'), `so is the bundle showing it among others: ${peek}`);
   assert.ok(bootItem.matches >= 2);
+  // With nobody to read the photo, an item is named after the listing whose own photo it is.
+  assert.equal(bootItem.label, 'Qwopple boot');
+  assert.equal(peek[0], 'lst_item_boot', 'the boot alone comes before the bundle it is part of');
   // The whole photo finds what is in it, item by item.
   const ids = listings.map((listing) => listing.id);
   for (const id of ['lst_item_boot', 'lst_item_disc', 'lst_item_bundle']) assert.ok(ids.includes(id), `${id} found from the whole photo`);
