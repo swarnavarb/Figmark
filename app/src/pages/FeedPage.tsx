@@ -43,6 +43,7 @@ import {
   AlertMe, DAY_CHOICES, FilterChips, FilterSheet, RecentRail, priceLabel, sheetCount, type FilterValues,
 } from '../components/ShopFinder';
 import { clearPhotoQuery, usePhotoQuery } from '../photoQuery';
+import { detectThings } from '../photoDetect';
 import '../styles/FeedPage.css';
 import { Select } from '../components/Select';
 
@@ -116,9 +117,13 @@ export function useCatalog() {
     if (!photo) return;
     let cancelled = false;
     setLoading(true);
-    void api
-      .photoSearch(photo.dataUrl, photoRegion)
+    // A look at the whole photo first finds the things in it, on the phone;
+    // a look at one part already knows them.
+    const boxes = photoRegion ? Promise.resolve([]) : detectThings(photo.id, photo.dataUrl);
+    void boxes
+      .then((found) => (cancelled ? null : api.photoSearch(photo.dataUrl, photoRegion, found)))
       .then((result) => {
+        if (!result) return;
         if (cancelled) return;
         setPhotoFound(result.listings);
         setPhotoSuggested(result.suggested ?? []);

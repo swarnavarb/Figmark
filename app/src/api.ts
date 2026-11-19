@@ -3081,10 +3081,11 @@ export const api = {
   },
   /**
    * Items like what is in the photo - all of it, or one part when `region` is
-   * given. The photo is read and dropped, never stored.
+   * given. `boxes` are the things the phone found in it, searched with each
+   * on its own. The photo is read and dropped, never stored.
    */
-  photoSearch: (dataUrl: string, region?: PhotoBox | null) =>
-    ask<PhotoSearchResponse>('/search/photo', region ? { dataUrl, region } : { dataUrl }),
+  photoSearch: (dataUrl: string, region?: PhotoBox | null, boxes?: PhotoBox[]) =>
+    ask<PhotoSearchResponse>('/search/photo', region ? { dataUrl, region } : boxes?.length ? { dataUrl, boxes } : { dataUrl }),
   /** Where the items in a photo already on Figmark are, or were, for sale. */
   photoSales: (url: string, about?: string, by?: string) =>
     ask<PhotoSalesResponse>('/search/photo/sales', { url, about, by }),

@@ -46,8 +46,8 @@ export const HASH_VERSION = 'v2';
 
 /** Every fingerprint is worked out at this size at most: a 9x8 grid needs no more. */
 const WORK_EDGE = 512;
-/** Items told apart in one photo, at most. */
-export const MAX_REGIONS = 6;
+/** Items told apart in one photo, at most: a shelf of figures is a dozen. */
+export const MAX_REGIONS = 12;
 
 /** The picture at a size worth fingerprinting. */
 function workingCopy(raw: Raw): Raw {
@@ -836,9 +836,9 @@ function isolate(raw: Raw, box: RegionBox): Raw {
  * Fingerprints of one item in a photo, to search with: lifted onto a plain
  * backdrop (`isolate`), as it is and turned a little each way.
  */
-export function isolatedFingerprints(raw: Raw, box: RegionBox): string[] {
+export function isolatedFingerprints(raw: Raw, box: RegionBox, tilted = true): string[] {
   const lifted = isolate(raw, box);
-  return [hashWorking(lifted), ...tiltedFingerprints(lifted)].filter((hash): hash is string => hash !== null);
+  return [hashWorking(lifted), ...(tilted ? tiltedFingerprints(lifted) : [])].filter((hash): hash is string => hash !== null);
 }
 
 /** The fingerprint of a JPEG, or null for anything this cannot decode. */

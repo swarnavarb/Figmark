@@ -5,6 +5,7 @@ import { ApiRequestError, api, type FeedListing, type ShopCard, type SocialSearc
 import { useSession } from '../session';
 import { formatMoney } from '../format';
 import { compressImage } from '../imageCompress';
+import { warmDetector } from '../photoDetect';
 import { Avatar, Icon, Thumb, leadPhoto } from './ui';
 import { SocialMatches, useSearchSheet } from './SocialChrome';
 
@@ -161,7 +162,11 @@ export function MarketSearch({ initial, onClose, onSubmit, onPhoto }: {
           )}
           {!q && !reading && (
             <button type="button" className="mktsearch__camera" aria-label="Search with a photo"
-              onClick={() => picker.current?.click()}>
+              onClick={() => {
+                // The detector downloads while the shopper picks a photo.
+                warmDetector();
+                picker.current?.click();
+              }}>
               <Icon name="camera" size={18} />
             </button>
           )}

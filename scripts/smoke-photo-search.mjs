@@ -602,6 +602,22 @@ await check('a photo search names each item, and the shopper can search with one
   assert.equal(bundle.photos[0].regions.length, 2, 'the bundle photo carries a fingerprint for each thing in it');
 });
 
+await check('the things the phone found are searched with, each on its own; boxes that are not boxes are passed over', async () => {
+  // Two things on a patterned ground, and the boxes a phone's detector would send for them.
+  const busy = camera(800, 600, (x, y) => {
+    if (roundel(0.25, 0.5, 0.12)(x, y)) return [200, 40, 50];
+    if (block(0.7, 0.5, 0.12)(x, y)) return [30, 60, 200];
+    return Math.floor(x * 23) % 2 ^ Math.floor(y * 17) % 2 ? [90, 140, 60] : [220, 200, 120];
+  }, { seed: 91 });
+  const boxes = [[0.12, 0.33, 0.26, 0.34], [0.57, 0.33, 0.26, 0.34], 'junk', [0.5, 0.5], [0.9, 0.9, 0, 0]];
+  const told = await photoSearchRoute(req({ body: { dataUrl: dataUrl(busy), boxes } }), ctx);
+  assert.equal(told.status, 200, JSON.stringify(told.jsonBody));
+  const found = told.jsonBody.items.map((item) => JSON.stringify(item.box));
+  assert.ok(found.includes('[0.12,0.33,0.26,0.34]') && found.includes('[0.57,0.33,0.26,0.34]'), `the phone's boxes are the items: ${found}`);
+  assert.ok(told.jsonBody.items.every((item) => item.box.length === 4 && item.box[2] > 0.03), 'and nothing else made of the junk');
+  assert.ok(told.jsonBody.items.every((item) => item.label), 'each named, by its colour at least');
+});
+
 await check('health says photo search is matching by picture only', async () => {
   const body = (await healthRoute(req(), ctx)).jsonBody;
   assert.equal(body.photoSearch.vision, false);

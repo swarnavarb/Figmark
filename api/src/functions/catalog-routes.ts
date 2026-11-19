@@ -452,7 +452,7 @@ async function photoSearch(request: HttpRequest, _context: InvocationContext) {
   const slow = await tooFast(who, visionAvailable() ? 'photosearch' : 'photopicture');
   if (slow) return slow;
 
-  let body: { dataUrl?: string; region?: unknown };
+  let body: { dataUrl?: string; region?: unknown; boxes?: unknown };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -476,6 +476,9 @@ async function photoSearch(request: HttpRequest, _context: InvocationContext) {
   }
   const region = body.region === undefined || body.region === null ? null : readBox(body.region);
   if (body.region != null && !region) return error(400, 'invalid_region', 'Pick an item inside the photo.');
+  // The things the phone found in the photo, if it looked: a box that is not one is passed over.
+  const boxes = (Array.isArray(body.boxes) ? body.boxes : []).slice(0, MAX_REGIONS)
+    .map(readBox).filter((box): box is RegionBox => box !== null);
 
   let raw: Raw | null = null;
   if (contentType === 'image/jpeg') {
@@ -487,7 +490,7 @@ async function photoSearch(request: HttpRequest, _context: InvocationContext) {
   // own, and every listing rather than the newest hundred.
   const searched = region
     ? await searchOneItem(raw!, region)
-    : await searchWholePhoto(bytes, contentType, raw);
+    : await searchWholePhoto(bytes, contentType, raw, boxes);
   const all = await everyListing(repository);
   if (searched.hashes.length === 0 && searched.descriptions === null) {
     return error(422, 'unreadable_photo', 'Could not read that photo. Try a JPEG, or a clearer picture.');
@@ -564,14 +567,21 @@ const LONE_ITEM_MAX = 0.5;
  * and boxes first, then any thing standing off the backdrop that Claude did
  * not mention - each fingerprinted on its own.
  */
-async function searchWholePhoto(bytes: Uint8Array, contentType: string, raw: Raw | null): Promise<Searched> {
+async function searchWholePhoto(bytes: Uint8Array, contentType: string, raw: Raw | null, found: RegionBox[] = []): Promise<Searched> {
   const read = visionAvailable() ? await describeItems(bytes, contentType) : null;
   const boxes: { box: RegionBox; description: PhotoDescription | null }[] = [];
   for (const item of read ?? []) if (item.box) boxes.push({ box: item.box, description: item });
-  for (const box of raw ? detectItems(raw) : []) {
-    if (boxes.length >= MAX_REGIONS) break;
-    if (!boxes.some((known) => overlapOfBoxes(known.box, box) >= 0.5)) boxes.push({ box, description: null });
-  }
+  // What the phone found, then what this finds where the backdrop is plain:
+  // each only where nothing already stands. The phone's detector has already
+  // kept a thing found twice once, and a figure standing behind another
+  // shares much of its box, so its boxes give way only to one nearly the same.
+  const add = (box: RegionBox, same: number) => {
+    if (boxes.length < MAX_REGIONS && !boxes.some((known) => overlapOfBoxes(known.box, box) >= same)) {
+      boxes.push({ box, description: null });
+    }
+  };
+  for (const box of found) add(box, 0.8);
+  for (const box of raw ? detectItems(raw) : []) add(box, 0.5);
   // One item filling most of the photo is the photo: nothing to choose between.
   const offered = boxes.length >= 2 || (boxes.length === 1 && boxes[0]!.box[2] * boxes[0]!.box[3] < LONE_ITEM_MAX)
     ? boxes.slice(0, MAX_REGIONS)
@@ -582,9 +592,9 @@ async function searchWholePhoto(bytes: Uint8Array, contentType: string, raw: Raw
   const items = offered.map((item) => ({
     ...item, hash: prints?.regions.find((region) => region.box === item.box)?.imageHash ?? null,
   }));
-  // A tilted look at each item too, for its peek.
+  // Each item lifted off the photo too, for its peek; the tilted looks wait until it is picked.
   const itemHashes = (item: { box: RegionBox; hash: string | null }) =>
-    item.hash && raw ? [item.hash, ...isolatedFingerprints(raw, item.box)] : item.hash ? [item.hash] : [];
+    item.hash && raw ? [item.hash, ...isolatedFingerprints(raw, item.box, false)] : item.hash ? [item.hash] : [];
   return {
     // The photo, each item in it, and the photo as if shot at a slant each way.
     hashes: prints ? [prints.hash, ...prints.regions.map((entry) => entry.imageHash), ...tiltedFingerprints(raw!)] : [],

@@ -83,6 +83,7 @@
   "mimeTypes": {
     ".json": "application/json",
     ".webmanifest": "application/manifest+json",
-    ".wasm": "application/wasm"
+    ".wasm": "application/wasm",
+    ".tflite": "application/octet-stream"
   }
 }
