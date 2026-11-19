@@ -123,7 +123,14 @@ export function useCatalog() {
         setPhotoFound(result.listings);
         setPhotoSuggested(result.suggested ?? []);
         // The things in the photo come from a look at all of it; a look at one keeps them.
-        if (!photoRegion) setFound({ photoId: photo.id, items: result.items ?? [] });
+        if (!photoRegion) {
+          const items = result.items ?? [];
+          setFound({ photoId: photo.id, items });
+          // The first look picks the most prominent thing, as a shopper pointing
+          // at one would; "All" is a tap away. Once anything has been picked for
+          // this photo - "All" included - that choice stands.
+          if (items[0]) setFocus((was) => (was.photoId === photo.id ? was : { photoId: photo.id, box: items[0]!.box }));
+        }
         setError(null);
       })
       .catch((err: Error) => !cancelled && setError(err.message))

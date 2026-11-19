@@ -448,7 +448,8 @@ async function photoSearch(request: HttpRequest, _context: InvocationContext) {
   const [repository, auth] = await Promise.all([getRepository(), getAuthService()]);
   const viewer = await auth.getCurrentUser(request);
   const who = viewer?.id ?? `ip:${clientIp(request)}`;
-  const slow = await tooFast(who, 'photosearch');
+  // A search Claude reads costs money and is held to fewer; one matched by picture alone is not.
+  const slow = await tooFast(who, visionAvailable() ? 'photosearch' : 'photopicture');
   if (slow) return slow;
 
   let body: { dataUrl?: string; region?: unknown };

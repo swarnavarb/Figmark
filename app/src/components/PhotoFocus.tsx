@@ -1,18 +1,73 @@
-import { useRef, useState, type PointerEvent } from 'react';
+import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import { Link } from 'react-router-dom';
 import type { PhotoBox, PhotoItem, PhotoSuggestion } from '../api';
 import { formatMoney } from '../format';
 import type { PhotoQuery } from '../photoQuery';
 import { Icon, Thumb, leadPhoto } from './ui';
 
+/** Smaller than this, as a share of the photo's width or height, a box is a slip of the finger. */
+const MIN_SIDE = 0.05;
+
+type Edge = 'move' | 'nw' | 'ne' | 'sw' | 'se';
+
+const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+const round = (box: PhotoBox) => box.map((part) => Math.round(part * 1000) / 1000) as PhotoBox;
+const sameBox = (a: PhotoBox | null, b: PhotoBox | null) => !!a && !!b && a.every((part, n) => Math.abs(part - b[n]!) < 0.002);
+
+/** A box moved or stretched by (dx, dy), kept inside the photo and never smaller than a fingertip. */
+function reshape([x, y, w, h]: PhotoBox, edge: Edge, dx: number, dy: number): PhotoBox {
+  if (edge === 'move') {
+    return [clamp01(Math.min(x + dx, 1 - w)), clamp01(Math.min(y + dy, 1 - h)), w, h];
+  }
+  let left = x; let top = y; let right = x + w; let bottom = y + h;
+  if (edge === 'nw' || edge === 'sw') left = clamp01(Math.min(left + dx, right - MIN_SIDE));
+  if (edge === 'ne' || edge === 'se') right = clamp01(Math.max(right + dx, left + MIN_SIDE));
+  if (edge === 'nw' || edge === 'ne') top = clamp01(Math.min(top + dy, bottom - MIN_SIDE));
+  if (edge === 'sw' || edge === 'se') bottom = clamp01(Math.max(bottom + dy, top + MIN_SIDE));
+  return [left, top, right - left, bottom - top];
+}
+
+/** Each item cut from the photo as a small picture, for the strip under it. */
+function useCrops(photo: PhotoQuery, boxes: PhotoBox[]): string[] {
+  const [crops, setCrops] = useState<string[]>([]);
+  const key = JSON.stringify(boxes);
+  useEffect(() => {
+    let cancelled = false;
+    const image = new Image();
+    image.onload = () => {
+      if (cancelled) return;
+      const out = boxes.map(([x, y, w, h]) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 96; canvas.height = 120;
+        const context = canvas.getContext('2d');
+        if (!context) return '';
+        // Cover the tile, as the photo's own crop would: the middle of the item, uncut.
+        const sw = w * image.naturalWidth; const sh = h * image.naturalHeight;
+        const scale = Math.max(canvas.width / sw, canvas.height / sh);
+        const cw = canvas.width / scale; const ch = canvas.height / scale;
+        const sx = x * image.naturalWidth + (sw - cw) / 2; const sy = y * image.naturalHeight + (sh - ch) / 2;
+        context.drawImage(image, sx, sy, cw, ch, 0, 0, canvas.width, canvas.height);
+        return canvas.toDataURL('image/jpeg', 0.8);
+      });
+      setCrops(out);
+    };
+    image.src = photo.dataUrl;
+    return () => { cancelled = true; };
+    // `key` stands for the boxes: a new array with the same boxes is no new crop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [photo.dataUrl, key]);
+  return crops;
+}
+
 /**
  * The photo being searched with, and which part of it.
  *
- * A photo of several things - a haul, a shelf, a lot - comes back with each
- * thing marked on it. Tapping one searches with that thing alone; "Whole photo"
- * searches with all of them at once; "Draw" lets the shopper drag a box round
- * anything the search did not mark. Each thing's chip carries a peek at its
- * best matches, so the shopper can see which is worth tapping.
+ * Every thing found in the photo wears a dot. Tapping a dot puts a box round
+ * that thing and searches with it; the box can be dragged to move it and
+ * stretched by its corners to take in more or less, and searches again when
+ * let go. Dragging across the photo where there is no box draws a new one, for
+ * anything that was not found. Under the photo, a strip: the whole photo
+ * first, then each thing cut out, the one being searched with outlined.
  */
 export function PhotoFocus({ photo, items, region, onPick, onClear, busy }: {
   photo: PhotoQuery;
@@ -24,127 +79,108 @@ export function PhotoFocus({ photo, items, region, onPick, onClear, busy }: {
   busy: boolean;
 }) {
   const frame = useRef<HTMLDivElement>(null);
-  const [drawMode, setDrawMode] = useState(false);
-  const [drag, setDrag] = useState<{ from: [number, number]; to: [number, number] } | null>(null);
+  // The box as it is being dragged; searched with only when let go.
+  const [live, setLive] = useState<PhotoBox | null>(null);
+  const gesture = useRef<{ edge: Edge | 'draw'; from: [number, number]; start: PhotoBox | null; moved: boolean } | null>(null);
+  const crops = useCrops(photo, items.map((item) => item.box));
 
   const at = (event: PointerEvent): [number, number] => {
     const rect = frame.current!.getBoundingClientRect();
-    const clamp = (value: number) => Math.max(0, Math.min(1, value));
-    return [clamp((event.clientX - rect.left) / rect.width), clamp((event.clientY - rect.top) / rect.height)];
-  };
-  const boxOf = ({ from, to }: { from: [number, number]; to: [number, number] }): PhotoBox => [
-    Math.min(from[0], to[0]), Math.min(from[1], to[1]), Math.abs(to[0] - from[0]), Math.abs(to[1] - from[1]),
-  ];
-  const down = (event: PointerEvent<HTMLDivElement>) => {
-    if (!drawMode) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    const point = at(event);
-    setDrag({ from: point, to: point });
-  };
-  const move = (event: PointerEvent<HTMLDivElement>) => {
-    if (drag) setDrag({ ...drag, to: at(event) });
-  };
-  const up = () => {
-    if (!drag) return;
-    const box = boxOf(drag);
-    setDrag(null);
-    // A tap is not a box: the server wants something to look at.
-    if (box[2] >= 0.05 && box[3] >= 0.05) {
-      setDrawMode(false);
-      onPick(box.map((part) => Math.round(part * 1000) / 1000) as PhotoBox);
-    }
+    return [clamp01((event.clientX - rect.left) / rect.width), clamp01((event.clientY - rect.top) / rect.height)];
   };
 
-  const same = (a: PhotoBox | null, b: PhotoBox | null) => !!a && !!b && a.every((part, n) => Math.abs(part - b[n]!) < 0.002);
-  const picked = items.findIndex((item) => same(item.box, region));
-  const drawn = region && picked < 0 ? region : null;
+  const begin = (edge: Edge | 'draw') => (event: PointerEvent<HTMLElement>) => {
+    event.stopPropagation();
+    event.preventDefault();
+    frame.current!.setPointerCapture(event.pointerId);
+    gesture.current = { edge, from: at(event), start: region, moved: false };
+  };
+  const move = (event: PointerEvent<HTMLDivElement>) => {
+    const now = gesture.current;
+    if (!now) return;
+    const [px, py] = at(event);
+    const dx = px - now.from[0]; const dy = py - now.from[1];
+    if (!now.moved && Math.hypot(dx, dy) < 0.01) return;
+    now.moved = true;
+    if (now.edge === 'draw') {
+      setLive([Math.min(now.from[0], px), Math.min(now.from[1], py), Math.abs(dx), Math.abs(dy)]);
+    } else if (now.start) {
+      setLive(reshape(now.start, now.edge, dx, dy));
+    }
+  };
+  const end = () => {
+    const now = gesture.current;
+    gesture.current = null;
+    const box = live;
+    setLive(null);
+    if (!now?.moved || !box || box[2] < MIN_SIDE || box[3] < MIN_SIDE) return;
+    onPick(round(box));
+  };
+
+  const shown = live ?? region;
+  const picked = items.findIndex((item) => sameBox(item.box, region));
   const place = (box: PhotoBox) => ({
     left: `${box[0] * 100}%`, top: `${box[1] * 100}%`, width: `${box[2] * 100}%`, height: `${box[3] * 100}%`,
   });
   const name = (item: PhotoItem, n: number) => item.label ?? `Item ${n + 1}`;
 
   return (
-    <section className={`pfocus${busy ? ' is-busy' : ''}`} aria-label="Your photo">
-      <div
-        ref={frame}
-        className={`pfocus__frame${drawMode ? ' is-drawing' : ''}`}
-        onPointerDown={down}
-        onPointerMove={move}
-        onPointerUp={up}
-        onPointerCancel={() => setDrag(null)}
-      >
-        <img src={photo.dataUrl} alt="Your photo" draggable={false} />
-        {region && <div className="pfocus__shade" style={place(region)} aria-hidden="true" />}
-        {items.map((item, n) => (
-          <button
-            key={n}
-            type="button"
-            className={`pfocus__box${n === picked ? ' is-on' : ''}`}
-            style={place(item.box)}
-            aria-label={`Search with ${name(item, n)} only`}
-            aria-pressed={n === picked}
-            onClick={() => onPick(n === picked ? null : item.box)}
-          >
-            <span className="pfocus__num">{n + 1}</span>
-          </button>
-        ))}
-        {drawn && <div className="pfocus__box is-on is-drawn" style={place(drawn)} aria-hidden="true" />}
-        {drag && <div className="pfocus__box is-drag" style={place(boxOf(drag))} aria-hidden="true" />}
-      </div>
-
-      <div className="pfocus__side">
-        <h2 className="pfocus__title">
-          Your photo
-          <button type="button" className="qphoto__clear" aria-label="Clear photo search" onClick={onClear}>
-            <Icon name="close" size={12} />
-          </button>
-        </h2>
-        <p className="pfocus__hint faint">
-          {drawMode
-            ? 'Drag across the photo round the thing you want.'
-            : items.length > 0
-              ? `${items.length} things in this photo. Tap one to search for it alone.`
-              : 'Searching the whole photo. Draw round one thing to search for just that.'}
-        </p>
-        <div className="pfocus__chips" role="group" aria-label="Search with">
-          <button type="button" className={`pfocus__chip${!region ? ' is-on' : ''}`} aria-pressed={!region} onClick={() => onPick(null)}>
-            <Icon name="image" size={14} /> Whole photo
-          </button>
-          {items.map((item, n) => (
+    <section className={`pstage${busy ? ' is-busy' : ''}`} aria-label="Your photo">
+      <div className="pstage__view">
+        <div
+          ref={frame}
+          className="pstage__frame"
+          onPointerDown={begin('draw')}
+          onPointerMove={move}
+          onPointerUp={end}
+          onPointerCancel={() => { gesture.current = null; setLive(null); }}
+        >
+          <img src={photo.dataUrl} alt="Your photo" draggable={false} />
+          {items.map((item, n) => n !== picked && (
             <button
               key={n}
               type="button"
-              className={`pfocus__chip${n === picked ? ' is-on' : ''}`}
-              aria-pressed={n === picked}
+              className="pstage__dot"
+              style={{ left: `${(item.box[0] + item.box[2] / 2) * 100}%`, top: `${(item.box[1] + item.box[3] / 2) * 100}%` }}
+              aria-label={`Search for ${name(item, n)}`}
+              onPointerDown={(event) => event.stopPropagation()}
               onClick={() => onPick(item.box)}
-            >
-              <span className="pfocus__num">{n + 1}</span>
-              <span className="pfocus__label">{name(item, n)}</span>
-              {item.preview.length > 0 && (
-                <span className="pfocus__peek" aria-hidden="true">
-                  {item.preview.map((entry) => entry.photoUrl && (
-                    <img key={entry.id} src={entry.photoUrl} alt="" loading="lazy" decoding="async" />
-                  ))}
-                </span>
-              )}
-              <span className="faint">{item.matches > 0 ? item.matches : 'none'}</span>
-            </button>
+            />
           ))}
-          {drawn && (
-            <button type="button" className="pfocus__chip is-on" aria-pressed="true" onClick={() => onPick(null)}>
-              Your box <Icon name="close" size={10} />
-            </button>
+          {shown && (
+            <div className="pstage__box" style={place(shown)} onPointerDown={begin('move')} role="group"
+              aria-label="The part of the photo searched with. Drag to move, drag a corner to resize.">
+              {(['nw', 'ne', 'sw', 'se'] as const).map((corner) => (
+                <span key={corner} className={`pstage__handle pstage__handle--${corner}`} onPointerDown={begin(corner)} aria-hidden="true" />
+              ))}
+            </div>
           )}
-          <button
-            type="button"
-            className={`pfocus__chip${drawMode ? ' is-on' : ''}`}
-            aria-pressed={drawMode}
-            onClick={() => setDrawMode((on) => !on)}
-          >
-            <Icon name="target" size={14} /> {drawMode ? 'Cancel' : 'Draw'}
-          </button>
         </div>
       </div>
+
+      <div className="pstage__bar">
+        <div className="pstage__strip" role="group" aria-label="Search with">
+          <button type="button" className={`pstage__tile pstage__tile--whole${!region ? ' is-on' : ''}`}
+            aria-pressed={!region} aria-label="Whole photo" onClick={() => onPick(null)}>
+            <img src={photo.dataUrl} alt="" />
+            <span>All</span>
+          </button>
+          {items.map((item, n) => (
+            <button key={n} type="button" className={`pstage__tile${n === picked ? ' is-on' : ''}`}
+              aria-pressed={n === picked} aria-label={name(item, n)} title={name(item, n)} onClick={() => onPick(item.box)}>
+              {crops[n] ? <img src={crops[n]} alt="" /> : <span className="pstage__num">{n + 1}</span>}
+            </button>
+          ))}
+        </div>
+        <button type="button" className="pstage__close" aria-label="Clear photo search" onClick={onClear}>
+          <Icon name="close" size={18} />
+        </button>
+      </div>
+      <p className="pstage__hint">
+        {items.length > 1
+          ? `${items.length} things found. Tap a dot to search for it; drag the box or its corners to adjust.`
+          : 'Drag the box or its corners to adjust, or drag across the photo to draw one.'}
+      </p>
     </section>
   );
 }
