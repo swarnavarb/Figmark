@@ -1050,6 +1050,14 @@ export class CosmosRepository implements Repository {
     return { users: found.resources, next: found.continuationToken ?? null, total: counted.resources[0] ?? 0 };
   }
 
+  async listReviewRequests(): Promise<User[]> {
+    // Few at a time, so sorted here rather than asking the index for a nested path.
+    const { resources } = await this.container('users')
+      .items.query<User>({ query: 'SELECT * FROM c WHERE IS_DEFINED(c.reviewRequest) AND NOT IS_NULL(c.reviewRequest)' })
+      .fetchAll();
+    return resources.sort((a, b) => (a.reviewRequest?.at ?? '').localeCompare(b.reviewRequest?.at ?? ''));
+  }
+
   async findStoreBySlug(kind: StoreKind, slug: string): Promise<User | null> {
     // An indexed equality, not a scan: one document read, whatever the user count.
     // One fixed statement per kind: the field name is never built from input.

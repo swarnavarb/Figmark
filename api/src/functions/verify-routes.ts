@@ -6,9 +6,10 @@ import { getRepository } from '../data/index.js';
 import { tooFast } from '../rate-limit.js';
 import {
   VerificationError, changePhone, confirmEmail, confirmEmailChange, handleWhatsAppMessage, inboundMessages, startEmail,
-  startEmailChange, startPhone, statusOf, verifyAadhaar, whatsappSignatureValid,
+  requestReview, startEmailChange, startPhone, statusOf, verifyAadhaar, whatsappSignatureValid, withdrawReview,
 } from '../verification/index.js';
 import { MockAuthProvider } from '../auth/mock-provider.js';
+import { aadhaarTestAllowed, testAadhaarQr } from '../verification/aadhaar-test.js';
 import { error, handler, json } from './http.js';
 
 /**
@@ -146,6 +147,34 @@ async function aadhaar(request: HttpRequest) {
 }
 
 /**
+ * POST /api/verify/aadhaar/test - { qr, phone, email? }. TEMPORARY test page
+ * support (see verification/aadhaar-test.ts): reads and checks a QR, saves nothing.
+ */
+async function aadhaarTest(request: HttpRequest) {
+  if (!aadhaarTestAllowed()) return error(404, 'not_found', 'Not available here.');
+  const user = await signedInRow(request);
+  const slow = await tooFast(user.id, 'verify_aadhaar');
+  if (slow) return slow;
+  const body = await readJson(request);
+  return json(200, testAadhaarQr(String(body.qr ?? ''), String(body.phone ?? ''), String(body.email ?? '')));
+}
+
+/**
+ * POST /api/verify/review - { stuckOn, note }: ask an operator to look, or
+ * { withdraw: true } to take the request back. Marks nothing verified.
+ */
+async function review(request: HttpRequest) {
+  const user = await signedInRow(request);
+  const slow = await tooFast(user.id, 'verify_review');
+  if (slow) return slow;
+  const body = await readJson(request);
+  const repository = await getRepository();
+  if (body.withdraw === true) await withdrawReview(repository, user);
+  else await requestReview(repository, user, body.stuckOn, body.note);
+  return json(200, { status: statusOf(user) });
+}
+
+/**
  * GET|POST /api/verify/whatsapp/webhook - WhatsApp Cloud API.
  *
  * GET is Meta's one-time subscription handshake: echo the challenge when the
@@ -200,6 +229,8 @@ export const verifyEmailChangeConfirmRoute = verifying(emailChangeConfirm);
 export const verifyPhoneStartRoute = verifying(phoneStart);
 export const verifyPhoneNumberRoute = verifying(phoneNumber);
 export const verifyAadhaarRoute = verifying(aadhaar);
+export const verifyReviewRoute = verifying(review);
+export const verifyAadhaarTestRoute = verifying(aadhaarTest);
 export const whatsappWebhookRoute = handler(whatsappWebhook);
 
 const anon = { authLevel: 'anonymous' as const };
@@ -211,4 +242,6 @@ app.http('verify-email-change-confirm', { ...anon, methods: ['POST'], route: 've
 app.http('verify-phone-start', { ...anon, methods: ['POST'], route: 'verify/phone/start', handler: verifyPhoneStartRoute });
 app.http('verify-phone-number', { ...anon, methods: ['POST'], route: 'verify/phone/number', handler: verifyPhoneNumberRoute });
 app.http('verify-aadhaar', { ...anon, methods: ['POST'], route: 'verify/aadhaar', handler: verifyAadhaarRoute });
+app.http('verify-aadhaar-test', { ...anon, methods: ['POST'], route: 'verify/aadhaar/test', handler: verifyAadhaarTestRoute });
+app.http('verify-review', { ...anon, methods: ['POST'], route: 'verify/review', handler: verifyReviewRoute });
 app.http('verify-whatsapp-webhook', { ...anon, methods: ['GET', 'POST'], route: 'verify/whatsapp/webhook', handler: whatsappWebhookRoute });

@@ -6,9 +6,11 @@ import type { VerificationState } from './models.js';
  * Email: a code sent to the address was typed back.
  * Phone: the number messaged Figmark on WhatsApp with the account's code, so
  *   the person holds that SIM.
- * Aadhaar: a UIDAI-signed Secure QR whose mobile hash matches that same
+ * Aadhaar: a UIDAI-signed Secure QR whose linked mobile matches that same
  *   WhatsApp-verified number - which is what ties the Aadhaar to this person
- *   rather than to whoever had a photo of the card.
+ *   rather than to whoever had a photo of the card. Legacy QRs are matched on
+ *   a hash of the whole number; 2022+ QRs carry only its last four digits, so
+ *   those are matched (a weaker tie, recorded as `mobileMatch: 'last4'`).
  *
  * Each needs its proof as well as its status. Accounts made before real
  * verification existed were marked verified at sign-up with nothing checked;

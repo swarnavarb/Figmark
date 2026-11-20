@@ -30,15 +30,17 @@ const {
   verifyStatusRoute: status, verifyEmailSendRoute: emailSend, verifyEmailConfirmRoute: emailConfirm,
   verifyPhoneStartRoute: phoneStart, verifyPhoneNumberRoute: phoneNumber, verifyAadhaarRoute: aadhaar,
   whatsappWebhookRoute: webhook, verifyEmailChangeRoute: emailChange, verifyEmailChangeConfirmRoute: emailChangeConfirm,
+  verifyReviewRoute: review,
 } = await import(new URL('verify-routes.js', fns));
 const { createOrderRoute: createOrder } = await import(new URL('catalog-routes.js', fns));
-const { adminRightsRoute: rights, adminUsersRoute: adminUsers } = await import(new URL('admin-routes.js', fns));
+const { adminRightsRoute: rights, adminUsersRoute: adminUsers, adminReviewsRoute: adminReviews } = await import(new URL('admin-routes.js', fns));
 const { publicProfileRoute: publicProfile } = await import(new URL('message-routes.js', fns));
 await useFixtures();
 const { getRepository } = await import(new URL('api/src/data/index.js', dist));
 const { MemoryRepository } = await import(new URL('api/src/data/memory-repository.js', dist));
 const { MockAuthProvider } = await import(new URL('api/src/auth/mock-provider.js', dist));
-const { aadhaarMobileHash, parseSecureQr } = await import(new URL('api/src/verification/aadhaar.js', dist));
+const { aadhaarMobileHash, parseSecureQr, bundledUidaiKeys, loadUidaiKeys, signedByAny, uidaiKeys } =
+  await import(new URL('api/src/verification/aadhaar.js', dist));
 
 const ctx = { error: () => {}, log: () => {}, warn: () => {}, info: () => {} };
 const req = ({ headers = {}, body, query = {}, params = {}, method = 'POST', raw } = {}) => ({
@@ -64,15 +66,23 @@ const repository = await getRepository();
 
 /* ── Helpers ───────────────────────────────────────────────────────────── */
 
-/** A Secure QR as UIDAI makes one, for `mobile` (ten digits), signed by `key`. */
-function secureQr({ mobile, last4 = '5678', key = privateKey, withMobile = true, name = 'Priya Nair' }) {
-  const fields = ['V2', withMobile ? '2' : '0', `${last4}20260101120000000`, name, '01-02-1990', 'F',
-    'D/O Someone', 'Pune', '', '12', 'Kothrud', '411038', 'Kothrud', 'Maharashtra', 'Main Road', 'Pune', 'Pune',
-    withMobile ? mobile.slice(-4) : ''];
+/**
+ * A Secure QR as UIDAI makes one, for `mobile` (ten digits), signed by `key`.
+ *
+ * `version` 'legacy' is the pre-2022 layout: no version marker, and hashes of
+ * the linked email and mobile after the photo. 'V2', 'V3', 'V5' are the newer
+ * layout: the marker first, the mobile's last four digits as the last field,
+ * and no hashes at all.
+ */
+function secureQr({ mobile, last4 = '5678', key = privateKey, withMobile = true, name = 'Priya Nair', version = 'legacy' }) {
+  const legacy = version === 'legacy';
+  const fields = [withMobile ? '2' : '0', `${last4}20260101120000000`, name, '01-02-1990', 'F',
+    'D/O Someone', 'Pune', '', '12', 'Kothrud', '411038', 'Kothrud', 'Maharashtra', 'Main Road', 'Pune', 'Pune'];
+  if (!legacy) fields.unshift(version), fields.push(withMobile ? mobile.slice(-4) : '');
   const body = Buffer.concat([
     Buffer.from(fields.join('\xff') + '\xff', 'latin1'),
     Buffer.from('fake-jp2-photo-bytes', 'latin1'),
-    withMobile ? Buffer.from(aadhaarMobileHash(mobile, last4), 'hex') : Buffer.alloc(0),
+    legacy && withMobile ? Buffer.from(aadhaarMobileHash(mobile, last4), 'hex') : Buffer.alloc(0),
   ]);
   const signed = Buffer.concat([body, sign('sha256', body, key)]);
   return BigInt(`0x${gzipSync(signed).toString('hex')}`).toString(10);
@@ -236,11 +246,33 @@ await check('an Aadhaar with no linked mobile is refused', async () => {
 });
 
 await check("an Aadhaar linked to another mobile is refused, naming that number's last digits", async () => {
-  const mismatch = await aadhaar(req({ headers: priya.headers, body: { qr: secureQr({ mobile: '9123456789' }), consent: true } }), ctx);
+  // A newer QR prints the last four digits, so the refusal can name them.
+  const mismatch = await aadhaar(req({ headers: priya.headers, body: { qr: secureQr({ mobile: '9123456789', version: 'V3' }), consent: true } }), ctx);
   assert.equal(mismatch.status, 400);
   assert.equal(mismatch.jsonBody.error, 'aadhaar_mobile_mismatch');
   assert.match(mismatch.jsonBody.message, /6789/);
   assert.match(mismatch.jsonBody.message, /same number/);
+  // A legacy QR is matched by the hash of the whole number.
+  const legacy = await aadhaar(req({ headers: priya.headers, body: { qr: secureQr({ mobile: '9123456789' }), consent: true } }), ctx);
+  assert.equal(legacy.jsonBody.error, 'aadhaar_mobile_mismatch');
+});
+
+await check('every QR layout puts each field in its place: legacy, V2, V3 and V5', async () => {
+  for (const version of ['legacy', 'V2', 'V3', 'V5']) {
+    const qr = parseSecureQr(secureQr({ mobile: '9876543210', version }));
+    assert.equal(qr.name, 'Priya Nair', version);
+    assert.equal(qr.dob, '01-02-1990', version);
+    assert.equal(qr.gender, 'F', version);
+    assert.equal(qr.last4, '5678', version);
+    assert.equal(qr.fields.pincode, '411038', version);
+    assert.equal(qr.hasMobile, true, version);
+    assert.equal(qr.version, version === 'legacy' ? 'V1' : version);
+    assert.equal(qr.versioned, version !== 'legacy');
+    // Newer layouts carry the last four in the clear and no hash; the photo runs to the signature.
+    assert.equal(qr.mobileLast4, version === 'legacy' ? null : '3210', version);
+    assert.equal(qr.mobileHash === null, version !== 'legacy', version);
+    assert.equal(qr.photo.toString('latin1'), 'fake-jp2-photo-bytes', version);
+  }
 });
 
 await check('the hash is checked for every last digit (one round for 0 and 1, n for the rest)', async () => {
@@ -262,10 +294,23 @@ await check('the matching Aadhaar verifies, keeping only name, birth date, gende
   assert.equal(ok.status, 200, JSON.stringify(ok.jsonBody));
   assert.equal(ok.jsonBody.status.checks.aadhaar, true);
   const stored = (await repository.getUserById(priya.id)).verification.proofs.aadhaar;
-  assert.deepEqual(Object.keys(stored).sort(), ['at', 'dob', 'gender', 'last4', 'mobile', 'name', 'via']);
+  assert.deepEqual(Object.keys(stored).sort(), ['at', 'dob', 'gender', 'last4', 'mobile', 'mobileMatch', 'name', 'qrVersion', 'via']);
   assert.equal(stored.last4, '5678');
   assert.equal(stored.name, 'Priya Nair');
+  assert.equal(stored.mobileMatch, 'hash');
   assert.ok(!JSON.stringify(stored).includes('Kothrud'), 'no address kept');
+});
+
+await check('a newer QR verifies on the last four digits, and the proof says so', async () => {
+  const user = await repository.getUserById(priya.id);
+  user.verification = { ...user.verification, governmentId: 'unverified', proofs: { ...user.verification.proofs, aadhaar: null } };
+  await repository.updateUser(user);
+  const ok = await aadhaar(req({ headers: priya.headers, body: { qr: secureQr({ mobile: '9876543210', version: 'V3' }), consent: true } }), ctx);
+  assert.equal(ok.status, 200, JSON.stringify(ok.jsonBody));
+  const stored = (await repository.getUserById(priya.id)).verification.proofs.aadhaar;
+  assert.equal(stored.mobileMatch, 'last4');
+  assert.equal(stored.qrVersion, 'V3');
+  assert.equal(stored.name, 'Priya Nair');
 });
 
 await check('all three open buying and selling', async () => {
@@ -400,6 +445,72 @@ await check('only an operator can change rights', async () => {
   assert.equal(self.status, 403);
 });
 
+/* ── Manual review ─────────────────────────────────────────────────────── */
+console.log('\nmanual review');
+
+const meera = await newAccount('Meera', '+91 91234 56780');
+const reviewQueue = async () => (await adminReviews(req({ method: 'GET', headers: operator }), ctx)).jsonBody.users;
+
+await check('asking for a review needs a step and a line about what is wrong', async () => {
+  const noStep = await review(req({ headers: meera.headers, body: { note: 'No WhatsApp on my phone at all' } }), ctx);
+  assert.equal(noStep.status, 400);
+  assert.equal(noStep.jsonBody.error, 'invalid_step');
+  const noNote = await review(req({ headers: meera.headers, body: { stuckOn: 'whatsapp', note: 'help' } }), ctx);
+  assert.equal(noNote.status, 400);
+  assert.equal(noNote.jsonBody.error, 'note_required');
+});
+
+await check('a request is recorded, marks nothing verified, and reaches the operator queue', async () => {
+  const asked = await review(req({ headers: meera.headers, body: { stuckOn: 'whatsapp', note: 'I do not use WhatsApp at all' } }), ctx);
+  assert.equal(asked.status, 200, JSON.stringify(asked.jsonBody));
+  assert.equal(asked.jsonBody.status.review.stuckOn, 'whatsapp');
+  assert.deepEqual(asked.jsonBody.status.checks, { email: false, phone: false, aadhaar: false });
+  assert.deepEqual(asked.jsonBody.status.access, { canBuy: false, canSell: false, byOperator: false });
+  const queue = await reviewQueue();
+  assert.equal(queue.find((row) => row.id === meera.id)?.reviewRequest.note, 'I do not use WhatsApp at all');
+});
+
+await check('it can be taken back', async () => {
+  const back = await review(req({ headers: meera.headers, body: { withdraw: true } }), ctx);
+  assert.equal(back.jsonBody.status.review, null);
+  assert.equal((await reviewQueue()).some((row) => row.id === meera.id), false);
+});
+
+await check('only an operator sees the queue', async () => {
+  const self = await adminReviews(req({ method: 'GET', headers: meera.headers }), ctx);
+  assert.equal(self.status, 403);
+});
+
+await check("an operator's grant answers it, opens trading and tells the person", async () => {
+  await review(req({ headers: meera.headers, body: { stuckOn: 'whatsapp', note: 'I do not use WhatsApp at all' } }), ctx);
+  const granted = await rights(req({ headers: operator, params: { id: meera.id }, body: { buy: 'grant', sell: 'auto', reason: 'Checked on a video call' } }), ctx);
+  assert.equal(granted.status, 200, JSON.stringify(granted.jsonBody));
+  assert.equal(granted.jsonBody.user.reviewRequest, null);
+  assert.equal((await reviewQueue()).some((row) => row.id === meera.id), false);
+  const now = await statusOf(meera);
+  assert.deepEqual(now.access, { canBuy: true, canSell: false, byOperator: true });
+  assert.equal(now.checks.phone, false, 'a grant is not a verification tick');
+  const [notice] = await repository.listNotifications(meera.id, 5);
+  assert.equal(notice.kind, 'verification_review');
+  assert.match(notice.title, /You can buy/);
+  assert.doesNotMatch(notice.body, /video call/, "a grant's reason is the operator's note, not shown");
+});
+
+await check('turning one down passes the reason on', async () => {
+  await rights(req({ headers: operator, params: { id: meera.id }, body: { buy: 'auto', sell: 'auto' } }), ctx);
+  await review(req({ headers: meera.headers, body: { stuckOn: 'aadhaar', note: 'My Aadhaar has no mobile linked' } }), ctx);
+  const declined = await rights(req({ headers: operator, params: { id: meera.id }, body: { buy: 'auto', sell: 'auto', reason: 'Please link a mobile first.' } }), ctx);
+  assert.equal(declined.jsonBody.user.reviewRequest, null);
+  const [notice] = await repository.listNotifications(meera.id, 5);
+  assert.match(notice.title, /not approved/);
+  assert.match(notice.body, /Please link a mobile first\./);
+});
+
+await check('a fully verified account has nothing to review', async () => {
+  const done = await review(req({ headers: priya.headers, body: { stuckOn: 'aadhaar', note: 'Just checking this out' } }), ctx);
+  assert.equal(done.status, 409);
+});
+
 /* ── The session key ───────────────────────────────────────────────────── */
 console.log('\nsession key');
 
@@ -412,6 +523,36 @@ await check('with no signing key, nothing is issued or accepted', async () => {
   const keyed = new MockAuthProvider(store, '', 3600);
   const forged = `${Buffer.from(JSON.stringify({ sub: 'usr_demo', exp: Date.now() / 1000 + 600 })).toString('base64url')}.x`;
   assert.equal(await keyed.getCurrentUser(req({ method: 'GET', headers: { authorization: `Bearer ${forged}` } })), null);
+});
+
+await check("UIDAI's signing certificates ship with the API, old ones included", async () => {
+  // DS 03 (2017) through DS 06 (2026-2029): a card printed under any of them still checks.
+  assert.equal(bundledUidaiKeys().length, 9);
+  for (const key of bundledUidaiKeys()) assert.equal(key.asymmetricKeyType, 'rsa');
+});
+
+await check('a QR signed with any one of several keys is accepted, and only those', async () => {
+  const { publicKey: older, privateKey: olderPrivate } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const pems = [older, publicKey].map((key) => key.export({ type: 'spki', format: 'pem' })).join('\n');
+  const base64 = [older, publicKey].map((key) => key.export({ type: 'spki', format: 'der' }).toString('base64')).join(',');
+  for (const setting of [pems, base64]) {
+    const keys = loadUidaiKeys(setting);
+    assert.equal(keys.length, 2);
+    assert.ok(signedByAny(parseSecureQr(secureQr({ mobile: '9876543210', key: olderPrivate })), keys));
+    assert.ok(signedByAny(parseSecureQr(secureQr({ mobile: '9876543210' })), keys));
+    assert.ok(!signedByAny(parseSecureQr(secureQr({ mobile: '9876543210', key: otherKey })), keys));
+  }
+});
+
+await check('the setting adds to the bundled keys, and a bad one does not switch them off', async () => {
+  assert.equal(uidaiKeys(process.env.AADHAAR_QR_CERT).length, 10);
+  const quiet = console.error;
+  console.error = () => {};
+  try {
+    assert.equal(uidaiKeys('not a certificate').length, 9);
+  } finally {
+    console.error = quiet;
+  }
 });
 
 console.log(`\n${passed} verification checks passed`);

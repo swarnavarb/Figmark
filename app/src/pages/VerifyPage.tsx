@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { AADHAAR_MOBILE_RULE, maskMobile } from '@shared/verification';
+import type { ReviewStep } from '@shared/models';
 import { ApiRequestError, api, type VerificationStatus } from '../api';
+import { Select } from '../components/Select';
+import { formatDate } from '../format';
 import { ErrorNotice, PageError } from '../components/ui';
 import { useSession } from '../session';
 import { PageLoading, useToast } from '../components/Feedback';
 import { SuccessMoment } from '../components/SuccessMoment';
 import { haptic } from '../haptics';
 import { useNavigate } from 'react-router-dom';
+import { readQrFrame, readQrPicture } from '../qr-reader';
 
 /**
  * Verification: email, then WhatsApp, then Aadhaar.
@@ -128,7 +132,119 @@ export function VerifyPage() {
           )}
         </li>
       </ol>
+
+      {!done && <ReviewCard status={status} onChange={changed} />}
     </main>
+  );
+}
+
+const REVIEW_STEP_LABELS: Record<ReviewStep, string> = {
+  email: 'Email',
+  whatsapp: 'WhatsApp number',
+  aadhaar: 'Aadhaar',
+};
+
+/**
+ * For someone who cannot finish a check: no WhatsApp, no mobile on their
+ * Aadhaar, a step this server cannot run. It asks an operator to look and
+ * marks nothing verified; an operator who is satisfied opens buying or
+ * selling for them, and the answer arrives as a notification.
+ */
+function ReviewCard({ status, onChange }: { status: VerificationStatus; onChange: (status: VerificationStatus) => void }) {
+  const { checks, review, access } = status;
+  const firstStuck: ReviewStep = !checks.email ? 'email' : !checks.phone ? 'whatsapp' : 'aadhaar';
+  const [open, setOpen] = useState(false);
+  const [stuckOn, setStuckOn] = useState<ReviewStep>(review?.stuckOn ?? firstStuck);
+  const [note, setNote] = useState(review?.note ?? '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
+
+  async function send(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api.requestReview(stuckOn, note);
+      setOpen(false);
+      toast('Sent. An operator will look at your account.');
+      onChange(result.status);
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not send that.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function withdraw() {
+    setBusy(true);
+    setError(null);
+    try {
+      onChange((await api.withdrawReview()).status);
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : 'Could not take it back.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="card card--pad stack" style={{ marginTop: 16 }}>
+      <span className="card__title">Can't finish a step?</span>
+
+      {access.byOperator && (access.canBuy || access.canSell) && (
+        <p className="notice notice--ok" style={{ margin: 0 }}>
+          An operator reviewed your account: you can {access.canBuy && access.canSell ? 'buy and sell' : access.canSell ? 'sell' : 'buy'}.
+          Your page shows the verification ticks only for the checks you finish yourself.
+        </p>
+      )}
+
+      {review && !open ? (
+        <>
+          <p className="notice notice--info" style={{ margin: 0 }}>
+            You asked for a manual review on {formatDate(review.at)}, stuck on {REVIEW_STEP_LABELS[review.stuckOn]}.
+            An operator will look and you will get a notification with the answer. Nothing is marked verified until
+            then. Your note: “{review.note}”
+          </p>
+          <div className="row" style={{ gap: 8 }}>
+            <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => setOpen(true)}>Edit request</button>
+            <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => void withdraw()}>Take it back</button>
+          </div>
+        </>
+      ) : !open ? (
+        <>
+          <p className="faint" style={{ margin: 0 }}>
+            If a check cannot work for you - no WhatsApp, no mobile linked to your Aadhaar, or a step that is not
+            switched on here - ask an operator to review your account. They may contact you to confirm who you are.
+          </p>
+          <button type="button" className="btn btn--ghost" style={{ justifySelf: 'start' }} onClick={() => setOpen(true)}>
+            Ask for a manual review
+          </button>
+        </>
+      ) : (
+        <form className="stack" onSubmit={(event) => void send(event)}>
+          <label className="field">
+            <span>Which step are you stuck on?</span>
+            <Select value={stuckOn} onChange={(event) => setStuckOn(event.target.value as ReviewStep)}>
+              {(Object.keys(REVIEW_STEP_LABELS) as ReviewStep[]).map((step) => (
+                <option key={step} value={step}>{REVIEW_STEP_LABELS[step]}</option>
+              ))}
+            </Select>
+          </label>
+          <label className="field">
+            <span>What is stopping you?</span>
+            <textarea value={note} maxLength={500} rows={3} onChange={(event) => setNote(event.target.value)}
+              placeholder="e.g. My Aadhaar has no mobile linked and the nearest centre is far away." />
+            <span className="field__hint">Don't type your Aadhaar number here.</span>
+          </label>
+          {error && <ErrorNotice message={error} />}
+          <div className="row" style={{ gap: 8 }}>
+            <button className="btn" disabled={busy || note.trim().length < 10}>{busy ? 'Sending…' : 'Send request'}</button>
+            <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => setOpen(false)}>Cancel</button>
+          </div>
+        </form>
+      )}
+    </section>
   );
 }
 
@@ -187,8 +303,8 @@ export function EmailStep({ status, onChange, devCode: initialDevCode }: {
   if (!status.ready.email) {
     return (
       <p className="notice notice--info">
-        Email codes are not switched on for this server yet, so this step cannot be finished here. An operator can
-        approve your account meanwhile.
+        Email codes are not switched on for this server yet, so this step cannot be finished here. You can ask for a
+        manual review at the bottom of this page.
       </p>
     );
   }
@@ -317,8 +433,8 @@ function WhatsAppStep({ status, onChange, reload }: {
 
       {!status.ready.whatsapp ? (
         <p className="notice notice--info" style={{ margin: 0 }}>
-          WhatsApp verification is not switched on for this server yet. An operator can approve your account
-          meanwhile.
+          WhatsApp verification is not switched on for this server yet. You can ask for a manual review at the bottom
+          of this page.
         </p>
       ) : !editing && (
         <>
@@ -352,35 +468,6 @@ function WhatsAppStep({ status, onChange, reload }: {
 
 /* ── Aadhaar ───────────────────────────────────────────────────────────── */
 
-interface Detector {
-  detect: (source: CanvasImageSource) => Promise<{ rawValue: string }[]>;
-}
-type DetectorClass = new (options: { formats: string[] }) => Detector;
-
-/** The QR's text from an image or a video frame: the browser's own reader, else jsQR. */
-async function readQr(source: CanvasImageSource, width: number, height: number): Promise<string | null> {
-  const Native = (window as unknown as { BarcodeDetector?: DetectorClass }).BarcodeDetector;
-  if (Native) {
-    try {
-      const found = await new Native({ formats: ['qr_code'] }).detect(source);
-      if (found[0]?.rawValue) return found[0].rawValue;
-    } catch {
-      /* fall through to jsQR */
-    }
-  }
-  // Large enough for the densest Aadhaar QR, small enough to stay quick.
-  const scale = Math.min(1, 2000 / Math.max(width, height));
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.round(width * scale);
-  canvas.height = Math.round(height * scale);
-  const context = canvas.getContext('2d', { willReadFrequently: true });
-  if (!context) return null;
-  context.drawImage(source, 0, 0, canvas.width, canvas.height);
-  const { default: jsQR } = await import('jsqr');
-  const image = context.getImageData(0, 0, canvas.width, canvas.height);
-  return jsQR(image.data, image.width, image.height, { inversionAttempts: 'attemptBoth' })?.data ?? null;
-}
-
 function AadhaarStep({ status, onChange }: { status: VerificationStatus; onChange: (status: VerificationStatus) => void }) {
   const [consent, setConsent] = useState(false);
   const [qr, setQr] = useState<string | null>(null);
@@ -397,14 +484,16 @@ function AadhaarStep({ status, onChange }: { status: VerificationStatus; onChang
     let stopped = false;
     void (async () => {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 } } });
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 2560 }, height: { ideal: 1440 } } });
         const video = videoRef.current;
         if (!video || stopped) return;
         video.srcObject = stream;
         await video.play();
+        let attempt = 0;
         while (!stopped) {
           if (video.videoWidth > 0) {
-            const text = await readQr(video, video.videoWidth, video.videoHeight);
+            const text = await readQrFrame(video, attempt);
+            attempt += 1;
             if (text) {
               setQr(text);
               setScanning(false);
@@ -428,9 +517,7 @@ function AadhaarStep({ status, onChange }: { status: VerificationStatus; onChang
     if (!file) return;
     setError(null);
     try {
-      const bitmap = await createImageBitmap(file);
-      const text = await readQr(bitmap, bitmap.width, bitmap.height);
-      bitmap.close();
+      const text = await readQrPicture(file);
       if (text) setQr(text);
       else setError('No QR code found in that picture. Crop it to the QR and make sure it is sharp, then try again.');
     } catch {
@@ -454,7 +541,8 @@ function AadhaarStep({ status, onChange }: { status: VerificationStatus; onChang
   if (!status.ready.aadhaar) {
     return (
       <p className="notice notice--info">
-        Aadhaar verification is not switched on for this server yet. An operator can approve your account meanwhile.
+        Aadhaar verification is not switched on for this server yet. You can ask for a manual review at the bottom of
+        this page.
       </p>
     );
   }

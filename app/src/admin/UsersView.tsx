@@ -22,9 +22,14 @@ export function UsersView() {
   const [query, setQuery] = useState('');
   const [openId, setOpenId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // People stuck on a check who asked for a look: kept apart from the list so
+  // they are not lost on page three of it.
+  const [waiting, setWaiting] = useState<AdminUserRow[]>([]);
 
   const load = useCallback(async () => {
     setError(null);
+    // The queue is a convenience on top of the list; it failing must not hide the list.
+    admin.reviews().then((result) => setWaiting(result.users), () => setWaiting([]));
     try {
       const result = await admin.users(query);
       setRows(result.users);
@@ -96,6 +101,27 @@ export function UsersView() {
 
       <EmailUsageLine />
 
+      {waiting.length > 0 && (
+        <div className="card card--pad stack">
+          <span className="card__title">Waiting for a manual review ({waiting.length})</span>
+          <p className="faint" style={{ margin: 0 }}>
+            They cannot finish a check and asked you to look. Open one and decide under “Buying and selling”:
+            saving answers the request.
+          </p>
+          {waiting.map((row) => row.reviewRequest && (
+            <button key={row.id} type="button" className="userrow" onClick={() => setOpenId(row.id)}>
+              <div className="userrow__main">
+                <span className="userrow__name">{row.displayName}</span>
+                <span className="userrow__meta">
+                  Stuck on {STEP_LABELS[row.reviewRequest.stuckOn]} · asked {formatDate(row.reviewRequest.at)} · “{row.reviewRequest.note}”
+                </span>
+              </div>
+              <div className="userrow__tags"><VerifiedTags row={row} /></div>
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="card">
         {rows.map((row) => (
           <button key={row.id} type="button" className="userrow" onClick={() => setOpenId(row.id)}>
@@ -113,6 +139,7 @@ export function UsersView() {
               <span className={`badge ${row.canBuy ? 'badge--ok' : 'badge--warn'}`}>{row.canBuy ? 'can buy' : 'cannot buy'}</span>
               <span className={`badge ${row.canSell ? 'badge--ok' : 'badge--warn'}`}>{row.canSell ? 'can sell' : 'cannot sell'}</span>
               {row.tradeOverride && <span className="badge badge--accent">operator override</span>}
+              {row.reviewRequest && <span className="badge badge--warn">asked for review</span>}
               {row.suspended && <span className="badge badge--warn">suspended</span>}
               {!row.signInAccount && <span className="badge">no login</span>}
               {row.store && <span className="badge">store</span>}
@@ -385,6 +412,8 @@ const RIGHT_LABELS: Record<TradeRight, string> = {
   block: 'Blocked',
 };
 
+const STEP_LABELS = { email: 'email', whatsapp: 'WhatsApp', aadhaar: 'Aadhaar' } as const;
+
 /**
  * Who may buy and who may sell.
  *
@@ -400,7 +429,9 @@ function RightsPanel({ user, onChanged }: { user: AdminUserRow; onChanged: () =>
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const unchanged = buy === (user.tradeOverride?.buy ?? 'auto') && sell === (user.tradeOverride?.sell ?? 'auto')
+  // A waiting review request can be answered without changing anything: that is turning it down.
+  const unchanged = !user.reviewRequest
+    && buy === (user.tradeOverride?.buy ?? 'auto') && sell === (user.tradeOverride?.sell ?? 'auto')
     && reason === (user.tradeOverride?.reason ?? '');
   // The server keeps a reason with every override; asked for here, before
   // the press, rather than refused after it.
@@ -428,6 +459,13 @@ function RightsPanel({ user, onChanged }: { user: AdminUserRow; onChanged: () =>
       {user.aadhaar && (
         <p className="faint" style={{ margin: 0 }}>
           Aadhaar: {user.aadhaar.name}, ending {user.aadhaar.last4}, verified {formatDate(user.aadhaar.at)}.
+        </p>
+      )}
+      {user.reviewRequest && (
+        <p className="notice notice--warn" style={{ margin: 0 }}>
+          Asked for a manual review {formatDate(user.reviewRequest.at)}, stuck on {STEP_LABELS[user.reviewRequest.stuckOn]}:
+          “{user.reviewRequest.note}”. Check who they are another way (a call, a video call, an ID in person) before
+          granting. Saving below answers the request and notifies them. To turn it down, leave both on “By verification” and give a reason: they are shown it.
         </p>
       )}
       <p className="faint" style={{ margin: 0 }}>

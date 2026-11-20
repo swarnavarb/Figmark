@@ -1025,6 +1025,12 @@ export class MemoryRepository implements Repository {
     return { users: matching.slice(from, to), next: to < matching.length ? String(to) : null, total: all.length };
   }
 
+  async listReviewRequests(): Promise<User[]> {
+    return [...this.users.values()]
+      .filter((user) => user.reviewRequest)
+      .sort((a, b) => (a.reviewRequest?.at ?? '').localeCompare(b.reviewRequest?.at ?? ''));
+  }
+
   async findStoreBySlug(kind: StoreKind, slug: string): Promise<User | null> {
     return [...this.users.values()].find((user) => storeOf(user, kind)?.directorySlug === slug) ?? null;
   }

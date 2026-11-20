@@ -5,6 +5,10 @@ import { ApiRequestError, api, type FeedListing, type ShopCard, type SocialSearc
 import { useSession } from '../session';
 import { formatMoney } from '../format';
 import { compressImage } from '../imageCompress';
+import { warmDetector } from '../photoDetect';
+
+/** How large a photo searched with may be: more than a listing's 90 KB, so its detail survives. */
+const SEARCH_PHOTO_BYTES = 250 * 1024;
 import { Avatar, Icon, Thumb, leadPhoto } from './ui';
 import { SocialMatches, useSearchSheet } from './SocialChrome';
 
@@ -62,7 +66,7 @@ export function MarketSearch({ initial, onClose, onSubmit, onPhoto }: {
   /** Show every item matching the words on the catalogue. */
   onSubmit: (term: string) => void;
   /** Show the catalogue ranked against this photo, as a data URL. Never uploaded or stored. */
-  onPhoto: (dataUrl: string) => void;
+  onPhoto: (dataUrl: string, original: Blob) => void;
 }) {
   const navigate = useNavigate();
   const { user } = useSession();
@@ -84,7 +88,8 @@ export function MarketSearch({ initial, onClose, onSubmit, onPhoto }: {
     if (!file) return;
     setReading(true);
     try {
-      onPhoto(await compressImage(file));
+      // Sent at a little more than a listing photo: the search reads its detail.
+      onPhoto(await compressImage(file, SEARCH_PHOTO_BYTES), file);
     } catch {
       setError('Could not read that photo. Try another one.');
       setReading(false);
@@ -161,7 +166,11 @@ export function MarketSearch({ initial, onClose, onSubmit, onPhoto }: {
           )}
           {!q && !reading && (
             <button type="button" className="mktsearch__camera" aria-label="Search with a photo"
-              onClick={() => picker.current?.click()}>
+              onClick={() => {
+                // The detector downloads while the shopper picks a photo.
+                warmDetector();
+                picker.current?.click();
+              }}>
               <Icon name="camera" size={18} />
             </button>
           )}

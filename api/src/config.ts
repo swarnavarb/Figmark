@@ -141,7 +141,10 @@ export interface VerificationConfig {
     accessToken: string | null;
     phoneNumberId: string | null;
   } | null;
-  /** UIDAI's offline-verification certificate (PEM, or base64 DER). Null: Aadhaar QRs cannot be checked. */
+  /**
+   * Extra UIDAI Secure QR certificates (PEM blocks, or base64 DER separated by commas), on top of the ones
+   * shipped in api/assets/uidai. Null: only the shipped ones are used.
+   */
   aadhaarCertificate: string | null;
 }
 

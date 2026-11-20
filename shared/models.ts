@@ -101,8 +101,16 @@ export interface AadhaarProof {
   dob: string;
   gender: string;
   last4: string;
-  /** The verified phone the QR's mobile hash matched, E.164. */
+  /** The verified phone the QR's mobile matched, E.164. */
   mobile: string;
+  /**
+   * How the QR's mobile was matched: `hash`, the whole number (legacy QRs),
+   * or `last4`, its last four digits (2022+ QRs carry nothing more). Absent
+   * on proofs made before newer QRs were accepted, which were all `hash`.
+   */
+  mobileMatch?: 'hash' | 'last4';
+  /** The QR's layout: "V1" for legacy, else its marker ("V2", "V3", ...). */
+  qrVersion?: string;
   via: 'secure_qr' | 'seed';
   at: string;
 }
@@ -113,6 +121,16 @@ export interface AadhaarProof {
  * stops a verified one. Absent or `auto` means verification decides.
  */
 export type TradeRight = 'auto' | 'grant' | 'block';
+
+/** Which check a manual-review request is about. */
+export type ReviewStep = 'email' | 'whatsapp' | 'aadhaar';
+
+export interface ReviewRequest {
+  stuckOn: ReviewStep;
+  /** What went wrong, in the person's words. */
+  note: string;
+  at: string;
+}
 
 export interface TradeOverride {
   buy: TradeRight;
@@ -325,6 +343,12 @@ export interface User extends BaseDocument {
   sessionsValidAfter?: string | null;
   /** An operator's say over buying and selling; absent means verification decides. */
   tradeOverride?: TradeOverride | null;
+  /**
+   * The person asked an operator to look at their account because a check
+   * cannot be finished (no WhatsApp, no mobile on their Aadhaar, a step this
+   * server cannot run). Cleared when an operator saves a decision on it.
+   */
+  reviewRequest?: ReviewRequest | null;
   /** Verification codes in flight. Never leaves the API. */
   challenges?: VerificationChallenges | null;
   /**
@@ -1056,9 +1080,26 @@ export interface ListingPhoto {
   url?: string;
   /** A small copy for cards and grids; absent on photos stored before these were made, and on pasted links. */
   thumbUrl?: string;
-  /** Perceptual hash, reserved for reverse-image search. */
+  /** Perceptual hash of the whole picture, for reverse-image search. */
   imageHash: string | null;
+  /**
+   * One hash per item found in the picture, when it shows more than one - a
+   * lot, a bundle, a shelf. A shopper's photo of one of those items then finds
+   * this listing even though the listing's picture shows several. Absent on
+   * photos fingerprinted before items were told apart, and on single-item photos
+   * it is an empty list.
+   */
+  regions?: PhotoRegion[];
   isPrimary: boolean;
+}
+
+/** Where an item sits in a photo, as fractions of its width and height: left, top, width, height. */
+export type RegionBox = [number, number, number, number];
+
+/** One item in a photo, and its own fingerprint. */
+export interface PhotoRegion {
+  box: RegionBox;
+  imageHash: string;
 }
 
 export interface Listing extends BaseDocument {
@@ -3210,6 +3251,8 @@ export type NotificationKind =
   | 'order_received'
   /** Somebody disputed a review or comment, or asked for one to be validated, and it was decided. */
   | 'content_report_settled'
+  /** An operator answered the manual review of your verification you asked for. */
+  | 'verification_review'
   | 'preorder_nearly'
   | 'preorder_filled'
   | 'preorder_due'

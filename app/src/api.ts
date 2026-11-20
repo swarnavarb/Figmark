@@ -11,6 +11,7 @@ import type { ContentReport, ModerationMark, ReportTarget } from '@shared/modera
 import type { NotificationCategory } from '@shared/notifications';
 import type { FirstDibsView, NotificationPrefs, OrderPhoto, PhotoAudience } from '@shared/models';
 import type { VerifiedChecks } from '@shared/verification';
+import type { ReviewRequest, ReviewStep } from '@shared/models';
 import type {
   ApiError,
   AuthUser,
@@ -2357,11 +2358,33 @@ export interface PhotoDraft {
 }
 
 /** A photo search: what matches the photo, best first, then what is related to it - one list. */
+/** Where something sits in a photo, as fractions of its width and height: left, top, width, height. */
+export type PhotoBox = [number, number, number, number];
+
+/** One thing told apart in a search photo, and a peek at what matches it. */
+export interface PhotoItem {
+  box: PhotoBox;
+  /** What it was read as, or its colour; null when nothing names it. */
+  label: string | null;
+}
+
 export interface PhotoSearchResponse {
   listings: FeedListing[];
   /** Whether this deployment reads photos at all, or only matches the picture. */
   vision: boolean;
+  /** The part of the photo searched with, or null for all of it. */
+  region: PhotoBox | null;
+  /** The things in the photo, when it shows more than one; empty when searching with one part. */
+  items: PhotoItem[];
+  /**
+   * Shown beside the matches, each saying why: named almost the same as a
+   * match, or the same thing in other colours - a repaint, a colourway.
+   */
+  suggested?: PhotoSuggestion[];
 }
+
+/** A listing suggested beside a photo's matches. */
+export type PhotoSuggestion = FeedListing & { because: 'name' | 'colour' };
 
 /** One item read in a photo, and the listings it is or was for sale under. */
 export interface PhotoSalesItem {
@@ -2507,6 +2530,10 @@ export interface VerificationStatus {
   emailCodePending: boolean;
   aadhaar: { name: string; last4: string; at: string } | null;
   ready: { email: boolean; whatsapp: boolean; aadhaar: boolean };
+  /** A manual review asked for and not yet decided. */
+  review: ReviewRequest | null;
+  /** What the account may do now; `byOperator` when an operator decided it rather than the checks. */
+  access: { canBuy: boolean; canSell: boolean; byOperator: boolean };
 }
 
 /** Whether a shop takes orders now, and when a pause lifts. */
@@ -3012,6 +3039,10 @@ export const api = {
     post<{ link: string; message: string; businessNumber: string; expiresAt: string; status: VerificationStatus }>('/verify/phone/start'),
   changePhone: (phone: string) => post<{ status: VerificationStatus }>('/verify/phone/number', { phone }),
   verifyAadhaar: (qr: string) => post<{ status: VerificationStatus }>('/verify/aadhaar', { qr, consent: true }),
+  requestReview: (stuckOn: ReviewStep, note: string) => post<{ status: VerificationStatus }>('/verify/review', { stuckOn, note }),
+  withdrawReview: () => post<{ status: VerificationStatus }>('/verify/review', { withdraw: true }),
+  /** TEMPORARY: the /verify/aadhaar-test page. Saves nothing. */
+  testAadhaar: <T>(qr: string, phone: string, email: string) => post<T>('/verify/aadhaar/test', { qr, phone, email }),
 
   logout: () => post<{ ok: true }>('/auth/logout'),
   /** Ends every session this account has, on every device - this one too. */
@@ -3045,8 +3076,13 @@ export const api = {
     const suffix = query.toString();
     return request<ListingDetail>(`/listings/${encodeURIComponent(id)}${suffix ? `?${suffix}` : ''}`);
   },
-  /** Items like the one in the photo. The photo is read and dropped, never stored. */
-  photoSearch: (dataUrl: string) => ask<PhotoSearchResponse>('/search/photo', { dataUrl }),
+  /**
+   * Items like what is in the photo - all of it, or one part when `region` is
+   * given. `boxes` are the things the phone found in it, searched with each
+   * on its own. The photo is read and dropped, never stored.
+   */
+  photoSearch: (dataUrl: string, region?: PhotoBox | null, boxes?: PhotoBox[]) =>
+    ask<PhotoSearchResponse>('/search/photo', region ? { dataUrl, region } : boxes?.length ? { dataUrl, boxes } : { dataUrl }),
   /** Where the items in a photo already on Figmark are, or were, for sale. */
   photoSales: (url: string, about?: string, by?: string) =>
     ask<PhotoSalesResponse>('/search/photo/sales', { url, about, by }),

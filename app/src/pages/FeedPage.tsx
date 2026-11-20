@@ -15,7 +15,8 @@ import {
 } from '@shared/catalog';
 import { isTakingBookings, preOrderView } from '@shared/preorder';
 import { RARITY_LABELS, XP, dayKey, listingRarity, type ListingRarity, type RarityTier } from '@shared/quest';
-import { api, type FeedListing, type FeedResponse, type ShopCard } from '../api';
+import { api, type FeedListing, type FeedResponse, type PhotoBox, type PhotoItem, type PhotoSuggestion, type ShopCard } from '../api';
+import { PhotoFocus, PhotoSuggestions } from '../components/PhotoFocus';
 import { ShopStrip, ShopsForYou, useShopsForYou } from '../components/ShopCards';
 import {
   ServiceCard, ServiceGrid, ServiceStrip, placeServices, searchWants, useProviders, useStudioSearch,
@@ -41,7 +42,9 @@ import { useRecentlyViewed } from '../recentViews';
 import {
   AlertMe, DAY_CHOICES, FilterChips, FilterSheet, RecentRail, priceLabel, sheetCount, type FilterValues,
 } from '../components/ShopFinder';
-import { clearPhotoQuery, usePhotoQuery } from '../photoQuery';
+import { clearPhotoQuery, holdsPhotoQuery, usePhotoQuery } from '../photoQuery';
+import { detectThings } from '../photoDetect';
+import { mergeItems } from '../photoThings';
 import '../styles/FeedPage.css';
 import { Select } from '../components/Select';
 
@@ -56,6 +59,7 @@ import { Select } from '../components/Select';
  */
 /** Listings per catalogue page, as the API counts them. */
 const CATALOG_PAGE = 100;
+const NO_ITEMS: PhotoItem[] = [];
 /** The API's own ceiling (400 listings). */
 const CATALOG_MAX_PAGES = 4;
 
@@ -88,27 +92,82 @@ export function useCatalog() {
   const photoId = params.get('photo') ?? '';
   const photo = usePhotoQuery(photoId);
   const [photoFound, setPhotoFound] = useState<FeedListing[] | null>(null);
+  const [photoSuggested, setPhotoSuggested] = useState<PhotoSuggestion[]>([]);
+  // Which part of the photo is searched with, and the things found in it -
+  // all belong to one photo, so a new photo starts afresh. The things come
+  // from the phone's own look (photoDetect.ts) and from the server's answer
+  // about the whole photo, which finds what stands off a plain backdrop - a
+  // shoe, a watch, a ring the phone's detector has no name for.
+  const [focus, setFocus] = useState<{ photoId: string; box: PhotoBox | null }>({ photoId: '', box: null });
+  const [seen, setSeen] = useState<{ photoId: string; items: PhotoItem[] }>({ photoId: '', items: [] });
+  const [told, setTold] = useState<{ photoId: string; items: PhotoItem[] }>({ photoId: '', items: [] });
+  const photoRegion = photo && focus.photoId === photo.id ? focus.box : null;
+  const seenItems = photo && seen.photoId === photo.id ? seen.items : NO_ITEMS;
+  const toldItems = photo && told.photoId === photo.id ? told.items : NO_ITEMS;
+  const photoItems = useMemo(() => mergeItems(seenItems, toldItems), [seenItems, toldItems]);
+  const pickRegion = useCallback((box: PhotoBox | null) => {
+    if (photo) setFocus({ photoId: photo.id, box });
+  }, [photo]);
+  // What the phone has found so far, for the whole-photo search to send.
+  const seenBoxes = useRef<{ photoId: string; boxes: PhotoBox[] }>({ photoId: '', boxes: [] });
 
-  // A reload forgets the photo; the catalogue it leaves behind is the ordinary one.
+  // A reload forgets the photo; the catalogue it leaves behind is the ordinary
+  // one. A photo that is held but is not this one is a new search on its way
+  // here - the address changes a moment after the photo does - so that is
+  // waited out, and only a stale address is let go.
   useEffect(() => {
     if (!photoId || photo) return;
-    const next = new URLSearchParams(params);
-    next.delete('photo');
-    setParams(next, { replace: true });
-  }, [photoId, photo, params, setParams]);
+    const settle = window.setTimeout(() => {
+      const still = new URLSearchParams(window.location.search).get('photo');
+      if (still !== photoId) return;
+      const next = new URLSearchParams(window.location.search);
+      next.delete('photo');
+      setParams(next, { replace: true });
+    }, holdsPhotoQuery() ? 250 : 0);
+    return () => window.clearTimeout(settle);
+  }, [photoId, photo, setParams]);
 
-  // Sent once per photo; the filters below narrow what came back without
-  // sending the photo again.
+  // The phone looks for the things in the photo: a quick look, then a closer one.
+  useEffect(() => {
+    if (!photo) return;
+    let cancelled = false;
+    const show = (boxes: PhotoBox[]) => {
+      if (cancelled) return;
+      seenBoxes.current = { photoId: photo.id, boxes };
+      setSeen({ photoId: photo.id, items: boxes.map((box) => ({ box, label: null })) });
+    };
+    void detectThings(photo, show).then(show);
+    return () => { cancelled = true; };
+  }, [photo]);
+
+  // Once the things are known, the first is searched with, as a shopper
+  // pointing at one would; "All" is a tap away. Once anything has been picked
+  // for this photo - "All" included - that choice stands.
+  const firstItem = photoItems[0]?.box;
+  useEffect(() => {
+    if (!photo || !firstItem) return;
+    setFocus((was) => (was.photoId === photo.id ? was : { photoId: photo.id, box: firstItem }));
+  }, [photo, firstItem]);
+
+  // Sent at once - the results do not wait for the phone's look - and again
+  // when another part is picked; the filters below narrow what came back
+  // without sending the photo again.
   useEffect(() => {
     setPhotoFound(null);
+    setPhotoSuggested([]);
     if (!photo) return;
     let cancelled = false;
     setLoading(true);
-    void api
-      .photoSearch(photo.dataUrl)
+    const known = !photoRegion && seenBoxes.current.photoId === photo.id ? seenBoxes.current.boxes : [];
+    void api.photoSearch(photo.dataUrl, photoRegion, known)
       .then((result) => {
+        // What the server found in the whole photo, beside what the phone
+        // found - kept even when a pick has since been made, which happens
+        // as soon as the phone's first dot comes: told is kept per photo.
+        if (!photoRegion) setTold({ photoId: photo.id, items: result.items ?? [] });
         if (cancelled) return;
         setPhotoFound(result.listings);
+        setPhotoSuggested(result.suggested ?? []);
         setError(null);
       })
       .catch((err: Error) => !cancelled && setError(err.message))
@@ -116,7 +175,7 @@ export function useCatalog() {
     return () => {
       cancelled = true;
     };
-  }, [photo]);
+  }, [photo, photoRegion]);
 
   const photoData: FeedResponse | null = useMemo(() => {
     if (!photoFound) return null;
@@ -247,7 +306,7 @@ export function useCatalog() {
     // More to come: the server said this is not every match, and there is room to ask for more.
     canShowMore: !photoId && data?.complete === false && pages < CATALOG_MAX_PAGES, showMore,
     search, group, category, condition, type, size, authenticity, kind, sort, maxPrice, minPrice, minTrust, maxDays,
-    photo, clearPhoto,
+    photo, clearPhoto, photoItems, photoRegion, pickRegion, photoSuggested,
     toggle, chooseGroup, chooseKind, set, activeFilters,
   };
 }
@@ -275,7 +334,7 @@ export function FeedPage() {
   const {
     params, setParams, data, error, loading,
     search, group, category, condition, type, size, authenticity, kind, sort, maxPrice, minPrice, minTrust, maxDays,
-    photo, clearPhoto,
+    photo, clearPhoto, photoItems, photoRegion, pickRegion, photoSuggested,
     chooseGroup, chooseKind, set, activeFilters,
     canShowMore, showMore,
   } = useCatalog();
@@ -513,15 +572,13 @@ export function FeedPage() {
       <>
       {showGrid && error && <ErrorNotice message={error} />}
 
+      {photo && (
+        <PhotoFocus photo={photo} items={photoItems} region={photoRegion} onPick={pickRegion} onClear={clearPhoto} busy={loading} />
+      )}
+      {photo && !loading && <PhotoSuggestions listings={photoSuggested} />}
       <div className="qrow__head">
         {photo ? (
-          <h2 className="qphoto">
-            <img loading="lazy" decoding="async" src={photo.dataUrl} alt="" />
-            Your photo
-            <button type="button" className="qphoto__clear" aria-label="Clear photo search" onClick={clearPhoto}>
-              <Icon name="close" size={12} />
-            </button>
-          </h2>
+          <h2>{photoRegion ? 'Matches for your pick' : 'Matches for your photo'}</h2>
         ) : (
           <h2>{search ? `“${search}”` : rarityFilter ? `${RARITY_LABELS[rarityFilter]} finds` : feedView ? FEED_VIEW_TITLES[feedView] : 'All items'}</h2>
         )}
@@ -535,11 +592,13 @@ export function FeedPage() {
         <SkeletonGrid count={6} />
       ) : shown.length === 0 ? (
         <>
-        <EmptyState title={photo ? 'Nothing like your photo yet'
+        <EmptyState title={photo ? (photoRegion ? 'Nothing like that yet' : 'Nothing like your photo yet')
           : rarityFilter ? `Nothing ${RARITY_LABELS[rarityFilter].toLowerCase()} right now`
           : browsing ? 'Nothing for sale yet' : 'Nothing matches those filters'}>
           {photo
-            ? 'Try another photo, or search with words instead.'
+            ? photoRegion
+              ? 'Try another part of the photo, the whole photo, or search with words instead.'
+              : 'Try drawing round one thing in it, another photo, or search with words instead.'
             : rarityFilter
             ? 'Rarity moves with demand. Check back as things sell and fill.'
             : search

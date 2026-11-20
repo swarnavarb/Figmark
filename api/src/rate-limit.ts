@@ -15,8 +15,8 @@ import { error } from './functions/http.js';
  * reached the local count still applies: a limit that fails open is better
  * than an endpoint that fails closed.
  */
-export type Action = 'post' | 'seen' | 'feedpref' | 'comment' | 'react' | 'share' | 'message' | 'want' | 'offer' | 'push_test' | 'chatphoto' | 'photosearch' | 'photosales'
-  | 'verify_email' | 'verify_code' | 'verify_phone' | 'verify_aadhaar'
+export type Action = 'post' | 'seen' | 'feedpref' | 'comment' | 'react' | 'share' | 'message' | 'want' | 'offer' | 'push_test' | 'chatphoto' | 'photosearch' | 'photopicture' | 'photosales'
+  | 'verify_email' | 'verify_code' | 'verify_phone' | 'verify_aadhaar' | 'verify_review'
   | 'upload' | 'login' | 'signup' | 'login_fail' | 'login_fail_account' | 'handle_check'
   | 'reset' | 'reset_account' | 'export' | 'clienterror' | 'billing' | 'voucher' | 'gift';
 
@@ -47,6 +47,9 @@ const LIMITS: Record<Action, { max: number; ms: number }[]> = {
   chatphoto: [{ max: 20, ms: MINUTE }, { max: 150, ms: HOUR }],
   // Each one may be a call to Claude, which is paid for.
   photosearch: [{ max: 10, ms: MINUTE }, { max: 60, ms: HOUR }],
+  // Matching by picture alone, with no call to Claude: a shopper moving and
+  // stretching the box round one thing after another searches each time.
+  photopicture: [{ max: 40, ms: MINUTE }, { max: 400, ms: HOUR }],
   // Only counted when a photo nobody has opened yet is read by Claude; scrolling
   // through a feed opens many, so it allows more than a search does.
   photosales: [{ max: 30, ms: MINUTE }, { max: 300, ms: HOUR }],
@@ -55,6 +58,8 @@ const LIMITS: Record<Action, { max: number; ms: number }[]> = {
   verify_code: [{ max: 10, ms: 600_000 }],
   verify_phone: [{ max: 10, ms: HOUR }],
   verify_aadhaar: [{ max: 10, ms: HOUR }],
+  // Asking an operator to look: one is all it takes, a few allow for a corrected note.
+  verify_review: [{ max: 3, ms: HOUR }, { max: 6, ms: DAY }],
   // Every photo is stored, and paid for, until someone deletes it. A busy
   // shop listing forty items with six photos each stays well inside these.
   upload: [{ max: 30, ms: MINUTE }, { max: 400, ms: HOUR }, { max: 1500, ms: DAY }],

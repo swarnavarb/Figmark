@@ -37,7 +37,7 @@ const {
 const {
   verifyStatusRoute, verifyEmailSendRoute, verifyEmailConfirmRoute, verifyPhoneStartRoute, verifyPhoneNumberRoute,
   verifyEmailChangeRoute, verifyEmailChangeConfirmRoute,
-  verifyAadhaarRoute, whatsappWebhookRoute,
+  verifyAadhaarRoute, verifyReviewRoute, verifyAadhaarTestRoute, whatsappWebhookRoute,
 } = await import(new URL('verify-routes.js', apiRoot));
 const {
   feedRoute, listingDetailRoute, createListingRoute, toggleLikeRoute, bumpListingRoute,
@@ -145,7 +145,7 @@ const {
 const {
   adminUsersRoute, adminUserDetailRoute, adminSuspendRoute, adminDeleteUserRoute,
   adminDeleteResourceRoute, adminPhotoScanRoute, adminPhotoCleanupRoute, adminManagerRoute, adminRightsRoute, adminEmailUsageRoute, adminDisputesRoute,
-  adminReassignRoute, adminActionsRoute, adminDecideActionRoute, adminLedgerRoute, adminAuditRoute,
+  adminReassignRoute, adminActionsRoute, adminDecideActionRoute, adminLedgerRoute, adminAuditRoute, adminReviewsRoute,
 } = await import(new URL('admin-routes.js', apiRoot));
 const {
   questMeRoute, questCheckInRoute, questClaimRoute, questRevealRoute, questRepairRoute, collectorRoute,
@@ -207,7 +207,9 @@ const routes = [
   ['POST', '/api/verify/email/change/confirm', verifyEmailChangeConfirmRoute],
   ['POST', '/api/verify/phone/start', verifyPhoneStartRoute],
   ['POST', '/api/verify/phone/number', verifyPhoneNumberRoute],
+  ['POST', '/api/verify/aadhaar/test', verifyAadhaarTestRoute],
   ['POST', '/api/verify/aadhaar', verifyAadhaarRoute],
+  ['POST', '/api/verify/review', verifyReviewRoute],
   ['GET', '/api/verify/whatsapp/webhook', whatsappWebhookRoute],
   ['POST', '/api/verify/whatsapp/webhook', whatsappWebhookRoute],
   ['GET', '/api/feed', feedRoute],
@@ -431,6 +433,7 @@ const routes = [
   ['GET', '/api/ops/actions', adminActionsRoute],
   ['POST', '/api/ops/actions/:id/decide', adminDecideActionRoute],
   ['GET', '/api/ops/ledger', adminLedgerRoute],
+  ['GET', '/api/ops/reviews', adminReviewsRoute],
   ['GET', '/api/pricing', pricingRoute],
   ['GET', '/api/me/fees', myFeesRoute],
   ['POST', '/api/me/fees/pay', payFeesRoute],
@@ -602,6 +605,7 @@ const routes = [
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
+  '.wasm': 'application/wasm',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml',

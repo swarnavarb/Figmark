@@ -8,7 +8,7 @@ three checks below, or an operator's grant.
 |---|---|---|
 | Email | A 6-digit code is emailed at sign-up and typed back. | Free (Brevo: 300 emails/day) |
 | WhatsApp number | The person taps **Verify on WhatsApp**; WhatsApp opens with a message holding a one-time code; they send it to Figmark's WhatsApp number. WhatsApp tells us which number sent it, so it must be the account's number. | Free (messages people send you cost nothing) |
-| Aadhaar | The person scans their Aadhaar **Secure QR** (letter, e-Aadhaar PDF or mAadhaar). The API checks UIDAI's RSA signature offline, then hashes the WhatsApp-verified number the way UIDAI does and compares it with the mobile hash in the QR. | Free (offline, no licence) |
+| Aadhaar | The person scans their Aadhaar **Secure QR** (letter, e-Aadhaar PDF or mAadhaar). The API checks UIDAI's RSA signature offline, then matches the Aadhaar-linked mobile to the WhatsApp-verified number: QRs from 2022 on (V2, V3, V5) carry only its last 4 digits, which must be the same; older QRs carry a hash of the whole number, which the API recomputes the way UIDAI does. The proof records which (`mobileMatch`: `last4` or `hash`). | Free (offline, no licence) |
 
 **The WhatsApp number and the Aadhaar-linked mobile must be the same number.**
 That match is what ties the Aadhaar to the person holding the SIM. The app says
@@ -34,10 +34,32 @@ each side to *By verification*, *Granted* or *Blocked*, with a required reason
 (kept with who and when). Use it for people who cannot finish - no WhatsApp, an
 Aadhaar without a linked mobile - and to stop a verified account.
 
+### Manual review requests
+
+Someone who cannot finish a check uses **Ask for a manual review** at the bottom
+of the Verification page: they pick the step they are stuck on and say what is
+wrong (`POST /api/verify/review`; `{ withdraw: true }` takes it back). Nothing is
+marked verified by asking.
+
+Requests wait at the top of Admin → Users ("Waiting for a manual review",
+`GET /api/ops/reviews`, oldest first), and the account carries an *asked for
+review* badge. Check who they are another way before granting. Saving
+**Buying and selling** answers the request, whatever you chose, and notifies
+them:
+
+- **Granted** on either side: they are told they can buy or sell. The reason is
+  your note and is not shown to them.
+- Both left on *By verification*: the request is turned down and **the reason
+  is shown to them**, so write it for them.
+
+A grant does not give the Email / WhatsApp / Aadhaar ticks. Those come only from
+the checks themselves, so a granted account still reads as unverified on its
+public page. Finishing all three checks clears a waiting request.
+
 ## Settings
 
 Each piece switches on when its settings are present. Until then its step says
-it is not set up yet, and an operator can grant rights instead.
+it is not set up yet and points to a manual review, which an operator answers by granting rights.
 
 | Setting | What |
 |---|---|
@@ -53,7 +75,7 @@ it is not set up yet, and an operator can grant rights instead.
 | `WHATSAPP_VERIFY_TOKEN` | Any string; typed into Meta's webhook settings too. |
 | `WHATSAPP_APP_SECRET` | Meta app → App settings → Basic → App secret. Checks each webhook's signature. |
 | `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` | Optional: lets Figmark reply "verified" in the chat. |
-| `AADHAAR_QR_CERT` | UIDAI's offline-verification certificate (`uidai_offline_publickey_*.cer`), as PEM or base64. Download it from UIDAI's "Secure QR Code" reader page. |
+| `AADHAAR_QR_CERT` | Optional. UIDAI's signing certificates ship with the API in `api/assets/uidai/`: the offline e-KYC keys DS 03 to DS 06 (2017 to 2029) and the Secure QR Code keys DS 4 and DS 7 (2017 to 2021, which still sign older e-Aadhaar QRs), plus UIDAI's authentication signing keys DS UIDAI 01 (2020 to 2023) and the 2023 to 2026 one, kept in case they signed QRs in those years, so Aadhaar works without this. Use it only for a new key UIDAI publishes before the next deploy: PEM blocks one after another, or base64 values separated by commas. It adds to the shipped keys, and a value that can't be read is logged and skipped. |
 
 ### Email: three free tiers, one after another
 

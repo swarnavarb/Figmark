@@ -98,9 +98,9 @@ export function AppShell() {
     navigate(suffix ? `/?${suffix}` : '/');
   }, [navigate, params, pathname]);
   /** A photo search starts the catalogue afresh: the photo is the whole question. */
-  const searchPhoto = useCallback((dataUrl: string) => {
+  const searchPhoto = useCallback((dataUrl: string, original: Blob) => {
     setSearching(false);
-    navigate(`/?photo=${setPhotoQuery(dataUrl).id}`);
+    navigate(`/?photo=${setPhotoQuery(dataUrl, original).id}`);
   }, [navigate]);
 
   return (

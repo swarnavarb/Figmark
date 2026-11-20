@@ -34,6 +34,8 @@ export const loaders = {
   communityService: () => import('./pages/CommunityServicePage'),
   profile: () => import('./pages/ProfilePage'),
   verify: () => import('./pages/VerifyPage'),
+  // TEMPORARY: the Aadhaar test page.
+  aadhaarTest: () => import('./pages/AadhaarTestPage'),
   purchases: () => import('./pages/PurchasesPage'),
   buyerLot: () => import('./pages/BuyerLotPage'),
   refunds: () => import('./pages/MyRefundsPage'),

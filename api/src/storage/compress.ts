@@ -61,7 +61,7 @@ export interface Raw {
 }
 
 /** Average the source pixels under each destination pixel: right for shrinking. */
-function shrinkRaw(source: Raw, scale: number): Raw {
+export function shrinkRaw(source: Raw, scale: number): Raw {
   if (scale >= 1) return source;
   const width = Math.max(1, Math.round(source.width * scale));
   const height = Math.max(1, Math.round(source.height * scale));
@@ -89,6 +89,9 @@ function shrinkRaw(source: Raw, scale: number): Raw {
 
 const encodeAt = (raw: Raw, quality: number): Uint8Array =>
   new Uint8Array(encode({ data: raw.data, width: raw.width, height: raw.height }, quality).data);
+
+/** Pixels back to a JPEG, at this quality. */
+export const encodeJpeg = encodeAt;
 
 /**
  * The highest quality that still fits `limit` at this size, or the smallest

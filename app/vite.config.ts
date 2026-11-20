@@ -99,6 +99,9 @@ export default defineConfig({
       // The domain model is shared with the API rather than duplicated, so a
       // change to a wire contract breaks the typecheck on both sides at once.
       '@shared': fileURLToPath(new URL('../shared', import.meta.url)),
+      // MediaPipe's WebAssembly, which its package does not export: imported
+      // with ?url, so it is served from this site under a hashed name.
+      '@mediapipe-wasm': fileURLToPath(new URL('node_modules/@mediapipe/tasks-vision/wasm', import.meta.url)),
     },
   },
   server: {

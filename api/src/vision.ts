@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { CATEGORIES } from '../../shared/catalog.js';
+import type { RegionBox } from '../../shared/models.js';
 import { config } from './config.js';
 
 /**
@@ -21,6 +22,8 @@ export interface PhotoDescription {
   keywords: string[];
   /** One of the catalogue's categories, or null when none fits. */
   category: string | null;
+  /** Where the item sits in the photo - left, top, width, height as fractions - when Claude said. */
+  box?: RegionBox | null;
 }
 
 const SCHEMA = {
@@ -64,9 +67,16 @@ export async function describePhoto(bytes: Uint8Array, contentType: string): Pro
 /** At most this many items are named in one photo: a shelf shot is a handful, not an inventory. */
 const MAX_ITEMS = 5;
 
+/** One item, and where it is: [left, top, right, bottom], each a fraction of the photo's width or height. */
+const ITEM_SCHEMA = {
+  ...SCHEMA,
+  properties: { ...SCHEMA.properties, box: { type: 'array', items: { type: 'number' } } },
+  required: [...SCHEMA.required, 'box'],
+} as const;
+
 const ITEMS_SCHEMA = {
   type: 'object',
-  properties: { items: { type: 'array', items: SCHEMA } },
+  properties: { items: { type: 'array', items: ITEM_SCHEMA } },
   required: ['items'],
   additionalProperties: false,
 } as const;
@@ -82,6 +92,8 @@ const ITEMS_SYSTEM = [
   'the card, the tag) over guesses; when you are unsure of a name, describe the item plainly instead. Keywords are',
   'lowercase single words or short names, at most eight, most telling first, and never generic words like "photo",',
   `"item", "toy" or "collectible". Each category must be one of: ${CATEGORIES.join(', ')} - or null if none fits.`,
+  'For each, give its box: [left, top, right, bottom] around the item, each a fraction from 0 to 1 of the photo\'s',
+  'width (left, right) or height (top, bottom), so a shopper can tap the item in the photo.',
 ].join(' ');
 
 /**
@@ -95,7 +107,10 @@ export async function describeItems(bytes: Uint8Array, contentType: string): Pro
   const items = Array.isArray((raw as { items?: unknown }).items) ? (raw as { items: unknown[] }).items : [];
   const named = items
     .filter((item): item is Partial<PhotoDescription> => typeof item === 'object' && item !== null)
-    .map(clean)
+    .map((item): PhotoDescription | null => {
+      const named = clean(item);
+      return named ? { ...named, box: boxOf((item as { box?: unknown }).box) } : null;
+    })
     .filter((item): item is PhotoDescription => item !== null);
   // Two names for one thing would be two groups of the same listings.
   const seen = new Set<string>();
@@ -150,6 +165,16 @@ async function ask(bytes: Uint8Array, contentType: string, system: string, schem
     console.warn(`photo search: Claude could not describe the photo: ${error instanceof Error ? error.message : String(error)}`);
     return null;
   }
+}
+
+/** Claude's [left, top, right, bottom] as a box; null for anything that is not one. */
+function boxOf(value: unknown): RegionBox | null {
+  if (!Array.isArray(value) || value.length !== 4) return null;
+  if (!value.every((part) => typeof part === 'number' && Number.isFinite(part) && part >= 0 && part <= 1)) return null;
+  const [left, top, right, bottom] = value as number[];
+  if (right! - left! < 0.03 || bottom! - top! < 0.03) return null;
+  const round = (part: number) => Math.round(part * 1000) / 1000;
+  return [round(left!), round(top!), round(right! - left!), round(bottom! - top!)];
 }
 
 /** Trim what came back to what search can use. */

@@ -1,13 +1,14 @@
 import { createHash, createHmac, randomInt, timingSafeEqual } from 'node:crypto';
-import type { User } from '../../../shared/models.js';
+import type { ReviewRequest, ReviewStep, User } from '../../../shared/models.js';
+import { deriveCapabilities } from '../../../shared/capabilities.js';
 import {
-  maskMobile, mobileDigits, normalizeIndianMobile, verifiedChecks, type VerifiedChecks,
+  fullyVerified, maskMobile, mobileDigits, normalizeIndianMobile, verifiedChecks, type VerifiedChecks,
 } from '../../../shared/verification.js';
 import { config } from '../config.js';
 import { EmailUnavailableError, sendEmail } from './email-providers.js';
 import type { Repository } from '../data/repository.js';
 import {
-  AadhaarError, aadhaarMobileHash, loadUidaiKey, parseSecureQr, signatureValid,
+  AadhaarError, aadhaarMobileHash, parseSecureQr, signedByAny, uidaiKeys,
 } from './aadhaar.js';
 
 /**
@@ -56,11 +57,20 @@ export interface VerificationStatus {
   aadhaar: { name: string; last4: string; at: string } | null;
   /** Which pieces this deployment can actually run. */
   ready: { email: boolean; whatsapp: boolean; aadhaar: boolean };
+  /** A manual review the person asked for and no operator has decided yet. */
+  review: ReviewRequest | null;
+  /**
+   * What the account may do now, and whether that is an operator's decision
+   * rather than its checks - so the page can say "an operator let you sell"
+   * instead of showing someone stuck who is not.
+   */
+  access: { canBuy: boolean; canSell: boolean; byOperator: boolean };
 }
 
 export function statusOf(user: User): VerificationStatus {
   const phone = user.challenges?.phone;
   const aadhaar = user.verification.proofs?.aadhaar;
+  const capabilities = deriveCapabilities(user);
   return {
     checks: verifiedChecks(user),
     email: user.email,
@@ -71,9 +81,56 @@ export function statusOf(user: User): VerificationStatus {
     ready: {
       email: config.verification.email !== null || devCodesAllowed(),
       whatsapp: config.verification.whatsapp !== null,
-      aadhaar: config.verification.aadhaarCertificate !== null,
+      aadhaar: aadhaarReady(),
+    },
+    review: user.reviewRequest ?? null,
+    access: {
+      canBuy: capabilities.canBuy,
+      canSell: capabilities.canSell,
+      byOperator: Boolean(user.tradeOverride && (user.tradeOverride.buy !== 'auto' || user.tradeOverride.sell !== 'auto')),
     },
   };
+}
+
+/* ── Manual review ─────────────────────────────────────────────────────── */
+
+const REVIEW_STEPS: readonly ReviewStep[] = ['email', 'whatsapp', 'aadhaar'];
+const REVIEW_NOTE_MIN = 10;
+const REVIEW_NOTE_MAX = 500;
+/** Said wherever a check cannot be finished, so nobody is left without a next step. */
+export const ASK_FOR_REVIEW = 'You can ask for a manual review at the bottom of the Verification page.';
+
+/**
+ * The person cannot finish a check and asks an operator to look.
+ *
+ * This records the request and nothing else: no check is marked passed, and
+ * the account's ticks stay as they are. An operator who is satisfied grants
+ * buying or selling in the console (`tradeOverride`, with a reason), which is
+ * what clears the request. Asking again replaces the note rather than queueing
+ * a second request.
+ */
+export async function requestReview(repository: Repository, user: User, stuckOn: unknown, note: unknown): Promise<void> {
+  if (fullyVerified(user)) {
+    throw new VerificationError(409, 'already_verified', 'You are fully verified, so there is nothing to review.');
+  }
+  if (!REVIEW_STEPS.includes(stuckOn as ReviewStep)) {
+    throw new VerificationError(400, 'invalid_step', 'Choose the step you are stuck on.');
+  }
+  const text = typeof note === 'string' ? note.trim().replace(/\s+/g, ' ') : '';
+  if (text.length < REVIEW_NOTE_MIN) {
+    throw new VerificationError(400, 'note_required', 'Say in a line what is stopping you, so an operator knows what to check.');
+  }
+  user.reviewRequest = { stuckOn: stuckOn as ReviewStep, note: text.slice(0, REVIEW_NOTE_MAX), at: now() };
+  user.updatedAt = now();
+  await repository.updateUser(user);
+}
+
+/** Takes back a request that is no longer needed, for example once the check went through. */
+export async function withdrawReview(repository: Repository, user: User): Promise<void> {
+  if (!user.reviewRequest) return;
+  user.reviewRequest = null;
+  user.updatedAt = now();
+  await repository.updateUser(user);
 }
 
 /**
@@ -292,7 +349,7 @@ const PHONE_MESSAGE_PATTERN = /code\s+([A-Z0-9]{6})\s+for\s+account\s+(usr_[A-Za
 export async function startPhone(repository: Repository, user: User): Promise<{ link: string; message: string; businessNumber: string; expiresAt: string }> {
   const whatsapp = config.verification.whatsapp;
   if (!whatsapp) {
-    throw new VerificationError(503, 'whatsapp_unconfigured', 'WhatsApp verification is not set up on this server yet. An operator can approve you meanwhile.');
+    throw new VerificationError(503, 'whatsapp_unconfigured', `WhatsApp verification is not set up on this server yet. ${ASK_FOR_REVIEW}`);
   }
   if (verifiedChecks(user).phone) throw new VerificationError(409, 'already_verified', 'Your WhatsApp number is already verified.');
   if (!normalizeIndianMobile(user.phone)) {
@@ -446,13 +503,18 @@ export async function handleWhatsAppMessage(repository: Repository, message: Inb
 
 /* ── Aadhaar Secure QR ─────────────────────────────────────────────────── */
 
+/** Whether there is any UIDAI key to check a QR against. */
+function aadhaarReady(): boolean {
+  return uidaiKeys(config.verification.aadhaarCertificate).length > 0;
+}
+
 export async function verifyAadhaar(repository: Repository, user: User, qrText: string, consent: boolean): Promise<void> {
   if (!consent) {
     throw new VerificationError(400, 'consent_required', 'Tick the consent box to let Figmark read your Aadhaar QR.');
   }
-  const certificate = config.verification.aadhaarCertificate;
-  if (!certificate) {
-    throw new VerificationError(503, 'aadhaar_unconfigured', 'Aadhaar verification is not set up on this server yet. An operator can approve you meanwhile.');
+  const keys = uidaiKeys(config.verification.aadhaarCertificate);
+  if (keys.length === 0) {
+    throw new VerificationError(503, 'aadhaar_unconfigured', `Aadhaar verification is not set up on this server yet. ${ASK_FOR_REVIEW}`);
   }
   const checks = verifiedChecks(user);
   if (checks.aadhaar) throw new VerificationError(409, 'already_verified', 'Your Aadhaar is already verified.');
@@ -463,17 +525,23 @@ export async function verifyAadhaar(repository: Repository, user: User, qrText: 
 
   try {
     const qr = parseSecureQr(qrText);
-    if (!signatureValid(qr, loadUidaiKey(certificate))) {
+    if (!signedByAny(qr, keys)) {
       throw new AadhaarError('aadhaar_signature', 'This QR is not signed by UIDAI, or it has been altered. Scan the QR on your original Aadhaar.');
     }
-    if (!qr.hasMobile || !qr.mobileHash) {
+    // Legacy QRs carry a hash of the whole linked number; 2022+ QRs carry only
+    // its last four digits, so those are what can be matched.
+    if (!qr.hasMobile || (qr.versioned ? !qr.mobileLast4 : !qr.mobileHash)) {
       throw new AadhaarError(
         'aadhaar_no_mobile',
         'No mobile number is linked to this Aadhaar, so it cannot be matched to your WhatsApp number. ' +
-          'Link your mobile at an Aadhaar centre, download a fresh e-Aadhaar, and try again.',
+          'Link your mobile at an Aadhaar centre, download a fresh e-Aadhaar, and try again. ' +
+          'If you cannot, ask for a manual review at the bottom of this page.',
       );
     }
-    if (aadhaarMobileHash(mobileDigits(mobile), qr.last4) !== qr.mobileHash) {
+    const mobileMatches = qr.versioned
+      ? mobile.endsWith(qr.mobileLast4 ?? '-')
+      : aadhaarMobileHash(mobileDigits(mobile), qr.last4) === qr.mobileHash;
+    if (!mobileMatches) {
       const hint = qr.mobileLast4 ? ` Your Aadhaar is linked to a number ending ${qr.mobileLast4};` : '';
       throw new AadhaarError(
         'aadhaar_mobile_mismatch',
@@ -489,10 +557,12 @@ export async function verifyAadhaar(repository: Repository, user: User, qrText: 
         ...user.verification.proofs,
         aadhaar: {
           name: qr.name.slice(0, 120), dob: qr.dob.slice(0, 20), gender: qr.gender.slice(0, 10), last4: qr.last4,
-          mobile, via: 'secure_qr', at: now(),
+          mobile, mobileMatch: qr.versioned ? 'last4' : 'hash', qrVersion: qr.version, via: 'secure_qr', at: now(),
         },
       },
     };
+    // All three passed on their own: a review asked for earlier has nothing left to decide.
+    if (fullyVerified(user)) user.reviewRequest = null;
     user.updatedAt = now();
     await repository.updateUser(user);
   } catch (err) {

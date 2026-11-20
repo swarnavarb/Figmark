@@ -1,6 +1,6 @@
 import type { CancelFlag, CancelSettings, CancelStats, FeeStatement, Pricing, ProState, ProVoucher } from '@shared/billing';
 import type { HealthResponse } from '@shared/contracts';
-import type { Dispute, DisputeDecision, DisputeSanction, ManagerRights, FeePayment, ReleaseDuty, SellerTrustSignals, TradeOverride, TradeRight, TrustSignals } from '@shared/models';
+import type { Dispute, DisputeDecision, DisputeSanction, ManagerRights, FeePayment, ReleaseDuty, ReviewRequest, SellerTrustSignals, TradeOverride, TradeRight, TrustSignals } from '@shared/models';
 import type { LearnDoc, LearnTab } from '@shared/learn';
 import type { ContentReport } from '@shared/moderation';
 import type { MarketSettings } from '@shared/settings';
@@ -48,6 +48,8 @@ export interface AdminUserRow {
   canBuy: boolean;
   canSell: boolean;
   tradeOverride: TradeOverride | null;
+  /** Asked for a manual review of their verification, and still waiting. */
+  reviewRequest: ReviewRequest | null;
 }
 
 export interface EmailProviderUsage {
@@ -215,7 +217,9 @@ export const admin = {
     post<{ user: AdminUserRow }>(`/ops/users/${encodeURIComponent(id)}/manager`, body),
   /** Today's sends against each free email tier, in the order they are used. */
   emailUsage: () => request<{ providers: EmailProviderUsage[] }>('/ops/email-usage'),
-  /** Grant, block or hand back to verification: who may buy and who may sell. */
+  /** People who cannot finish verifying and asked an operator to look, oldest first. */
+  reviews: () => request<{ users: AdminUserRow[] }>('/ops/reviews'),
+  /** Grant, block or hand back to verification: who may buy and who may sell. Answers any review request. */
   setRights: (id: string, body: { buy: TradeRight; sell: TradeRight; reason: string }) =>
     post<{ user: AdminUserRow }>(`/ops/users/${encodeURIComponent(id)}/rights`, body),
 

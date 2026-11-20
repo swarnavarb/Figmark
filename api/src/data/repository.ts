@@ -443,6 +443,8 @@ export interface Repository {
   listSignupTimes(since: string): Promise<string[]>;
   /** One page of accounts, newest first, optionally matching a search - the admin list. `total` is everyone. */
   pageUsers(options: { search?: string; limit: number; cursor?: string | null }): Promise<{ users: User[]; next: string | null; total: number }>;
+  /** Accounts waiting on an operator's manual review of their verification, oldest request first. */
+  listReviewRequests(): Promise<User[]>;
   /** The account whose store of this kind lives at this directory slug, by index rather than by scan. */
   findStoreBySlug(kind: StoreKind, slug: string): Promise<User | null>;
   /** Accounts holding a service store of this kind - or of any kind - in whatever state it is. */
