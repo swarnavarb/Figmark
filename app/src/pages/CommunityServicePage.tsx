@@ -59,7 +59,7 @@ export function CommunityServicePage() {
   }
 
   return (
-    <main className="page tab-view">
+    <main className="page">
       <WorkSwitcher />
       <div className="page__head">
         <div>

@@ -1,7 +1,7 @@
 import { SpreadNudge } from './SpreadKit';
 import { useToast } from './Feedback';
 import { ProLock, useProLocked } from './Billing';
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent, type CSSProperties } from 'react';
 import { useNow } from '../clock';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import type { PostTemplate } from '@shared/templates';
@@ -192,7 +192,7 @@ function SaleCard({ sale, storeId, storeName, onChanged }: {
       </button>
 
       <div className="runcard__bar" aria-hidden="true">
-        <span style={{ width: `${pct}%` }} />
+        <span style={{ '--p': `${pct}%` } as CSSProperties} />
       </div>
 
       {spreadWhen && (

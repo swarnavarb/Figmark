@@ -15,7 +15,7 @@
 .lotbox__peek {
   position: absolute; z-index: 1; top: -16px; left: 50%; transform: translateX(-50%);
   display: flex; gap: 0;
-  transition: transform 0.4s cubic-bezier(0.3, 1.4, 0.5, 1);
+  transition: transform var(--spring-bouncy-dur) var(--spring-bouncy);
 }
 .lotbox__peekitem {
   width: 34px; height: 34px; border-radius: var(--r-sm); overflow: hidden; margin-left: -8px;

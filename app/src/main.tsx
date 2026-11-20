@@ -226,6 +226,10 @@ function App() {
 // Errors in the browser reach the server's log.
 listenForErrors();
 watchMotion();
+// Safari on iPhone draws a pressed (`:active`) state only on pages that listen
+// for touches. An empty listener is enough, and every press style in the
+// stylesheets (cards, tiles, buttons squashing in) then shows under a finger.
+document.addEventListener('touchstart', () => {}, { passive: true });
 // A spinner on whichever button was pressed and is now working.
 listenForPresses();
 pauseOffscreenAnimations();

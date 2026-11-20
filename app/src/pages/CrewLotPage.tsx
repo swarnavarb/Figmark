@@ -289,7 +289,7 @@ export function CrewLotPage() {
                   <div key={button.key} className={`cl-btncard${all ? ' is-done' : ''}`}>
                     <span className="cl-btncard__label">⚡ {button.label}</span>
                     <span className="cl-btncard__step">{button.step}{button.assigned ? '' : ' · your part of the trip'}</span>
-                    <span className="cl-btncard__bar"><span style={{ width: `${view.items.length ? (count / view.items.length) * 100 : 0}%` }} /></span>
+                    <span className="cl-btncard__bar"><span style={{ '--p': `${view.items.length ? (count / view.items.length) * 100 : 0}%` } as CSSProperties} /></span>
                     <span className="cl-btncard__foot">
                       <span><b>{count}</b>/{view.items.length}</span>
                       {!all && pressable.length > 0 && (
@@ -569,7 +569,7 @@ function HandlerSummary({ view, groups, busy, filter, onFilter, onPress }: {
               <span className="hx-step__label">{shortLabel(button)}</span>
               <span className="hx-meter" role="progressbar" aria-label={`${button.label}: ${count} of ${view.items.length} orders`}
                 aria-valuemin={0} aria-valuemax={view.items.length} aria-valuenow={count}>
-                <span style={{ width: `${view.items.length ? (count / view.items.length) * 100 : 0}%` }} />
+                <span style={{ '--p': `${view.items.length ? (count / view.items.length) * 100 : 0}%` } as CSSProperties} />
               </span>
               <span className="hx-step__count"><b>{count}</b>/{view.items.length}</span>
               <span className="hx-step__acts">

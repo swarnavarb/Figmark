@@ -754,7 +754,7 @@ function SellForm({ serverDraft, draftMissing }: {
   // filled in and refused on publish.
   if (!storeId && user && user.sellerProfile === null) {
     return (
-      <main className="page tab-view">
+      <main className="page">
         <div className="page__head">
           <div>
             <h1>Open a business</h1>

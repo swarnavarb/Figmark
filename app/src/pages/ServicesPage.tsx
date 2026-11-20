@@ -60,7 +60,7 @@ export function ServicesPage() {
   }, [user]);
 
   return (
-    <main className="page tab-view">
+    <main className="page">
       <div className="page__head">
         <div>
           <h1>Services</h1>
@@ -649,7 +649,7 @@ export function SupplierPage() {
 
   const waiting = (rows ?? []).filter((row) => row.toPress > 0).length;
   return (
-    <main className="page tab-view">
+    <main className="page">
       <WorkSwitcher />
       <div className="page__head">
         <div>
@@ -717,7 +717,7 @@ function CrewCard({ row }: { row: CrewRow }) {
           : <span className="badge badge--ok">Done for now</span>}
       </span>
       <span className="faint">{row.store.name} · {row.lot.step || row.lot.stage.replace(/_/g, ' ')}</span>
-      <span className="ms-crew__bar" aria-hidden="true"><span style={{ width: `${Math.round(progress * 100)}%` }} /></span>
+      <span className="ms-crew__bar" aria-hidden="true"><span style={{ '--p': `${Math.round(progress * 100)}%` } as CSSProperties} /></span>
       <span className="ms-crew__btns">
         {row.buttons.length === 0
           ? <span className="faint">No buttons handed to you on this route yet.</span>
@@ -824,7 +824,7 @@ export function DistributionPage() {
   }
 
   return (
-    <main className="page tab-view">
+    <main className="page">
       <WorkSwitcher />
       <div className="page__head">
         <div>

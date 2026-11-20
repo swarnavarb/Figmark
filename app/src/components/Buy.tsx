@@ -1,5 +1,5 @@
 import { confirmSentence } from './Ask';
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, type CSSProperties } from 'react';
 import type { CreditRecord, Listing, Order } from '@shared/models';
 import { affiliateUnitMinor, linkDiscountMinor } from '@shared/affiliate';
 import { DEAL_DEFAULT_HOURS, DEAL_HOUR_CHOICES, DEAL_MAX_HOURS } from '@shared/deals';
@@ -85,7 +85,7 @@ export function MoneyBar({ totalMinor, paidMinor, outstandingMinor, creditMinor 
         )}
       </div>
       <div className="moneybar__track" aria-hidden="true">
-        <span style={{ width: `${percent}%` }} />
+        <span style={{ '--p': `${percent}%` } as CSSProperties} />
       </div>
     </div>
   );

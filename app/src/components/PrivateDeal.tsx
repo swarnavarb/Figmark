@@ -1,5 +1,5 @@
 import { useToast } from './Feedback';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent, type CSSProperties } from 'react';
 import { useNow } from '../clock';
 import { Link, useNavigate } from 'react-router-dom';
 import type { Message, MessageDeal, MessageParty } from '@shared/models';
@@ -282,7 +282,7 @@ export function DealCard({ message, mine, us, onAnswer }: {
         </span>
       </div>
       {state === 'live' && span > 0 && (
-        <span className="dealcard__bar" aria-hidden="true"><i style={{ width: `${fraction * 100}%` }} /></span>
+        <span className="dealcard__bar" aria-hidden="true"><i style={{ '--p': `${fraction * 100}%` } as CSSProperties} /></span>
       )}
       {deal.listingId && (
         mine ? (

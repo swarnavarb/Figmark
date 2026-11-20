@@ -248,7 +248,7 @@ export function ShopPage() {
   }
   if (!own) {
     return (
-      <main className="page tab-view">
+      <main className="page">
         <BackBar onBack={() => setOpening(false)} title="Open your storefront" />
         <div className="page__head">
           <div>
@@ -295,7 +295,7 @@ export function ManagedShopPage() {
   if (store?.isOwner) return <Navigate to="/shop" replace />;
   if (!store) {
     return (
-      <main className="page tab-view">
+      <main className="page">
         <BackBar onBack={() => navigate('/services/mine')}>All my work</BackBar>
         <EmptyState title="You do not help run this shop">
           Its owner may have changed who has access. The shops you help run are in the switcher at the top of the Sell tab.
@@ -313,7 +313,7 @@ export function ManagedShopPage() {
  */
 function ShopStart({ onOpen, helping }: { onOpen: () => void; helping: StoreAccess[] }) {
   return (
-    <main className="page tab-view">
+    <main className="page">
       {/* No shop of your own, but other work: it is one tap away from here. */}
       <WorkSwitcher title={helping.length > 0 ? 'Shops you help run and more' : undefined} />
       <OpenBusinessHead />
@@ -422,7 +422,7 @@ function ShopConsole({ store, onChanged }: { store: StoreAccess; onChanged: () =
   return (
     <ShopBase.Provider value={base}>
     <ProOwnerProvider ownerId={store.ownerId}>
-    <main className="page tab-view sellpage">
+    <main className="page sellpage">
       {store.isOwner && <FeeLockBanner />}
       {store.isOwner && <CancelFlagBanner />}
       {store.isOwner && <SetupChecklist hasStore />}
@@ -3045,7 +3045,7 @@ function MoneyLine({ total, paid, balance, share, due, children }: {
 }) {
   return (
     <div className="mline">
-      <div className="mline__bar" aria-hidden="true"><span style={{ width: `${share}%` }} /></div>
+      <div className="mline__bar" aria-hidden="true"><span style={{ '--p': `${share}%` } as CSSProperties} /></div>
       <div className="mline__row">
         <span>Total <b>{total}</b></span>
         <span>Paid <b>{paid}</b></span>

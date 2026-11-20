@@ -347,9 +347,15 @@
   border: 1px solid var(--border); border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--surface) 86%, transparent);
   color: inherit; text-decoration: none;
-  transition: border-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
+  transition: border-color var(--dur-1) var(--ease), transform var(--spring-bouncy-dur) var(--spring-bouncy);
+  -webkit-tap-highlight-color: transparent;
 }
 .discitem:hover { border-color: var(--border-strong); transform: translateY(-1px); }
+/* A tap presses the card in, fast; letting go springs it back. */
+.discitem:active { border-color: var(--border-strong); transform: scale(0.96); transition: border-color var(--dur-1) var(--ease), transform 120ms var(--ease-out); }
+@media (prefers-reduced-motion: reduce) {
+  .discitem:active { transform: none; opacity: 0.8; }
+}
 /* The picture holds its square whatever the photo's shape: a tall photo used
    to stretch it and push the price out of the card. */
 .discitem__art { position: relative; display: block; }
@@ -532,3 +538,8 @@ a.discweek__row:active { transform: scale(0.99); }
 .spreadhero__stats { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0; font-size: var(--t-xs); color: var(--text-dim); }
 .spreadhero__stats b { color: var(--text); font-variant-numeric: tabular-nums; }
 .spreadhero__stats .spreadhero__mine { color: var(--ok); }
+
+@media (pointer: coarse) {
+  /* 16px or iOS zooms the page when the field takes focus. */
+  .discsearch__field input { font-size: max(16px, calc(16px * var(--text-scale))); }
+}

@@ -436,7 +436,7 @@ const SHAPES = {
     </main>
   ),
   sell: () => (
-    <main className="page tab-view psk">
+    <main className="page psk">
       <BackTitle title="List an item" />
       <S w="70%" h={11} />
       <Card h={128}><span className="psk-row"><S w={30} h={30} r={8} /><span className="psk-lines" style={{ flex: 1 }}><S w="40%" /><S w="80%" h={9} /></span></span><S w={120} h={30} r={999} /></Card>
@@ -445,7 +445,7 @@ const SHAPES = {
     </main>
   ),
   shop: () => (
-    <main className="page tab-view psk">
+    <main className="page psk">
       <Card><S w={110} h={10} /><div className="psk-tiles2">{Array.from({ length: 4 }, (_, i) => <span key={i} className="psk-tile"><S w={26} h={20} /><S w="60%" h={9} /></span>)}</div><Lines n={2} h={9} /></Card>
       <S h={48} r={12} />
       <div className="psk-tiles3">{Array.from({ length: 3 }, (_, i) => <span key={i} className="psk-tile psk-tile--tall"><S w={26} h={26} /><S w="80%" h={9} /><S w="50%" h={9} /></span>)}</div>
@@ -454,7 +454,7 @@ const SHAPES = {
     </main>
   ),
   lotboard: () => (
-    <main className="page tab-view psk">
+    <main className="page psk">
       <Back text="Track" />
       <span className="psk-row"><S w={80} h={24} /><S w={84} h={22} r={8} /><S w={56} h={22} r={999} /><S w={66} h={22} r={999} /></span>
       <S w={110} h={10} />
@@ -491,7 +491,7 @@ const SHAPES = {
     </main>
   ),
   services: () => (
-    <main className="page tab-view psk">
+    <main className="page psk">
       <Head title="Services" sub={2} />
       <Hero h={170} />
       <Hero h={170} />
@@ -589,7 +589,7 @@ const SHAPES = {
     </main>
   ),
   social: () => (
-    <main className="page tab-view social psk">
+    <main className="page social psk">
       <div className="psk-tiles5">{Array.from({ length: 5 }, (_, i) => <S key={i} h={58} r={14} />)}</div>
       <Card h={110}><span className="psk-row"><S w={40} h={40} r="50%" /><S h={40} r={999} style={{ flex: 1 }} /></span><span className="psk-row psk-row--between"><S w={60} /><S w={40} /><S w={60} /><S w={56} /></span></Card>
       <span className="psk-row psk-scroll"><S w={96} h={34} r={999} /><S w={150} h={34} r={999} /><S w={84} h={34} r={999} /></span>
@@ -627,7 +627,7 @@ const SHAPES = {
     </main>
   ),
   dispute: () => (
-    <main className="page tab-view psk">
+    <main className="page psk">
       <Back />
       <div className="page__head psk-lines">
         <S w={170} h={9} />
@@ -653,7 +653,7 @@ const SHAPES = {
     </main>
   ),
   community: () => (
-    <main className="page tab-view psk">
+    <main className="page psk">
       <BackTitle title="Community Service" />
       <S w="74%" h={11} />
       <S w={150} h={34} r={999} />
