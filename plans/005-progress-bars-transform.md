@@ -1,6 +1,6 @@
 # 005 — Animate progress fills with transform, not width
 
-- **Status**: TODO
+- **Status**: DONE (applied in this branch)
 - **Commit**: a9e1b80
 - **Severity**: LOW
 - **Category**: Performance

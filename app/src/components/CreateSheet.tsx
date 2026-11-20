@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { SkelRows } from './PageSkeletons';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
@@ -9,6 +9,8 @@ import { api, type ServiceStoreRole } from '../api';
 import { useSession } from '../session';
 import { VoiceScope, remembered } from './SocialVoice';
 import type { StudioMode } from './PostStudio';
+import { reducedMotion } from '../motion';
+import { Velocity } from '../spring';
 
 
 /*
@@ -122,7 +124,79 @@ const STAGGER_MS = 28;
  * those go there. Everything else is made right here, in the studio, over
  * whatever page you were on, and lands you on the post once it is up.
  */
+/**
+ * Pull the sheet down to put it away, the way a phone's own sheets go.
+ *
+ * Grabbed by its top (the grip and the title, never the list, which scrolls),
+ * it follows the finger 1:1; pulled up it resists, a fifth as far. Let go past
+ * a third of its height, or flicked down faster than 0.11 px/ms, it slides out
+ * and closes; otherwise it springs back. Moves are written straight to the
+ * element's style, so a drag never re-renders the sheet.
+ */
+function useDragToClose(onClose: () => void) {
+  const box = useRef<HTMLDivElement>(null);
+  const held = useRef<{ y: number; height: number; id: number } | null>(null);
+  const speed = useRef(new Velocity());
+
+  function down(event: ReactPointerEvent<HTMLDivElement>) {
+    const el = box.current;
+    if (!el || event.button !== 0 || (event.target as HTMLElement).closest('button, a, input, textarea, select')) return;
+    const top = el.getBoundingClientRect().top;
+    // Only the top of the sheet: the grip and the title above the choices.
+    const head = el.querySelector('.csheet__head');
+    const limit = head ? head.getBoundingClientRect().bottom : top + 56;
+    if (event.clientY > limit) return;
+    held.current = { y: event.clientY, height: el.offsetHeight, id: event.pointerId };
+    speed.current.reset(0, event.timeStamp);
+    // The entrance animation holds transform while it runs: let go of it.
+    el.style.animation = 'none';
+    el.style.transition = 'none';
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function move(event: ReactPointerEvent<HTMLDivElement>) {
+    const grip = held.current;
+    const el = box.current;
+    if (!grip || !el || event.pointerId !== grip.id) return;
+    const dy = event.clientY - grip.y;
+    speed.current.track(dy, event.timeStamp);
+    const shown = dy < 0 ? dy * 0.2 : dy;
+    el.style.transform = `translateY(${shown}px)`;
+  }
+
+  function up(event: ReactPointerEvent<HTMLDivElement>) {
+    const grip = held.current;
+    const el = box.current;
+    held.current = null;
+    if (!grip || !el) return;
+    const dy = event.clientY - grip.y;
+    const fling = speed.current.at(event.timeStamp);
+    if (dy > 0 && (dy > grip.height * 0.3 || fling > 0.11)) {
+      if (reducedMotion()) {
+        onClose();
+        return;
+      }
+      el.style.transition = 'transform 240ms var(--ease-out)';
+      el.style.transform = 'translateY(100%)';
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        onClose();
+      };
+      el.addEventListener('transitionend', finish, { once: true });
+      window.setTimeout(finish, 320);
+      return;
+    }
+    el.style.transition = 'transform var(--spring-snappy-dur) var(--spring-snappy)';
+    el.style.transform = '';
+  }
+
+  return { box, handlers: { onPointerDown: down, onPointerMove: move, onPointerUp: up, onPointerCancel: up } };
+}
+
 export function CreateSheet({ onClose }: { onClose: () => void }) {
+  const drag = useDragToClose(onClose);
   const navigate = useNavigate();
   const { user } = useSession();
   const [making, setMaking] = useState<{ action: Action; storeId: string | null; storeName: string | null } | null>(null);
@@ -224,7 +298,7 @@ export function CreateSheet({ onClose }: { onClose: () => void }) {
 
   return createPortal(
     <div className="csheet" role="presentation" onClick={(event) => event.target === event.currentTarget && onClose()}>
-      <div className="csheet__box" role="dialog" aria-modal="true" aria-labelledby="csheet-title">
+      <div ref={drag.box} className="csheet__box" role="dialog" aria-modal="true" aria-labelledby="csheet-title" {...drag.handlers}>
         <span className="csheet__grip" aria-hidden="true" />
         <div className="csheet__head">
           <h2 id="csheet-title" className="csheet__title">

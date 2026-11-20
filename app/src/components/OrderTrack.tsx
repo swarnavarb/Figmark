@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { ReactNode, CSSProperties } from 'react';
 import type { Order } from '@shared/models';
 import { renderStepText, type RouteStep, type StageIcon } from '@shared/routes';
 import { settledHistory } from '@shared/fulfilment';
@@ -70,7 +70,7 @@ export function TrackHero({ icon, now, sub, done, total, children }: {
       </div>
       <div className="trk__bar" role="progressbar" aria-valuenow={share} aria-valuemin={0} aria-valuemax={100}
         aria-label="How far along it is">
-        <span style={{ width: `${share}%` }} />
+        <span style={{ '--p': `${share}%` } as CSSProperties} />
       </div>
       {children}
     </div>

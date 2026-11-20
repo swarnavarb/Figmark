@@ -17,7 +17,7 @@
   background: radial-gradient(120% 90% at 0% 0%, color-mix(in srgb, var(--tile) 20%, transparent), transparent 62%), var(--surface-2);
   color: var(--text); font: inherit; text-align: left; cursor: pointer;
   animation: engage-in 420ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
-  transition: border-color var(--dur-1) ease, transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: border-color var(--dur-1) ease, transform var(--spring-bouncy-dur) var(--spring-bouncy);
 }
 .sengage__start strong { font-size: var(--t-sm); line-height: 1.25; }
 .sengage__line { font-size: var(--t-xs); color: var(--text-dim); line-height: 1.3; }

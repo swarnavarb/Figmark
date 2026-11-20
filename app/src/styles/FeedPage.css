@@ -108,7 +108,7 @@
 .qseller__lv { display: flex; min-width: 0; }
 .qtimer--ago { color: var(--text-faint); }
 .qheart:active { transform: scale(0.85); }
-.qheart { transition: transform var(--dur-1) cubic-bezier(0.34, 1.56, 0.64, 1), background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease); }
+.qheart { transition: transform 160ms var(--ease-out), background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease); }
 .qloot__drop {
   position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; gap: 5px;
   padding: 5px var(--s2); font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.08em; text-transform: uppercase;
@@ -141,7 +141,7 @@
   position: absolute; top: 4px; bottom: 4px; left: 0; border-radius: var(--r-pill); overflow: hidden;
   background: var(--grad-blue);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12) inset, 0 4px 16px rgba(124, 58, 237, 0.55);
-  transition: transform 420ms cubic-bezier(0.34, 1.56, 0.64, 1), width 420ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform var(--spring-snappy-dur) var(--spring-snappy), width var(--spring-snappy-dur) var(--spring-snappy);
 }
 .qkinds__flash {
   position: absolute; inset: 0;
@@ -149,7 +149,7 @@
   transform: translateX(-100%); animation: qkinds-flash 700ms 120ms ease-out forwards;
 }
 .qkind:active { transform: scale(0.92); }
-.qkind__icon { display: grid; opacity: 0.7; transition: transform var(--dur-2) cubic-bezier(0.34, 1.56, 0.64, 1), opacity var(--dur-2); }
+.qkind__icon { display: grid; opacity: 0.7; transition: transform var(--spring-bouncy-dur) var(--spring-bouncy), opacity var(--dur-2); }
 .qkind:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .qfeed .filters .picker:nth-child(2) { animation-delay: 60ms; }
 .qfeed .filters .picker:nth-child(3) { animation-delay: 120ms; }
@@ -158,9 +158,9 @@
 .picker__icon {
   width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; flex: none;
   background: rgba(255, 255, 255, 0.07); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
-  transition: transform var(--dur-2) cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform var(--spring-bouncy-dur) var(--spring-bouncy);
 }
-.picker::after { transition: transform var(--dur-2) cubic-bezier(0.34, 1.56, 0.64, 1); }
+.picker::after { transition: transform var(--spring-bouncy-dur) var(--spring-bouncy); }
 .picker:focus-within::after { transform: translateY(1px) rotate(225deg); }
 @media (prefers-reduced-motion: reduce) {
   .qripple, .qkinds__flash { display: none; }
@@ -313,7 +313,7 @@
   position: relative; width: 58px; height: 58px; border-radius: 18px;
   background: var(--carbon); border: 0;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 0 0 1px rgba(255, 255, 255, 0.07), 0 6px 14px rgba(0, 0, 0, 0.35);
-  transition: transform var(--dur-2) cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow var(--dur-2) var(--ease);
+  transition: transform var(--spring-bouncy-dur) var(--spring-bouncy), box-shadow var(--dur-2) var(--ease);
 }
 .qfeed .qzone:hover .qzone__medal { transform: translateY(-2px); }
 .qfeed .qzone:active .qzone__medal { transform: scale(0.94); }
@@ -326,7 +326,7 @@
 .qzone__label::after {
   content: ''; position: absolute; left: 50%; bottom: 0; width: 22px; height: 3px; margin-left: -11px;
   transform: skewX(-24deg) scaleX(0); border-radius: 1px; background: var(--volt);
-  transition: transform var(--dur-2) cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform var(--spring-bouncy-dur) var(--spring-bouncy);
 }
 .qfeed .qzone.is-on { color: var(--text); font-weight: inherit; }
 .qfeed .qzone.is-on .qzone__label { font-weight: 800; }
