@@ -10739,13 +10739,12 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
   --story-bg: radial-gradient(70% 90% at 50% 0%, rgba(167, 139, 250, 0.22), transparent 65%), linear-gradient(180deg, #24102A 0%, #1A0B1E 60%, #110713 100%);
 }
 @keyframes story-focus { from { opacity: 0; filter: blur(6px); transform: scale(0.94); } }
-.sc-spot {
-  left: var(--x); top: -10%; width: 120px; height: 130%; margin-left: -60px; transform-origin: 50% 0;
-  background: linear-gradient(180deg, rgba(254, 243, 199, 0.28), rgba(254, 243, 199, 0.06) 80%, transparent);
-  clip-path: polygon(44% 0, 56% 0, 100% 100%, 0 100%);
-  animation: sc-spot 7s ease-in-out var(--d) infinite alternate;
+.sc-haze {
+  left: -10%; right: -10%; top: 0; height: 70%;
+  background: radial-gradient(50% 60% at 30% 20%, rgba(254, 243, 199, 0.08), transparent 70%), radial-gradient(45% 55% at 75% 30%, rgba(253, 164, 175, 0.08), transparent 70%);
+  animation: sc-haze 14s ease-in-out infinite alternate;
 }
-@keyframes sc-spot { from { transform: rotate(-16deg); } to { transform: rotate(16deg); } }
+@keyframes sc-haze { from { transform: translateX(-4%); opacity: 0.7; } to { transform: translateX(4%); opacity: 1; } }
 .sc-curtain { top: 0; bottom: 0; width: 52%; }
 .sc-curtain--left { left: 0; }
 .sc-curtain--right { right: 0; }
