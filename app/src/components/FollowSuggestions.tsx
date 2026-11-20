@@ -22,7 +22,7 @@ export function FollowSuggestions({ title = 'People to follow', onFollowed }: {
   const [rows, setRows] = useState<FollowSuggestion[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const story = useStory('cast');
+  const story = useStory('stage');
 
   useEffect(() => {
     let live = true;
@@ -63,6 +63,7 @@ export function FollowSuggestions({ title = 'People to follow', onFollowed }: {
 
   return (
     <section ref={story.ref} className={`fsug ${story.className}`} aria-label={title}>
+      {story.scene}
       <StoryTag>Chapter · The cast</StoryTag>
       <h2 className="fsug__title"><Icon name="users" size={15} /> {title}</h2>
       <div className="fsug__row story__row">
