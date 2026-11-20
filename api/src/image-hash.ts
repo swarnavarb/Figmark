@@ -48,6 +48,8 @@ export const HASH_VERSION = 'v2';
 const WORK_EDGE = 512;
 /** Items told apart in one photo, at most: a shelf of figures is a dozen. */
 export const MAX_REGIONS = 12;
+/** Beside the largest thing, one under this share of its size is a speck - a logo, a sticker - unless it is solid enough to be a ring or an earring. */
+const SPECK = 0.012;
 
 /** Working copies already made, by the picture they were made from: a search reads one photo many times. */
 const workingCopies = new WeakMap<Raw, Raw>();
@@ -516,7 +518,11 @@ function adjacency(thing: Raw, view: View): string {
 /* ── Telling the items in a photo apart ─────────────────────────────────── */
 
 /** Cells across the longer side of the grid items are found on. */
-const SEGMENT_CELLS = 48;
+const SEGMENT_CELLS = 96;
+/** A shape smaller than this share of the photo is a speck - though an earring on a tray is not much more. */
+const MIN_SHARE = 0.001;
+/** A small piece this close to a much larger one (a share of the photo's longer side) is part of it. */
+const NEAR = 0.05;
 
 interface Segmented {
   /** Around everything that is not backdrop; null when the backdrop could not be told. */
@@ -574,7 +580,7 @@ function segment(raw: Raw, given?: View): Segmented {
   // The separate shapes, by flood fill.
   const label = new Int32Array(width * height).fill(-1);
   const boxes: { box: RegionBox; cells: number }[] = [];
-  const minCells = Math.max(4, width * height * 0.008);
+  const minCells = Math.max(4, width * height * MIN_SHARE);
   for (let start = 0; start < mask.length; start += 1) {
     if (!mask[start] || label[start]! >= 0) continue;
     const queue = [start];
@@ -608,7 +614,7 @@ function segment(raw: Raw, given?: View): Segmented {
   // figure printed on it. So is a small piece right beside a much larger one:
   // the dark sole under a white-soled shoe, a head over a body, cut off by a
   // band the colour of the backdrop. Two things of a size side by side stay two.
-  const near = 4 / Math.max(width, height);
+  const near = NEAR;
   const gap = (a: RegionBox, b: RegionBox) => Math.max(
     0, Math.max(a[0], b[0]) - Math.min(a[0] + a[2], b[0] + b[2]), Math.max(a[1], b[1]) - Math.min(a[1] + a[3], b[1] + b[3]),
   );
@@ -637,7 +643,7 @@ function segment(raw: Raw, given?: View): Segmented {
   merged.sort((a, b) => area(b) - area(a));
   const largest = area(merged[0]!);
   // A speck beside the main thing - a logo, a price sticker - is not an item.
-  merged = merged.filter((box) => area(box) >= largest * 0.08).slice(0, MAX_REGIONS);
+  merged = merged.filter((box) => area(box) >= largest * SPECK).slice(0, MAX_REGIONS);
   return { subject, items: merged.length >= 2 ? merged : [] };
 }
 

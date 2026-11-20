@@ -1,4 +1,4 @@
-import type { PhotoBox } from './api';
+import type { PhotoBox, PhotoItem } from './api';
 
 /**
  * Which of an object detector's boxes are things a shopper would buy.
@@ -37,11 +37,13 @@ const PACKAGE = new Set(['book']);
  * is skis or a tie to it, Mickey a dog - but where it is is right. So any
  * name will do, except the things a photo of a shelf is taken in front of.
  */
-const SCENERY = new Set(['dining table', 'bed', 'couch', 'chair', 'bench', 'tv', 'refrigerator', 'oven', 'sink', 'toilet', 'car', 'bus', 'truck', 'train', 'airplane', 'boat', 'traffic light', 'stop sign', 'parking meter', 'fire hydrant']);
+const SCENERY = new Set(['dining table', 'bed', 'couch', 'chair', 'bench', 'tv', 'refrigerator', 'oven', 'sink', 'toilet', 'traffic light', 'stop sign', 'parking meter', 'fire hydrant']);
+/** Things that are a figure, so that one inside another of them is a part found twice. */
+const BODY = new Set([...FIGURE, 'skis', 'tie']);
 /** A box over this much of the photo is the shelf or the wall, not a thing on it. */
 const MAX_AREA = 0.5;
 /** Under this much of it, a speck. */
-const MIN_AREA = 0.004;
+const MIN_AREA = 0.002;
 /** At most this many things are offered. */
 export const MAX_THINGS = 20;
 
@@ -55,7 +57,7 @@ function inside(inner: PhotoBox, outer: PhotoBox): number {
 }
 
 /** Shared area over combined area, 0 to 1. */
-function sameness(a: PhotoBox, b: PhotoBox): number {
+export function sameness(a: PhotoBox, b: PhotoBox): number {
   const shared = inside(a, b) * areaOf(a);
   return shared / (areaOf(a) + areaOf(b) - shared);
 }
@@ -87,8 +89,10 @@ export function thingsIn(detections: Detected[]): PhotoBox[] {
     // A torso found inside its own whole figure is that figure found twice;
     // a figure standing behind another shares less of its box, and stays.
     // Two boxes round mostly the same pixels are one figure seen from two views.
-    if (loose.some((kept) => inside(figure.box, kept.box) >= 0.8 || inside(kept.box, figure.box) >= 0.8
-      || sameness(figure.box, kept.box) >= 0.5)) continue;
+    // A bag, a phone or a watch held by a person is inside the person's box
+    // too, but is a thing of its own: only a body inside a body is the same.
+    const part = (a: Detected, b: Detected) => BODY.has(a.label) && BODY.has(b.label) && inside(a.box, b.box) >= 0.8;
+    if (loose.some((kept) => part(figure, kept) || part(kept, figure) || sameness(figure.box, kept.box) >= 0.5)) continue;
     loose.push(figure);
   }
 
@@ -100,4 +104,20 @@ export function thingsIn(detections: Detected[]): PhotoBox[] {
     .sort((a, b) => prominence(b) - prominence(a))
     .slice(0, MAX_THINGS)
     .map(({ box }) => box.map((part) => Math.round(part * 1000) / 1000) as PhotoBox);
+}
+
+/**
+ * The things the phone found, then those the server found that the phone did
+ * not - it sees what stands off a plain backdrop, which is how a shoe, a watch
+ * or a ring is photographed, and the detector has no name for those. A thing
+ * both found keeps the phone's box and takes the server's name for it.
+ */
+export function mergeItems(phone: PhotoItem[], server: PhotoItem[]): PhotoItem[] {
+  if (server.length === 0) return phone;
+  const same = (a: PhotoBox, b: PhotoBox) => sameness(a, b) >= 0.5 || inside(a, b) >= 0.8 || inside(b, a) >= 0.8;
+  const named = phone.map((item) => ({
+    ...item, label: item.label ?? server.find((other) => sameness(item.box, other.box) >= 0.8)?.label ?? null,
+  }));
+  const more = server.filter((item) => !phone.some((seen) => same(seen.box, item.box)));
+  return [...named, ...more].slice(0, MAX_THINGS);
 }

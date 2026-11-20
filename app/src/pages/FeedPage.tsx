@@ -44,6 +44,7 @@ import {
 } from '../components/ShopFinder';
 import { clearPhotoQuery, holdsPhotoQuery, usePhotoQuery } from '../photoQuery';
 import { detectThings } from '../photoDetect';
+import { mergeItems } from '../photoThings';
 import '../styles/FeedPage.css';
 import { Select } from '../components/Select';
 
@@ -58,6 +59,7 @@ import { Select } from '../components/Select';
  */
 /** Listings per catalogue page, as the API counts them. */
 const CATALOG_PAGE = 100;
+const NO_ITEMS: PhotoItem[] = [];
 /** The API's own ceiling (400 listings). */
 const CATALOG_MAX_PAGES = 4;
 
@@ -93,14 +95,16 @@ export function useCatalog() {
   const [photoSuggested, setPhotoSuggested] = useState<PhotoSuggestion[]>([]);
   // Which part of the photo is searched with, and the things found in it -
   // all belong to one photo, so a new photo starts afresh. The things come
-  // from the phone's own look (photoDetect.ts) when it finds any, else from
-  // the server's answer about the whole photo.
+  // from the phone's own look (photoDetect.ts) and from the server's answer
+  // about the whole photo, which finds what stands off a plain backdrop - a
+  // shoe, a watch, a ring the phone's detector has no name for.
   const [focus, setFocus] = useState<{ photoId: string; box: PhotoBox | null }>({ photoId: '', box: null });
   const [seen, setSeen] = useState<{ photoId: string; items: PhotoItem[] }>({ photoId: '', items: [] });
   const [told, setTold] = useState<{ photoId: string; items: PhotoItem[] }>({ photoId: '', items: [] });
   const photoRegion = photo && focus.photoId === photo.id ? focus.box : null;
-  const seenItems = photo && seen.photoId === photo.id ? seen.items : [];
-  const photoItems = seenItems.length > 0 ? seenItems : photo && told.photoId === photo.id ? told.items : [];
+  const seenItems = photo && seen.photoId === photo.id ? seen.items : NO_ITEMS;
+  const toldItems = photo && told.photoId === photo.id ? told.items : NO_ITEMS;
+  const photoItems = useMemo(() => mergeItems(seenItems, toldItems), [seenItems, toldItems]);
   const pickRegion = useCallback((box: PhotoBox | null) => {
     if (photo) setFocus({ photoId: photo.id, box });
   }, [photo]);

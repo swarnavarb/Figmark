@@ -539,6 +539,33 @@ await check('a photo of several things is told apart into each, and each gets a 
   assert.deepEqual(detectItems(pixels(camera(400, 300, boot(0.5, 0.5, 0.4)))), []);
 });
 
+/** A jewellery tray: a watch on its strap, a necklace with a pendant, two rings and a pair of earrings, on dark velvet. */
+const tray = (x, y) => {
+  const at = (cx, cy) => Math.hypot(x - cx, y - cy);
+  const hoop = (cx, cy, r, t) => at(cx, cy) < r && at(cx, cy) > r - t;
+  if (at(0.18, 0.37) < 0.07) return at(0.18, 0.37) < 0.06 ? [240, 240, 235] : [200, 200, 205];
+  if (Math.abs(x - 0.18) < 0.035 && Math.abs(y - 0.37) < 0.2) return [90, 55, 30];
+  if (hoop(0.5, 0.3, 0.16, 0.012) && y > 0.2) return [212, 175, 70];
+  if (at(0.5, 0.47) < 0.02) return [30, 120, 200];
+  if (hoop(0.78, 0.2, 0.035, 0.01)) return [212, 175, 70];
+  if (hoop(0.9, 0.2, 0.03, 0.009)) return [200, 200, 205];
+  if (at(0.78, 0.5) < 0.015 || at(0.86, 0.5) < 0.015) return [230, 230, 240];
+  return [52, 48, 60];
+};
+
+await check('not just figures: a watch, a necklace, rings and earrings on a tray, and a pair of shoes, are each told apart', async () => {
+  // Painted on a square, so a circle is a circle on the wider photo.
+  const items = detectItems(pixels(camera(1000, 600, (x, y) => tray(x, y * 0.6))));
+  assert.equal(items.length, 6, JSON.stringify(items));
+  const small = items.filter(([, , w, h]) => w * h < 0.02);
+  assert.equal(small.length, 4, 'the rings and the earrings, each on its own');
+  const shoes = detectItems(pixels(camera(800, 400, (x, y) => {
+    const left = boot(0.3, 0.45, 0.4, { ground: [245, 245, 245] })(x, y);
+    return left[0] === 245 ? boot(0.7, 0.45, 0.4, { ground: [245, 245, 245] })(x, y) : left;
+  })));
+  assert.equal(shoes.length, 2, JSON.stringify(shoes));
+});
+
 await check('a photo search names each item, and the shopper can search with one, or the whole photo', async () => {
   const repository = await getRepository();
   const store = await getPhotoStore();
