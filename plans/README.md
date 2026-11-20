@@ -39,5 +39,6 @@ agent and it has every path, value and check it needs.
   animations for one change. In-page tab swaps keep `.tab-view`.
 - The Pro tab chip no longer loops its gradient drift (it's a tab people flip
   through, and `background-position` loops repaint every frame).
-- The "expires soon" chip pulses once instead of forever; the PRO badge
-  sheens once on arrival instead of every 3.6s in every list row.
+- The "expires soon" chip and the PRO badge keep their endless pulse and
+  shine (reduced on request, then restored by the product owner); both stop
+  under reduced motion, as they always did.

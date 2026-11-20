@@ -4133,7 +4133,7 @@ a.psheet__row:hover { background: var(--surface-hover); }
 .expchip { background: var(--aqua-soft); color: var(--aqua); box-shadow: inset 0 0 0 1px var(--aqua-line); }
 .expchip--soon {
   background: var(--grad-warm); color: #fff; box-shadow: 0 4px 14px rgba(255, 90, 95, 0.35);
-  animation: expchip-pulse 1.6s ease-in-out;
+  animation: expchip-pulse 1.6s ease-in-out infinite;
 }
 @keyframes expchip-pulse { 50% { transform: scale(1.05); } }
 .moneybar__nums > span {
@@ -9379,7 +9379,7 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .probadge-sport::after {
   content: ''; position: absolute; inset: 0; transform: translateX(-120%);
   background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.65) 50%, transparent 70%);
-  animation: probadge-sheen 3.6s ease-in-out;
+  animation: probadge-sheen 3.6s ease-in-out infinite;
 }
 .probadge-sport--sm { font-size: var(--t-2xs); }
 .probadge-sport--md { font-size: var(--t-xs); padding: 2px 10px 2px 9px; }
