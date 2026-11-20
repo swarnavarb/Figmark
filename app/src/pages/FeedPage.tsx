@@ -161,11 +161,13 @@ export function useCatalog() {
     const known = !photoRegion && seenBoxes.current.photoId === photo.id ? seenBoxes.current.boxes : [];
     void api.photoSearch(photo.dataUrl, photoRegion, known)
       .then((result) => {
+        // What the server found in the whole photo, beside what the phone
+        // found - kept even when a pick has since been made, which happens
+        // as soon as the phone's first dot comes: told is kept per photo.
+        if (!photoRegion) setTold({ photoId: photo.id, items: result.items ?? [] });
         if (cancelled) return;
         setPhotoFound(result.listings);
         setPhotoSuggested(result.suggested ?? []);
-        // What the server found in the whole photo: used when the phone finds nothing.
-        if (!photoRegion) setTold({ photoId: photo.id, items: result.items ?? [] });
         setError(null);
       })
       .catch((err: Error) => !cancelled && setError(err.message))
