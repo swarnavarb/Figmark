@@ -65,6 +65,7 @@ import { refreshIfStale } from '../seller-stats.js';
 import { isViewSource, searchTerm } from '../../../shared/seller-data.js';
 import { recordSearch } from '../search-log.js';
 import { alertWantsListed } from './want-routes.js';
+import { dnaForListing } from '../dna.js';
 
 /** Public seller summary attached to feed cards and listing pages. */
 function toSellerCard(user: SellerCardSource) {
@@ -618,7 +619,7 @@ async function searchOneItem(raw: Raw, box: RegionBox): Promise<Searched> {
 let catalogue: { at: number; listings: Promise<Listing[]>; next: Promise<Listing[]> | null } | null = null;
 const CATALOGUE_MS = 60_000;
 
-function everyListing(repository: Awaited<ReturnType<typeof getRepository>>): Promise<Listing[]> {
+export function everyListing(repository: Awaited<ReturnType<typeof getRepository>>): Promise<Listing[]> {
   if (!catalogue) {
     const listings = repository.listListings({ includeHidden: true });
     catalogue = { at: Date.now(), listings, next: null };
@@ -1097,6 +1098,8 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
   if (dibs) await announceFirstDibs(repository, created, dibs.optionId).catch(() => undefined);
   // What a shop lists is what it is about: its tags count toward its identity.
   if (!privateFor) await refreshIdentity(repository, created.sellerId);
+  // Its Product DNA: joined to the same product's, or started. Never the reason a listing fails.
+  if (!privateFor) await everyListing(repository).then((all) => dnaForListing(repository, created, all)).catch(() => null);
   // Anybody hunting for this hears it is here. Never the reason a listing fails.
   if (!privateFor && !created.unlisted) {
     const shop = await repository.getUserById(sellerId).catch(() => null);

@@ -16,6 +16,7 @@ import { BackLink } from '../components/ScrollManager';
 import { useSave } from '../components/useSave';
 import { Canopy, DetailBlocks, Gallery, Svg, Urgency } from '../components/ListingBlocks';
 import { ListingPosts } from '../components/ListingPosts';
+import { ListingDna } from '../components/DnaKit';
 import { Glyph, RarityRibbon } from '../components/Quest';
 import { BumpHelp, InfoTip, useBump } from '../components/QuestKit';
 import { listingRarity } from '@shared/quest';
@@ -454,6 +455,8 @@ export function ListingPage() {
                 onPosted={(href) => { setSpreading(false); navigate(href); }} />
             )}
             <DetailBlocks listing={listing} />
+            {/* Its Product DNA: every shop with this product, its prices, demand and owners' reviews. */}
+            {!listing.privateFor && <ListingDna listingId={listing.id} />}
             {/* A loose figure is where a restorer or a painter earns their keep: the studios that do it. */}
             {listing.condition === 'LOOSE' && !listing.privateFor && (
               <div style={{ marginTop: 14 }}>

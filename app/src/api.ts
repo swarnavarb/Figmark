@@ -1,4 +1,5 @@
 import type { PayoutSummary } from '@shared/payouts';
+import type { DnaLinkKind, DnaSummary, DnaView } from '@shared/dna';
 import type { DayRange, DaySource, ShopDays } from '@shared/step-days';
 import type { LotCostKey, LotSplit } from '@shared/lot-costs';
 import type { CancelFlag, CancelSettings, CancelStats, FeeSettlement, FeeStatement, GiftMethod, GiverKind, PlatformFees, Pricing, ProFeatureId, ProGrant, ProPlan, StoreGift } from '@shared/billing';
@@ -3762,6 +3763,25 @@ export const api = {
   seenPosts: (items: SeenEntry[]) => post<{ counted: number }>('/social/seen', { items }),
   followSuggestions: () => request<{ suggestions: FollowSuggestion[] }>('/social/suggestions'),
   weeklyBest: () => request<Leaderboard>('/social/leaderboard'),
+  /** Product DNA: the whole page, or where a folded-in one went. */
+  dna: (id: string) => request<DnaView | { moved: string }>(`/dna/view/${encodeURIComponent(id)}`),
+  dnaOfListing: (id: string) => request<{ dna: DnaSummary | null }>(`/dna/of/listing/${encodeURIComponent(id)}`),
+  dnaOfPost: (channelId: string, id: string) =>
+    request<{ dnas: DnaSummary[]; yours: boolean }>(`/dna/of/post/${encodeURIComponent(channelId)}/${encodeURIComponent(id)}`),
+  dnaOfWant: (buyerId: string, id: string) =>
+    request<{ dna: DnaSummary | null; yours: boolean }>(`/dna/of/want/${encodeURIComponent(buyerId)}/${encodeURIComponent(id)}`),
+  dnaTrending: (category?: string | null) =>
+    request<{ products: DnaSummary[] }>(`/dna/trending${category ? `?category=${encodeURIComponent(category)}` : ''}`),
+  dnaSearch: (q: string, listingId?: string) => {
+    const query = new URLSearchParams({ q });
+    if (listingId) query.set('listing', listingId);
+    return request<{ products: DnaSummary[] }>(`/dna/search?${query.toString()}`);
+  },
+  reviewDna: (id: string, body: { rating: number; body: string; photoUrls: string[] }) =>
+    post<{ ok: true }>(`/dna/view/${encodeURIComponent(id)}/reviews`, body),
+  fixDna: (body: { kind: DnaLinkKind; id: string; partition: string; action: 'remove' | 'move' | 'tag' | 'new'; from?: string; to?: string }) =>
+    post<{ dna: string | null }>('/dna/fix', body),
+  mergeDna: (id: string, into: string) => post<{ dna: string }>(`/dna/view/${encodeURIComponent(id)}/merge`, { into }),
   topicPosts: (slug: string) =>
     request<{ topic: { key: string; label: string }; posts: PostCard[] }>(`/social/topics/${encodeURIComponent(slug)}`),
   socialHome: (as?: string | null, before?: string, following = false) => {

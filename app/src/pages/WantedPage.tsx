@@ -1,4 +1,5 @@
 import { useToast } from '../components/Feedback';
+import { WantDna } from '../components/DnaKit';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { SkelCards } from '../components/PageSkeletons';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -516,6 +517,8 @@ function WantDialog({ card, onClose, onChanged }: {
         <dd>{card.budgetMinor === null ? 'Open to offers' : formatMoney(card.budgetMinor, card.currency)}</dd>
       </div>
       {card.details && <p className="muted">{card.details}</p>}
+      {/* The product this hunt is for: its prices, shops and owners, one tap away. */}
+      <WantDna buyerId={card.buyerId} wantId={card.id} title={card.title} />
       {card.photoUrls?.length > 0 && (
         <div className="isophotos isophotos--view">
           {card.photoUrls.map((url) => (
