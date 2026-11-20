@@ -52,10 +52,10 @@ async function decode(blob: Blob): Promise<{ draw: CanvasImageSource; width: num
 }
 
 /** The highest quality that fits at this canvas size, or the smallest there is. */
-async function bestFit(canvas: HTMLCanvasElement): Promise<{ blob: Blob; fits: boolean } | null> {
+async function bestFit(canvas: HTMLCanvasElement, limit: number): Promise<{ blob: Blob; fits: boolean } | null> {
   const smallest = await toBlob(canvas, FLOOR_QUALITY);
   if (!smallest) return null;
-  if (smallest.size > PHOTO_MAX_BYTES) return { blob: smallest, fits: false };
+  if (smallest.size > limit) return { blob: smallest, fits: false };
   let best = smallest;
   let low = FLOOR_QUALITY;
   let high = CEILING_QUALITY;
@@ -63,16 +63,16 @@ async function bestFit(canvas: HTMLCanvasElement): Promise<{ blob: Blob; fits: b
     const mid = (low + high) / 2;
     const tried = await toBlob(canvas, mid);
     if (!tried) break;
-    if (tried.size <= PHOTO_MAX_BYTES) { best = tried; low = mid; } else { high = mid; }
+    if (tried.size <= limit) { best = tried; low = mid; } else { high = mid; }
   }
   return { blob: best, fits: true };
 }
 
 /**
- * The picture as a data URL, compressed - or untouched when it could not be
- * decoded here, which the API will size-check and explain.
+ * The picture as a data URL, compressed to `limit` bytes - or untouched when
+ * it could not be decoded here, which the API will size-check and explain.
  */
-export async function compressImage(file: Blob): Promise<string> {
+export async function compressImage(file: Blob, limit = PHOTO_MAX_BYTES): Promise<string> {
   let compressed: Blob | null = null;
   try {
     const image = await decode(file);
@@ -88,7 +88,7 @@ export async function compressImage(file: Blob): Promise<string> {
         context.fillStyle = '#fff';
         context.fillRect(0, 0, canvas.width, canvas.height);
         context.drawImage(image.draw, 0, 0, canvas.width, canvas.height);
-        const found = await bestFit(canvas);
+        const found = await bestFit(canvas, limit);
         if (!found) break;
         if (!compressed || found.blob.size < compressed.size) compressed = found.blob;
         if (found.fits) { compressed = found.blob; break; }

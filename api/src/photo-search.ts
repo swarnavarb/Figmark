@@ -1,6 +1,8 @@
 import type { Listing, PhotoRegion } from '../../shared/models.js';
 import { wordKeys } from '../../shared/shop-tags.js';
-import { isCurrent, isFingerprinted, likeness, storedPrints, type Prints } from './image-hash.js';
+import {
+  isCurrent, isFingerprinted, likenessOf, readFingerprint, storedPrints, type Fingerprint, type Prints,
+} from './image-hash.js';
 import { ownPhotoName } from './storage/index.js';
 import type { PhotoDescription } from './vision.js';
 
@@ -117,6 +119,23 @@ interface ListingPrints {
   hashes: string[];
   /** Those of whole photos, rather than of items in one. */
   wholes: Set<string>;
+  /** Each hash read for comparing, in the same order; null for one that cannot be. */
+  read?: (Fingerprint | null)[];
+}
+
+/**
+ * Each listing's fingerprints, once worked out, by the listing itself. The
+ * catalogue is a snapshot kept for a minute, its listings the same objects
+ * from one search to the next, so a search finds them ready rather than
+ * gathering every photo again. A changed listing is a new object, and is
+ * gathered afresh.
+ */
+const gathered = new WeakMap<Listing, ListingPrints>();
+
+/** The fingerprints read for comparing, worked out once per entry. */
+function readAll(entry: ListingPrints): (Fingerprint | null)[] {
+  entry.read ??= entry.hashes.map(readFingerprint);
+  return entry.read;
 }
 
 /**
@@ -130,6 +149,8 @@ interface ListingPrints {
  */
 async function catalogPrints(pool: Listing[], learned: LearnedHash[]): Promise<ListingPrints[]> {
   const entries = new Map<string, ListingPrints>();
+  // Listings whose every photo was settled without reading one: kept for the next search.
+  const settled = new Set<Listing>();
   const add = (listing: Listing, hashes: string[]) => {
     const entry = entries.get(listing.id) ?? { listing, hashes: [], wholes: new Set<string>() };
     // The first of each photo's fingerprints is the whole photo's.
@@ -144,29 +165,42 @@ async function catalogPrints(pool: Listing[], learned: LearnedHash[]): Promise<L
   };
   const toRead: { listing: Listing; name: string; theirs: string | null }[] = [];
   for (const listing of pool) {
+    const ready = gathered.get(listing);
+    if (ready) { entries.set(listing.id, ready); continue; }
+    settled.add(listing);
     for (const name of await storedPhotos(listing)) {
       const photo = listing.photos.find((entry) => entry.blobName === name);
       const theirs = photo?.imageHash ?? null;
       if (theirs && isCurrent(theirs) && photo?.regions) add(listing, [theirs, ...photo.regions.map((region) => region.imageHash)]);
       else if (isFingerprinted(name)) settle(listing, name, theirs, await storedPrints(name));
-      else if (toRead.length < FRESH_PER_SEARCH) toRead.push({ listing, name, theirs });
-      else if (theirs) add(listing, [theirs]);
+      else if (toRead.length < FRESH_PER_SEARCH) { toRead.push({ listing, name, theirs }); settled.delete(listing); }
+      else { if (theirs) add(listing, [theirs]); settled.delete(listing); }
     }
   }
   await inBatches(toRead, async ({ listing, name, theirs }) =>
     settle(listing, name, theirs, await storedPrints(name).catch(() => null)));
+  for (const listing of settled) {
+    let entry = entries.get(listing.id);
+    if (!entry) { entry = { listing, hashes: [], wholes: new Set<string>() }; }
+    gathered.set(listing, entry);
+  }
   return [...entries.values()];
 }
 
 /** How each listing compares with any of the photo's fingerprints, by id, keeping the best of each. */
 function compareAll(entries: ListingPrints[], hashes: string[]): Map<string, PictureLook> {
   const found = new Map<string, PictureLook>();
-  for (const { listing, hashes: theirs, wholes } of entries) {
+  const mine = hashes.map(readFingerprint).filter((read): read is Fingerprint => read !== null);
+  for (const listing of entries) {
+    const { hashes: theirs, wholes } = listing;
+    const read = readAll(listing);
     let entry: PictureLook | null = null;
-    for (const mine of hashes) {
-      for (const their of theirs) {
-        const alike = likeness(mine, their);
-        if (!alike) continue;
+    for (const left of mine) {
+      for (let at = 0; at < theirs.length; at += 1) {
+        const right = read[at];
+        if (!right) continue;
+        const their = theirs[at]!;
+        const alike = likenessOf(left, right);
         entry ??= { same: false, sameItem: false, wholeItem: false, variant: false, shape: 0, visual: 0, look: 0 };
         // A recoloured copy is the same picture, but for a shopper it is another variant, not this one.
         entry.same ||= alike.samePhoto && alike.sameItem;
@@ -178,7 +212,7 @@ function compareAll(entries: ListingPrints[], hashes: string[]): Map<string, Pic
         entry.look = Math.max(entry.look, alike.look ?? 0);
       }
     }
-    if (entry && (entry.visual > 0 || entry.look > 0 || entry.variant)) found.set(listing.id, entry);
+    if (entry && (entry.visual > 0 || entry.look > 0 || entry.variant)) found.set(listing.listing.id, entry);
   }
   return found;
 }

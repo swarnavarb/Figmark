@@ -2364,11 +2364,8 @@ export type PhotoBox = [number, number, number, number];
 /** One thing told apart in a search photo, and a peek at what matches it. */
 export interface PhotoItem {
   box: PhotoBox;
-  /** What it was read as, or null when the picture alone told it apart. */
+  /** What it was read as, or its colour; null when nothing names it. */
   label: string | null;
-  /** How many listings match it alone. */
-  matches: number;
-  preview: { id: string; title: string; photoUrl: string | null }[];
 }
 
 export interface PhotoSearchResponse {

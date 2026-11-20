@@ -498,25 +498,19 @@ async function photoSearch(request: HttpRequest, _context: InvocationContext) {
   const pool = all.filter((listing) => onSale(listing) && everListed(listing));
   const learned: LearnedHash[] = [];
   const descriptions = searched.descriptions ?? [];
-  // The photo as a whole - any item in it may match - then each item alone, against one read of the catalogue's fingerprints.
-  const [looks, ...itemLooks] = await pictureLooksEach(
-    pool, [[...searched.hashes, ...searched.items.flatMap((item) => item.hashes)], ...searched.items.map((item) => item.hashes)], learned,
-  );
+  // The photo as a whole, and every item in it: any of them may match.
+  const [looks] = await pictureLooksEach(pool, [searched.hashes], learned);
   const matches = rankMatches(pool, onlyAlike(looks!), descriptions, PHOTO_RESULTS);
   // Beside the matches: listings named almost the same, and the same shape in other colours.
   const suggested = suggestionsFor(pool, matches, looks!, await looksBesideMatches(pool, matches, looks!, learned));
   const suggestedIds = new Set(suggested.map((entry) => entry.listing.id));
   const found = [...matches, ...relatedItems(pool, matches, descriptions[0] ?? null).filter((listing) => !suggestedIds.has(listing.id))];
-  const items = searched.items.map((item, at) => {
-    const alike = onlyAlike(itemLooks[at]!);
-    const hits = rankMatches(pool, alike, item.description ? [item.description] : [], PHOTO_RESULTS);
-    return {
-      box: item.box,
-      label: item.description?.query || nameOf(item.colour, hits.find((hit) => alike.get(hit.id)?.wholeItem)?.title),
-      matches: hits.length,
-      preview: hits.slice(0, 3).map((listing) => ({ id: listing.id, title: listing.title, photoUrl: cardPhoto(listing) })),
-    };
-  });
+  // Where each thing is, and what to call it: what Claude read it as, or its colour. Each
+  // is searched on its own only when picked, so a look at the whole photo stays one pass.
+  const items = searched.items.map((item) => ({
+    box: item.box,
+    label: item.description?.query || (item.colour ? `${item.colour} item` : null),
+  }));
   const storing = storeLearned(repository, learned);
 
   const likedIds = viewer ? new Set(await repository.listLikedListingIds(viewer.id)) : new Set<string>();
@@ -547,8 +541,6 @@ interface FoundItem {
   box: RegionBox;
   /** What colour it mostly is, as a word; null when the photo could not be decoded. */
   colour: string | null;
-  /** Its fingerprint, then the same tilted each way; empty when the photo could not be decoded. */
-  hashes: string[];
   description: PhotoDescription | null;
 }
 
@@ -592,15 +584,12 @@ async function searchWholePhoto(bytes: Uint8Array, contentType: string, raw: Raw
   const items = offered.map((item) => ({
     ...item, hash: prints?.regions.find((region) => region.box === item.box)?.imageHash ?? null,
   }));
-  // Each item lifted off the photo too, for its peek; the tilted looks wait until it is picked.
-  const itemHashes = (item: { box: RegionBox; hash: string | null }) =>
-    item.hash && raw ? [item.hash, ...isolatedFingerprints(raw, item.box, false)] : item.hash ? [item.hash] : [];
   return {
     // The photo, each item in it, and the photo as if shot at a slant each way.
     hashes: prints ? [prints.hash, ...prints.regions.map((entry) => entry.imageHash), ...tiltedFingerprints(raw!)] : [],
     // Read as items, but a photo Claude saw nothing for sale in is still worth one look as a whole.
     descriptions: read === null ? null : read.length > 0 ? read : await describePhoto(bytes, contentType).then((one) => (one ? [one] : [])),
-    items: items.map((item) => ({ ...item, hashes: itemHashes(item), colour: raw ? itemColour(raw, item.box) : null })),
+    items: items.map((item) => ({ ...item, colour: raw ? itemColour(raw, item.box) : null })),
   };
 }
 
@@ -616,21 +605,6 @@ async function searchOneItem(raw: Raw, box: RegionBox): Promise<Searched> {
     .filter((hash): hash is string => hash !== null);
   const description = visionAvailable() ? await describePhoto(encodeJpeg(crop, 85), 'image/jpeg') : null;
   return { hashes, descriptions: description ? [description] : null, items: [] };
-}
-
-/**
- * What to call an item nobody read: the listing whose own photo the picture is
- * sure is this thing, or else its colour ("Brown item"), so the chips are not
- * just numbers.
- */
-function nameOf(colour: string | null, sure: string | undefined): string | null {
-  return sure ?? (colour ? `${colour} item` : null);
-}
-
-/** The small picture a card shows for a listing, or null when it has none. */
-function cardPhoto(listing: Listing): string | null {
-  const lead = listing.photos.find((photo) => photo.isPrimary) ?? listing.photos[0];
-  return lead?.thumbUrl ?? lead?.url ?? null;
 }
 
 /**

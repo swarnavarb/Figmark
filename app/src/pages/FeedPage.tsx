@@ -42,7 +42,7 @@ import { useRecentlyViewed } from '../recentViews';
 import {
   AlertMe, DAY_CHOICES, FilterChips, FilterSheet, RecentRail, priceLabel, sheetCount, type FilterValues,
 } from '../components/ShopFinder';
-import { clearPhotoQuery, usePhotoQuery } from '../photoQuery';
+import { clearPhotoQuery, holdsPhotoQuery, usePhotoQuery } from '../photoQuery';
 import { detectThings } from '../photoDetect';
 import '../styles/FeedPage.css';
 import { Select } from '../components/Select';
@@ -92,50 +92,76 @@ export function useCatalog() {
   const [photoFound, setPhotoFound] = useState<FeedListing[] | null>(null);
   const [photoSuggested, setPhotoSuggested] = useState<PhotoSuggestion[]>([]);
   // Which part of the photo is searched with, and the things found in it -
-  // both belong to one photo, so a new photo starts from the whole of it.
+  // all belong to one photo, so a new photo starts afresh. The things come
+  // from the phone's own look (photoDetect.ts) when it finds any, else from
+  // the server's answer about the whole photo.
   const [focus, setFocus] = useState<{ photoId: string; box: PhotoBox | null }>({ photoId: '', box: null });
-  const [found, setFound] = useState<{ photoId: string; items: PhotoItem[] }>({ photoId: '', items: [] });
+  const [seen, setSeen] = useState<{ photoId: string; items: PhotoItem[] }>({ photoId: '', items: [] });
+  const [told, setTold] = useState<{ photoId: string; items: PhotoItem[] }>({ photoId: '', items: [] });
   const photoRegion = photo && focus.photoId === photo.id ? focus.box : null;
-  const photoItems = photo && found.photoId === photo.id ? found.items : [];
+  const seenItems = photo && seen.photoId === photo.id ? seen.items : [];
+  const photoItems = seenItems.length > 0 ? seenItems : photo && told.photoId === photo.id ? told.items : [];
   const pickRegion = useCallback((box: PhotoBox | null) => {
     if (photo) setFocus({ photoId: photo.id, box });
   }, [photo]);
+  // What the phone has found so far, for the whole-photo search to send.
+  const seenBoxes = useRef<{ photoId: string; boxes: PhotoBox[] }>({ photoId: '', boxes: [] });
 
-  // A reload forgets the photo; the catalogue it leaves behind is the ordinary one.
+  // A reload forgets the photo; the catalogue it leaves behind is the ordinary
+  // one. A photo that is held but is not this one is a new search on its way
+  // here - the address changes a moment after the photo does - so that is
+  // waited out, and only a stale address is let go.
   useEffect(() => {
     if (!photoId || photo) return;
-    const next = new URLSearchParams(params);
-    next.delete('photo');
-    setParams(next, { replace: true });
-  }, [photoId, photo, params, setParams]);
+    const settle = window.setTimeout(() => {
+      const still = new URLSearchParams(window.location.search).get('photo');
+      if (still !== photoId) return;
+      const next = new URLSearchParams(window.location.search);
+      next.delete('photo');
+      setParams(next, { replace: true });
+    }, holdsPhotoQuery() ? 250 : 0);
+    return () => window.clearTimeout(settle);
+  }, [photoId, photo, setParams]);
 
-  // Sent once per photo, and again when another part of it is picked; the
-  // filters below narrow what came back without sending the photo again.
+  // The phone looks for the things in the photo: a quick look, then a closer one.
+  useEffect(() => {
+    if (!photo) return;
+    let cancelled = false;
+    const show = (boxes: PhotoBox[]) => {
+      if (cancelled) return;
+      seenBoxes.current = { photoId: photo.id, boxes };
+      setSeen({ photoId: photo.id, items: boxes.map((box) => ({ box, label: null })) });
+    };
+    void detectThings(photo, show).then(show);
+    return () => { cancelled = true; };
+  }, [photo]);
+
+  // Once the things are known, the first is searched with, as a shopper
+  // pointing at one would; "All" is a tap away. Once anything has been picked
+  // for this photo - "All" included - that choice stands.
+  const firstItem = photoItems[0]?.box;
+  useEffect(() => {
+    if (!photo || !firstItem) return;
+    setFocus((was) => (was.photoId === photo.id ? was : { photoId: photo.id, box: firstItem }));
+  }, [photo, firstItem]);
+
+  // Sent at once - the results do not wait for the phone's look - and again
+  // when another part is picked; the filters below narrow what came back
+  // without sending the photo again.
   useEffect(() => {
     setPhotoFound(null);
     setPhotoSuggested([]);
     if (!photo) return;
     let cancelled = false;
     setLoading(true);
-    // A look at the whole photo first finds the things in it, on the phone;
-    // a look at one part already knows them.
-    const boxes = photoRegion ? Promise.resolve([]) : detectThings(photo.id, photo.dataUrl);
-    void boxes
-      .then((found) => (cancelled ? null : api.photoSearch(photo.dataUrl, photoRegion, found)))
+    const known = !photoRegion && seenBoxes.current.photoId === photo.id ? seenBoxes.current.boxes : [];
+    void api.photoSearch(photo.dataUrl, photoRegion, known)
       .then((result) => {
-        if (!result) return;
         if (cancelled) return;
         setPhotoFound(result.listings);
         setPhotoSuggested(result.suggested ?? []);
-        // The things in the photo come from a look at all of it; a look at one keeps them.
-        if (!photoRegion) {
-          const items = result.items ?? [];
-          setFound({ photoId: photo.id, items });
-          // The first look picks the most prominent thing, as a shopper pointing
-          // at one would; "All" is a tap away. Once anything has been picked for
-          // this photo - "All" included - that choice stands.
-          if (items[0]) setFocus((was) => (was.photoId === photo.id ? was : { photoId: photo.id, box: items[0]!.box }));
-        }
+        // What the server found in the whole photo: used when the phone finds nothing.
+        if (!photoRegion) setTold({ photoId: photo.id, items: result.items ?? [] });
         setError(null);
       })
       .catch((err: Error) => !cancelled && setError(err.message))

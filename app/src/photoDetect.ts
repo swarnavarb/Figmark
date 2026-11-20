@@ -1,48 +1,46 @@
 import wasmLoaderUrl from '@mediapipe-wasm/vision_wasm_internal.js?url';
 import wasmBinaryUrl from '@mediapipe-wasm/vision_wasm_internal.wasm?url';
-import modelUrl from './models/efficientdet_lite2.tflite?url';
+import modelUrl from './models/efficientdet_lite2_int8.tflite?url';
 import type { PhotoBox } from './api';
+import type { PhotoQuery } from './photoQuery';
+import { thingsIn, type Detected } from './photoThings';
 
 /**
  * The things in a photo, found on the shopper's own phone.
  *
  * A shelf of figures in front of boxed toys has no plain backdrop for the
- * server to tell things from, so the server alone finds nothing in it. This
- * asks a small object detector instead: Google's MediaPipe running
- * EfficientDet-Lite2 (Apache-2.0), compiled to WebAssembly and served from
- * this site - nothing is sent anywhere to find them, and no key is needed.
- * It is fetched only when somebody searches with a photo (about 21 MB the
- * first time, from the cache after), and only the boxes it finds go to the
- * server with the photo.
+ * server to tell things from. This asks a small object detector instead:
+ * Google's MediaPipe running EfficientDet-Lite2 (Apache-2.0, int8: 7.5 MB),
+ * compiled to WebAssembly and served from this site - nothing is sent anywhere
+ * to find them, and no key is needed. Which of its boxes are things for sale
+ * (figures, and packages, which it reads as books) is photoThings.ts.
  *
- * It knows everyday things, and reads a figure as a person; packaged toys it
- * mostly does not see. What it misses the server's own look, and the shopper's
- * own box, still cover. Any failure - an old phone, no WebAssembly, a slow
- * download - is no boxes, and the search goes on without them.
+ * It looks at the photo as it was taken, not the copy compressed for sending:
+ * a small, soft copy loses a third of what it finds. And it looks twice:
+ *
+ * - once at the whole photo, in about half a second, so the dots come quickly;
+ * - then at each quarter of it as well, enlarged, which finds the smaller
+ *   packages and figures the whole view shrinks away - three times the work,
+ *   so it runs after, and adds its dots when done.
+ *
+ * Any failure - an old phone, no WebAssembly, a slow download - is no boxes,
+ * and the search goes on with what the server finds.
  */
 
-type Detector = { detect: (image: HTMLImageElement) => { detections: Detection[] } };
-interface Detection {
+type Detector = { detect: (image: CanvasImageSource) => { detections: RawDetection[] } };
+interface RawDetection {
   categories: { score: number; categoryName: string }[];
   boundingBox?: { originX: number; originY: number; width: number; height: number };
 }
 
-/** Below this the detector is guessing. Low, because a missed figure costs more than an extra dot. */
-const MIN_SCORE = 0.15;
-/** At most this many things are offered: the server fingerprints each. */
-const MAX_THINGS = 12;
-/** A box over this much of the photo is the shelf or the wall, not a thing on it. */
-const MAX_AREA = 0.6;
-/** A box under this much of it is a speck. */
-const MIN_AREA = 0.003;
-/**
- * Two boxes sharing this much of the smaller one are one thing found twice: a
- * torso inside its whole figure. A figure standing behind another shares less
- * (about 0.7 on a crowded shelf) and stays its own thing.
- */
-const SAME_THING = 0.8;
+/** Below this the detector is guessing; photoThings.ts asks more of most kinds. */
+const MIN_SCORE = 0.08;
+/** The photo is looked at no larger than this: more is time, not things. */
+const LOOK_EDGE = 1600;
+/** Each quarter looked at closely covers this much of each side, so a thing on a seam is whole in one. */
+const QUARTER = 0.6;
 /** How long the first look may take, model download included, before the search goes on without it. */
-const PATIENCE_MS = 20_000;
+const PATIENCE_MS = 25_000;
 
 let detector: Promise<Detector> | null = null;
 
@@ -53,7 +51,7 @@ function loadDetector(): Promise<Detector> {
       {
         baseOptions: { modelAssetPath: modelUrl, delegate: 'CPU' },
         scoreThreshold: MIN_SCORE,
-        maxResults: 40,
+        maxResults: 50,
         runningMode: 'IMAGE',
       },
     ) as Promise<Detector>);
@@ -62,61 +60,102 @@ function loadDetector(): Promise<Detector> {
   return detector;
 }
 
-const areaOf = (box: PhotoBox) => box[2] * box[3];
-
-function overlapShare(a: PhotoBox, b: PhotoBox): number {
-  const w = Math.min(a[0] + a[2], b[0] + b[2]) - Math.max(a[0], b[0]);
-  const h = Math.min(a[1] + a[3], b[1] + b[3]) - Math.max(a[1], b[1]);
-  if (w <= 0 || h <= 0) return 0;
-  return (w * h) / Math.min(areaOf(a), areaOf(b));
-}
-
-/**
- * The detector's boxes made into things: as fractions of the photo, the shelf
- * and the specks dropped, a thing found twice kept once, likeliest first.
- */
-export function thingsFrom(detections: Detection[], width: number, height: number): PhotoBox[] {
-  const found = detections
-    .filter((detection) => detection.boundingBox && (detection.categories[0]?.score ?? 0) >= MIN_SCORE)
-    .map((detection) => {
-      const { originX, originY, width: w, height: h } = detection.boundingBox!;
-      const x = Math.max(0, originX / width); const y = Math.max(0, originY / height);
-      const box: PhotoBox = [x, y, Math.min(1 - x, w / width), Math.min(1 - y, h / height)];
-      return { box, score: detection.categories[0]!.score };
-    })
-    .filter(({ box }) => areaOf(box) <= MAX_AREA && areaOf(box) >= MIN_AREA)
-    .sort((a, b) => b.score - a.score);
-  const kept: PhotoBox[] = [];
-  for (const { box } of found) {
-    if (kept.length >= MAX_THINGS) break;
-    if (kept.some((other) => overlapShare(other, box) >= SAME_THING)) continue;
-    kept.push(box.map((part) => Math.round(part * 1000) / 1000) as PhotoBox);
-  }
-  return kept;
-}
-
-/** The things found in a photo by id, so looking at the same photo again costs nothing. */
-const looked = new Map<string, Promise<PhotoBox[]>>();
-
-/** The things in the photo, as boxes; empty when there are none, or none could be found. */
-export function detectThings(photoId: string, dataUrl: string): Promise<PhotoBox[]> {
-  const known = looked.get(photoId);
-  if (known) return known;
-  const work = (async () => {
-    const image = new Image();
-    image.src = dataUrl;
-    await image.decode();
-    const found = await loadDetector();
-    const result = found.detect(image);
-    return thingsFrom(result.detections, image.naturalWidth, image.naturalHeight);
-  })();
-  const patient = new Promise<PhotoBox[]>((resolve) => { setTimeout(() => resolve([]), PATIENCE_MS); });
-  const answer = Promise.race([work, patient]).catch(() => [] as PhotoBox[]);
-  looked.set(photoId, answer);
-  return answer;
-}
-
 /** Start fetching the detector before it is needed: when the photo picker opens, say. */
 export function warmDetector(): void {
   void loadDetector().catch(() => undefined);
+}
+
+/** The photo drawn no larger than LOOK_EDGE. */
+async function canvasOf(url: string): Promise<HTMLCanvasElement> {
+  const image = new Image();
+  image.src = url;
+  await image.decode();
+  const scale = Math.min(1, LOOK_EDGE / Math.max(image.naturalWidth, image.naturalHeight));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+  canvas.getContext('2d')!.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas;
+}
+
+/** What the detector sees in part of the photo, as boxes over the whole of it. */
+function look(found: Detector, photo: HTMLCanvasElement, [vx, vy, vw, vh]: [number, number, number, number]): Detected[] {
+  const W = photo.width; const H = photo.height;
+  let source: CanvasImageSource = photo;
+  if (vw < W || vh < H) {
+    const part = document.createElement('canvas');
+    part.width = Math.round(vw); part.height = Math.round(vh);
+    part.getContext('2d')!.drawImage(photo, vx, vy, vw, vh, 0, 0, part.width, part.height);
+    source = part;
+  }
+  const out: Detected[] = [];
+  for (const detection of found.detect(source).detections) {
+    const box = detection.boundingBox;
+    const best = detection.categories[0];
+    if (!box || !best) continue;
+    // A box cut by a quarter's inner edge is a piece of something the whole view sees better.
+    const cut = (vx > 0 && box.originX < 2) || (vy > 0 && box.originY < 2)
+      || (vx + vw < W && box.originX + box.width > vw - 2) || (vy + vh < H && box.originY + box.height > vh - 2);
+    if ((vw < W || vh < H) && cut) continue;
+    const x = Math.max(0, (vx + box.originX) / W); const y = Math.max(0, (vy + box.originY) / H);
+    out.push({
+      label: best.categoryName, score: best.score,
+      box: [x, y, Math.min(1 - x, box.width / W), Math.min(1 - y, box.height / H)],
+    });
+  }
+  return out;
+}
+
+/** The quarters of a photo, each QUARTER of a side, overlapping in the middle. */
+function quarters(W: number, H: number): [number, number, number, number][] {
+  const w = W * QUARTER; const h = H * QUARTER;
+  return [[0, 0, w, h], [W - w, 0, w, h], [0, H - h, w, h], [W - w, H - h, w, h]];
+}
+
+interface Looked {
+  /** The things in the whole photo at a glance. */
+  quick: Promise<PhotoBox[]>;
+  /** Those and the ones a closer look at each quarter finds. */
+  close: Promise<PhotoBox[]>;
+}
+
+/** What was found in each photo, by id, so looking at the same photo again costs nothing. */
+const looked = new Map<string, Looked>();
+
+/** Wait for a frame to be painted between looks, so the page stays responsive. */
+const breathe = () => new Promise<void>((resolve) => { requestAnimationFrame(() => setTimeout(resolve, 0)); });
+
+/**
+ * The things in the photo, as boxes: the quick look's straight away, and the
+ * closer look's to `better` when it is done and finds more. Empty when there
+ * are none, or none could be found.
+ */
+export function detectThings(photo: PhotoQuery, better?: (boxes: PhotoBox[]) => void): Promise<PhotoBox[]> {
+  let found = looked.get(photo.id);
+  if (!found) {
+    const ready = Promise.all([loadDetector(), canvasOf(photo.original ?? photo.dataUrl)]);
+    const glance = ready.then(([model, canvas]) => look(model, canvas, [0, 0, canvas.width, canvas.height]));
+    const quick = glance.then(thingsIn);
+    const close = Promise.all([ready, glance]).then(async ([[model, canvas], first]) => {
+      const all = [...first];
+      for (const part of quarters(canvas.width, canvas.height)) {
+        await breathe();
+        all.push(...look(model, canvas, part));
+      }
+      return thingsIn(all);
+    });
+    const patient = new Promise<PhotoBox[]>((resolve) => { setTimeout(() => resolve([]), PATIENCE_MS); });
+    found = {
+      quick: Promise.race([quick, patient]).catch(() => [] as PhotoBox[]),
+      close: close.catch(() => [] as PhotoBox[]),
+    };
+    looked.set(photo.id, found);
+  }
+  const { quick, close } = found;
+  if (better) {
+    void Promise.all([quick, close]).then(([first, more]) => {
+      if (more.length > 0 && JSON.stringify(more) !== JSON.stringify(first)) better(more);
+    });
+  }
+  return quick;
 }

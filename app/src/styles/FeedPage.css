@@ -539,32 +539,32 @@
 }
 .pstage__frame img { display: block; max-width: 100%; max-height: min(62vh, 560px); width: auto; height: auto; border-radius: 6px; }
 .pstage__dot {
-  position: absolute; z-index: 2; width: 22px; height: 22px; margin: -11px 0 0 -11px; padding: 0;
+  position: absolute; z-index: 2; width: 12px; height: 12px; margin: -6px 0 0 -6px; padding: 0;
   border: 0; border-radius: 50%; background: #fff; cursor: pointer;
-  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.28), 0 1px 6px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3), 0 1px 4px rgba(0, 0, 0, 0.55);
   transition: transform var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease);
 }
 /* A fingertip-sized target round a small dot. */
-.pstage__dot::before { content: ''; position: absolute; inset: -11px; border-radius: 50%; }
-.pstage__dot:hover { transform: scale(1.15); }
+.pstage__dot::before { content: ''; position: absolute; inset: -14px; border-radius: 50%; }
+.pstage__dot:hover { transform: scale(1.25); }
 .pstage__dot:active { transform: scale(0.9); }
 .pstage__dot:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 .pstage__box {
-  position: absolute; border: 3px solid #fff; border-radius: 16px; cursor: move; touch-action: none;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 2px 12px rgba(0, 0, 0, 0.45);
+  position: absolute; border: 1.5px solid #fff; border-radius: 10px; cursor: move; touch-action: none;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3), 0 1px 8px rgba(0, 0, 0, 0.35);
 }
 .pstage__handle { position: absolute; width: 30px; height: 30px; touch-action: none; }
 .pstage__handle::after {
-  content: ''; position: absolute; width: 14px; height: 14px; border: 0 solid #fff;
+  content: ''; position: absolute; width: 10px; height: 10px; border: 0 solid #fff;
 }
 .pstage__handle--nw { left: -15px; top: -15px; cursor: nwse-resize; }
 .pstage__handle--ne { right: -15px; top: -15px; cursor: nesw-resize; }
 .pstage__handle--sw { left: -15px; bottom: -15px; cursor: nesw-resize; }
 .pstage__handle--se { right: -15px; bottom: -15px; cursor: nwse-resize; }
-.pstage__handle--nw::after { left: 12px; top: 12px; border-left-width: 5px; border-top-width: 5px; border-top-left-radius: 12px; }
-.pstage__handle--ne::after { right: 12px; top: 12px; border-right-width: 5px; border-top-width: 5px; border-top-right-radius: 12px; }
-.pstage__handle--sw::after { left: 12px; bottom: 12px; border-left-width: 5px; border-bottom-width: 5px; border-bottom-left-radius: 12px; }
-.pstage__handle--se::after { right: 12px; bottom: 12px; border-right-width: 5px; border-bottom-width: 5px; border-bottom-right-radius: 12px; }
+.pstage__handle--nw::after { left: 13px; top: 13px; border-left-width: 3px; border-top-width: 3px; border-top-left-radius: 9px; }
+.pstage__handle--ne::after { right: 13px; top: 13px; border-right-width: 3px; border-top-width: 3px; border-top-right-radius: 9px; }
+.pstage__handle--sw::after { left: 13px; bottom: 13px; border-left-width: 3px; border-bottom-width: 3px; border-bottom-left-radius: 9px; }
+.pstage__handle--se::after { right: 13px; bottom: 13px; border-right-width: 3px; border-bottom-width: 3px; border-bottom-right-radius: 9px; }
 .pstage__bar { display: flex; align-items: center; gap: var(--s2); padding: 0 var(--s3) var(--s2); }
 .pstage__strip { display: flex; gap: 8px; overflow-x: auto; flex: 1; min-width: 0; padding: 3px; scrollbar-width: none; }
 .pstage__strip::-webkit-scrollbar { display: none; }

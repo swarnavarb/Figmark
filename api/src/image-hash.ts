@@ -49,10 +49,19 @@ const WORK_EDGE = 512;
 /** Items told apart in one photo, at most: a shelf of figures is a dozen. */
 export const MAX_REGIONS = 12;
 
+/** Working copies already made, by the picture they were made from: a search reads one photo many times. */
+const workingCopies = new WeakMap<Raw, Raw>();
+
 /** The picture at a size worth fingerprinting. */
 function workingCopy(raw: Raw): Raw {
   const edge = Math.max(raw.width, raw.height);
-  return edge > WORK_EDGE ? shrinkRaw(raw, WORK_EDGE / edge) : raw;
+  if (edge <= WORK_EDGE) return raw;
+  let copy = workingCopies.get(raw);
+  if (!copy) {
+    copy = shrinkRaw(raw, WORK_EDGE / edge);
+    workingCopies.set(raw, copy);
+  }
+  return copy;
 }
 
 /** Average the source pixels under each destination cell, as grey. */
@@ -169,6 +178,8 @@ interface Backdrop {
   sides: { top: Colour[]; bottom: Colour[]; left: Colour[]; right: Colour[] } | null;
   /** How far from it a colour may be and still be it. */
   reach: number;
+  /** The colour the sides say belongs across the frame, on a grid; null without sides. */
+  field: Float32Array | null;
 }
 
 /** Whether anything is known about the backdrop at all. */
@@ -209,7 +220,8 @@ function backdropOf(raw: Raw): Backdrop {
   steps.sort((a, b) => a - b);
   const grain = steps.length > 0 ? steps[Math.floor(steps.length * 0.8)]! : REACH_MAX;
   const reach = Math.max(REACH_MIN, Math.min(REACH_MAX, 12 + 2.5 * grain));
-  return { colours, sides: sidesOf(raw, inX, inY), reach };
+  const sides = sidesOf(raw, inX, inY);
+  return { colours, sides, reach, field: sides ? fieldOf(sides) : null };
 }
 
 /** The colour along each side, smoothed past small things that touch it; null when a side is busy. */
@@ -258,32 +270,68 @@ function sideAt(side: Colour[], t: number): Colour {
   return [0, 1, 2].map((c) => side[k]![c]! * (1 - f) + side[k + 1]![c]! * f) as Colour;
 }
 
+/** Nodes across and down the grid the sides' backdrop is worked out on, once per photo. */
+const FIELD = 33;
+
+/**
+ * The colour the sides say belongs at every node of a grid over the frame,
+ * blended in from all four (a Coons patch). Worked out once per photo; a
+ * pixel then looks its colour up rather than blending the sides afresh.
+ */
+function fieldOf(sides: NonNullable<Backdrop['sides']>): Float32Array {
+  const field = new Float32Array(FIELD * FIELD * 3);
+  const first = (side: Colour[]) => side[0]!;
+  const last = (side: Colour[]) => side[side.length - 1]!;
+  for (let row = 0; row < FIELD; row += 1) {
+    const v = row / (FIELD - 1);
+    const left = sideAt(sides.left, v); const right = sideAt(sides.right, v);
+    for (let col = 0; col < FIELD; col += 1) {
+      const u = col / (FIELD - 1);
+      const top = sideAt(sides.top, u); const bottom = sideAt(sides.bottom, u);
+      for (let c = 0; c < 3; c += 1) {
+        field[(row * FIELD + col) * 3 + c] = (1 - v) * top[c]! + v * bottom[c]! + (1 - u) * left[c]! + u * right[c]!
+          - ((1 - u) * (1 - v) * first(sides.top)[c]! + u * (1 - v) * last(sides.top)[c]!
+            + (1 - u) * v * first(sides.bottom)[c]! + u * v * last(sides.bottom)[c]!);
+      }
+    }
+  }
+  return field;
+}
+
+/** Whether (r, g, b) is the backdrop colour (br, bg, bb), or a shadow on it. */
+function nearColour(r: number, g: number, b: number, br: number, bg: number, bb: number, reach: number): boolean {
+  if (Math.abs(r - br) + Math.abs(g - bg) + Math.abs(b - bb) < reach) return true;
+  // A shadow: the backdrop's own colour, a little darker. A thing is a
+  // different colour, or a lot darker, so neither is taken for one.
+  const shade = (r + g + b) / Math.max(1, br + bg + bb);
+  if (shade < SHADOW_DEPTH || shade > 1) return false;
+  // A shadow's edge is soft and its colour a little off, however clean the backdrop.
+  return Math.abs(r / shade - br) + Math.abs(g / shade - bg) + Math.abs(b / shade - bb) < REACH_MAX * 0.6;
+}
+
 /**
  * Whether a colour at (u, v) - fractions across and down the frame - is the
  * backdrop: close to a colour the edge carries much of, or to the colour the
- * sides say belongs there.
+ * sides say belongs there. Called for most pixels of every photo, so it
+ * allocates nothing.
  */
 function isBackdrop(backdrop: Backdrop, u: number, v: number, r: number, g: number, b: number, reach = backdrop.reach): boolean {
-  const near = ([br, bg, bb]: Colour) => {
-    if (Math.abs(r - br) + Math.abs(g - bg) + Math.abs(b - bb) < reach) return true;
-    // A shadow: the backdrop's own colour, a little darker. A thing is a
-    // different colour, or a lot darker, so neither is taken for one.
-    const shade = (r + g + b) / Math.max(1, br + bg + bb);
-    if (shade < SHADOW_DEPTH || shade > 1) return false;
-    // A shadow's edge is soft and its colour a little off, however clean the backdrop.
-    return Math.abs(r / shade - br) + Math.abs(g / shade - bg) + Math.abs(b / shade - bb) < REACH_MAX * 0.6;
-  };
-  if (backdrop.colours.some(near)) return true;
-  const sides = backdrop.sides;
-  if (!sides) return false;
-  const top = sideAt(sides.top, u); const bottom = sideAt(sides.bottom, u);
-  const left = sideAt(sides.left, v); const right = sideAt(sides.right, v);
-  const corner = (side: Colour[], end: number) => side[end === 0 ? 0 : side.length - 1]!;
-  const expected = [0, 1, 2].map((c) =>
-    (1 - v) * top[c]! + v * bottom[c]! + (1 - u) * left[c]! + u * right[c]!
-    - ((1 - u) * (1 - v) * corner(sides.top, 0)[c]! + u * (1 - v) * corner(sides.top, 1)[c]!
-      + (1 - u) * v * corner(sides.bottom, 0)[c]! + u * v * corner(sides.bottom, 1)[c]!)) as Colour;
-  return near(expected);
+  for (const colour of backdrop.colours) {
+    if (nearColour(r, g, b, colour[0], colour[1], colour[2], reach)) return true;
+  }
+  const field = backdrop.field;
+  if (!field) return false;
+  // The colour the sides say belongs here, between the four nearest nodes.
+  const x = Math.max(0, Math.min(1, u)) * (FIELD - 1); const y = Math.max(0, Math.min(1, v)) * (FIELD - 1);
+  const x0 = Math.min(FIELD - 2, Math.floor(x)); const y0 = Math.min(FIELD - 2, Math.floor(y));
+  const fx = x - x0; const fy = y - y0;
+  const a = (y0 * FIELD + x0) * 3; const d = a + FIELD * 3;
+  const w00 = (1 - fx) * (1 - fy); const w01 = fx * (1 - fy); const w10 = (1 - fx) * fy; const w11 = fx * fy;
+  return nearColour(r, g, b,
+    field[a]! * w00 + field[a + 3]! * w01 + field[d]! * w10 + field[d + 3]! * w11,
+    field[a + 1]! * w00 + field[a + 4]! * w01 + field[d + 1]! * w10 + field[d + 4]! * w11,
+    field[a + 2]! * w00 + field[a + 5]! * w01 + field[d + 2]! * w10 + field[d + 5]! * w11,
+    reach);
 }
 
 /**
@@ -902,17 +950,19 @@ interface Bits { high: number; low: number }
 interface Parsed {
   version: string;
   shape: Bits;
-  colour: number[];
-  look: number[] | null;
+  colour: Uint8Array;
+  look: Uint8Array | null;
   /** Present on v2 and later. */
   mirror: Bits | null;
   subject: Bits | null;
   subjectMirror: Bits | null;
-  edges: number[] | null;
+  edges: Uint8Array | null;
+  /** The edges turned and mirrored, for comparing against without copying. */
+  edgeReadings: Uint8Array[] | null;
   silhouette: Bits | null;
   silhouetteMirror: Bits | null;
   /** Which colours touch which; absent on hashes from before it was kept. */
-  adjacency: number[] | null;
+  adjacency: Uint8Array | null;
   /** How many part boundaries the adjacency rests on, 0 to 15. */
   partsStrength: number;
 }
@@ -928,7 +978,7 @@ const PARSED_MAX = 40_000;
 const SHAPE = /^[0-9a-f]{16}$/i;
 // The 64-bit shape as two 32-bit halves: counting bits apart on numbers is far cheaper than on a bigint.
 const bitsOf = (text: string): Bits => ({ high: parseInt(text.slice(0, 8), 16), low: parseInt(text.slice(8), 16) });
-const digits = (text: string) => [...text].map((digit) => parseInt(digit, 16));
+const digits = (text: string) => Uint8Array.from(text, (digit) => parseInt(digit, 16));
 
 /** Eight rows of eight bits, each read the other way: the same grid mirrored. */
 function mirrorRows(hex: string): string {
@@ -959,6 +1009,7 @@ function parse(hash: string): Parsed | null {
       subject: v2 ? bitsOf(subject!) : null,
       subjectMirror: v2 ? bitsOf(subjectMirror!) : null,
       edges: v2 ? digits(edges!) : null,
+      edgeReadings: v2 ? edgeReadings([...digits(edges!)]) : null,
       silhouette: v2 ? bitsOf(outline!) : null,
       silhouetteMirror: v2 ? bitsOf(mirrorRows(outline!)) : null,
       adjacency: v2 && touching?.length === PAIRS + 1 ? digits(touching.slice(1)) : null,
@@ -982,30 +1033,59 @@ export function hasLook(hash: string): boolean {
 }
 
 /** Weighted overlap of two histograms, 0 to 1. */
-function overlap(a: number[], b: number[], weight: (index: number) => number = () => 1): number {
+/*
+ * Comparison runs once per photo in the catalogue for every search, so these
+ * loops allocate nothing: no closures, no copied arrays.
+ */
+function overlap(a: ArrayLike<number>, b: ArrayLike<number>): number {
   let shared = 0; let total = 0;
   for (let index = 0; index < a.length; index += 1) {
-    shared += weight(index) * Math.min(a[index]!, b[index]!);
-    total += weight(index) * Math.max(a[index]!, b[index]!);
+    const x = a[index]!; const y = b[index]!;
+    if (x < y) { shared += x; total += y; } else { shared += y; total += x; }
   }
   return total ? shared / total : 0;
 }
 
 /** Black, grey and white are in most photos - text, shadow, packaging - so they say little. */
-const lookWeight = (index: number) => (index >= 24 ? 0.25 : 1);
+const GREY_LOOK = 24;
+const GREY_WEIGHT = 0.25;
+
+/** `overlap` with the greys of the look counted for a quarter. */
+function lookOverlap(a: ArrayLike<number>, b: ArrayLike<number>): number {
+  let shared = 0; let total = 0;
+  for (let index = 0; index < a.length; index += 1) {
+    const weight = index >= GREY_LOOK ? GREY_WEIGHT : 1;
+    const x = a[index]!; const y = b[index]!;
+    if (x < y) { shared += weight * x; total += weight * y; } else { shared += weight * y; total += weight * x; }
+  }
+  return total ? shared / total : 0;
+}
+
+/** An edge histogram as it reads turned a bin either way and mirrored: six readings, worked out once per hash. */
+function edgeReadings(edges: number[]): Uint8Array[] {
+  const out: Uint8Array[] = [];
+  for (const mirrored of [false, true]) {
+    for (const shift of [-1, 0, 1]) {
+      const reading = new Uint8Array(EDGE_BINS);
+      for (let index = 0; index < EDGE_BINS; index += 1) {
+        const from = (index + shift + EDGE_BINS) % EDGE_BINS;
+        reading[index] = edges[mirrored ? EDGE_BINS - 1 - from : from]!;
+      }
+      out.push(reading);
+    }
+  }
+  return out;
+}
 
 /**
  * How alike two edge histograms are, allowing the camera a slant of up to a
  * bin either way (15 degrees), and the item facing the other way.
  */
-function edgeLikeness(a: number[], b: number[]): number {
+function edgeLikeness(a: Uint8Array, readings: Uint8Array[]): number {
   let best = 0;
-  for (const mirrored of [false, true]) {
-    const turned = mirrored ? b.map((_, index) => b[EDGE_BINS - 1 - index]!) : b;
-    for (const shift of [-1, 0, 1]) {
-      const moved = turned.map((_, index) => turned[(index + shift + EDGE_BINS) % EDGE_BINS]!);
-      best = Math.max(best, overlap(a, moved));
-    }
+  for (const reading of readings) {
+    const alike = overlap(a, reading);
+    if (alike > best) best = alike;
   }
   return best;
 }
@@ -1071,12 +1151,24 @@ export interface Likeness {
 export function likeness(a: string, b: string): Likeness | null {
   const left = parse(a);
   const right = parse(b);
-  if (!left || !right) return null;
+  return left && right ? likenessOf(left, right) : null;
+}
+
+/** A fingerprint read once, to be compared many times without reading it again. */
+export type Fingerprint = Parsed;
+
+/** A fingerprint read for comparing, or null for one that is not. */
+export function readFingerprint(hash: string): Fingerprint | null {
+  return parse(hash);
+}
+
+/** `likeness` of two fingerprints already read: what a search over the catalogue runs. */
+export function likenessOf(left: Fingerprint, right: Fingerprint): Likeness {
   const bits = closest(left.shape, right.shape, right.mirror);
   // Unrelated photos sit around 32 bits apart; anything past that is noise.
   const shape = Math.max(0, 1 - bits / 32);
   const colour = overlap(left.colour, right.colour);
-  const look = left.look && right.look ? overlap(left.look, right.look, lookWeight) : null;
+  const look = left.look && right.look ? lookOverlap(left.look, right.look) : null;
   // A photo that is mostly plain backdrop has little shape to go on, and two of
   // them can share it; the same photo shares its colours as well.
   let samePhoto = bits <= SAME_PHOTO_BITS && colour >= 0.5;
@@ -1100,7 +1192,7 @@ export function likeness(a: string, b: string): Likeness | null {
     const subjectBits = flipped < straight ? bitsApart(left.subject, right.subjectMirror!) : bitsApart(left.subject, right.subject);
     const outline = Math.max(0, 1 - outlineBits / 24);
     const subject = Math.max(0, 1 - subjectBits / 32);
-    const edges = edgeLikeness(left.edges, right.edges);
+    const edges = edgeLikeness(left.edges, right.edgeReadings!);
     const hue = look ?? colour;
     form = 0.55 * outline + 0.3 * edges + 0.15 * subject;
     sameForm = form >= VARIANT_FORM;

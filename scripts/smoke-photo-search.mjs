@@ -568,13 +568,10 @@ await check('a photo search names each item, and the shopper can search with one
   assert.equal(items.length, 3, JSON.stringify(items.map((item) => item.box)));
   const bootItem = items.find((item) => item.box[0] > 0.6);
   assert.ok(bootItem, 'the boot is one of the items');
-  const peek = bootItem.preview.map((entry) => entry.id);
-  assert.ok(peek.includes('lst_item_boot'), `the boot's own listing is in its peek: ${peek}`);
-  assert.ok(peek.includes('lst_item_bundle'), `so is the bundle showing it among others: ${peek}`);
-  assert.ok(bootItem.matches >= 2);
-  // With nobody to read the photo, an item is named after the listing whose own photo it is.
-  assert.equal(bootItem.label, 'Qwopple boot');
-  assert.equal(peek[0], 'lst_item_boot', 'the boot alone comes before the bundle it is part of');
+  // With nobody to read the photo, an item is named by its colour.
+  assert.equal(bootItem.label, 'Red item');
+  // Each item is searched on its own only when picked: a look at the whole photo is one pass.
+  assert.equal(bootItem.preview, undefined);
   // The whole photo finds what is in it, item by item.
   const ids = listings.map((listing) => listing.id);
   for (const id of ['lst_item_boot', 'lst_item_disc', 'lst_item_bundle']) assert.ok(ids.includes(id), `${id} found from the whole photo`);
@@ -584,7 +581,8 @@ await check('a photo search names each item, and the shopper can search with one
   assert.equal(one.status, 200, JSON.stringify(one.jsonBody));
   assert.deepEqual(one.jsonBody.region, bootItem.box);
   assert.deepEqual(one.jsonBody.items, [], 'one item is not split again');
-  const firstTwo = one.jsonBody.listings.slice(0, 2).map((listing) => listing.id).sort();
+  // The boot's own listing first, then the bundle showing it among other things.
+  const firstTwo = one.jsonBody.listings.slice(0, 2).map((listing) => listing.id);
   assert.deepEqual(firstTwo, ['lst_item_boot', 'lst_item_bundle']);
   const discAt = one.jsonBody.listings.findIndex((listing) => listing.id === 'lst_item_disc');
   assert.ok(discAt === -1 || discAt > 1, 'the disc is no match for the boot');
