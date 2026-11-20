@@ -13331,6 +13331,18 @@ await check('suggestions name people you engage with, never anybody followed or 
   assert.ok(!(await suggestionsR(req({ headers: reader.headers }), ctx)).jsonBody.suggestions.some((entry) => entry.id === writer.id));
 });
 
+await check('people-only suggestions are people, with somebody to show even with nothing to go on', async () => {
+  const fresh = await newBuyer('People Only Reader');
+  const poster = await newBuyer('People Only Poster');
+  resetRateLimits();
+  await createPost(req({ headers: poster.headers, body: { body: 'My shelf this week' } }), ctx);
+  const rows = (await suggestionsR(req({ headers: fresh.headers, query: { only: 'people' } }), ctx)).jsonBody.suggestions;
+  assert.ok(rows.length > 0, 'somebody to suggest');
+  assert.ok(rows.every((entry) => entry.shop === false && entry.followKey.startsWith('person:')), JSON.stringify(rows));
+  assert.ok(rows.every((entry) => typeof entry.postCount === 'number'));
+  assert.ok(rows.every((entry) => entry.id !== fresh.id));
+});
+
 await check('the week\'s best ranks loved shelves and argued debates', async () => {
   resetRateLimits();
   await reactTo(req({ headers: auth, params: on(flexPost), body: { kind: 'fire' } }), ctx);

@@ -260,6 +260,8 @@ const SUGGESTIONS = 12;
 async function suggestions(request: HttpRequest, _context: InvocationContext) {
   const { viewer, repository, user } = await account(request);
   if (!user) return error(401, 'unauthorized', 'Sign in first.');
+  // `?only=people`: Discover's "People to follow" - collectors, never a shop.
+  const peopleOnly = request.query.get('only') === 'people';
   const [follows, recent, liked] = await Promise.all([
     repository.listFollowsBy(viewer.id),
     repository.listRecentPosts(300),
@@ -270,6 +272,7 @@ async function suggestions(request: HttpRequest, _context: InvocationContext) {
   const tally = new Map<string, { score: number; reason: string; shop: boolean }>();
   const offer = (followKey: string, score: number, reason: string) => {
     const shop = !isPersonFollow(followKey);
+    if (peopleOnly && shop) return;
     const id = shop ? followKey : followKey.slice(PERSON_FOLLOW.length);
     if (id === viewer.id || followKeys.has(followKey) || screen.muted.has(id)) return;
     const was = tally.get(followKey);
@@ -310,8 +313,26 @@ async function suggestions(request: HttpRequest, _context: InvocationContext) {
     for (const listing of inCategories[index]!) offer(listing.sellerId, 3, `Sells ${category}`);
   });
 
+  // People only, and not enough to go on: whoever is posting and being
+  // loved for it lately, speaking as themselves rather than as a shop.
+  const postsBy = new Map<string, number>();
+  if (peopleOnly) {
+    const owners = await channelOwners(recent, repository);
+    const loved = new Map<string, number>();
+    for (const post of recent) {
+      if (asShop(post, owners.get(post.channelId))) continue;
+      postsBy.set(post.authorId, (postsBy.get(post.authorId) ?? 0) + 1);
+      loved.set(post.authorId, (loved.get(post.authorId) ?? 0) + (post.reactions?.length ?? post.likeCount ?? 0));
+    }
+    if (tally.size < SUGGESTIONS) {
+      for (const [id, hearts] of loved) {
+        offer(`${PERSON_FOLLOW}${id}`, 0.2 + Math.min(hearts, 50) / 100, hearts > 0 ? 'Their posts get loved' : 'Posting on Figmark lately');
+      }
+    }
+  }
+
   // Nothing to go on yet: the shops most people follow.
-  if (tally.size < SUGGESTIONS) {
+  if (!peopleOnly && tally.size < SUGGESTIONS) {
     // The shop index is held for a minute, so this costs no read of every shop.
     const owners = [...await shopIndex(repository)]
       .sort((a, b) => b.followerCount - a.followerCount).slice(0, SUGGESTIONS);
@@ -337,6 +358,7 @@ async function suggestions(request: HttpRequest, _context: InvocationContext) {
       shop: entry.shop,
       followerCount: entry.shop ? person.sellerProfile!.followerCount : person.followerCount ?? 0,
       reason: entry.reason,
+      ...(peopleOnly ? { postCount: postsBy.get(id) ?? 0 } : {}),
     });
     if (rows.length >= SUGGESTIONS) break;
   }

@@ -104,24 +104,37 @@ function Lab() {
   );
 }
 
-/** The treasure: under the sea - light coming down, fish passing, weed swaying, gold glinting. */
+/**
+ * The treasure: one dive, told on a loop. Light plays on the surface; a diver
+ * swims down past a sunken ship to a chest half-buried in the sand; the lid
+ * lifts, gold light spills out and coins float up; the diver turns and kicks
+ * away with the find, and the lid settles shut for the next one.
+ */
 function Ocean() {
   return (
     <>
-      <span className="sc-ray" style={at({ '--x': '12%', '--d': '0s' })} />
-      <span className="sc-ray" style={at({ '--x': '48%', '--d': '-3s' })} />
-      <span className="sc-ray" style={at({ '--x': '80%', '--d': '-6s' })} />
-      <span className="sc-swim"><i className="sc-fish" /></span>
-      <span className="sc-swim sc-swim--back"><i className="sc-fish sc-fish--small" /></span>
-      {['4%', '18%', '83%', '94%'].map((x, n) => (
-        <span key={x} className="sc-weed" style={at({ '--x': x, '--d': `${n * -0.9}s`, '--h': `${38 + (n % 2) * 16}px` })} />
+      <span className="sc-caustics" />
+      <span className="sc-ray" style={at({ '--x': '10%', '--d': '0s' })} />
+      <span className="sc-ray" style={at({ '--x': '52%', '--d': '-4s' })} />
+      <span className="sc-wreck" />
+      <span className="sc-school"><i /></span>
+      <span className="sc-jelly" />
+      <span className="sc-sand" />
+      {['3%', '16%', '90%'].map((x, n) => (
+        <span key={x} className="sc-weed" style={at({ '--x': x, '--d': `${n * -0.9}s`, '--h': `${40 + (n % 2) * 18}px` })} />
       ))}
-      {[30, 62, 88, 46].map((x, n) => (
-        <span key={x} className="sc-bubble sc-bubble--sea" style={at({ '--x': `${x}%`, '--d': `${n * -1.7}s`, '--s': `${3 + (n % 3) * 2}px` })} />
-      ))}
-      <span className="sc-glint" style={at({ '--x': '70%', '--y': '30%', '--d': '0s' })} />
-      <span className="sc-glint" style={at({ '--x': '26%', '--y': '58%', '--d': '-1.4s' })} />
-      <span className="sc-glint" style={at({ '--x': '88%', '--y': '64%', '--d': '-2.6s' })} />
+      <span className="sc-chest">
+        <i className="sc-chest__glow" />
+        {[0, 1, 2, 3].map((n) => <i key={n} className="sc-coin" style={at({ '--n': String(n) })} />)}
+        <i className="sc-chest__box" />
+        <i className="sc-chest__lid" />
+      </span>
+      <span className="sc-dive">
+        <i className="sc-diver">
+          <b className="sc-diver__lamp" />
+          {[0, 1, 2].map((n) => <b key={n} className="sc-diver__bubble" style={at({ '--n': String(n) })} />)}
+        </i>
+      </span>
     </>
   );
 }

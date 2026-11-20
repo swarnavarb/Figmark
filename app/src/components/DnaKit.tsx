@@ -361,9 +361,46 @@ export function DnaRail({ category, onAll }: { category?: string | null; onAll: 
         <button type="button" className="dnak__railall" onClick={onAll}>See all <Icon name="right" size={12} /></button>
       </h2>
       <div className="dnak__railrow story__row">
-        {products.map((summary, at) => <DnaTile key={summary.id} summary={summary} index={at} />)}
+        {products.map((summary, at) => <DnaJar key={summary.id} summary={summary} index={at} />)}
       </div>
     </section>
+  );
+}
+
+/**
+ * A product on the lab bench: kept in a glass beaker - rim and spout, sheen,
+ * measuring marks, a tinted liquid sloshing with bubbles rising, the product
+ * floating in it - with what it is written on a specimen label stuck to the
+ * glass. The lab rail's tile; the Products lens keeps the plain one.
+ */
+function DnaJar({ summary, index }: { summary: DnaSummary; index: number }) {
+  const span = priceSpan(summary);
+  const theme = themeOf(summary.category);
+  return (
+    <Link to={dnaHref(summary.id)} className="dnak__tile dnak__jar" data-theme={theme.key}
+      style={{ ['--i' as string]: index } as CSSProperties}>
+      <span className="dnak__jarrim" aria-hidden="true" />
+      <span className="dnak__jarglass">
+        <span className="dnak__jarliquid" aria-hidden="true"><i /></span>
+        <span className="dnak__jarspecimen">
+          {summary.cover ? <img src={summary.cover} alt="" loading="lazy" decoding="async" /> : <DnaHelix rungs={10} />}
+        </span>
+        <span className="dnak__jarbubbles" aria-hidden="true">{[0, 1, 2, 3].map((n) => <i key={n} />)}</span>
+        <span className="dnak__jarticks" aria-hidden="true"><i>250</i><i>150</i><i>50</i></span>
+        <span className="dnak__jarlabel">
+          <span className="dnak__jarno">No. {sequenceOf(summary.id)} <span aria-hidden="true">{theme.glyph}</span></span>
+          <span className="dnak__tilecat">{summary.category}</span>
+          <span className="dnak__tilename">{summary.name}</span>
+          {span && <span className="dnak__tileprice">{span}</span>}
+          <span className="dnak__tilemeta">
+            <span>{summary.sellers} shop{summary.sellers === 1 ? '' : 's'}</span>
+            {summary.rating !== null && <span><Stars value={summary.rating} size={10} /> {summary.rating.toFixed(1)}</span>}
+          </span>
+          <HeatBand heat={summary.heat} label={summary.heatLabel} compact />
+        </span>
+        <span className="dnak__jarsheen" aria-hidden="true" />
+      </span>
+    </Link>
   );
 }
 
