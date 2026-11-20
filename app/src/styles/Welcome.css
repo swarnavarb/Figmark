@@ -387,10 +387,67 @@
 .welm__you { padding: 12px 20px; box-shadow: 0 24px 60px rgba(124, 58, 237, 0.35); }
 .welm__shine { display: inline-grid; animation: wel-stamp 900ms var(--ease-out) 400ms both; filter: drop-shadow(0 0 10px rgba(29, 155, 240, 0.8)); }
 
+/* ── ver 2: scenes. The story is the content, so it reads larger and brighter. ── */
+.welslides__ver {
+  margin-left: 2px; padding: 2px 8px; border-radius: var(--r-pill);
+  background: var(--tone-soft); color: var(--tone-text);
+  font-family: inherit; font-size: var(--t-xs); font-weight: var(--w-bold);
+}
+.welslide--scene .welslide__title { font-size: calc(26px * var(--text-scale)); line-height: 1.15; }
+.welslide--scene .welslide__lede { color: color-mix(in srgb, var(--text) 82%, transparent); font-size: var(--t-md); line-height: 1.55; }
+
+/* The moment's lock screen: the time, then notifications buzzing in. */
+.welm__lock {
+  width: 100%; max-width: 290px; padding: 16px 12px 12px;
+  display: grid; justify-items: center; gap: 2px;
+  background:
+    radial-gradient(120% 80% at 50% 0%, color-mix(in srgb, var(--tone) 30%, transparent), transparent 70%),
+    color-mix(in srgb, var(--surface) 94%, transparent);
+  animation: wel-card-in 620ms var(--ease-out) both;
+}
+.welm__day { color: var(--text-dim); font-size: var(--t-xs); font-weight: var(--w-semi); letter-spacing: 0.04em; }
+.welm__time {
+  font-family: var(--display); font-weight: var(--w-bold); line-height: 1;
+  font-size: calc(54px * var(--text-scale)); letter-spacing: -0.03em;
+  background: linear-gradient(180deg, var(--text), var(--tone-text));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.welm__buzz { list-style: none; margin: 12px 0 0; padding: 0; width: 100%; display: grid; gap: 6px; }
+.welm__buzz li {
+  display: flex; align-items: center; gap: 10px; padding: 9px 10px;
+  border-radius: 16px; text-align: left;
+  background: color-mix(in srgb, var(--text) 8%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--text) 8%, transparent);
+  animation: wel-buzz 700ms var(--ease-out) both;
+}
+.welm__app {
+  flex: none; width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
+  background: var(--tone); color: var(--tone-ink);
+}
+@keyframes wel-buzz {
+  0% { opacity: 0; transform: translateY(-14px) scale(0.94); }
+  60% { opacity: 1; transform: translateY(0) scale(1); }
+  70% { transform: translateX(-3px); }
+  80% { transform: translateX(3px); }
+  90% { transform: translateX(-1px); }
+}
+
 @media (max-height: 760px) {
   .welslide__art { padding: 8px 0 12px; }
   .welslide__copy:has(.welslide__grid) .welslide__lede, .welslide__copy:has(.welready) .welslide__lede { display: none; }
   .welm__avatar--xl { width: 48px; height: 48px; }
+  .welm__time { font-size: calc(42px * var(--text-scale)); }
+  .welslide--scene .welslide__lede { font-size: var(--t-base); }
+}
+
+/* Small phones: the scene keeps its time and first buzz, so the story still fits. */
+@media (max-height: 700px) {
+  .welm__lock { padding: 10px 10px 10px; }
+  .welm__day, .welm__buzz li:nth-child(n + 2) { display: none; }
+  .welm__time { font-size: calc(34px * var(--text-scale)); }
+  .welm__buzz { margin-top: 8px; }
+  .welslide--scene .welslide__title { font-size: calc(23px * var(--text-scale)); }
+  .welslide--scene .welslide__copy { gap: 7px; }
 }
 
 /* ── Sign-up steps ── */
@@ -604,7 +661,7 @@ select.welinput { appearance: none; background-image: linear-gradient(45deg, tra
 
 @media (prefers-reduced-motion: reduce) {
   .welslides__track, .welstep__track::after, .welslides__seg::after { transition: none; }
-  .welslides__blobs span, .welm *, .welm__chip, .welm__panel, .welm__fan, .welslide.is-on .welslide__copy > *, .welready li,
+  .welslides__blobs span, .welm *, .welm__chip, .welm__panel, .welm__lock, .welm__fan, .welslide.is-on .welslide__copy > *, .welready li,
   .welstep__body, .welearned__tick, .weldone__card, .welbtn--glow { animation: none !important; }
   .welm__plane { display: none; }
 }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { Navigate, useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { suggestUsername } from '@shared/handles';
 import { Icon, type IconName } from '../components/ui';
 import { useSession } from '../session';
@@ -62,6 +62,10 @@ const EMPTY: Draft = { step: 'slides', name: '', email: '', phone: '', phoneVeri
 export function WelcomePage() {
   const { user } = useSession();
   const navigate = useNavigate();
+  // ver 2 tells the same tour as scenes (/welcome?v=2), to compare with the
+  // feature slides. Keep whichever wins and delete the other.
+  const [params] = useSearchParams();
+  const scenes = params.get('v') === '2';
   const [draft, setDraft] = useState<Draft>(() => {
     const saved = readWelcomeDraft<Draft>();
     if (saved && saved.step !== 'slides') return { ...EMPTY, ...saved };
@@ -90,7 +94,7 @@ export function WelcomePage() {
     <div className="wel">
       <div className="wel__aura" aria-hidden="true" />
       <div className="wel__frame">
-        {draft.step === 'slides' && <Slides onSignIn={goSignIn} />}
+        {draft.step === 'slides' && <Slides slides={scenes ? SCENES : SLIDES} label={scenes ? 'ver 2' : undefined} onSignIn={goSignIn} />}
         {draft.step === 'google' && (
           <StepShell step="google" onBack={back} backLabel="See the tour">
             <GoogleStep initial={draft} onDone={(name, email) => patch({ name, email, step: 'whatsapp' })} />
@@ -141,6 +145,10 @@ interface Slide {
   /** Up to four benefits: icon, the gain in a few words, how. */
   points?: Array<[IconName, string, string]>;
   art: () => JSX.Element;
+  /** Shown under the copy, like the gist's tiles. */
+  extra?: () => JSX.Element;
+  /** A ver 2 scene: a moment told as a story rather than a list of features. */
+  scene?: boolean;
 }
 
 const SLIDES: Slide[] = [
@@ -152,6 +160,7 @@ const SLIDES: Slide[] = [
     hl: 'safest way',
     lede: 'Imports, group-buys, drops and original art, with your money held safe until it arrives and real, verified people behind every shop.',
     art: GistArt,
+    extra: GistTiles,
   },
   {
     id: 'buyers',
@@ -296,8 +305,154 @@ const SLIDES: Slide[] = [
     hl: 'blue tick',
     lede: 'Four quick steps, and your verified profile is live.',
     art: ReadyArt,
+    extra: ReadySteps,
   },
 ];
+
+/* ── ver 2: the same tour, told as scenes ────────────────────────────────────
+ * No feature lists. Each slide is the moment someone is really paying for -
+ * the parcel that clears customs while they sleep, the print run that sells
+ * out by twenty past seven - and its art is that moment's lock screen. */
+
+const SCENES: Slide[] = [
+  {
+    id: 'scene-door',
+    tone: 'violet',
+    scene: true,
+    kicker: 'Welcome to Figmark',
+    title: 'The doorbell rings. It’s the figure you ordered from Tokyo.',
+    hl: 'from Tokyo.',
+    lede: 'Four months ago you paid someone on the other side of the world, and never once lay awake wondering. That’s Figmark: buying, selling and collecting with people you can trust.',
+    art: () => (
+      <Moment day="Saturday" time="7:12" buzz={[
+        ['box', 'Delivered · Mecha kit 1/100', 'Signed for at your door'],
+        ['message', '@tokyo.toys', 'It made it! Enjoy it 🙏'],
+      ]} />
+    ),
+  },
+  {
+    id: 'scene-buy',
+    tone: 'aqua',
+    scene: true,
+    kicker: 'When you buy',
+    title: '11:40 pm. Your parcel is stuck in customs, and you’re not worried.',
+    hl: 'you’re not worried.',
+    lede: 'Your phone buzzes: cleared, with a photo of the box. Your ₹3,450 is still with Figmark, not the seller, until it’s in your hands. You put the phone down and sleep.',
+    art: () => (
+      <Moment day="Tuesday" time="11:40" buzz={[
+        ['truck', 'Lot #24 cleared customs', 'Photo of your box attached'],
+        ['lock', 'Your ₹3,450 is safe', 'Released only when it reaches you'],
+      ]} />
+    ),
+  },
+  {
+    id: 'scene-sell',
+    tone: 'coral',
+    scene: true,
+    kicker: 'When you sell',
+    title: 'Sunday morning. Coffee in one hand, twenty orders in the other.',
+    hl: 'twenty orders',
+    lede: 'Eighteen have paid; the last two get a nudge without you typing a word. You tap Shipped once, and twenty phones light up across India. Then you finish your coffee while it’s still hot.',
+    art: () => (
+      <Moment day="Sunday" time="9:05" buzz={[
+        ['box', 'Lot #24 · 18 of 20 paid', '2 reminders sent for you'],
+        ['bell', 'Marked as shipped', 'All 20 buyers told'],
+      ]} />
+    ),
+  },
+  {
+    id: 'scene-ship',
+    tone: 'blue',
+    scene: true,
+    kicker: 'When you move freight',
+    title: 'Friday’s flight to Mumbai was half empty. By lunch, it’s full.',
+    hl: 'it’s full.',
+    lede: 'Three sellers found your route and booked the space themselves. No calls, no chasing group chats. One update from customs, and every buyer hears it.',
+    art: () => (
+      <Moment day="Wednesday" time="12:30" buzz={[
+        ['plane', 'New booking · 42 kg', 'Tokyo → Mumbai, Friday'],
+        ['plane', 'New booking · 18 kg', 'Tokyo → Mumbai, Friday'],
+        ['check', 'Friday’s flight is full', '3 sellers · paid in advance'],
+      ]} />
+    ),
+  },
+  {
+    id: 'scene-art',
+    tone: 'pink',
+    scene: true,
+    kicker: 'When you make art',
+    title: 'Your print went live at seven. By twenty past, it’s sold out.',
+    hl: 'sold out.',
+    lede: 'Fifty collectors, every one paid upfront. Then a message from a stranger in Pune: would you paint their city next? The advance is already in.',
+    art: () => (
+      <Moment day="Thursday" time="7:20" buzz={[
+        ['image', 'Monsoon City · 50 of 50 sold', 'Your print run is gone'],
+        ['message', 'New commission from Pune', '₹8,000 advance held for you'],
+      ]} />
+    ),
+  },
+  {
+    id: 'scene-people',
+    tone: 'lime',
+    scene: true,
+    kicker: 'Your people',
+    title: 'You post your shelf. Someone in Kolkata asks where you found it.',
+    hl: 'where you found it.',
+    lede: 'Ten minutes later a shop replies, “I can get this.” By the weekend you’re swapping tips with people who love the same strangely specific thing you do.',
+    art: () => (
+      <Moment day="Monday" time="10:14" buzz={[
+        ['heart', '128 people liked your shelf', '@anime.kolkata: where is that from?!'],
+        ['target', '@kicks.import', 'I can get this. Want one?'],
+      ]} />
+    ),
+  },
+  {
+    id: 'scene-drop',
+    tone: 'orange',
+    scene: true,
+    kicker: 'Drops',
+    title: '8:59 pm. Thumb hovering. Three, two, one.',
+    hl: 'Three, two, one.',
+    lede: 'You’re in: number 3 of 8, at the channel price, while everyone else is still refreshing. Your friends will ask how you got one. You’ll just smile.',
+    art: () => (
+      <Moment day="Friday" time="8:59" buzz={[
+        ['bolt', 'Power sale is live · @tokyo.toys', 'Limited figure, 8 made'],
+        ['trophy', 'It’s yours: #3 of 8', '₹1,920 instead of ₹2,400'],
+      ]} />
+    ),
+  },
+  {
+    id: 'scene-tick',
+    tone: 'violet',
+    scene: true,
+    kicker: 'Free to join',
+    title: 'A stranger offers you a trade. You tap their name: blue tick.',
+    hl: 'blue tick.',
+    lede: 'A real person, verified. You say yes without a second thought. Four minutes from now, people will feel that way about you.',
+    art: ReadyArt,
+  },
+];
+
+/** A lock screen at the moment of the scene: the time, then a buzz or two. */
+function Moment({ day, time, buzz }: { day: string; time: string; buzz: Array<[IconName, string, string]> }) {
+  return (
+    <div className="welm">
+      <div className="welm__card welm__lock">
+        <span className="welm__day">{day}</span>
+        <span className="welm__time">{time}</span>
+        <ul className="welm__buzz">
+          {buzz.map(([icon, title, body], at) => (
+            <li key={title} style={{ animationDelay: `${450 + at * 900}ms` }}>
+              <span className="welm__app"><Icon name={icon} size={15} /></span>
+              <span className="welm__grow"><strong>{title}</strong><span>{body}</span></span>
+              <span className="welm__muted">now</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
 
 function Title({ text, hl }: { text: string; hl: string }) {
   const at = text.indexOf(hl);
@@ -305,12 +460,12 @@ function Title({ text, hl }: { text: string; hl: string }) {
   return <>{text.slice(0, at)}<em className="welslide__hl">{hl}</em>{text.slice(at + hl.length)}</>;
 }
 
-function Slides({ onSignIn }: { onSignIn: () => void }) {
+function Slides({ slides, label, onSignIn }: { slides: Slide[]; label?: string; onSignIn: () => void }) {
   const [index, setIndex] = useState(0);
   const drag = useRef<{ x: number; y: number; id: number } | null>(null);
-  const count = SLIDES.length;
+  const count = slides.length;
   const last = index === count - 1;
-  const slide = SLIDES[index]!;
+  const slide = slides[index]!;
 
   const go = (next: number) => {
     if (next < 0 || next >= count) return;
@@ -340,13 +495,13 @@ function Slides({ onSignIn }: { onSignIn: () => void }) {
       <div className="welslides__blobs" aria-hidden="true"><span /><span /></div>
 
       <div className="welslides__progress" aria-label={`Slide ${index + 1} of ${count}`}>
-        {SLIDES.map((item, at) => (
+        {slides.map((item, at) => (
           <button key={item.id} type="button" className={`welslides__seg${at < index ? ' is-done' : at === index ? ' is-on' : ''}`}
             aria-label={`Go to ${item.kicker}`} aria-current={at === index} onClick={() => go(at)} />
         ))}
       </div>
       <header className="welslides__bar">
-        <span className="welslides__brand"><span className="brand__mark welslides__mark" aria-hidden="true" />Figmark</span>
+        <span className="welslides__brand"><span className="brand__mark welslides__mark" aria-hidden="true" />Figmark{label && <span className="welslides__ver">{label}</span>}</span>
         {!last && index > 0 && <button type="button" className="welslides__join" onClick={onSignIn}>Join free</button>}
         {index === 0 && <button type="button" className="welslides__skip" onClick={onSignIn}>Log in</button>}
       </header>
@@ -354,8 +509,8 @@ function Slides({ onSignIn }: { onSignIn: () => void }) {
       <div className="welslides__stage" onPointerDown={onPointerDown} onPointerUp={onPointerUp}
         onPointerCancel={() => { drag.current = null; }}>
         <div className="welslides__track" style={{ transform: `translateX(${-100 * index}%)` }}>
-          {SLIDES.map((item, at) => (
-            <article key={item.id} className={`welslide wel--${item.tone}${at === index ? ' is-on' : ''}`}
+          {slides.map((item, at) => (
+            <article key={item.id} className={`welslide wel--${item.tone}${item.scene ? ' welslide--scene' : ''}${at === index ? ' is-on' : ''}`}
               aria-roledescription="slide" aria-label={`${at + 1} of ${count}`} aria-hidden={at !== index}>
               <div className="welslide__art" aria-hidden="true">{at === index && <item.art />}</div>
               <div className="welslide__copy">
@@ -373,8 +528,7 @@ function Slides({ onSignIn }: { onSignIn: () => void }) {
                     ))}
                   </ul>
                 )}
-                {item.id === 'gist' && <GistTiles />}
-                {item.id === 'ready' && <ReadySteps />}
+                {item.extra && <item.extra />}
               </div>
             </article>
           ))}
