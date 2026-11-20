@@ -428,14 +428,12 @@ export function Spin({ spinKey, children, back }: {
       turnTo(Math.round(at / 360) * 360 + 360, at, 1000);
       return;
     }
-    // Carry on the way it was flicked, landing face up: at least one more
-    // turn, and further the harder it was flung. A spring takes the speed it
-    // was let go at, so it never stops dead and starts again.
-    const perSecond = speed.current.at(event.timeStamp) * 1000;
-    const way = perSecond !== 0 ? Math.sign(perSecond) : at >= held.from ? 1 : -1;
-    const carry = Math.min(1080, Math.abs(perSecond) * 0.35);
-    const projected = at + way * Math.max(360, carry);
-    const rest = way > 0 ? Math.ceil(projected / 360) * 360 : Math.floor(projected / 360) * 360;
+    // Coast as far as the flick would carry it, then settle on the nearest
+    // face up: a light flick only rocks it, a firm one turns it once, a very
+    // hard one twice. A spring takes the speed it was let go at, so it never
+    // stops dead and starts again.
+    const perSecond = Math.max(-4500, Math.min(4500, speed.current.at(event.timeStamp) * 1000));
+    const rest = Math.round((at + perSecond * 0.15) / 360) * 360;
     const el = node.current;
     if (!el || still) {
       turnTo(rest, at, 1100);
@@ -444,7 +442,7 @@ export function Spin({ spinKey, children, back }: {
     el.getAnimations().forEach((animation) => animation.cancel());
     angle.current = rest;
     el.style.transform = `rotateY(${rest}deg)`;
-    const { keyframes, ms } = springKeyframes(at, rest, perSecond, (deg) => `rotateY(${deg}deg)`, { duration: 0.9, bounce: 0.2 });
+    const { keyframes, ms } = springKeyframes(at, rest, perSecond, (deg) => `rotateY(${deg}deg)`, { duration: 0.7, bounce: 0.15 });
     el.animate(keyframes, { duration: ms, easing: 'linear' });
   }
 
