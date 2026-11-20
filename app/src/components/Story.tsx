@@ -139,12 +139,14 @@ function Ocean() {
   );
 }
 
-/** The cast: a stage - the curtains part as the people come on, spotlights find them. */
+/**
+ * The cast: a stage - the curtains part as the people come on. The lights are
+ * the cards' own: a lamp over each, its beam falling on them (FollowSuggestions).
+ */
 function Stage() {
   return (
     <>
-      <span className="sc-spot" style={at({ '--x': '22%', '--d': '0s' })} />
-      <span className="sc-spot" style={at({ '--x': '72%', '--d': '-3.5s' })} />
+      <span className="sc-haze" />
       <span className="sc-curtain sc-curtain--left"><i /></span>
       <span className="sc-curtain sc-curtain--right"><i /></span>
       <span className="sc-footlights" />

@@ -108,16 +108,17 @@ function Who({ row }: { row: FollowSuggestion }) {
 }
 
 /**
- * A person, as a headshot pinned up backstage: a polaroid of them, their name
- * in print, the part they play here (collector, followers, posts), and why
- * they are suggested, in their own little quote. Shops never get one.
+ * A person, as one of the cast: a lamp hangs over each card from the rig and
+ * its beam falls through the card onto them - their face lit in a pool of
+ * light on a velvet ground. Below, their name on the playbill, star billing,
+ * their numbers, and why they are suggested. Shops never get one.
  */
 function CastCard({ row, busy, onFollow, onDismiss }: {
   row: FollowSuggestion; busy: boolean; onFollow: () => void; onDismiss: () => void;
 }) {
   const face = (
     <>
-      <span className="fcast__shot">
+      <span className="fcast__spot">
         {row.photoUrl
           ? <img className="fcast__photo" src={row.photoUrl} alt="" loading="lazy" />
           : <Avatar name={row.name} size={64} />}
@@ -126,21 +127,26 @@ function CastCard({ row, busy, onFollow, onDismiss }: {
       {row.handle && <span className="fcast__handle">@{row.handle}</span>}
     </>
   );
-  const parts = [
-    row.followerCount > 0 ? `${row.followerCount} follower${row.followerCount === 1 ? '' : 's'}` : null,
-    row.postCount ? `${row.postCount} post${row.postCount === 1 ? '' : 's'}` : null,
-  ].filter(Boolean);
+  const stats = [
+    row.followerCount > 0 ? { n: row.followerCount, label: row.followerCount === 1 ? 'follower' : 'followers' } : null,
+    row.postCount ? { n: row.postCount, label: row.postCount === 1 ? 'post' : 'posts' } : null,
+  ].filter((stat): stat is { n: number; label: string } => stat !== null);
   return (
     <div className="fcast">
-      <span className="fcast__tape" aria-hidden="true" />
+      <span className="fcast__lamp" aria-hidden="true"><i /></span>
+      <span className="fcast__beam" aria-hidden="true" />
       <button type="button" className="fcast__x" aria-label={`Not now: ${row.name}`} onClick={onDismiss}>
         <Icon name="close" size={12} />
       </button>
       {row.handle
         ? <Link to={`/${encodeURIComponent(row.handle)}`} className="fcast__who">{face}</Link>
         : <span className="fcast__who">{face}</span>}
-      <span className="fcast__role">Collector</span>
-      {parts.length > 0 && <span className="fcast__stats">{parts.join(' · ')}</span>}
+      <span className="fcast__bill">Collector</span>
+      {stats.length > 0 && (
+        <span className="fcast__stats">
+          {stats.map((stat) => <span key={stat.label}><b>{stat.n}</b> {stat.label}</span>)}
+        </span>
+      )}
       <q className="fcast__why">{row.reason}</q>
       <button type="button" className="fcast__follow" disabled={busy} onClick={onFollow}>
         <Icon name="plus" size={12} /> Follow

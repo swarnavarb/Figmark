@@ -32,67 +32,116 @@
 }
 .fsug__follow { justify-content: center; width: 100%; }
 
-/* ── People, as cast headshots pinned up backstage ──────────────────────────
-   Cream playbill card stock with a strip of tape, each one hung a little
-   crooked (alternately), a polaroid of the person, their name in print. The
-   opposite of a shop's tile: paper, not a building. */
-.fsug__row:has(.fcast) { grid-auto-columns: 158px; gap: 14px; padding-top: 12px; padding-bottom: 12px; }
-.fcast {
-  position: relative; display: grid; justify-items: center; gap: 6px; align-content: start;
-  padding: 16px 10px 10px; scroll-snap-align: start; text-align: center;
-  color: #2A1E14; border-radius: 3px;
+/* ── People, as the cast ─────────────────────────────────────────────────────
+   A lighting rig runs over the row (drawn on the row itself, so it scrolls
+   with the cards) and a lamp hangs from it over every card. Each lamp's beam
+   is painted over its card - the light lands on the person - into an arched
+   velvet stage where their face sits in a pool of it. Below the arch, the
+   playbill: name, star billing, numbers, why. Shops never get one.
+
+   The lamps come on one after another the first time the band is seen, then
+   hum; they only hum while it is on screen. */
+.fsug__row:has(.fcast) {
+  grid-auto-columns: 164px; gap: 14px; padding-top: 46px; padding-bottom: 14px;
+  /* The rig: two rails and the lattice between them. */
   background:
-    radial-gradient(120% 60% at 50% 0%, rgba(255, 255, 255, 0.55), transparent 60%),
-    linear-gradient(180deg, #F8F0DE, #EFE2C4);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset, 0 10px 20px rgba(0, 0, 0, 0.45), 0 2px 4px rgba(0, 0, 0, 0.35);
-  rotate: -1.6deg;
-  transition: rotate var(--dur-2) var(--ease), translate var(--dur-2) var(--ease);
+    linear-gradient(rgba(148, 132, 160, 0.9) 0 0) 0 9px / 100% 2px no-repeat,
+    linear-gradient(rgba(148, 132, 160, 0.9) 0 0) 0 19px / 100% 2px no-repeat,
+    repeating-linear-gradient(60deg, transparent 0 7px, rgba(148, 132, 160, 0.55) 7px 8.5px) 0 11px / 100% 8px no-repeat;
+  background-attachment: local;
 }
-.fcast:nth-child(even) { rotate: 1.4deg; }
-.fcast:nth-child(3n) { rotate: -0.6deg; }
-.fcast:hover { rotate: 0deg; translate: 0 -3px; }
-.fcast__tape {
-  position: absolute; top: -9px; left: 50%; width: 54px; height: 18px; translate: -50% 0; rotate: -4deg;
-  background: rgba(253, 230, 138, 0.62);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
-  clip-path: polygon(3% 0, 97% 4%, 100% 50%, 96% 100%, 2% 96%, 0 45%);
+.fcast {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 5px;
+  padding: 6px 6px 10px; scroll-snap-align: start; text-align: center;
+  color: #2A1E14; border-radius: 16px;
+  background:
+    radial-gradient(120% 50% at 50% 100%, rgba(212, 160, 23, 0.1), transparent 70%),
+    linear-gradient(180deg, #FBF5E8, #F1E4C8);
+  box-shadow:
+    0 0 0 1px rgba(212, 160, 23, 0.35) inset,
+    0 14px 28px -8px rgba(0, 0, 0, 0.65), 0 2px 6px rgba(0, 0, 0, 0.35);
+  transition: translate var(--dur-2) var(--ease);
 }
-.fcast:nth-child(even) .fcast__tape { rotate: 5deg; }
-.fcast__x {
-  position: absolute; top: 4px; right: 4px; display: grid; place-items: center;
-  width: 24px; height: 24px; border: 0; border-radius: 50%;
-  background: transparent; color: rgba(42, 30, 20, 0.55); cursor: pointer;
+.fcast:hover { translate: 0 -3px; }
+
+/* The lamp: a rod off the rig, a black can on a yoke, a lit lens. */
+.fcast__lamp {
+  position: absolute; z-index: 4; top: -25px; left: 50%; width: 26px; height: 20px; translate: -50% 0;
+  pointer-events: none;
 }
-.fcast__x:hover { background: rgba(42, 30, 20, 0.08); color: #2A1E14; }
-.fcast__who { display: grid; justify-items: center; gap: 2px; min-width: 0; max-width: 100%; color: inherit; text-decoration: none; }
-/* The polaroid: white border, a deeper bottom margin, a spotlight on the face. */
-.fcast__shot {
-  display: grid; place-items: center; padding: 5px 5px 14px; margin-bottom: 4px;
-  background: #FFFDF8; border-radius: 2px;
-  box-shadow: 0 3px 8px rgba(42, 30, 20, 0.28);
+.fcast__lamp::before {
+  content: ''; position: absolute; left: 50%; top: 0; width: 3px; height: 7px; translate: -50% 0;
+  border-radius: 1px; background: rgba(148, 132, 160, 0.95);
 }
-.fcast__shot > * {
-  width: 72px; height: 72px; border-radius: 1px;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+.fcast__lamp::after {
+  content: ''; position: absolute; left: 3px; right: 3px; top: 6px; height: 12px;
+  border-radius: 5px 5px 3px 3px;
+  background: linear-gradient(180deg, #4A4152, #1C1720 70%);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), 0 1px 0 rgba(255, 255, 255, 0.18) inset;
 }
-.fcast__shot .avatar { border-radius: 1px !important; width: 72px !important; height: 72px !important; font-size: calc(26px * var(--text-scale)); }
+.fcast__lamp i {
+  position: absolute; z-index: 1; left: 5px; right: 5px; top: 15px; height: 5px; border-radius: 50%;
+  background: radial-gradient(closest-side, #FFFBEB, rgba(253, 230, 138, 0.9) 60%, rgba(253, 230, 138, 0));
+  box-shadow: 0 2px 10px 2px rgba(253, 230, 138, 0.7);
+}
+/* The beam, over the card: from the lens down into the arch. */
+.fcast__beam {
+  position: absolute; z-index: 3; top: -6px; left: 0; right: 0; height: 128px; pointer-events: none;
+  background: linear-gradient(180deg, rgba(255, 244, 214, 0.62), rgba(255, 236, 190, 0.22) 70%, rgba(255, 236, 190, 0));
+  clip-path: polygon(45% 0, 55% 0, 88% 100%, 12% 100%);
+  mix-blend-mode: screen;
+}
+
+/* The stage in the card: an arch of velvet, the face lit, a pool at its feet. */
+.fcast__who { display: flex; flex-direction: column; align-items: center; gap: 1px; width: 100%; min-width: 0; color: inherit; text-decoration: none; }
+.fcast__spot {
+  position: relative; display: grid; place-items: center; width: 100%; height: 112px; margin-bottom: 7px;
+  border-radius: 76px 76px 10px 10px / 40px 40px 10px 10px; overflow: hidden;
+  background:
+    radial-gradient(52% 24% at 50% 92%, rgba(255, 232, 170, 0.55), rgba(255, 232, 170, 0) 100%),
+    radial-gradient(60% 80% at 50% 30%, rgba(190, 18, 60, 0.35), transparent 70%),
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.22) 0 3px, transparent 3px 9px),
+    linear-gradient(180deg, #3B0A24, #22061A);
+  box-shadow: 0 0 0 1.5px rgba(212, 160, 23, 0.75) inset, 0 0 0 4px rgba(212, 160, 23, 0.14) inset;
+}
+.fcast__spot > * {
+  position: relative; z-index: 1; width: 66px; height: 66px; border-radius: 50%; translate: 0 6px;
+  box-shadow: 0 0 0 2px #FFF6DA, 0 -8px 22px rgba(255, 236, 190, 0.45), 0 6px 10px rgba(0, 0, 0, 0.5);
+}
+.fcast__spot .avatar { width: 66px !important; height: 66px !important; font-size: calc(22px * var(--text-scale)) !important; }
 .fcast__photo { object-fit: cover; display: block; }
 .fcast__name {
-  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-family: var(--display); font-size: var(--t-base); font-weight: 800; letter-spacing: -0.01em; line-height: 1.15;
+  max-width: 100%; padding-inline: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--display); font-size: var(--t-base); font-weight: 800; letter-spacing: -0.01em; line-height: 1.2;
 }
-.fcast__handle { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-2xs); color: rgba(42, 30, 20, 0.6); }
-.fcast__role {
-  padding: 2px 8px; border-radius: 999px; font-size: var(--t-2xs); font-weight: var(--w-bold);
-  letter-spacing: 0.04em; color: #7A1D2E; background: rgba(159, 18, 57, 0.1);
+.fcast__handle { max-width: 100%; padding-inline: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-2xs); color: rgba(42, 30, 20, 0.58); }
+
+/* Star billing, between two rules. */
+.fcast__bill {
+  display: flex; align-items: center; gap: 6px; width: 100%; padding-inline: 6px;
+  font-size: var(--t-2xs); font-weight: var(--w-bold); letter-spacing: 0.16em; text-transform: uppercase; color: #9F1239;
 }
-.fcast__stats { font-size: var(--t-2xs); font-weight: var(--w-semi); color: rgba(42, 30, 20, 0.7); }
+.fcast__bill::before, .fcast__bill::after {
+  content: '\2605'; flex: 1; font-size: 0.85em; letter-spacing: 0; color: #B8860B;
+  background: linear-gradient(rgba(159, 18, 57, 0.28) 0 0) center / 100% 1px no-repeat;
+}
+.fcast__bill::before { text-align: right; }
+.fcast__bill::after { text-align: left; }
+.fcast__stats { display: flex; justify-content: center; gap: 10px; font-size: var(--t-2xs); color: rgba(42, 30, 20, 0.62); }
+.fcast__stats b { color: #2A1E14; font-weight: 800; }
 .fcast__why {
-  font-size: var(--t-2xs); font-style: italic; line-height: 1.35; color: rgba(42, 30, 20, 0.78);
+  padding-inline: 6px; font-size: var(--t-2xs); font-style: italic; line-height: 1.35; color: rgba(42, 30, 20, 0.75);
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
+.fcast__x {
+  position: absolute; z-index: 5; top: 10px; right: 10px; display: grid; place-items: center;
+  width: 24px; height: 24px; border: 0; border-radius: 50%; cursor: pointer;
+  background: rgba(0, 0, 0, 0.35); color: rgba(255, 246, 218, 0.85);
+}
+.fcast__x:hover { background: rgba(0, 0, 0, 0.55); color: #fff; }
 .fcast__follow {
-  display: inline-flex; align-items: center; justify-content: center; gap: 4px; width: 100%; margin-top: 2px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  width: calc(100% - 8px); margin-top: auto;
   min-height: 34px; padding: 6px 10px; border: 0; border-radius: 999px; cursor: pointer;
   font: inherit; font-size: var(--t-xs); font-weight: var(--w-bold);
   color: #FFF8EC; background: linear-gradient(180deg, #B4123E, #8C0D30);
@@ -101,3 +150,19 @@
 .fcast__follow:active { translate: 0 1px; box-shadow: 0 1px 0 #5B0A1F; }
 .fcast__follow:disabled { opacity: 0.6; cursor: default; }
 .fcast__follow:focus-visible, .fcast__x:focus-visible, .fcast__who:focus-visible { outline: 2px solid #FDA4AF; outline-offset: 2px; }
+
+/* Lights up: off until the band is seen, then on one at a time - a flicker
+   as each catches - and a slow hum after. */
+.fsug.is-armed .fcast__beam, .fsug.is-armed .fcast__lamp i { opacity: 0; }
+.fsug.is-shown .fcast__beam, .fsug.is-shown .fcast__lamp i {
+  animation: fcast-on 900ms linear var(--on, 300ms) both, fcast-hum 3.2s ease-in-out calc(var(--on, 300ms) + 900ms) infinite alternate;
+}
+.fcast:nth-child(2) { --on: 650ms; }
+.fcast:nth-child(3) { --on: 1000ms; }
+.fcast:nth-child(4) { --on: 1300ms; }
+.fcast:nth-child(n+5) { --on: 1550ms; }
+.fsug:not(.is-live) .fcast__beam, .fsug:not(.is-live) .fcast__lamp i { animation-play-state: paused; }
+@keyframes fcast-on {
+  0% { opacity: 0; } 12% { opacity: 0.9; } 20% { opacity: 0.1; } 34% { opacity: 1; } 42% { opacity: 0.35; } 60%, 100% { opacity: 1; }
+}
+@keyframes fcast-hum { from { opacity: 1; } to { opacity: 0.78; } }
