@@ -6,6 +6,7 @@ import { formatMoney } from '../format';
 import { useToast } from './Feedback';
 import { Icon } from './Icon';
 import { Modal } from './ui';
+import { StoryTag, useStory } from './Story';
 import '../styles/DnaKit.css';
 
 /**
@@ -345,18 +346,20 @@ export function DnaTile({ summary, index = 0 }: { summary: DnaSummary; index?: n
 /** Discover's row of products people are after. Draws nothing until there are some. */
 export function DnaRail({ category, onAll }: { category?: string | null; onAll: () => void }) {
   const [products, setProducts] = useState<DnaSummary[]>([]);
+  const story = useStory('helix');
   useEffect(() => {
     void api.dnaTrending(category).then((answer) => setProducts(answer.products.slice(0, 12))).catch(() => undefined);
   }, [category]);
   if (products.length < 2) return null;
   return (
-    <section className="dnak__rail" aria-label="Products">
+    <section ref={story.ref} className={`dnak__rail ${story.className}`} aria-label="Products">
+      <StoryTag>Chapter · The lab</StoryTag>
       <h2 className="dnak__railhead">
         <DnaHelix rungs={6} still /> Product DNA
         <span className="dnak__railsub">what people are after</span>
         <button type="button" className="dnak__railall" onClick={onAll}>See all <Icon name="right" size={12} /></button>
       </h2>
-      <div className="dnak__railrow">
+      <div className="dnak__railrow story__row">
         {products.map((summary, at) => <DnaTile key={summary.id} summary={summary} index={at} />)}
       </div>
     </section>

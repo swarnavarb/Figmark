@@ -231,7 +231,12 @@ export function useDialog(ref: { current: HTMLElement | null }, onClose: () => v
       'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
     ) ?? [])].filter((element) => element.offsetParent !== null || element === document.activeElement);
     // The first field if there is one, else the dialog itself - never the close button by default.
-    const first = focusable().find((element) => element.matches('input, select, textarea')) ?? box;
+    // On a touch screen focusing a field opens the on-screen keyboard over the
+    // dialog before anyone asked to type (tapping Share raised the keyboard for
+    // its optional "say something" box), so there the dialog itself takes focus.
+    // A field that must be typed into straight away says so with autoFocus.
+    const touch = typeof window.matchMedia === 'function' && window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+    const first = (touch ? null : focusable().find((element) => element.matches('input, select, textarea'))) ?? box;
     if (first && !box?.contains(document.activeElement)) first.focus({ preventScroll: true });
 
     const onKey = (event: KeyboardEvent) => {
