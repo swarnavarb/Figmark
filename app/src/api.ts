@@ -3782,6 +3782,12 @@ export const api = {
   fixDna: (body: { kind: DnaLinkKind; id: string; partition: string; action: 'remove' | 'move' | 'tag' | 'new'; from?: string; to?: string }) =>
     post<{ dna: string | null }>('/dna/fix', body),
   mergeDna: (id: string, into: string) => post<{ dna: string }>(`/dna/view/${encodeURIComponent(id)}/merge`, { into }),
+  /** Follow a product for `days` (up to 90), or stop with null. */
+  followDna: (id: string, days: number | null) =>
+    post<{ follow: { until: string } | null }>(`/dna/view/${encodeURIComponent(id)}/follow`, { days }),
+  /** "I want this": a hunt on the Wanted board for the product, for `days`. */
+  wantDna: (id: string, body: { days: number; budgetMinor?: number | null }) =>
+    post<{ want: { id: string; buyerId: string; expiresAt: string }; existing: boolean }>(`/dna/view/${encodeURIComponent(id)}/want`, body),
   topicPosts: (slug: string) =>
     request<{ topic: { key: string; label: string }; posts: PostCard[] }>(`/social/topics/${encodeURIComponent(slug)}`),
   socialHome: (as?: string | null, before?: string, following = false) => {
@@ -3904,6 +3910,8 @@ export const api = {
   postWant: (body: {
     title: string; details: string; category: string;
     budgetMinor: number | null; condition: string | null; photoUrls?: string[];
+    /** How long it stays up before it is deleted: 1 to 90 days. */
+    days?: number;
   }) => post<{ want: WantCard }>('/wants/new', body),
   // The buyer is on the path because a want is stored under whoever posted it.
   want: (id: string, buyerId: string) =>

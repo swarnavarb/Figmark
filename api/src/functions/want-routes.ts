@@ -6,7 +6,9 @@ import { personRef, sellerRef } from '../../../shared/parties.js';
 import { can } from '../../../shared/stores.js';
 import { getAuthService } from '../auth/index.js';
 import { ownPhotos } from '../storage/index.js';
-import { claimPhotos } from '../storage/release.js';
+import { claimPhotos, releaseWantPhotos } from '../storage/release.js';
+import { DEFAULT_TIMED_DAYS, timedDays, timedUntil } from '../../../shared/timed.js';
+import { dnasLinked, removeLink } from '../dna.js';
 import { tooFast } from '../rate-limit.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
@@ -27,17 +29,10 @@ import { matchesSearch } from '../../../shared/catalog.js';
  * this", which is the offer that actually matters here.
  */
 
-/** How long a hunt stays on the board before it stops being one. */
-const WANT_DAYS = 30;
-
 /** Longest a hunt can be, so the board stays scannable. */
 const MAX_TITLE = 90;
 const MAX_DETAILS = 600;
 const MAX_CATEGORY = 40;
-
-function expiryFrom(now = new Date()): string {
-  return new Date(now.getTime() + WANT_DAYS * 86_400_000).toISOString();
-}
 
 /** One hunt, as a card on the board reads it. */
 const MAX_PHOTOS = 4;
@@ -142,6 +137,7 @@ async function board(request: HttpRequest, _context: InvocationContext) {
   const repository = await getRepository();
 
   const category = request.query.get('category')?.trim() || undefined;
+  sweepSoon(repository);
   const wants = await repository.listOpenWants({ category, limit: 50 });
 
   const search = (request.query.get('q') ?? '').trim().toLowerCase();
@@ -184,42 +180,65 @@ async function post(request: HttpRequest, _context: InvocationContext) {
 
   let body: {
     title?: string; details?: string; category?: string;
-    budgetMinor?: number | null; condition?: string | null; photoUrls?: unknown;
+    budgetMinor?: number | null; condition?: string | null; photoUrls?: unknown; days?: unknown;
   };
   try {
     body = (await request.json()) as typeof body;
   } catch {
     return error(400, 'invalid_body', 'Request body must be JSON.');
   }
+  const photoUrls = await ownPhotos(body.photoUrls, MAX_PHOTOS);
+  if (!photoUrls) return error(400, 'invalid_want', `Up to ${MAX_PHOTOS} photos, uploaded here.`);
+  const made = await createWant(repository, user, { ...body, photoUrls, shownPhotos: [] });
+  if (typeof made === 'string') return error(400, 'invalid_want', made);
+  if ('refusal' in made) return made.refusal;
+  return json(201, { want: card(made.want, made.matches) });
+}
 
+/**
+ * Post a hunt: checked, saved, its photos claimed, and the shops that already
+ * list something like it told. Shared by the Wanted form and a Product DNA's
+ * "I want this". `photoUrls` are the poster's own uploads, already checked;
+ * `shownPhotos` are photos it shows without owning, such as a DNA's cover.
+ * Answers a sentence saying what is wrong, or the hunt.
+ */
+export async function createWant(
+  repository: Repo,
+  user: { id: string; displayName: string; username?: string | null },
+  body: {
+    title?: string; details?: string; category?: string; budgetMinor?: number | null;
+    condition?: string | null; photoUrls: string[]; shownPhotos: string[]; days?: unknown;
+  },
+): Promise<string | { refusal: ReturnType<typeof error> } | { want: Want; matches: number }> {
   const title = (body.title ?? '').trim();
-  if (title.length < 3) return error(400, 'invalid_want', 'Say what you are looking for.');
-  if (title.length > MAX_TITLE) {
-    return error(400, 'invalid_want', `Keep the title under ${MAX_TITLE} characters.`);
-  }
+  if (title.length < 3) return 'Say what you are looking for.';
+  if (title.length > MAX_TITLE) return `Keep the title under ${MAX_TITLE} characters.`;
 
   const category = (body.category ?? '').trim();
-  if (!category) return error(400, 'invalid_want', 'Pick a category, so sellers can find it.');
-  if (category.length > MAX_CATEGORY) return error(400, 'invalid_want', `Keep the category under ${MAX_CATEGORY} characters.`);
+  if (!category) return 'Pick a category, so sellers can find it.';
+  if (category.length > MAX_CATEGORY) return `Keep the category under ${MAX_CATEGORY} characters.`;
 
   const budget = body.budgetMinor;
   if (budget !== undefined && budget !== null && (!Number.isFinite(budget) || budget <= 0)) {
-    return error(400, 'invalid_want', 'A budget is a number above zero, or leave it out.');
+    return 'A budget is a number above zero, or leave it out.';
   }
 
   const condition = body.condition ?? null;
   if (condition !== null && !CONDITION_TAGS.includes(condition as ConditionTag)) {
-    return error(400, 'invalid_want', 'That is not a condition we recognise.');
+    return 'That is not a condition we recognise.';
   }
 
-  const photoUrls = await ownPhotos(body.photoUrls, MAX_PHOTOS);
-  if (!photoUrls) return error(400, 'invalid_want', `Up to ${MAX_PHOTOS} photos, uploaded here.`);
+  // How long it runs is the poster's choice, up to three months; then it is deleted.
+  const days = body.days === undefined || body.days === null ? DEFAULT_TIMED_DAYS : timedDays(body.days);
+  if (days === null) return 'Pick how long to keep it up: from a day to three months.';
+
   const slow = await tooFast(user.id, 'want');
-  if (slow) return slow;
+  if (slow) return { refusal: slow };
 
   const record = await repository.getUserById(user.id);
   const who = personRef(record ?? user);
   const now = new Date().toISOString();
+  const photoUrls = [...body.photoUrls, ...body.shownPhotos].slice(0, MAX_PHOTOS);
 
   const want: Want = {
     id: `wnt_${randomUUID().slice(0, 12)}`,
@@ -235,14 +254,14 @@ async function post(request: HttpRequest, _context: InvocationContext) {
     condition: condition as ConditionTag | null,
     status: 'open',
     offerCount: 0,
-    expiresAt: expiryFrom(),
+    expiresAt: timedUntil(days),
     closedAt: null,
     createdAt: now,
     updatedAt: now,
   };
 
   const savedWant = await repository.saveWant(want);
-  await claimPhotos(photoUrls, `want:${savedWant.id}`);
+  await claimPhotos(body.photoUrls, `want:${savedWant.id}`);
 
   // Matching starts the moment it is posted: whoever already lists something
   // like it hears so, and can answer with the item rather than a promise.
@@ -254,7 +273,44 @@ async function post(request: HttpRequest, _context: InvocationContext) {
     link: `/social?view=wanted&want=${savedWant.id}&buyer=${savedWant.buyerId}`,
   }, { except: user.id });
 
-  return json(201, { want: card(savedWant, matches.length) });
+  return { want: savedWant, matches: matches.length };
+}
+
+/** Most ended hunts one run deletes, so one run stays short. */
+const SWEEP_BATCH = 25;
+
+/**
+ * Delete hunts whose time is up - open or closed - with everything hanging off
+ * them: the answers, the names put to them, the photos they uploaded, and their
+ * place on a Product DNA. Run by the clock, and on a board read at most every
+ * ten minutes per instance for hosts without timers.
+ */
+export async function sweepEndedWants(repository: Repo, now = new Date()): Promise<number> {
+  const ended = await repository.listWantsEndedBefore(now.toISOString(), SWEEP_BATCH);
+  let deleted = 0;
+  for (const want of ended) {
+    try {
+      for (const answer of await repository.listWantOffers(want.id)) await repository.deleteWantOffer(answer.id, want.id);
+      for (const seeker of await repository.listWantSeekers(want.id)) await repository.deleteWantSeeker(seeker.id, want.id);
+      await releaseWantPhotos(want);
+      for (const dna of await dnasLinked(repository, 'want', want.id)) {
+        await removeLink(repository, dna.id, 'want', want.id, false).catch(() => null);
+      }
+      await repository.deleteWant(want.id, want.buyerId);
+      deleted += 1;
+    } catch {
+      // Left for the next run.
+    }
+  }
+  return deleted;
+}
+
+let sweptAt = 0;
+/** The sweep, on a read: at most every ten minutes per instance, never waited on. */
+function sweepSoon(repository: Repo): void {
+  if (Date.now() - sweptAt < 10 * 60_000) return;
+  sweptAt = Date.now();
+  void sweepEndedWants(repository).catch(() => 0);
 }
 
 /** The hunt, or the refusal. Reading one needs its partition, which is its buyer. */

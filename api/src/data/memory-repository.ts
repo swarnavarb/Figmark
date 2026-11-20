@@ -761,6 +761,21 @@ export class MemoryRepository implements Repository {
     this.wantSeekers.delete(id);
   }
 
+  async listWantsEndedBefore(beforeIso: string, limit: number): Promise<Want[]> {
+    return [...this.wants.values()]
+      .filter((want) => want.expiresAt <= beforeIso)
+      .sort((a, b) => a.expiresAt.localeCompare(b.expiresAt))
+      .slice(0, limit);
+  }
+
+  async deleteWant(id: string): Promise<void> {
+    this.wants.delete(id);
+  }
+
+  async deleteWantOffer(id: string): Promise<void> {
+    this.wantOffers.delete(id);
+  }
+
   async listPreOrdersDue(nowIso: string, limit: number): Promise<Listing[]> {
     return [...this.listings.values()].filter(({ preOrder: pre }) => pre && !pre.closedAt && (
       (pre.cutoffAt <= nowIso && !pre.filledAt && !pre.proceededShortAt && !pre.decisionDueAt)

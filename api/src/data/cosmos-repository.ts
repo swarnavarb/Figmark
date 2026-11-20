@@ -1235,6 +1235,33 @@ export class CosmosRepository implements Repository {
     await this.container('wantSeekers').item(id, wantId).delete();
   }
 
+  async listWantsEndedBefore(beforeIso: string, limit: number): Promise<Want[]> {
+    // Cross-partition and bounded: the clock takes a handful each run.
+    const { resources } = await this.container('wants')
+      .items.query<Want>({
+        query: 'SELECT * FROM c WHERE c.expiresAt <= @before ORDER BY c.expiresAt ASC OFFSET 0 LIMIT @limit',
+        parameters: [{ name: '@before', value: beforeIso }, { name: '@limit', value: limit }],
+      })
+      .fetchAll();
+    return resources;
+  }
+
+  async deleteWant(id: string, buyerId: string): Promise<void> {
+    try {
+      await this.container('wants').item(id, buyerId).delete();
+    } catch (err) {
+      if ((err as { code?: number }).code !== 404) throw err;
+    }
+  }
+
+  async deleteWantOffer(id: string, wantId: string): Promise<void> {
+    try {
+      await this.container('wantOffers').item(id, wantId).delete();
+    } catch (err) {
+      if ((err as { code?: number }).code !== 404) throw err;
+    }
+  }
+
   async listOpenGames(nowIso: string, limit: number): Promise<Post[]> {
     // Every channel's, so cross-partition; IS_STRING is false for absent and null alike.
     const { resources } = await this.container('posts').items.query<Post>({

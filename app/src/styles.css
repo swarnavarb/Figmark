@@ -770,6 +770,9 @@ code, kbd, samp, pre {
   transition: background var(--dur-1), color var(--dur-1);
 }
 .seg button:hover { color: var(--text); }
+/* How long to keep something: five short choices that stay on one line at phone width. */
+.seg--timed { flex-wrap: wrap; }
+.seg--timed button { flex: 1 1 auto; padding-inline: 8px; white-space: nowrap; font-size: var(--t-sm); }
 /* Selected is vibrant, not merely lighter. A filter you have chosen should be
    obvious from across the room, which is most of what a filter row is for. */
 .seg button.is-on {

@@ -27,6 +27,8 @@ import { sweepFees } from './billing.js';
 import { refreshBoards } from './functions/board-routes.js';
 import { getPhotoStore } from './storage/index.js';
 import { deleteUnused } from './storage/unused.js';
+import { sweepEndedWants } from './functions/want-routes.js';
+import { sweepFollows } from './dna-follow.js';
 
 /**
  * How old an unsaved photo must be before the nightly sweep deletes it. Forms
@@ -68,8 +70,16 @@ app.timer('clock', {
     /* Forwarders' custom quotes past the date they set are deleted. */
     await run(context, 'quote-clock', () => sweepExpiredQuotes(repository), (n) => `deleted ${n} expired quote(s)`);
 
+    /* Hunts past the end their poster chose are deleted with their answers and photos. */
+    await run(context, 'want-clock', () => sweepEndedWants(repository), (n) => `deleted ${n} ended hunt(s)`);
+
     /* Dispute deadlines and the release of money they hold: once an hour, on the first run of it. */
     if (new Date().getUTCMinutes() < 5) await disputeClock(timer, context);
+    /* Product DNA follows: prices moved by edits and sales nobody was looking at, once an hour. */
+    if (new Date().getUTCMinutes() >= 15 && new Date().getUTCMinutes() < 20) {
+      await run(context, 'dna-follow-clock', async () => sweepFollows(repository, await repository.listListings({ includeHidden: true })),
+        (n) => `told ${n} follower(s)`);
+    }
     /* Hobby leaderboards: members' scores recounted and finished seasons' podiums written, once an hour. */
     if (new Date().getUTCMinutes() >= 30 && new Date().getUTCMinutes() < 35) {
       await run(context, 'boards-clock', () => refreshBoards(repository), (n) => `recounted ${n} board member(s)`);

@@ -20,6 +20,9 @@ import { ownPhotos } from '../storage/index.js';
 import { claimPhotos } from '../storage/release.js';
 import { everyListing } from './catalog-routes.js';
 import { error, handler, json } from './http.js';
+import { alertFollowers, followsOf, marketOf, setFollow } from '../dna-follow.js';
+import { timedDays } from '../../../shared/timed.js';
+import { createWant } from './want-routes.js';
 
 /**
  * Product DNA over HTTP.
@@ -338,6 +341,14 @@ async function buildView(repository: Repo, dna: ProductDna, viewerId: string | n
   }
 
   const ownedFrom = viewerId ? ownerOf(viewerId) : null;
+  // The reader's follow, how many follow it, and their own hunt for it.
+  const [follows, theirWants] = await Promise.all([
+    followsOf(repository, dna.id).catch(() => []),
+    viewerId ? repository.listWantsBy(viewerId).catch(() => [] as Want[]) : Promise.resolve([] as Want[]),
+  ]);
+  const wantLinked = new Set(dna.links.filter((entry) => entry.kind === 'want').map((entry) => entry.id));
+  const theirHunt = theirWants.find((want) => wantLinked.has(want.id) && want.status === 'open' && want.expiresAt > now);
+  const theirFollow = viewerId ? follows.find((entry) => entry.userId === viewerId) : undefined;
   return {
     dna: { id: dna.id, name: dna.name, category: dna.category, cover: dna.cover ?? sellingNow[0]?.photoUrl ?? null, createdAt: dna.createdAt },
     price,
@@ -360,6 +371,9 @@ async function buildView(repository: Repo, dna: ProductDna, viewerId: string | n
     related,
     yourLinks,
     staff,
+    follow: theirFollow ? { until: theirFollow.until } : null,
+    watchers: follows.length,
+    hunting: theirHunt ? { id: theirHunt.id, buyerId: theirHunt.buyerId, expiresAt: theirHunt.expiresAt } : null,
   };
 }
 
@@ -393,7 +407,74 @@ async function view(request: HttpRequest, _context: InvocationContext) {
   const built = await buildView(repository, fresh, user?.id ?? null, Boolean(user?.capabilities.isAdmin));
   // The background is looked for after answering: the page never waits on another site.
   void findBackground(repository, dna).catch(() => undefined);
+  // Anyone following hears about a move the page shows, even with no clock running.
+  void alertFollowers(repository, fresh, byId);
   return json(200, built);
+}
+
+/**
+ * POST /api/dna/view/{id}/follow - `{ days }` to follow it for that long (one
+ * day to three months), `{ days: null }` to stop. Following again sets a new
+ * end and keeps what was last told.
+ */
+async function follow(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const dna = await getDna(repository, request.params.id ?? '');
+  if (!dna) return error(404, 'not_found', 'No such product.');
+  let body: { days?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  const stop = body.days === null || body.days === 0;
+  const days = stop ? null : timedDays(body.days);
+  if (!stop && days === null) return error(400, 'invalid_days', 'Pick how long to follow it: from a day to three months.');
+  const byId = new Map((await everyListing(repository)).map((listing) => [listing.id, listing]));
+  const saved = await setFollow(repository, dna, user.id, days, marketOf(dna, byId));
+  return json(200, { follow: saved ? { until: saved.until } : null });
+}
+
+/**
+ * POST /api/dna/view/{id}/want - "I want this": a hunt on the Wanted board for
+ * this product, in one tap. `{ days, budgetMinor? }`. Its title, category and
+ * photo come from the DNA, and it is linked to the DNA at once. One open hunt
+ * per person per product: asking again answers the one already running.
+ */
+async function wantIt(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+  const dna = await getDna(repository, request.params.id ?? '');
+  if (!dna) return error(404, 'not_found', 'No such product.');
+  let body: { days?: unknown; budgetMinor?: number | null };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  const now = new Date().toISOString();
+  const linked = new Set(dna.links.filter((entry) => entry.kind === 'want').map((entry) => entry.id));
+  const running = (await repository.listWantsBy(user.id))
+    .find((want) => linked.has(want.id) && want.status === 'open' && want.expiresAt > now);
+  if (running) return json(200, { want: { id: running.id, buyerId: running.buyerId, expiresAt: running.expiresAt }, existing: true });
+
+  const made = await createWant(repository, user, {
+    title: dna.name.slice(0, 90),
+    details: '',
+    category: dna.category,
+    budgetMinor: body.budgetMinor ?? null,
+    condition: null,
+    photoUrls: [],
+    shownPhotos: dna.cover ? [dna.cover] : [],
+    days: body.days,
+  });
+  if (typeof made === 'string') return error(400, 'invalid_want', made);
+  if ('refusal' in made) return made.refusal;
+  await addLink(repository, dna.id, { kind: 'want', id: made.want.id, partition: made.want.buyerId, by: 'owner', at: now });
+  return json(201, { want: { id: made.want.id, buyerId: made.want.buyerId, expiresAt: made.want.expiresAt }, existing: false });
 }
 
 /** GET /api/dna/of/listing/{id} - the DNA a listing belongs to, linking it if it is not yet. */
@@ -645,6 +726,8 @@ export const dnaSearchRoute = handler(search);
 export const dnaReviewRoute = handler(writeReview);
 export const dnaFixRoute = handler(fix);
 export const dnaMergeRoute = handler(merge);
+export const dnaFollowRoute = handler(follow);
+export const dnaWantRoute = handler(wantIt);
 
 const anon = { authLevel: 'anonymous' } as const;
 
@@ -656,5 +739,7 @@ app.http('dna-trending', { ...anon, methods: ['GET'], route: 'dna/trending', han
 app.http('dna-search', { ...anon, methods: ['GET'], route: 'dna/search', handler: dnaSearchRoute });
 app.http('dna-review', { ...anon, methods: ['POST'], route: 'dna/view/{id}/reviews', handler: dnaReviewRoute });
 app.http('dna-fix', { ...anon, methods: ['POST'], route: 'dna/fix', handler: dnaFixRoute });
+app.http('dna-follow', { ...anon, methods: ['POST'], route: 'dna/view/{id}/follow', handler: dnaFollowRoute });
+app.http('dna-want', { ...anon, methods: ['POST'], route: 'dna/view/{id}/want', handler: dnaWantRoute });
 app.http('dna-merge', { ...anon, methods: ['POST'], route: 'dna/view/{id}/merge', handler: dnaMergeRoute });
 
