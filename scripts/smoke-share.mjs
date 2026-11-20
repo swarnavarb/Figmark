@@ -77,7 +77,7 @@ const repository = await getRepository();
 console.log('quest rules');
 
 const facts = (over = {}) => ({
-  orders: [], reviewsWritten: [], ratingsReceived: [], pageRatings: [], likes: [], follows: [], posts: [], wants: [],
+  orders: [], reviewsWritten: [], ratingsReceived: [], pageRatings: [], likes: [], follows: [], posts: [], wants: { total: 0, week: '', inWeek: 0, month: '', inMonth: 0 },
   pledges: 0, disputesLost: 0, collection: [], hasBio: false, hasTags: false, shares: 0, referredSales: 0,
   shareOpens: [], sharesSent: [], invites: [], invitedSellers: 0, ...over,
 });

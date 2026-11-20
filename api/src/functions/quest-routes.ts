@@ -4,7 +4,7 @@ import type { Dispute, QuestState, User } from '../../../shared/models.js';
 import { isCancelledLike, isPlaced, reviewRevealed, scoreFrom } from '../../../shared/orders.js';
 import {
   DETAILED_REVIEW_CHARS, EARLY_BACK_HOURS, autoCollect, claimKey, dayKey, emptyQuestState, questView, streakRepairFor,
-  tidyQuestState, type QuestFacts, type QuestView,
+  tidyQuestState, currentWantTally, wantTallyFrom, type QuestFacts, type QuestView,
 } from '../../../shared/quest.js';
 import { currentBoards } from '../../../shared/boards.js';
 import { getAuthService } from '../auth/index.js';
@@ -25,6 +25,17 @@ import { error, handler, json } from './http.js';
 
 type Repo = Awaited<ReturnType<typeof getRepository>>;
 
+/**
+ * Save the game's changes to a person. The hunt count is kept as it is now in
+ * the database rather than as it was when this request read the person: a hunt
+ * posted meanwhile counted itself there.
+ */
+async function saveQuest(repository: Repo, user: User): Promise<void> {
+  const latest = (await repository.getUserById(user.id))?.quest?.wantTally;
+  if (latest && user.quest) user.quest = { ...user.quest, wantTally: latest };
+  await repository.updateUser(user);
+}
+
 /** Everything the rules count, read from the rows rather than from a tally. */
 export async function factsFor(repository: Repo, user: User): Promise<QuestFacts> {
   const [allOrders, likes, follows, posts, wants, pledged, reviewsAbout, pageReviews, invitedSellers] = await Promise.all([
@@ -32,7 +43,8 @@ export async function factsFor(repository: Repo, user: User): Promise<QuestFacts
     repository.listLikesBy(user.id),
     repository.listFollowsBy(user.id),
     repository.listPostsByAuthor(user.id),
-    repository.listWantsBy(user.id),
+    // Read only for somebody whose hunts were never counted (see wantTally).
+    user.quest?.wantTally ? Promise.resolve([]) : repository.listWantsBy(user.id),
     repository.listPledgedListingIds(user.id),
     repository.listReviewsAbout(user.id),
     repository.listStoreReviews(user.id),
@@ -82,7 +94,9 @@ export async function factsFor(repository: Repo, user: User): Promise<QuestFacts
     likes: likes.map((like) => ({ createdAt: like.createdAt })),
     follows: follows.filter((follow) => !isPersonFollow(follow.sellerId)).map((follow) => ({ createdAt: follow.createdAt })),
     posts: posts.map((post) => ({ createdAt: post.createdAt })),
-    wants: wants.map((want) => ({ createdAt: want.createdAt })),
+    wants: user.quest?.wantTally
+      ? currentWantTally(user.quest.wantTally)
+      : wantTallyFrom(wants.map((want) => want.createdAt)),
     pledges: pledged.length,
     disputesLost: user.buyerTrust?.disputesLost ?? 0,
     penaltyXp: user.standing?.xpPenalty ?? 0,
@@ -147,7 +161,7 @@ async function viewAndCollect(repository: Repo, user: User, given: QuestState = 
   if (collected.length || state.xpCache !== view.xp || state.levelCache !== view.level) {
     user.quest = tidyQuestState({ ...state, xpCache: view.xp, levelCache: view.level, computedAt: new Date(now).toISOString() });
     user.updatedAt = new Date(now).toISOString();
-    await repository.updateUser(user);
+    await saveQuest(repository, user);
   }
   return { view, collected };
 }
@@ -169,7 +183,7 @@ async function signedIn(request: HttpRequest) {
 async function commit(repository: Repo, user: User, before: QuestView, next: QuestState, extra: object = {}, now = Date.now()) {
   user.quest = tidyQuestState(next);
   user.updatedAt = new Date(now).toISOString();
-  await repository.updateUser(user);
+  await saveQuest(repository, user);
   const view = await viewFor(repository, user, user.quest, now);
   return json(200, {
     ...extra,
@@ -329,7 +343,7 @@ async function collector(request: HttpRequest, _context: InvocationContext) {
   const state = user.quest ?? emptyQuestState();
   if (state.xpCache !== view.xp || state.levelCache !== view.level) {
     user.quest = tidyQuestState({ ...state, xpCache: view.xp, levelCache: view.level, computedAt: new Date().toISOString() });
-    await repository.updateUser(user);
+    await saveQuest(repository, user);
   }
 
   const visible = reviews.filter((review) => reviewRevealed(review, false));
