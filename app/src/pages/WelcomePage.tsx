@@ -310,148 +310,335 @@ const SLIDES: Slide[] = [
 ];
 
 /* ── ver 2: the same tour, told as scenes ────────────────────────────────────
- * No feature lists. Each slide is the moment someone is really paying for -
- * the parcel that clears customs while they sleep, the print run that sells
- * out by twenty past seven - and its art is that moment's lock screen. */
+ * No feature lists. One unique feature per slide, told as one short story -
+ * the moment someone is really paying for - with its own little animated
+ * scene: a parcel opening, a container filling up, a countdown hitting zero.
+ * Names, prices and places are examples. */
 
 const SCENES: Slide[] = [
   {
-    id: 'scene-door',
-    tone: 'violet',
-    scene: true,
+    id: 'scene-door', tone: 'violet', scene: true,
     kicker: 'Welcome to Figmark',
     title: 'The doorbell rings. It’s the figure you ordered from Tokyo.',
     hl: 'from Tokyo.',
-    lede: 'Four months ago you paid someone on the other side of the world, and never once lay awake wondering. That’s Figmark: buying, selling and collecting with people you can trust.',
-    art: () => (
-      <Moment day="Saturday" time="7:12" buzz={[
-        ['box', 'Delivered · Mecha kit 1/100', 'Signed for at your door'],
-        ['message', '@tokyo.toys', 'It made it! Enjoy it 🙏'],
-      ]} />
-    ),
+    lede: 'You never once worried it wouldn’t come. That’s Figmark: buy, sell and collect with people you can trust.',
+    art: UnboxScene,
   },
   {
-    id: 'scene-buy',
-    tone: 'aqua',
-    scene: true,
-    kicker: 'When you buy',
-    title: '11:40 pm. Your parcel is stuck in customs, and you’re not worried.',
-    hl: 'you’re not worried.',
-    lede: 'Your phone buzzes: cleared, with a photo of the box. Your ₹3,450 is still with Figmark, not the seller, until it’s in your hands. You put the phone down and sleep.',
-    art: () => (
-      <Moment day="Tuesday" time="11:40" buzz={[
-        ['truck', 'Lot #24 cleared customs', 'Photo of your box attached'],
-        ['lock', 'Your ₹3,450 is safe', 'Released only when it reaches you'],
-      ]} />
-    ),
+    id: 'scene-safe', tone: 'aqua', scene: true,
+    kicker: 'Buyer Protection',
+    title: '11:40 pm. Your parcel is in customs. You’re fast asleep.',
+    hl: 'fast asleep.',
+    lede: 'Your ₹3,450 waits with Figmark, not the seller. They’re paid only once it’s in your hands.',
+    art: VaultScene,
   },
   {
-    id: 'scene-sell',
-    tone: 'coral',
-    scene: true,
-    kicker: 'When you sell',
-    title: 'Sunday morning. Coffee in one hand, twenty orders in the other.',
-    hl: 'twenty orders',
-    lede: 'Eighteen have paid; the last two get a nudge without you typing a word. You tap Shipped once, and twenty phones light up across India. Then you finish your coffee while it’s still hot.',
-    art: () => (
-      <Moment day="Sunday" time="9:05" buzz={[
-        ['box', 'Lot #24 · 18 of 20 paid', '2 reminders sent for you'],
-        ['bell', 'Marked as shipped', 'All 20 buyers told'],
-      ]} />
-    ),
+    id: 'scene-track', tone: 'blue', scene: true,
+    kicker: 'Live tracking',
+    title: 'Lunch break. Your phone shows your box, already in Mumbai.',
+    hl: 'already in Mumbai.',
+    lede: 'Every step, with a photo. No more “any update?” messages.',
+    art: TrackScene,
   },
   {
-    id: 'scene-ship',
-    tone: 'blue',
-    scene: true,
-    kicker: 'When you move freight',
-    title: 'Friday’s flight to Mumbai was half empty. By lunch, it’s full.',
+    id: 'scene-lot', tone: 'coral', scene: true,
+    kicker: 'Group-buys',
+    title: 'Sunday morning. One tap, and twenty buyers hear the news.',
+    hl: 'twenty buyers',
+    lede: 'Who paid, who owes, who’s waiting: all in one place. You finish your coffee while it’s still hot.',
+    art: LotScene,
+  },
+  {
+    id: 'scene-cargo', tone: 'gold', scene: true,
+    kicker: 'For freight forwarders',
+    title: 'Friday’s flight was half empty. By lunch, it’s full.',
     hl: 'it’s full.',
-    lede: 'Three sellers found your route and booked the space themselves. No calls, no chasing group chats. One update from customs, and every buyer hears it.',
-    art: () => (
-      <Moment day="Wednesday" time="12:30" buzz={[
-        ['plane', 'New booking · 42 kg', 'Tokyo → Mumbai, Friday'],
-        ['plane', 'New booking · 18 kg', 'Tokyo → Mumbai, Friday'],
-        ['check', 'Friday’s flight is full', '3 sellers · paid in advance'],
-      ]} />
-    ),
+    lede: 'Sellers find your route and book the space themselves. No calls, no chasing.',
+    art: CargoScene,
   },
   {
-    id: 'scene-art',
-    tone: 'pink',
-    scene: true,
-    kicker: 'When you make art',
+    id: 'scene-print', tone: 'pink', scene: true,
+    kicker: 'For artists',
     title: 'Your print went live at seven. By twenty past, it’s sold out.',
     hl: 'sold out.',
-    lede: 'Fifty collectors, every one paid upfront. Then a message from a stranger in Pune: would you paint their city next? The advance is already in.',
-    art: () => (
-      <Moment day="Thursday" time="7:20" buzz={[
-        ['image', 'Monsoon City · 50 of 50 sold', 'Your print run is gone'],
-        ['message', 'New commission from Pune', '₹8,000 advance held for you'],
-      ]} />
-    ),
+    lede: 'Fifty collectors, every one paid upfront. Then a commission from Pune, advance already in.',
+    art: PrintScene,
   },
   {
-    id: 'scene-people',
-    tone: 'lime',
-    scene: true,
-    kicker: 'Your people',
-    title: 'You post your shelf. Someone in Kolkata asks where you found it.',
-    hl: 'where you found it.',
-    lede: 'Ten minutes later a shop replies, “I can get this.” By the weekend you’re swapping tips with people who love the same strangely specific thing you do.',
-    art: () => (
-      <Moment day="Monday" time="10:14" buzz={[
-        ['heart', '128 people liked your shelf', '@anime.kolkata: where is that from?!'],
-        ['target', '@kicks.import', 'I can get this. Want one?'],
-      ]} />
-    ),
+    id: 'scene-snap', tone: 'lime', scene: true,
+    kicker: 'Photo search',
+    title: 'Sneakers on a stranger in the metro. One photo, three shops.',
+    hl: 'three shops.',
+    lede: 'Snap anything you love, and Figmark finds who sells it.',
+    art: SnapScene,
   },
   {
-    id: 'scene-drop',
-    tone: 'orange',
-    scene: true,
+    id: 'scene-wanted', tone: 'violet', scene: true,
+    kicker: 'Wanted board',
+    title: 'You post the figure nobody has. By dinner: “I can get this.”',
+    hl: '“I can get this.”',
+    lede: 'Tell people what you’re hunting for. Collectors cheer you on, and sellers come to you.',
+    art: WantedScene,
+  },
+  {
+    id: 'scene-drop', tone: 'orange', scene: true,
     kicker: 'Drops',
     title: '8:59 pm. Thumb hovering. Three, two, one.',
     hl: 'Three, two, one.',
-    lede: 'You’re in: number 3 of 8, at the channel price, while everyone else is still refreshing. Your friends will ask how you got one. You’ll just smile.',
-    art: () => (
-      <Moment day="Friday" time="8:59" buzz={[
-        ['bolt', 'Power sale is live · @tokyo.toys', 'Limited figure, 8 made'],
-        ['trophy', 'It’s yours: #3 of 8', '₹1,920 instead of ₹2,400'],
-      ]} />
-    ),
+    lede: 'You’re in: #3 of 8, at the channel price, while everyone else is still refreshing.',
+    art: DropScene,
   },
   {
-    id: 'scene-tick',
-    tone: 'violet',
-    scene: true,
+    id: 'scene-level', tone: 'gold', scene: true,
+    kicker: 'Collect & play',
+    title: 'Day seven. Your streak lights up. Level 13.',
+    hl: 'Level 13.',
+    lede: 'Every buy, review and share earns XP, and your shelf shows off what you really own.',
+    art: LevelScene,
+  },
+  {
+    id: 'scene-tick', tone: 'blue', scene: true,
     kicker: 'Free to join',
-    title: 'A stranger offers you a trade. You tap their name: blue tick.',
+    title: 'A stranger offers a trade. You tap their name: blue tick.',
     hl: 'blue tick.',
-    lede: 'A real person, verified. You say yes without a second thought. Four minutes from now, people will feel that way about you.',
-    art: ReadyArt,
+    lede: 'A real, verified person, so you say yes. In four minutes, people can trust you the same way.',
+    art: TickScene,
   },
 ];
 
-/** A lock screen at the moment of the scene: the time, then a buzz or two. */
-function Moment({ day, time, buzz }: { day: string; time: string; buzz: Array<[IconName, string, string]> }) {
+/** The parcel lands, the lid pops, the figure rises out in a burst of sparks. */
+function UnboxScene() {
   return (
     <div className="welm">
-      <div className="welm__card welm__lock">
-        <span className="welm__day">{day}</span>
-        <span className="welm__time">{time}</span>
-        <ul className="welm__buzz">
-          {buzz.map(([icon, title, body], at) => (
-            <li key={title} style={{ animationDelay: `${450 + at * 900}ms` }}>
-              <span className="welm__app"><Icon name={icon} size={15} /></span>
-              <span className="welm__grow"><strong>{title}</strong><span>{body}</span></span>
-              <span className="welm__muted">now</span>
+      <div className="welv welv--unbox">
+        <span className="welv__burst" />
+        {[0, 1, 2, 3, 4, 5].map((at) => <span key={at} className="welv__spark" style={{ ['--a' as string]: `${at * 60}deg` }} />)}
+        <span className="welv__prize"><Icon name="star" size={34} /></span>
+        <span className="welv__box">
+          <span className="welv__flap welv__flap--l" /><span className="welv__flap welv__flap--r" />
+          <span className="welv__tape">TYO → BOM</span>
+        </span>
+      </div>
+      <Chip className="welm__chip--tl welm__chip--tone" delay={1500}><Icon name="bell" size={12} /> Ding-dong!</Chip>
+      <Chip className="welm__chip--br" delay={1800}><BlueTick size={12} /> @tokyo.toys</Chip>
+    </div>
+  );
+}
+
+/** You → Figmark → seller: the money stops in the middle and waits. */
+function VaultScene() {
+  return (
+    <div className="welm">
+      <div className="welm__card welv welv--vault">
+        <div className="welv__flow">
+          <span className="welv__node"><span className="welm__avatar welm__avatar--lg" style={{ background: 'var(--grad-cool)' }}>You</span></span>
+          <span className="welv__pipe"><span className="welv__coin">₹</span></span>
+          <span className="welv__node welv__node--safe"><Icon name="lock" size={22} /></span>
+          <span className="welv__pipe welv__pipe--wait" />
+          <span className="welv__node"><Thumb hue={200} icon="box" size={34} /></span>
+        </div>
+        <div className="welv__flowtext"><span>You</span><b>Held safe</b><span>Seller</span></div>
+        <span className="welv__moon"><Icon name="smile" size={14} /> Released on delivery</span>
+      </div>
+    </div>
+  );
+}
+
+/** The box hops along the route, each stop lighting up with a photo. */
+function TrackScene() {
+  const stops: Array<[string, string]> = [['Tokyo', 'Packed'], ['In the air', 'Flight NH829'], ['Mumbai', 'Cleared customs'], ['You', 'Thursday']];
+  return (
+    <div className="welm">
+      <div className="welm__card welv welv--track">
+        <ol className="welv__stops">
+          {stops.map(([place, note], at) => (
+            <li key={place} className={at < 3 ? 'is-done' : ''} style={{ animationDelay: `${300 + at * 450}ms` }}>
+              <span className="welv__pin" />
+              <span className="welm__grow"><strong>{place}</strong><span>{note}</span></span>
+              {at === 2 && <span className="welv__photo" style={{ animationDelay: '1700ms' }}><Icon name="camera" size={14} /></span>}
+            </li>
+          ))}
+        </ol>
+      </div>
+    </div>
+  );
+}
+
+/** Twenty buyers light up as they pay; one tap sends a ripple to every one. */
+function LotScene() {
+  return (
+    <div className="welm">
+      <div className="welm__card welv welv--lot">
+        <div className="welm__row welm__row--between"><strong>Lot #24 · Mecha kits</strong><span className="welm__muted">18 paid · 2 due</span></div>
+        <div className="welv__crowd">
+          {Array.from({ length: 20 }, (_, at) => (
+            <span key={at} className={at === 7 || at === 15 ? 'is-due' : ''}
+              style={{ animationDelay: `${200 + at * 60}ms, ${2400 + (at % 5) * 70 + Math.floor(at / 5) * 70}ms` }} />
+          ))}
+        </div>
+        <span className="welv__tap">Shipped · tell all 20 <Icon name="send" size={13} /></span>
+      </div>
+    </div>
+  );
+}
+
+/** A half-empty container; crates drop in until it's full. */
+function CargoScene() {
+  const crates = ['', '', '', '', '42 kg', '18 kg', '25 kg', '30 kg'];
+  return (
+    <div className="welm">
+      <div className="welm__card welv welv--cargo">
+        <div className="welm__row welm__row--between"><strong>TYO → BOM · Friday</strong><span className="welv__full">Full</span></div>
+        <div className="welv__hold">
+          {crates.map((label, at) => (
+            <span key={at} className={at >= 4 ? 'is-new' : ''} style={at >= 4 ? { animationDelay: `${500 + (at - 4) * 450}ms` } : undefined}>{label}</span>
+          ))}
+        </div>
+        <span className="welm__bar welv__fill"><span /></span>
+      </div>
+    </div>
+  );
+}
+
+/** The edition counter races to 50, and SOLD OUT stamps across the print. */
+function PrintScene() {
+  const sold = useCountUp(50, 1800, 300);
+  return (
+    <div className="welm">
+      <div className="welm__card welv welv--print">
+        <span className="welv__canvas">
+          {sold === 50 && <span className="welv__stamp">Sold out</span>}
+        </span>
+        <div className="welm__grow">
+          <strong>Monsoon City</strong>
+          <span>A3 print · 50 made</span>
+          <span className="welv__count"><b>{sold}</b> / 50 sold</span>
+        </div>
+      </div>
+      {[0, 1, 2].map((at) => <span key={at} className="welv__heart" style={{ animationDelay: `${600 + at * 500}ms`, left: `${20 + at * 28}%` }}><Icon name="heart" size={14} /></span>)}
+      <Chip className="welm__chip--br welm__chip--tone" delay={2400}><Icon name="message" size={12} /> New commission · Pune</Chip>
+    </div>
+  );
+}
+
+/** A viewfinder sweeps the shoe, then the shops that sell it pop up. */
+function SnapScene() {
+  const shops: Array<[string, string]> = [['@kicks.import', '₹12,900'], ['@solecity', '₹13,400'], ['@hypeden', '₹12,500']];
+  return (
+    <div className="welm">
+      <div className="welv welv--snap">
+        <span className="welv__finder">
+          <span className="welv__shoe" style={{ background: 'linear-gradient(140deg, hsl(95 80% 60%), hsl(145 70% 38%))' }}><Icon name="tag" size={30} /></span>
+          <span className="welv__scan" />
+        </span>
+        <ul className="welv__hits">
+          {shops.map(([shop, price], at) => (
+            <li key={shop} style={{ animationDelay: `${1300 + at * 250}ms` }}>
+              <span>{shop} <BlueTick size={10} /></span><b>{price}</b>
             </li>
           ))}
         </ul>
       </div>
     </div>
   );
+}
+
+/** Your post, a friend cheering, someone typing, then the seller's answer. */
+function WantedScene() {
+  return (
+    <div className="welm">
+      <div className="welm__card welv welv--chat">
+        <div className="welv__want"><Icon name="target" size={14} /> <span><b>Wanted:</b> Mecha kit 1/60, any box</span></div>
+        <span className="welv__bubble" style={{ animationDelay: '600ms' }}><i>@anime.kolkata</i>Been hunting that for years 😭</span>
+        <span className="welv__typing"><span /><span /><span /></span>
+        <span className="welv__bubble welv__bubble--shop" style={{ animationDelay: '2600ms' }}><i>@tokyo.toys <BlueTick size={10} /></i>I can get this. ₹4,200?</span>
+      </div>
+    </div>
+  );
+}
+
+/** 3, 2, 1 - you're in. Then it rests on the win and plays again. */
+function DropScene() {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const timer = window.setInterval(() => setTick((value) => (value + 1) % 7), 900);
+    return () => window.clearInterval(timer);
+  }, []);
+  const count = tick < 3 ? 3 - tick : 0;
+  return (
+    <div className="welm">
+      <div className="welm__card welv welv--drop">
+        <span className="welm__live"><span />Power sale · @tokyo.toys</span>
+        {count > 0 ? (
+          <span key={tick} className="welv__num">{count}</span>
+        ) : (
+          <span key="in" className="welv__won">
+            <Icon name="trophy" size={26} />
+            <strong>You’re in! #3 of 8</strong>
+            <span><s>₹2,400</s> <b className="welm__tone">₹1,920</b></span>
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** The XP ring fills, flips 12 to 13, and stickers pop around it. */
+function LevelScene() {
+  return (
+    <div className="welm">
+      <div className="welm__card welv welv--level">
+        <span className="welv__ring">
+          <span className="welv__lvl welv__lvl--old">12</span>
+          <span className="welv__lvl welv__lvl--new">13</span>
+        </span>
+        <div className="welv__days">
+          {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, at) => (
+            <span key={at} style={{ animationDelay: `${200 + at * 160}ms` }}><Icon name="bolt" size={12} />{day}</span>
+          ))}
+        </div>
+        <span className="welv__levelup">Level up!</span>
+      </div>
+      {(['trophy', 'star', 'spark'] as IconName[]).map((icon, at) => (
+        <span key={icon} className={`welv__sticker welv__sticker--${at}`}><Icon name={icon} size={16} /></span>
+      ))}
+    </div>
+  );
+}
+
+/** A profile card: the checks tick in, the blue tick stamps down and shines. */
+function TickScene() {
+  return (
+    <div className="welm">
+      <div className="welm__card welv welv--tick">
+        <span className="welm__avatar welm__avatar--xl" style={{ background: 'var(--grad-warm)' }}>R</span>
+        <strong className="welv__who">Riya Sharma <span className="welv__badge"><BlueTick size={20} /></span></strong>
+        <div className="welv__proofs">
+          <span style={{ animationDelay: '300ms' }}><Icon name="check" size={12} /> WhatsApp</span>
+          <span style={{ animationDelay: '550ms' }}><Icon name="check" size={12} /> Aadhaar</span>
+        </div>
+        <span className="welv__shine" />
+      </div>
+      <Chip className="welm__chip--tl welm__chip--bubble" delay={1500}>Trade? 🤝</Chip>
+    </div>
+  );
+}
+
+/** Counts from 0 to `to` over `ms`, after `delay`. */
+function useCountUp(to: number, ms: number, delay = 0) {
+  const [value, setValue] = useState(0);
+  useEffect(() => {
+    let frame = 0;
+    const start = performance.now() + delay;
+    const step = (now: number) => {
+      const t = Math.min(1, Math.max(0, (now - start) / ms));
+      setValue(Math.round(to * (1 - Math.pow(1 - t, 3))));
+      if (t < 1) frame = requestAnimationFrame(step);
+    };
+    frame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frame);
+  }, [to, ms, delay]);
+  return value;
 }
 
 function Title({ text, hl }: { text: string; hl: string }) {

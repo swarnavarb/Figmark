@@ -393,59 +393,322 @@
   background: var(--tone-soft); color: var(--tone-text);
   font-family: inherit; font-size: var(--t-xs); font-weight: var(--w-bold);
 }
+/* Centre the scene in the space between the header and the buttons. */
+.welslide--scene > .welslide__art { margin-top: auto; }
+.welslide--scene > .welslide__copy { margin-bottom: auto; }
 .welslide--scene .welslide__title { font-size: calc(26px * var(--text-scale)); line-height: 1.15; }
 .welslide--scene .welslide__lede { color: color-mix(in srgb, var(--text) 82%, transparent); font-size: var(--t-md); line-height: 1.55; }
 
-/* The moment's lock screen: the time, then notifications buzzing in. */
-.welm__lock {
-  width: 100%; max-width: 290px; padding: 16px 12px 12px;
-  display: grid; justify-items: center; gap: 2px;
-  background:
-    radial-gradient(120% 80% at 50% 0%, color-mix(in srgb, var(--tone) 30%, transparent), transparent 70%),
-    color-mix(in srgb, var(--surface) 94%, transparent);
-  animation: wel-card-in 620ms var(--ease-out) both;
+/* ── ver 2 scenes: one animated moment per feature ── */
+.welv { position: relative; width: 100%; max-width: 290px; }
+.welm__card.welv { animation: wel-card-in 620ms var(--ease-out) both; }
+
+/* Welcome: the parcel lands, the flaps fly open, the figure rises out. */
+.welv--unbox { height: 196px; }
+.welv__box {
+  position: absolute; left: 50%; bottom: 6px; width: 140px; height: 92px; margin-left: -70px; z-index: 2;
+  border-radius: 6px 6px 12px 12px; background: linear-gradient(180deg, #C8955B, #A16A36);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+  animation: wel-drop 760ms cubic-bezier(0.3, 1.5, 0.5, 1) both;
 }
-.welm__day { color: var(--text-dim); font-size: var(--t-xs); font-weight: var(--w-semi); letter-spacing: 0.04em; }
-.welm__time {
-  font-family: var(--display); font-weight: var(--w-bold); line-height: 1;
-  font-size: calc(54px * var(--text-scale)); letter-spacing: -0.03em;
-  background: linear-gradient(180deg, var(--text), var(--tone-text));
-  -webkit-background-clip: text; background-clip: text; color: transparent;
+@keyframes wel-drop { from { opacity: 0; transform: translateY(-140px); } }
+.welv__flap { position: absolute; top: 0; width: 50%; height: 26px; background: #DDAA6E; border-radius: 4px; }
+.welv__flap--l { left: 0; transform-origin: 0 0; animation: wel-flap-l 600ms var(--ease-out) 800ms both; }
+.welv__flap--r { right: 0; transform-origin: 100% 0; animation: wel-flap-r 600ms var(--ease-out) 800ms both; }
+@keyframes wel-flap-l { to { transform: rotate(-145deg); } }
+@keyframes wel-flap-r { to { transform: rotate(145deg); } }
+.welv__tape {
+  position: absolute; left: 0; right: 0; bottom: 18px; text-align: center;
+  color: rgba(0, 0, 0, 0.55); font-size: var(--t-xs); font-weight: var(--w-bold); letter-spacing: 0.12em;
 }
-.welm__buzz { list-style: none; margin: 12px 0 0; padding: 0; width: 100%; display: grid; gap: 6px; }
-.welm__buzz li {
-  display: flex; align-items: center; gap: 10px; padding: 9px 10px;
-  border-radius: 16px; text-align: left;
+.welv__prize {
+  position: absolute; left: 50%; bottom: 96px; width: 70px; height: 70px; margin-left: -35px; z-index: 1;
+  display: grid; place-items: center; border-radius: 22px;
+  background: linear-gradient(140deg, var(--tone-text), var(--tone)); color: var(--tone-ink);
+  box-shadow: 0 0 40px color-mix(in srgb, var(--tone) 70%, transparent);
+  animation: wel-prize 800ms cubic-bezier(0.3, 1.5, 0.5, 1) 1000ms both, wel-bob 3s ease-in-out 2s infinite;
+}
+@keyframes wel-prize { from { opacity: 0; transform: translateY(80px) scale(0.4) rotate(-20deg); } }
+.welv__burst {
+  position: absolute; left: 50%; bottom: 60px; width: 220px; height: 220px; margin-left: -110px;
+  border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--tone) 45%, transparent), transparent 65%);
+  animation: wel-burst 900ms var(--ease-out) 1000ms both;
+}
+@keyframes wel-burst { from { opacity: 0; transform: scale(0.2); } }
+.welv__spark {
+  position: absolute; left: 50%; bottom: 128px; width: 5px; height: 14px; margin-left: -2px; border-radius: 3px;
+  background: var(--tone-text); opacity: 0;
+  animation: wel-spark 900ms var(--ease-out) 1150ms both;
+}
+@keyframes wel-spark {
+  0% { opacity: 0; transform: rotate(var(--a)) translateY(-20px) scaleY(0.3); }
+  40% { opacity: 1; }
+  100% { opacity: 0; transform: rotate(var(--a)) translateY(-78px) scaleY(1); }
+}
+
+/* Buyer Protection: the money travels to the middle and waits there. */
+.welv--vault { padding: 18px 16px 16px; display: grid; gap: 10px; }
+.welv__flow { display: flex; align-items: center; }
+.welv__node {
+  flex: none; width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center;
   background: color-mix(in srgb, var(--text) 8%, var(--surface));
-  border: 1px solid color-mix(in srgb, var(--text) 8%, transparent);
-  animation: wel-buzz 700ms var(--ease-out) both;
 }
-.welm__app {
-  flex: none; width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
-  background: var(--tone); color: var(--tone-ink);
+.welv__node--safe {
+  width: 58px; height: 58px; background: var(--tone); color: var(--tone-ink);
+  animation: wel-safe 2.4s ease-in-out infinite;
 }
-@keyframes wel-buzz {
-  0% { opacity: 0; transform: translateY(-14px) scale(0.94); }
-  60% { opacity: 1; transform: translateY(0) scale(1); }
-  70% { transform: translateX(-3px); }
-  80% { transform: translateX(3px); }
-  90% { transform: translateX(-1px); }
+@keyframes wel-safe { 50% { box-shadow: 0 0 0 10px color-mix(in srgb, var(--tone) 18%, transparent), 0 0 30px color-mix(in srgb, var(--tone) 60%, transparent); } }
+.welv__pipe { position: relative; flex: 1; height: 4px; margin: 0 6px; border-radius: var(--r-pill); background: color-mix(in srgb, var(--tone) 40%, transparent); }
+.welv__pipe--wait { background: repeating-linear-gradient(90deg, color-mix(in srgb, var(--text) 25%, transparent) 0 6px, transparent 6px 12px); }
+.welv__coin {
+  position: absolute; top: 50%; left: 0; width: 24px; height: 24px; margin: -12px 0 0 -12px;
+  display: grid; place-items: center; border-radius: 50%;
+  background: var(--gold); color: var(--gold-ink); font-size: var(--t-xs); font-weight: var(--w-bold);
+  box-shadow: 0 0 14px rgba(245, 158, 11, 0.7);
+  animation: wel-coin 2.4s ease-in-out infinite;
 }
+@keyframes wel-coin {
+  0% { left: 0; opacity: 0; transform: scale(0.5); }
+  15% { opacity: 1; transform: scale(1); }
+  70% { left: 100%; opacity: 1; transform: scale(1); }
+  85%, 100% { left: 100%; opacity: 0; transform: scale(0.4); }
+}
+.welv__flowtext { display: flex; justify-content: space-between; color: var(--text-faint); font-size: var(--t-xs); }
+.welv__flowtext b { color: var(--tone-text); }
+.welv__moon {
+  justify-self: center; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px;
+  border-radius: var(--r-pill); background: var(--tone-soft); color: var(--tone-text);
+  font-size: var(--t-xs); font-weight: var(--w-bold);
+}
+
+/* Live tracking: the stops light up one by one; customs sends a photo. */
+.welv--track { padding: 16px; }
+.welv__stops { position: relative; list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.welv__stops::before { content: ''; position: absolute; left: 7px; top: 10px; bottom: 10px; width: 2px; background: color-mix(in srgb, var(--text) 12%, transparent); }
+.welv__stops li { position: relative; display: flex; align-items: center; gap: 12px; animation: wel-rise 500ms var(--ease-out) both; }
+.welv__stops li:last-child { opacity: 0.6; }
+.welv__pin { flex: none; z-index: 1; width: 16px; height: 16px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--text) 25%, transparent); background: var(--surface); }
+.welv__stops li.is-done .welv__pin { border-color: var(--tone); background: var(--tone); }
+.welv__stops li:nth-child(3) .welv__pin { animation: wel-ping 1.4s ease-out 1.8s infinite; box-shadow: 0 0 0 0 var(--tone); }
+.welv__photo {
+  flex: none; width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center;
+  background: linear-gradient(140deg, var(--tone-text), var(--tone)); color: var(--tone-ink);
+  animation: wel-sticker 500ms var(--ease-out) both;
+}
+
+/* Group-buys: twenty buyers pay, then one tap tells them all. */
+.welv--lot { padding: 14px; display: grid; gap: 12px; }
+.welv--lot strong { font-size: var(--t-sm); }
+.welv__crowd { display: grid; grid-template-columns: repeat(10, 1fr); gap: 7px; }
+.welv__crowd span {
+  aspect-ratio: 1; border-radius: 50%; background: color-mix(in srgb, var(--text) 10%, transparent);
+  animation: wel-paid 400ms var(--ease-out) both, wel-told 700ms ease-out both;
+}
+.welv__crowd span.is-due { animation-name: wel-due, wel-told; }
+@keyframes wel-paid { from { transform: scale(0.3); } to { background: var(--tone); } }
+@keyframes wel-due { from { transform: scale(0.3); } to { background: var(--gold); } }
+@keyframes wel-told {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--tone) 70%, transparent); }
+  40% { transform: scale(1.3); }
+  100% { box-shadow: 0 0 0 8px transparent; transform: scale(1); }
+}
+.welv__tap {
+  display: flex; align-items: center; justify-content: center; gap: 6px; padding: 9px;
+  border-radius: var(--r-pill); background: var(--tone); color: var(--tone-ink);
+  font-size: var(--t-sm); font-weight: var(--w-bold);
+  animation: wel-press 500ms ease-in-out 2000ms both;
+}
+@keyframes wel-press { 50% { transform: scale(0.9); box-shadow: 0 0 0 6px color-mix(in srgb, var(--tone) 30%, transparent); } }
+
+/* Freight forwarders: crates drop into the half-empty hold until it's full. */
+.welv--cargo { padding: 14px; display: grid; gap: 10px; }
+.welv--cargo strong { font-size: var(--t-sm); }
+.welv__full {
+  padding: 3px 10px; border-radius: var(--r-pill); background: var(--tone); color: var(--tone-ink);
+  font-size: var(--t-xs); font-weight: var(--w-bold); text-transform: uppercase; letter-spacing: 0.06em;
+  animation: wel-stamp 700ms var(--ease-out) 2500ms both;
+}
+.welv__hold {
+  display: flex; flex-wrap: wrap-reverse; gap: 5px; padding: 6px;
+  border-radius: 10px; border: 2px solid color-mix(in srgb, var(--tone) 50%, transparent);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+}
+.welv__hold span {
+  flex: 0 0 calc(25% - 4px); height: 40px; border-radius: 6px; display: grid; place-items: center;
+  background: linear-gradient(180deg, #C8955B, #A16A36); color: rgba(0, 0, 0, 0.6);
+  font-size: var(--t-xs); font-weight: var(--w-bold);
+}
+.welv__hold span.is-new {
+  background: linear-gradient(180deg, var(--tone-text), var(--tone)); color: var(--tone-ink);
+  animation: wel-crate 600ms cubic-bezier(0.3, 1.4, 0.5, 1) both;
+}
+@keyframes wel-crate { from { opacity: 0; transform: translateY(-110px) rotate(-8deg); } }
+.welv__fill span { animation: wel-half 2200ms var(--ease-out) 500ms both; }
+@keyframes wel-half { from { transform: scaleX(0.5); } }
+
+/* Artists: the counter races to 50 and SOLD OUT stamps across the print. */
+.welv--print { padding: 14px; display: flex; align-items: center; gap: 14px; }
+.welv__canvas {
+  position: relative; flex: none; width: 92px; height: 118px; border-radius: 6px; overflow: hidden;
+  border: 4px solid var(--surface-hover);
+  background: linear-gradient(160deg, var(--pink) 0%, var(--violet-lit) 55%, var(--aqua) 100%);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+}
+.welv__stamp {
+  position: absolute; inset: 0; margin: auto; width: max-content; height: max-content; rotate: -14deg;
+  padding: 3px 8px; border: 2px solid currentColor; border-radius: 4px;
+  background: rgba(0, 0, 0, 0.4); color: var(--text);
+  font-size: var(--t-xs); font-weight: var(--w-bold); text-transform: uppercase; letter-spacing: 0.08em;
+  animation: wel-stamp 600ms var(--ease-out) both;
+}
+.welv__count { margin-top: 4px; }
+.welv__count b {
+  display: block; color: var(--tone-text); font-family: var(--display); font-variant-numeric: tabular-nums;
+  font-size: calc(32px * var(--text-scale)); line-height: 1;
+}
+.welv__heart {
+  position: absolute; bottom: 30px; z-index: 3; color: var(--tone); opacity: 0;
+  animation: wel-heart 2.6s ease-out infinite;
+}
+@keyframes wel-heart {
+  0% { opacity: 0; transform: translateY(0) scale(0.6); }
+  20% { opacity: 1; transform: translateY(-20px) scale(1); }
+  100% { opacity: 0; transform: translateY(-120px) scale(0.8); }
+}
+
+/* Photo search: a viewfinder sweeps the find, then the shops pop up. */
+.welv--snap { display: grid; justify-items: center; gap: 12px; }
+.welv__finder {
+  position: relative; width: 150px; height: 112px; display: grid; place-items: center;
+  --c: var(--tone);
+  background:
+    linear-gradient(var(--c) 0 0) top left / 22px 3px no-repeat, linear-gradient(var(--c) 0 0) top left / 3px 22px no-repeat,
+    linear-gradient(var(--c) 0 0) top right / 22px 3px no-repeat, linear-gradient(var(--c) 0 0) top right / 3px 22px no-repeat,
+    linear-gradient(var(--c) 0 0) bottom left / 22px 3px no-repeat, linear-gradient(var(--c) 0 0) bottom left / 3px 22px no-repeat,
+    linear-gradient(var(--c) 0 0) bottom right / 22px 3px no-repeat, linear-gradient(var(--c) 0 0) bottom right / 3px 22px no-repeat;
+}
+.welv__shoe { width: 74px; height: 74px; border-radius: 20px; display: grid; place-items: center; color: rgba(255, 255, 255, 0.92); }
+.welv__scan {
+  position: absolute; left: 10px; right: 10px; top: 10%; height: 2px; border-radius: 2px;
+  background: var(--tone); box-shadow: 0 0 14px var(--tone);
+  animation: wel-scan 1.3s ease-in-out infinite alternate;
+}
+@keyframes wel-scan { to { top: 88%; } }
+.welv__hits { list-style: none; margin: 0; padding: 0; width: 100%; display: grid; gap: 6px; }
+.welv__hits li {
+  display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent); border: 1px solid var(--border-strong);
+  font-size: var(--t-sm); animation: wel-chip-in 500ms var(--ease-out) both;
+}
+.welv__hits li span { display: inline-flex; align-items: center; gap: 4px; }
+.welv__hits b { color: var(--tone-text); }
+
+/* Wanted board: your post, a cheer, someone typing, then the seller. */
+.welv--chat { padding: 14px; display: grid; gap: 8px; min-height: 196px; align-content: start; }
+.welv__want {
+  display: flex; align-items: center; gap: 8px; padding: 9px 11px; border-radius: 12px;
+  background: var(--tone-soft); color: var(--tone-text); font-size: var(--t-sm);
+}
+.welv__want b { color: var(--text); }
+.welv__bubble {
+  justify-self: start; max-width: 86%; display: grid; gap: 2px; padding: 8px 12px;
+  border-radius: 14px 14px 14px 4px; background: color-mix(in srgb, var(--text) 9%, var(--surface));
+  font-size: var(--t-sm); line-height: 1.35; animation: wel-chip-in 500ms var(--ease-out) both;
+}
+.welv__bubble i { display: inline-flex; align-items: center; gap: 3px; font-style: normal; font-size: var(--t-xs); color: var(--text-faint); }
+.welv__bubble--shop { justify-self: end; border-radius: 14px 14px 4px 14px; background: var(--tone); color: var(--tone-ink); font-weight: var(--w-semi); }
+.welv__bubble--shop i { color: color-mix(in srgb, var(--tone-ink) 70%, transparent); }
+.welv__typing {
+  position: absolute; right: 14px; bottom: 14px; display: inline-flex; gap: 4px; padding: 11px 13px;
+  border-radius: var(--r-pill); background: color-mix(in srgb, var(--text) 9%, var(--surface));
+  animation: wel-typing 1.6s linear 1000ms both;
+}
+@keyframes wel-typing { 0% { opacity: 0; } 10%, 90% { opacity: 1; } 100% { opacity: 0; } }
+.welv__typing span { width: 6px; height: 6px; border-radius: 50%; background: var(--text-dim); animation: wel-blink 900ms ease-in-out infinite; }
+.welv__typing span:nth-child(2) { animation-delay: 150ms; }
+.welv__typing span:nth-child(3) { animation-delay: 300ms; }
+
+/* Drops: 3, 2, 1, you're in. */
+.welv--drop { padding: 16px; min-height: 186px; display: grid; justify-items: center; align-content: center; gap: 8px; }
+.welv__num {
+  font-family: var(--display); font-weight: var(--w-bold); line-height: 1; font-size: calc(84px * var(--text-scale));
+  background: linear-gradient(180deg, var(--text), var(--tone)); -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: wel-num 900ms ease-out both;
+}
+@keyframes wel-num { 0% { opacity: 0; transform: scale(1.8); } 25% { opacity: 1; transform: scale(1); } 85% { opacity: 1; } 100% { opacity: 0.15; transform: scale(0.8); } }
+.welv__won { display: grid; justify-items: center; gap: 4px; color: var(--tone); animation: wel-stamp 700ms var(--ease-out) both; }
+.welv__won strong { color: var(--text); font-family: var(--display); font-size: var(--t-lg); }
+.welv__won > span { color: var(--text-dim); font-size: var(--t-sm); }
+
+/* Collect & play: the streak fills, the ring closes, 12 becomes 13. */
+@property --welp { syntax: '<number>'; inherits: false; initial-value: 72; }
+.welv--level { padding: 16px; display: grid; justify-items: center; gap: 12px; }
+.welv__ring {
+  position: relative; width: 92px; height: 92px; border-radius: 50%;
+  background: conic-gradient(var(--tone) calc(var(--welp) * 1%), color-mix(in srgb, var(--text) 10%, transparent) 0);
+  animation: wel-xp 1400ms var(--ease-out) 300ms both;
+}
+@keyframes wel-xp { to { --welp: 100; } }
+.welv__ring::before { content: ''; position: absolute; inset: 9px; border-radius: 50%; background: var(--surface); }
+.welv__lvl { position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--display); font-weight: var(--w-bold); font-size: calc(34px * var(--text-scale)); }
+.welv__lvl--old { animation: wel-out 300ms ease-in 1700ms both; }
+.welv__lvl--new { color: var(--tone-text); animation: wel-stamp 700ms var(--ease-out) 1850ms both; }
+@keyframes wel-out { to { opacity: 0; transform: scale(0.4); } }
+.welv__days { display: flex; gap: 4px; }
+.welv__days span {
+  width: 32px; padding: 5px 0; border-radius: 9px; display: grid; justify-items: center; gap: 1px;
+  background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text-faint); font-size: var(--t-xs); font-weight: var(--w-bold);
+  animation: wel-streak 350ms var(--ease-out) both;
+}
+@keyframes wel-streak { from { transform: scale(0.8); } to { background: var(--tone); color: var(--tone-ink); } }
+.welv__levelup {
+  position: absolute; top: 14px; right: 14px; padding: 4px 10px; border-radius: var(--r-pill);
+  background: var(--tone); color: var(--tone-ink); font-size: var(--t-xs); font-weight: var(--w-bold);
+  animation: wel-stamp 700ms var(--ease-out) 2000ms both;
+}
+.welv__sticker {
+  position: absolute; z-index: 3; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--tone-soft); color: var(--tone-text); border: 1px solid color-mix(in srgb, var(--tone) 40%, transparent);
+  animation: wel-sticker 500ms var(--ease-out) both, wel-bob 3.5s ease-in-out 3s infinite;
+}
+.welv__sticker--0 { top: 6px; left: 2%; animation-delay: 2100ms, 3s; }
+.welv__sticker--1 { top: 38%; right: 0; animation-delay: 2250ms, 3.3s; }
+.welv__sticker--2 { bottom: 8px; left: 6%; animation-delay: 2400ms, 3.6s; }
+
+/* Blue tick: the proofs tick in, the badge stamps down, a shine passes. */
+.welv--tick { padding: 20px 16px 18px; display: grid; justify-items: center; gap: 10px; overflow: hidden; }
+.welv__who { display: inline-flex; align-items: center; gap: 6px; font-family: var(--display); font-size: var(--t-lg); }
+.welv__badge { display: inline-grid; animation: wel-stamp 900ms var(--ease-out) 1000ms both; filter: drop-shadow(0 0 10px rgba(29, 155, 240, 0.8)); }
+.welv__proofs { display: flex; gap: 6px; }
+.welv__proofs span {
+  display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; border-radius: var(--r-pill);
+  background: var(--ok-soft); color: var(--ok-pale); font-size: var(--t-xs); font-weight: var(--w-bold);
+  animation: wel-chip-in 500ms var(--ease-out) both;
+}
+.welv__shine {
+  position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(105deg, transparent 38%, rgba(255, 255, 255, 0.13) 50%, transparent 62%);
+  transform: translateX(-100%); animation: wel-shine 3.2s ease-in-out 1.8s infinite;
+}
+@keyframes wel-shine { 0% { transform: translateX(-100%); } 45%, 100% { transform: translateX(100%); } }
 
 @media (max-height: 760px) {
   .welslide__art { padding: 8px 0 12px; }
   .welslide__copy:has(.welslide__grid) .welslide__lede, .welslide__copy:has(.welready) .welslide__lede { display: none; }
   .welm__avatar--xl { width: 48px; height: 48px; }
-  .welm__time { font-size: calc(42px * var(--text-scale)); }
   .welslide--scene .welslide__lede { font-size: var(--t-base); }
 }
 
-/* Small phones: the scene keeps its time and first buzz, so the story still fits. */
-@media (max-height: 700px) {
-  .welm__lock { padding: 10px 10px 10px; }
-  .welm__day, .welm__buzz li:nth-child(n + 2) { display: none; }
-  .welm__time { font-size: calc(34px * var(--text-scale)); }
-  .welm__buzz { margin-top: 8px; }
+/* Small phones: smaller scenes, so the story still fits. */
+@media (max-height: 600px) {
+  .welv--unbox { height: 160px; }
+  .welv__box { width: 120px; height: 76px; margin-left: -60px; }
+  .welv__prize { bottom: 78px; width: 58px; height: 58px; margin-left: -29px; }
+  .welv__spark { bottom: 104px; }
+  .welv--drop { min-height: 150px; }
+  .welv--chat { min-height: 180px; }
+  .welv__finder { height: 92px; }
+  .welv__hits li:nth-child(3), .welv__stops li:nth-child(2) { display: none; }
   .welslide--scene .welslide__title { font-size: calc(23px * var(--text-scale)); }
   .welslide--scene .welslide__copy { gap: 7px; }
 }
@@ -661,9 +924,12 @@ select.welinput { appearance: none; background-image: linear-gradient(45deg, tra
 
 @media (prefers-reduced-motion: reduce) {
   .welslides__track, .welstep__track::after, .welslides__seg::after { transition: none; }
-  .welslides__blobs span, .welm *, .welm__chip, .welm__panel, .welm__lock, .welm__fan, .welslide.is-on .welslide__copy > *, .welready li,
+  .welslides__blobs span, .welm *, .welm__chip, .welm__panel, .welm__card.welv, .welm__fan, .welslide.is-on .welslide__copy > *, .welready li,
   .welstep__body, .welearned__tick, .weldone__card, .welbtn--glow { animation: none !important; }
   .welm__plane { display: none; }
+  .welv__crowd span, .welv__days span { background: var(--tone); color: var(--tone-ink); }
+  .welv__lvl--old, .welv__typing, .welv__heart, .welv__spark, .welv__scan, .welv__shine { display: none; }
+  .welv__ring { --welp: 100; }
 }
 
 /* Aadhaar by Secure QR: where to find it, the camera, the check. */
