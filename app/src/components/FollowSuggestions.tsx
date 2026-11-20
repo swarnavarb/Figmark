@@ -4,6 +4,7 @@ import type { FollowSuggestion } from '@shared/feed';
 import { ApiRequestError, api } from '../api';
 import { Avatar } from './ui';
 import { Icon } from './Icon';
+import { StoryTag, useStory } from './Story';
 import '../styles/FollowSuggestions.css';
 
 /**
@@ -21,6 +22,7 @@ export function FollowSuggestions({ title = 'People to follow', onFollowed }: {
   const [rows, setRows] = useState<FollowSuggestion[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const story = useStory('cast');
 
   useEffect(() => {
     let live = true;
@@ -60,9 +62,10 @@ export function FollowSuggestions({ title = 'People to follow', onFollowed }: {
   }
 
   return (
-    <section className="fsug" aria-label={title}>
+    <section ref={story.ref} className={`fsug ${story.className}`} aria-label={title}>
+      <StoryTag>Chapter · The cast</StoryTag>
       <h2 className="fsug__title"><Icon name="users" size={15} /> {title}</h2>
-      <div className="fsug__row">
+      <div className="fsug__row story__row">
         {rows.map((row) => (
           <div key={row.followKey} className="fsug__card">
             <button type="button" className="fsug__x" aria-label={`Not now: ${row.name}`} onClick={() => void dismiss(row)}>

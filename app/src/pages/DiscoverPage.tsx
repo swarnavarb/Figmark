@@ -17,6 +17,7 @@ import { FollowSuggestions } from '../components/FollowSuggestions';
 import { SpreadRow } from '../components/SpreadKit';
 import { DnaProductsView, DnaRail } from '../components/DnaKit';
 import { Icon } from '../components/Icon';
+import { StoryTag, useStory } from '../components/Story';
 import { Spinner } from '../components/Spinner';
 import { useToast } from '../components/Feedback';
 import { EmptyState, ErrorNotice, Thumb, leadPhoto } from '../components/ui';
@@ -626,13 +627,7 @@ function DiscoverBody() {
         <>
           {spots.length > 0 && !words.length && <SpotlightDeck spots={spots} />}
           {spreads.length > 0 && !narrowed && (
-            <>
-              <h2 className="discsection">
-                <Icon name="megaphone" size={15} /> Earn store credit
-                <button type="button" className="discsection__all" onClick={() => setLens('spread')}>See all <Icon name="right" size={12} /></button>
-              </h2>
-              <SpreadRow cards={spreads} />
-            </>
+            <SpreadChapter cards={spreads} onAll={() => setLens('spread')} />
           )}
           {/* Products people are after, each with its own Product DNA. */}
           {!words.length && <DnaRail category={category} onAll={() => setLens('products')} />}
@@ -839,13 +834,15 @@ function DiscoverWall({ onJoin }: { onJoin: () => void }) {
 
 /** A row of finds between posts, sideways on a phone. */
 function FindRail({ finds, first, onAll }: { finds: Find[]; first: boolean; onAll: () => void }) {
+  const story = useStory('stamp');
   return (
-    <section className="discrail" aria-label={first ? 'Worth a look, for you' : 'More finds'}>
+    <section ref={story.ref} className={`discrail ${story.className}`} aria-label={first ? 'Worth a look, for you' : 'More finds'}>
+      <StoryTag>Chapter · The treasure</StoryTag>
       <div className="discrail__head">
         <h2>{first ? 'Worth a look, for you' : 'More finds'}</h2>
         <button type="button" className="discrail__all" onClick={onAll}>See all</button>
       </div>
-      <div className="discrail__row">
+      <div className="discrail__row story__row">
         {finds.map((find) => <FindCard key={find.listing.id} find={find} />)}
       </div>
     </section>
@@ -951,13 +948,15 @@ function FindsView({ finds, spotted, category }: { finds: Find[]; spotted: Spott
  * collects. A shop answers with an offer; a collector can join the hunt.
  */
 function HuntRail({ wants }: { wants: WantRow[] }) {
+  const story = useStory('map');
   return (
-    <section className="discrail" aria-label="People are hunting">
+    <section ref={story.ref} className={`discrail ${story.className}`} aria-label="People are hunting">
+      <StoryTag>Chapter · The quest</StoryTag>
       <div className="discrail__head">
         <h2>People are hunting</h2>
         <Link to="/social?view=wanted" className="discrail__all">See all</Link>
       </div>
-      <div className="discrail__row">
+      <div className="discrail__row story__row">
         {wants.map((want) => (
           <Link key={want.id} className="discitem"
             to={`/social?view=wanted&want=${encodeURIComponent(want.id)}&buyer=${encodeURIComponent(want.buyerId)}`}>
@@ -977,18 +976,35 @@ function HuntRail({ wants }: { wants: WantRow[] }) {
   );
 }
 
+/** "Earn store credit": the shops' invitations, as a strip of tickets. */
+function SpreadChapter({ cards, onAll }: { cards: PostCard[]; onAll: () => void }) {
+  const story = useStory('ticket');
+  return (
+    <section ref={story.ref} className={story.className} aria-label="Earn store credit">
+      <StoryTag>Chapter · The invitation</StoryTag>
+      <h2 className="discsection">
+        <Icon name="megaphone" size={15} /> Earn store credit
+        <button type="button" className="discsection__all" onClick={onAll}>See all <Icon name="right" size={12} /></button>
+      </h2>
+      <SpreadRow cards={cards} story />
+    </section>
+  );
+}
+
 /** A name, cut to the first word: "Karan Malhotra" is Karan on a small label. */
 const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? name;
 
 /** Things seen on somebody's shelf or in a debate, that can be bought now. */
 function SpottedRail({ items, onAll }: { items: SpottedItem[]; onAll?: () => void }) {
+  const story = useStory('film');
   return (
-    <section className="discrail" aria-label="Spotted in posts, buyable now">
+    <section ref={story.ref} className={`discrail ${story.className}`} aria-label="Spotted in posts, buyable now">
+      <StoryTag>Chapter · The scene</StoryTag>
       <div className="discrail__head">
         <h2>Spotted in posts</h2>
         {onAll && <button type="button" className="discrail__all" onClick={onAll}>See all</button>}
       </div>
-      <div className="discrail__row">
+      <div className="discrail__row story__row">
         {items.map((item) => (
           <Link key={item.listingId} className="discitem" to={`/listing/${encodeURIComponent(item.listingId)}`}>
             <ItemArt seed={item.listingId} title={item.title} category={null} photo={item.photoUrl ? { url: item.photoUrl } : null} badge="sale" />
