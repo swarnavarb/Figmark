@@ -15,6 +15,7 @@ import { ContentBadge, SocialPostCard, postHref } from '../components/SocialPost
 import { VoiceProvider } from '../components/SocialVoice';
 import { FollowSuggestions } from '../components/FollowSuggestions';
 import { SpreadRow } from '../components/SpreadKit';
+import { DnaProductsView, DnaRail } from '../components/DnaKit';
 import { Icon } from '../components/Icon';
 import { Spinner } from '../components/Spinner';
 import { useToast } from '../components/Feedback';
@@ -44,7 +45,7 @@ import '../styles/DiscoverPage.css';
  * nothing is shown twice on the first screens.
  */
 
-type Lens = 'all' | 'live' | 'spread' | 'debates' | 'shelves' | 'finds' | 'week';
+type Lens = 'all' | 'live' | 'spread' | 'debates' | 'shelves' | 'finds' | 'products' | 'week';
 type IconName = Parameters<typeof Icon>[0]['name'];
 
 const LENSES: { id: Exclude<Lens, 'week'>; label: string; icon: IconName }[] = [
@@ -54,6 +55,7 @@ const LENSES: { id: Exclude<Lens, 'week'>; label: string; icon: IconName }[] = [
   { id: 'debates', label: 'Debates', icon: 'forum' },
   { id: 'shelves', label: 'Shelves', icon: 'camera' },
   { id: 'finds', label: 'Finds', icon: 'tag' },
+  { id: 'products', label: 'Products', icon: 'dna' },
 ];
 
 /** Older addresses, and the lenses folded into others. */
@@ -65,7 +67,7 @@ function lensFrom(value: string | null, hash: string): Lens {
   if (hash === '#competitions') return 'live';
   if (!value) return 'all';
   if (LEGACY_LENS[value]) return LEGACY_LENS[value]!;
-  return (['all', 'live', 'spread', 'debates', 'shelves', 'finds', 'week'] as const).find((lens) => lens === value) ?? 'all';
+  return (['all', 'live', 'spread', 'debates', 'shelves', 'finds', 'products', 'week'] as const).find((lens) => lens === value) ?? 'all';
 }
 
 /** An item worth surfacing, and the one word that says why. Ranked on the server. */
@@ -531,7 +533,7 @@ function DiscoverBody() {
     void load();
   }
 
-  const showChips = (lens === 'all' || lens === 'finds') && categories.length > 1;
+  const showChips = (lens === 'all' || lens === 'finds' || lens === 'products') && categories.length > 1;
 
   return (
     <main className="page discpage">
@@ -632,6 +634,8 @@ function DiscoverBody() {
               <SpreadRow cards={spreads} />
             </>
           )}
+          {/* Products people are after, each with its own Product DNA. */}
+          {!words.length && <DnaRail category={category} onAll={() => setLens('products')} />}
           {rails.topics.length > 0 && !narrowed && (
             <nav className="distopics" aria-label="Topics">
               {rails.topics.slice(0, TOPICS_INLINE).map((topic) => (
@@ -686,6 +690,8 @@ function DiscoverBody() {
             </div>
           )}
         </>
+      ) : lens === 'products' ? (
+        <DnaProductsView category={category} />
       ) : lens === 'finds' ? (
         <FindsView finds={shownFinds} spotted={rails.spotted} category={category} />
       ) : lens === 'week' ? (

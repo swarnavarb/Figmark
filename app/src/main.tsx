@@ -90,6 +90,7 @@ const MyDisputesPage = page(loaders.disputes, 'MyDisputesPage');
 const QuestsPage = page(loaders.quests, 'QuestsPage');
 const LearnPage = page(loaders.learn, 'LearnPage');
 const TagPage = page(loaders.tag, 'TagPage');
+const DnaPage = page(loaders.dna, 'DnaPage');
 const ProfileByHandlePage = page(loaders.profileByHandle, 'ProfileByHandlePage');
 const ShortLinkPage = page(loaders.shortLink, 'ShortLinkPage');
 const InvitePage = page(loaders.invite, 'InvitePage');
@@ -213,6 +214,8 @@ function App() {
         {/* Open to anybody with the link: an order's journey, shared by its buyer or shop. */}
         <Route path="/track/:token" element={<TrackPage />} />
         <Route path="/tags/:slug" element={<TagPage />} />
+        {/* A product's shared page: every shop, post, hunt and review about it. Open to everybody. */}
+        <Route path="/dna/:id" element={<DnaPage />} />
         {/* Last, so every screen above keeps its path: `/<username>` is the
             fallback reading of a single segment, not the first one. */}
         <Route path="/:username" element={<ProfileByHandlePage />} />

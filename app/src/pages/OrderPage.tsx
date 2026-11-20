@@ -49,6 +49,7 @@ import { Select } from '../components/Select';
 import { PriceBreakdown } from '../components/Offers';
 import { CheckoutDeals } from '../components/OffersBlock';
 import { ReviewPhotoPicker, ReviewPhotoStrip } from '../components/ReviewPhotos';
+import { ReviewItemLink } from '../components/DnaKit';
 import { REVIEW_PHOTO_MAX } from '@shared/models';
 
 /**
@@ -2101,6 +2102,8 @@ function ReviewPanel({ state, onDone }: { state: OrderState; onDone: () => Promi
           <p className="faint">Nothing yet. It shows here as soon as {other} posts it.</p>
         )}
       </div>
+      {/* The shop is reviewed above, as always; the item itself on its Product DNA, where you show as an owner. */}
+      {state.side === 'buyer' && <ReviewItemLink listingId={state.order.listingId} />}
     </div>
   );
 }

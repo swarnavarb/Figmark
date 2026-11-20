@@ -23,9 +23,11 @@ export type IconName =
   | 'box' | 'truck' | 'users' | 'spark' | 'forum' | 'send' | 'image' | 'camera'
   | 'trash' | 'sort' | 'filter' | 'settings' | 'external' | 'home' | 'phone'
   | 'share' | 'repost' | 'more' | 'poll' | 'smile' | 'link' | 'copy' | 'rising'
-  | 'bookmark' | 'trophy' | 'mute' | 'hide';
+  | 'bookmark' | 'trophy' | 'mute' | 'hide' | 'dna';
 
 const PATHS: Record<IconName, ReactNode> = {
+  // Two strands and their rungs, for a product's DNA.
+  dna: (<><path d="M7 3c0 6 10 6 10 12s-10 3-10 6M17 3c0 6-10 6-10 12s10 3 10 6" /><path d="M8.6 7h6.8M8.6 17h6.8M10 12h4" /></>),
   // A ribbon marker, for keeping a post to read again.
   bookmark: <path d="M6.4 3.6h11.2v17l-5.6-4-5.6 4Z" />,
   // A cup, for the week's best.
