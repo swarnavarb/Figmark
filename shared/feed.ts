@@ -143,6 +143,8 @@ export interface FollowSuggestion {
   shop: boolean;
   followerCount: number;
   reason: string;
+  /** People only: how many of the recent posts are theirs. */
+  postCount?: number;
 }
 
 /** A hunt somebody posted, as a Discover rail shows it. */

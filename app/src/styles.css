@@ -10596,46 +10596,142 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
   100% { opacity: 0; transform: translate(-4px, -230px); }
 }
 
-/* ── The treasure: under the sea ──────────────────────────────────────── */
+/* ── The treasure: one dive, on a loop ────────────────────────────────────
+   Light plays on the surface; a diver swims down past a wreck to a chest in
+   the sand; the lid lifts, gold spills out, coins float up; the diver kicks
+   away with the find and the lid settles. Every part of the dive keeps the
+   one clock (--dive), so the story stays in step however long it plays. The
+   band is taller at the foot, so the seabed shows under the cards. */
 .story--ocean {
-  --tone: 125, 211, 252; --story-in: story-surface;
-  --story-bg: linear-gradient(180deg, #0C3B66 0%, #0A2A4D 45%, #071B36 100%);
+  --tone: 125, 211, 252; --story-in: story-surface; --dive: 16s;
+  padding-bottom: calc(var(--hem) + 72px);
+  --story-bg:
+    radial-gradient(60% 40% at 64% 100%, rgba(251, 191, 36, 0.12), transparent 70%),
+    linear-gradient(180deg, #0E4A78 0%, #0B3260 35%, #08214A 70%, #061633 100%);
 }
 @keyframes story-surface {
   0% { opacity: 0; transform: translateY(26px) scale(0.96); }
   60% { opacity: 1; transform: translateY(-4px); }
 }
+.sc-caustics {
+  left: 0; top: 0; width: calc(100% + 160px); height: 54px; opacity: 0.4;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 54'%3E%3Cg fill='none' stroke='%23E0F2FE' stroke-linecap='round'%3E%3Cpath d='M0 24 C14 18 22 30 38 24 S62 16 80 24 S108 32 124 22 S150 20 160 24' stroke-width='1.6' opacity='.7'/%3E%3Cpath d='M4 36 C18 32 30 42 46 36 S76 30 92 38 S122 42 140 34' stroke-width='1.1' opacity='.45'/%3E%3Cpath d='M20 46 q10 -4 20 0 M70 47 q12 -5 24 0 M118 45 q9 -3 18 0' stroke-width='1' opacity='.3'/%3E%3C/g%3E%3C/svg%3E") left top / 160px 54px repeat-x;
+  -webkit-mask: linear-gradient(#000, transparent); mask: linear-gradient(#000, transparent);
+  animation: sc-caustics 7s linear infinite;
+}
+@keyframes sc-caustics { to { transform: translateX(-160px); } }
 .sc-ray {
-  left: var(--x); top: -30%; width: 70px; height: 150%; transform-origin: 50% 0;
+  left: var(--x); top: -30%; width: 80px; height: 150%; transform-origin: 50% 0;
   background: linear-gradient(180deg, rgba(224, 242, 254, 0.2), rgba(224, 242, 254, 0.05) 60%, transparent);
   clip-path: polygon(35% 0, 65% 0, 100% 100%, 0 100%);
   animation: sc-ray 9s ease-in-out var(--d) infinite alternate;
 }
 @keyframes sc-ray { from { transform: rotate(14deg); opacity: 0.5; } to { transform: rotate(24deg); opacity: 1; } }
-.sc-swim { inset: 0; animation: sc-swim 17s linear infinite; }
-.sc-swim--back { animation-duration: 24s; animation-direction: reverse; animation-delay: -9s; }
-@keyframes sc-swim { from { transform: translateX(-12%); } to { transform: translateX(112%); } }
-.sc-fish {
-  position: absolute; left: 0; top: 56%; width: 34px; height: 18px; margin-left: -34px;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 34 18'%3E%3Cpath d='M4 9 C10 1 22 1 27 9 C22 17 10 17 4 9Z' fill='%23FB923C'/%3E%3Cpath d='M5 9 L0 3.5 L1.4 9 L0 14.5Z' fill='%23FDBA74'/%3E%3Cpath d='M14 3.6 C15 7 15 11 14 14.4' fill='none' stroke='%23FFF7ED' stroke-width='1.6'/%3E%3Ccircle cx='23' cy='7.6' r='1.4' fill='%23111827'/%3E%3C/svg%3E") center / contain no-repeat;
-  animation: sc-wiggle 0.9s ease-in-out infinite alternate;
+/* The wreck: a broken hull on its side, a snapped mast, portholes. */
+.sc-wreck {
+  left: 2%; bottom: calc(var(--hem) + 4px); width: 150px; height: 70px; opacity: 0.75;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 150 70'%3E%3Cg fill='%23123A63' stroke='%231B4D7E' stroke-width='1.2' stroke-linejoin='round'%3E%3Cpath d='M6 62 L14 40 L92 30 L132 18 L140 26 L124 50 L104 62Z'/%3E%3Cpath d='M58 34 L64 6 L67 7 L62 33Z'/%3E%3Cpath d='M64 10 L84 16 L66 20Z' opacity='.7'/%3E%3Cpath d='M98 30 L112 10 L114 12 L102 29Z'/%3E%3C/g%3E%3Cg fill='%23061633'%3E%3Ccircle cx='34' cy='46' r='3'/%3E%3Ccircle cx='52' cy='44' r='3'/%3E%3Ccircle cx='70' cy='42' r='3'/%3E%3Cpath d='M86 44 l10 -3 l2 8 l-9 4z'/%3E%3C/g%3E%3C/svg%3E") left bottom / contain no-repeat;
 }
-.sc-fish--small { top: 30%; width: 22px; height: 12px; margin-left: -22px; opacity: 0.55; transform: scaleX(-1); animation-name: sc-wiggle-back; }
-@keyframes sc-wiggle { from { transform: translateY(-2px) rotate(-3deg); } to { transform: translateY(2px) rotate(3deg); } }
-@keyframes sc-wiggle-back { from { transform: scaleX(-1) translateY(-2px) rotate(-3deg); } to { transform: scaleX(-1) translateY(2px) rotate(3deg); } }
+.sc-sand {
+  left: 0; right: 0; bottom: 0; height: calc(var(--hem) + 26px);
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 44' preserveAspectRatio='none'%3E%3Cpath d='M0 14 C30 6 52 18 84 12 S140 4 168 12 S196 16 200 14 V44 H0Z' fill='%23C2A266' opacity='.42'/%3E%3Cpath d='M0 22 C40 16 70 26 110 20 S170 16 200 22 V44 H0Z' fill='%23A8884F' opacity='.35'/%3E%3Cg fill='none' stroke='%23E7D3A1' stroke-width='.8' opacity='.35' stroke-linecap='round'%3E%3Cpath d='M18 30 q8 -3 16 0 M70 33 q10 -4 20 0 M130 29 q9 -3 18 0 M168 34 q8 -3 16 0'/%3E%3C/g%3E%3C/svg%3E") left bottom / 200px 100% repeat-x;
+}
 .sc-weed {
-  left: var(--x); bottom: calc(var(--hem) - 4px); width: 16px; height: var(--h); transform-origin: 50% 100%;
+  left: var(--x); bottom: calc(var(--hem) + 4px); width: 16px; height: var(--h); transform-origin: 50% 100%;
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 60' preserveAspectRatio='none'%3E%3Cpath d='M8 60 C2 48 14 40 8 30 S3 12 9 0' fill='none' stroke='%2334D399' stroke-width='3.2' stroke-linecap='round'/%3E%3Cpath d='M9 44 C14 40 15 34 13 30' fill='none' stroke='%2310B981' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
-  opacity: 0.6; animation: sc-weed 3.4s ease-in-out var(--d) infinite alternate;
+  opacity: 0.7; animation: sc-weed 3.4s ease-in-out var(--d) infinite alternate;
 }
 @keyframes sc-weed { from { transform: rotate(-7deg); } to { transform: rotate(7deg); } }
-.sc-bubble--sea { bottom: calc(var(--hem) + 4px); border-color: rgba(224, 242, 254, 0.55); animation-duration: 6.5s; }
-.sc-glint {
-  left: var(--x); top: var(--y); width: 12px; height: 12px;
-  background: var(--gold-text); clip-path: polygon(50% 0, 60% 40%, 100% 50%, 60% 60%, 50% 100%, 40% 60%, 0 50%, 40% 40%);
-  opacity: 0; animation: sc-glint 3.8s ease-in-out var(--d) infinite;
+/* A school of little fish, turning together as it crosses. */
+.sc-school { inset: 0; animation: sc-school 21s linear infinite; }
+.sc-school i {
+  position: absolute; left: 0; top: 44%; width: 64px; height: 26px; margin-left: -64px; opacity: 0.55;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 26' fill='%23BAE6FD'%3E%3Cpath d='M50 6 c3 -3 7 -3 9 0 c-2 3 -6 3 -9 0z m0 0 l-3 -2 l0 4z'/%3E%3Cpath d='M38 14 c3 -3 7 -3 9 0 c-2 3 -6 3 -9 0z m0 0 l-3 -2 l0 4z'/%3E%3Cpath d='M52 20 c3 -3 7 -3 9 0 c-2 3 -6 3 -9 0z m0 0 l-3 -2 l0 4z'/%3E%3Cpath d='M24 8 c3 -3 7 -3 9 0 c-2 3 -6 3 -9 0z m0 0 l-3 -2 l0 4z'/%3E%3Cpath d='M26 20 c3 -3 7 -3 9 0 c-2 3 -6 3 -9 0z m0 0 l-3 -2 l0 4z'/%3E%3Cpath d='M12 14 c3 -3 7 -3 9 0 c-2 3 -6 3 -9 0z m0 0 l-3 -2 l0 4z'/%3E%3C/svg%3E") center / contain no-repeat;
+  animation: sc-shoal 2.6s ease-in-out infinite alternate;
 }
-@keyframes sc-glint { 0%, 70%, 100% { opacity: 0; transform: scale(0.3) rotate(0deg); } 80% { opacity: 0.9; transform: scale(1) rotate(45deg); } }
+@keyframes sc-school { from { transform: translateX(0); } to { transform: translateX(calc(100% + 64px)); } }
+@keyframes sc-shoal { from { transform: translateY(-6px) scaleY(0.9); } to { transform: translateY(6px) scaleY(1.05); } }
+.sc-jelly {
+  left: 46%; top: 26%; width: 20px; height: 30px; opacity: 0.55;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 30'%3E%3Cpath d='M2 11 C2 3 18 3 18 11 C15 13 5 13 2 11Z' fill='%23F9A8D4' opacity='.85'/%3E%3Cg fill='none' stroke='%23F9A8D4' stroke-width='1' stroke-linecap='round' opacity='.7'%3E%3Cpath d='M5 12 q-2 5 0 9 t0 8'/%3E%3Cpath d='M10 13 q2 5 0 9 t0 7'/%3E%3Cpath d='M15 12 q-2 5 0 9 t0 7'/%3E%3C/g%3E%3C/svg%3E") center / contain no-repeat;
+  animation: sc-jelly 8s ease-in-out infinite;
+}
+@keyframes sc-jelly {
+  0%, 100% { transform: translateY(0) scaleY(1); }
+  20% { transform: translateY(-10px) scaleY(0.82); }
+  40% { transform: translateY(-16px) scaleY(1.05); }
+  70% { transform: translateY(-4px) scaleY(1); }
+}
+/* The chest: box, a lid hinged at its back, a glow and a few coins inside. */
+.sc-chest { left: 60%; bottom: calc(var(--hem) + 10px); width: 48px; height: 36px; }
+.sc-chest > i { position: absolute; }
+.sc-chest__box {
+  left: 0; right: 0; bottom: 0; height: 22px; border-radius: 2px 2px 3px 3px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 22'%3E%3Crect x='1' y='1' width='46' height='20' rx='2' fill='%237C4A1E' stroke='%233B200A' stroke-width='1.4'/%3E%3Cpath d='M1 8 H47 M1 15 H47' stroke='%235C3412' stroke-width='1'/%3E%3Crect x='6' y='1' width='5' height='20' fill='%23D4A017' opacity='.9'/%3E%3Crect x='37' y='1' width='5' height='20' fill='%23D4A017' opacity='.9'/%3E%3Crect x='20' y='3' width='8' height='9' rx='1.5' fill='%23F4C542' stroke='%233B200A' stroke-width='.8'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+}
+.sc-chest__lid {
+  left: -1px; right: -1px; bottom: 21px; height: 15px; transform-origin: 100% 100%;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 50 15'%3E%3Cpath d='M1 14 C1 3 49 3 49 14Z' fill='%238B5524' stroke='%233B200A' stroke-width='1.4'/%3E%3Cpath d='M7 14 C8 7 9 6 12 5 M38 5 C41 6 42 7 43 14' stroke='%23D4A017' stroke-width='4' fill='none'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+  animation: sc-lid var(--dive) ease-in-out infinite;
+}
+@keyframes sc-lid {
+  0%, 36% { transform: rotate(0deg); }
+  42% { transform: rotate(38deg); }
+  45% { transform: rotate(31deg); }
+  80% { transform: rotate(34deg); }
+  88%, 100% { transform: rotate(0deg); }
+}
+.sc-chest__glow {
+  left: -30px; right: -30px; bottom: 8px; height: 80px; border-radius: 50%; opacity: 0;
+  background: radial-gradient(closest-side, rgba(253, 224, 71, 0.75), rgba(251, 191, 36, 0.25) 55%, transparent);
+  animation: sc-gold var(--dive) ease-in-out infinite;
+}
+@keyframes sc-gold { 0%, 38% { opacity: 0; transform: scale(0.6); } 48%, 78% { opacity: 1; transform: scale(1); } 90%, 100% { opacity: 0; transform: scale(0.7); } }
+.sc-coin {
+  left: calc(14px + var(--n) * 6px); bottom: 18px; width: 9px; height: 9px; border-radius: 50%; opacity: 0;
+  background: radial-gradient(circle at 35% 35%, var(--gold-pale), #F4C542 45%, #B7791F);
+  box-shadow: 0 0 6px rgba(253, 224, 71, 0.8);
+  animation: sc-coin var(--dive) ease-out infinite; animation-delay: calc(var(--n) * 0.3s);
+}
+@keyframes sc-coin {
+  0%, 43% { opacity: 0; transform: translate(0, 0) scale(0.6); }
+  48% { opacity: 1; transform: translate(calc((var(--n) - 1.5) * 6px), -26px) scale(1); }
+  72% { opacity: 0.8; transform: translate(calc((var(--n) - 1.5) * 16px), -80px) scale(0.9) rotateY(180deg); }
+  80%, 100% { opacity: 0; transform: translate(calc((var(--n) - 1.5) * 18px), -100px) scale(0.7); }
+}
+/* The diver: in from the top right, down to the chest, a look, away up and left. */
+.sc-dive { inset: 0; animation: sc-dive var(--dive) ease-in-out infinite; }
+@keyframes sc-dive {
+  0% { transform: translate(calc(100% + 20px), 26px); }
+  36% { transform: translate(calc(60% + 34px), calc(100% - var(--hem) - 70px)); }
+  56% { transform: translate(calc(60% + 30px), calc(100% - var(--hem) - 74px)); }
+  100% { transform: translate(-80px, 10px); }
+}
+.sc-diver {
+  position: absolute; left: 0; top: 0; width: 54px; height: 22px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 54 22'%3E%3Cpath d='M44 9 L53 4 L52 9 L54 14 L44 12Z' fill='%230EA5E9'/%3E%3Cpath d='M8 11 C10 6 16 6 22 7 L42 8 C46 8 46 13 42 13 L22 14 C16 15 10 15 8 11Z' fill='%238FB4D9'/%3E%3Crect x='20' y='3' width='16' height='5' rx='2.5' fill='%23FACC15'/%3E%3Ccircle cx='8' cy='10' r='5' fill='%238FB4D9'/%3E%3Cpath d='M3 8.5 h5 v3 h-5z' fill='%237DD3FC' stroke='%238FB4D9' stroke-width='.8'/%3E%3Cpath d='M12 14 L18 19 M14 14 L22 18' stroke='%238FB4D9' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat;
+  filter: drop-shadow(0 0 3px rgba(186, 230, 253, 0.55));
+  animation: sc-pitch var(--dive) ease-in-out infinite;
+}
+@keyframes sc-pitch {
+  0% { transform: rotate(-22deg); }
+  32% { transform: rotate(-16deg); }
+  40%, 54% { transform: rotate(-2deg); }
+  62%, 100% { transform: rotate(16deg); }
+}
+.sc-diver__lamp {
+  position: absolute; right: 100%; top: -4px; width: 64px; height: 34px; opacity: 0; transform-origin: 100% 50%;
+  background: linear-gradient(270deg, rgba(254, 249, 195, 0.55), rgba(254, 249, 195, 0));
+  clip-path: polygon(100% 42%, 100% 58%, 0 100%, 0 0);
+  animation: sc-lamp var(--dive) ease-in-out infinite;
+}
+@keyframes sc-lamp { 0%, 18% { opacity: 0; } 28%, 56% { opacity: 1; } 66%, 100% { opacity: 0; } }
+.sc-diver__bubble {
+  position: absolute; left: 4px; top: 0; width: 5px; height: 5px; border-radius: 50%;
+  border: 1px solid rgba(224, 242, 254, 0.75); opacity: 0;
+  animation: sc-breath 2.2s ease-out infinite; animation-delay: calc(var(--n) * 0.5s);
+}
+@keyframes sc-breath { 0% { opacity: 0; transform: translate(0, 0) scale(0.6); } 20% { opacity: 0.9; } 100% { opacity: 0; transform: translate(-4px, -46px) scale(1.3); } }
 
 /* ── The cast: a stage ────────────────────────────────────────────────── */
 .story--stage {

@@ -14,8 +14,10 @@ import '../styles/FollowSuggestions.css';
  * person is short of somebody to read. Following one takes it out of the row;
  * "Not now" mutes it, so it is not suggested again.
  */
-export function FollowSuggestions({ title = 'People to follow', onFollowed }: {
+export function FollowSuggestions({ title = 'People to follow', people = false, onFollowed }: {
   title?: string;
+  /** People only - collectors, never shops - each on a cast headshot card. Discover's row. */
+  people?: boolean;
   /** Somebody was followed: a feed showing this may want to read itself again. */
   onFollowed?: () => void;
 }) {
@@ -26,13 +28,13 @@ export function FollowSuggestions({ title = 'People to follow', onFollowed }: {
 
   useEffect(() => {
     let live = true;
-    api.followSuggestions()
+    api.followSuggestions(people ? 'people' : undefined)
       .then((found) => live && setRows(found.suggestions))
       .catch(() => live && setRows([]));
     return () => {
       live = false;
     };
-  }, []);
+  }, [people]);
 
   if (!rows || rows.length === 0) return null;
 
@@ -67,7 +69,10 @@ export function FollowSuggestions({ title = 'People to follow', onFollowed }: {
       <StoryTag>Chapter · The cast</StoryTag>
       <h2 className="fsug__title"><Icon name="users" size={15} /> {title}</h2>
       <div className="fsug__row story__row">
-        {rows.map((row) => (
+        {rows.map((row) => people ? (
+          <CastCard key={row.followKey} row={row} busy={busy === row.followKey}
+            onFollow={() => void follow(row)} onDismiss={() => void dismiss(row)} />
+        ) : (
           <div key={row.followKey} className="fsug__card">
             <button type="button" className="fsug__x" aria-label={`Not now: ${row.name}`} onClick={() => void dismiss(row)}>
               <Icon name="close" size={12} />
@@ -100,4 +105,46 @@ function Who({ row }: { row: FollowSuggestion }) {
   return row.handle
     ? <Link to={`/${encodeURIComponent(row.handle)}`} className="fsug__who">{inside}</Link>
     : <span className="fsug__who">{inside}</span>;
+}
+
+/**
+ * A person, as a headshot pinned up backstage: a polaroid of them, their name
+ * in print, the part they play here (collector, followers, posts), and why
+ * they are suggested, in their own little quote. Shops never get one.
+ */
+function CastCard({ row, busy, onFollow, onDismiss }: {
+  row: FollowSuggestion; busy: boolean; onFollow: () => void; onDismiss: () => void;
+}) {
+  const face = (
+    <>
+      <span className="fcast__shot">
+        {row.photoUrl
+          ? <img className="fcast__photo" src={row.photoUrl} alt="" loading="lazy" />
+          : <Avatar name={row.name} size={64} />}
+      </span>
+      <strong className="fcast__name">{row.name}</strong>
+      {row.handle && <span className="fcast__handle">@{row.handle}</span>}
+    </>
+  );
+  const parts = [
+    row.followerCount > 0 ? `${row.followerCount} follower${row.followerCount === 1 ? '' : 's'}` : null,
+    row.postCount ? `${row.postCount} post${row.postCount === 1 ? '' : 's'}` : null,
+  ].filter(Boolean);
+  return (
+    <div className="fcast">
+      <span className="fcast__tape" aria-hidden="true" />
+      <button type="button" className="fcast__x" aria-label={`Not now: ${row.name}`} onClick={onDismiss}>
+        <Icon name="close" size={12} />
+      </button>
+      {row.handle
+        ? <Link to={`/${encodeURIComponent(row.handle)}`} className="fcast__who">{face}</Link>
+        : <span className="fcast__who">{face}</span>}
+      <span className="fcast__role">Collector</span>
+      {parts.length > 0 && <span className="fcast__stats">{parts.join(' · ')}</span>}
+      <q className="fcast__why">{row.reason}</q>
+      <button type="button" className="fcast__follow" disabled={busy} onClick={onFollow}>
+        <Icon name="plus" size={12} /> Follow
+      </button>
+    </div>
+  );
 }

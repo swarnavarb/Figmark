@@ -565,3 +565,114 @@
   .dnak__tile[data-theme='cards'] .dnak__tilepattern { animation: none; }
   .dnak__tile:hover { transform: none; }
 }
+
+/* ---- the lab rail's beakers ------------------------------------------------
+   A product kept in glass: a rim with a pouring spout, the glass itself (a
+   thin bright edge, sheen down one side, measuring marks), a liquid in the
+   category's colour sloshing over the product as it floats, bubbles rising,
+   and a paper specimen label stuck to the front. Later in the sheet than the
+   tile's themes, so it wins where both say something. */
+.dnak__tile.dnak__jar {
+  display: grid; overflow: visible; padding-top: 7px;
+  background: none; border: 0; border-radius: 0; box-shadow: none;
+}
+@media (hover: hover) {
+  .dnak__tile.dnak__jar:hover { transform: translateY(-3px) rotate(-1deg); box-shadow: none; }
+}
+.dnak__jarrim {
+  position: absolute; z-index: 3; top: 0; left: -4px; right: -4px; height: 11px; border-radius: 6px;
+  background: linear-gradient(180deg, rgba(224, 242, 254, 0.5), rgba(186, 230, 253, 0.16));
+  box-shadow: inset 0 0 0 1.5px rgba(224, 242, 254, 0.55), 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+/* The spout, on the left of the rim. */
+.dnak__jarrim::before {
+  content: ''; position: absolute; left: -7px; top: -3px; width: 16px; height: 12px;
+  border-radius: 10px 2px 2px 8px; rotate: -18deg;
+  background: linear-gradient(180deg, rgba(224, 242, 254, 0.45), rgba(186, 230, 253, 0.12));
+  box-shadow: inset 0 0 0 1.5px rgba(224, 242, 254, 0.5);
+}
+.dnak__jarglass {
+  position: relative; display: grid; grid-template-rows: 128px auto; overflow: hidden;
+  border-radius: 3px 3px 26px 26px;
+  background:
+    radial-gradient(80% 50% at 50% 30%, color-mix(in srgb, var(--th1) 14%, transparent), transparent 70%),
+    rgba(10, 22, 34, 0.55);
+  box-shadow: inset 0 0 0 1.5px rgba(224, 242, 254, 0.42), inset 0 -10px 24px rgba(0, 0, 0, 0.35), 0 12px 24px rgba(0, 0, 0, 0.4);
+}
+/* The liquid: from a third of the way down to the base, its surface a
+   sloshing wave in the category's colour. */
+.dnak__jarliquid { position: absolute; inset: 30% 0 0; z-index: 1; overflow: hidden; pointer-events: none; }
+.dnak__jarliquid::before {
+  content: ''; position: absolute; inset: 9px 0 0;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--th1) 38%, transparent), color-mix(in srgb, var(--th2) 40%, transparent));
+}
+.dnak__jarliquid i {
+  position: absolute; left: 0; top: 0; width: calc(100% + 60px); height: 10px;
+  background: color-mix(in srgb, var(--th1) 38%, transparent);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 10' preserveAspectRatio='none'%3E%3Cpath d='M0 5 C10 0 20 0 30 5 S50 10 60 5 V10 H0Z'/%3E%3C/svg%3E") left top / 60px 10px repeat-x;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 10' preserveAspectRatio='none'%3E%3Cpath d='M0 5 C10 0 20 0 30 5 S50 10 60 5 V10 H0Z'/%3E%3C/svg%3E") left top / 60px 10px repeat-x;
+  animation: dnak-slosh 3.2s linear infinite;
+}
+@keyframes dnak-slosh { to { transform: translateX(-60px); } }
+.dnak__jarspecimen {
+  position: relative; z-index: 0; display: grid; place-items: center; align-self: end; justify-self: center;
+  width: 92px; height: 92px; margin-bottom: 6px; border-radius: 16px; overflow: hidden;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
+  animation: dnak-float 4.6s ease-in-out infinite alternate; animation-delay: calc(var(--i, 0) * -0.7s);
+}
+.dnak__jarspecimen img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.dnak__jarspecimen .dnak__helix { --dnak-w: 40px; --dnak-h: 5px; }
+@keyframes dnak-float { from { transform: translateY(-4px) rotate(-4deg); } to { transform: translateY(5px) rotate(3deg); } }
+.dnak__jarbubbles { position: absolute; inset: 34% 0 0; z-index: 1; pointer-events: none; }
+.dnak__jarbubbles i {
+  position: absolute; bottom: 10px; width: 6px; height: 6px; border-radius: 50%; opacity: 0;
+  border: 1px solid rgba(240, 249, 255, 0.75); background: rgba(240, 249, 255, 0.15);
+  animation: dnak-bubble 3.6s ease-in infinite;
+}
+.dnak__jarbubbles i:nth-child(1) { left: 16%; }
+.dnak__jarbubbles i:nth-child(2) { left: 30%; width: 4px; height: 4px; animation-delay: -1s; }
+.dnak__jarbubbles i:nth-child(3) { left: 72%; animation-delay: -2.1s; }
+.dnak__jarbubbles i:nth-child(4) { left: 84%; width: 4px; height: 4px; animation-delay: -2.8s; }
+@keyframes dnak-bubble {
+  0% { opacity: 0; transform: translate(0, 0); }
+  15% { opacity: 0.9; }
+  60% { transform: translate(4px, -60px); }
+  85% { opacity: 0.6; }
+  100% { opacity: 0; transform: translate(-2px, -90px); }
+}
+/* Measuring marks up the right-hand side. */
+.dnak__jarticks {
+  position: absolute; z-index: 2; top: 14px; right: 7px; height: 100px; width: 26px; pointer-events: none;
+  display: grid; align-content: space-between; justify-items: end;
+  background: repeating-linear-gradient(180deg, rgba(224, 242, 254, 0.5) 0 1px, transparent 1px 10px) right top / 6px 100% no-repeat;
+}
+.dnak__jarticks i {
+  display: flex; align-items: center; gap: 2px; font-style: normal;
+  font: 500 calc(8px * var(--text-scale))/1 'IBM Plex Mono', ui-monospace, monospace; color: rgba(224, 242, 254, 0.65);
+}
+.dnak__jarticks i::after { content: ''; width: 10px; height: 1.5px; background: rgba(224, 242, 254, 0.7); }
+/* The specimen label: paper, stuck on a touch crooked, in front of the liquid. */
+.dnak__jarlabel {
+  position: relative; z-index: 2; display: grid; gap: 4px; align-content: start;
+  margin: 0 10px 14px; padding: 8px 9px 9px; border-radius: 3px;
+  color: #1C2430; background: linear-gradient(180deg, #FBF7EC, #EFE7D3);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  rotate: -1deg;
+}
+.dnak__jar:nth-child(even) .dnak__jarlabel { rotate: 0.8deg; }
+.dnak__jarno {
+  display: flex; justify-content: space-between; align-items: center;
+  padding-bottom: 4px; border-bottom: 1px dashed rgba(28, 36, 48, 0.3);
+  font: 600 calc(9.5px * var(--text-scale))/1.2 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.06em; color: rgba(28, 36, 48, 0.7);
+}
+.dnak__jar .dnak__tilecat { color: color-mix(in srgb, var(--th1) 55%, #1C2430); }
+.dnak__jar .dnak__tilename { color: #111827; font-size: calc(13px * var(--text-scale)); }
+.dnak__jar .dnak__tileprice { color: color-mix(in srgb, var(--th1) 45%, #0B3B44); font-weight: 600; }
+.dnak__jar .dnak__tilemeta { color: rgba(28, 36, 48, 0.65); font-size: calc(11px * var(--text-scale)); }
+/* The glass in front of it all: a bright streak down the left, a softer one on the right. */
+.dnak__jarsheen {
+  position: absolute; inset: 0; z-index: 3; pointer-events: none; border-radius: inherit;
+  background:
+    linear-gradient(90deg, transparent 6%, rgba(255, 255, 255, 0.16) 8% 12%, transparent 15%),
+    linear-gradient(90deg, transparent 84%, rgba(255, 255, 255, 0.08) 86% 88%, transparent 90%);
+}
