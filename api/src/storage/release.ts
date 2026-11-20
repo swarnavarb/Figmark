@@ -134,3 +134,24 @@ export async function releasePostPhotos(deleted: Post[], repository: Repository)
     return 0;
   }
 }
+
+/**
+ * Release the photos a hunt uploaded, once the hunt is deleted. Only photos the
+ * hunt itself claimed: a hunt started from a Product DNA shows a listing's
+ * photo, which stays with the listing.
+ */
+export async function releaseWantPhotos(want: { id: string; photoUrls?: string[] }): Promise<number> {
+  try {
+    const store = await getPhotoStore();
+    let removed = 0;
+    for (const entry of want.photoUrls ?? []) {
+      const name = await nameOf(entry);
+      if (!name) continue;
+      const info = await store.publicInfo(name);
+      if (info?.attachedTo === `want:${want.id}` && await store.remove('public', name)) removed += 1;
+    }
+    return removed;
+  } catch {
+    return 0;
+  }
+}

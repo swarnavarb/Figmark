@@ -15,6 +15,8 @@ import { VoicePicker, useVoice } from '../components/SocialVoice';
 
 import { Select } from '../components/Select';
 import { useDraftUploads } from '../draft-uploads';
+import { DEFAULT_TIMED_DAYS, timeLeft } from '@shared/timed';
+import { TimedPicker } from '../components/TimedPicker';
 
 /**
  * What people are looking for.
@@ -264,7 +266,7 @@ function WantBody({ want, onOpen }: { want: WantCard; onOpen: () => void }) {
         <span className="want__title">{want.title}</span>
         <span className="faint">
           {want.category}
-          {want.condition ? ` · ${conditionWords(want.condition)!.words}` : ''} · asked {timeAgo(want.createdAt)}
+          {want.condition ? ` · ${conditionWords(want.condition)!.words}` : ''} · asked {timeAgo(want.createdAt)} · {timeLeft(want.expiresAt)}
         </span>
         {(want.matchCount ?? 0) > 0 && (
           <span className="want__matches">
@@ -301,6 +303,7 @@ function AskDialog({ onClose, onPosted }: { onClose: () => void; onPosted: () =>
   const [category, setCategory] = useState<string>(CATEGORIES[0]!);
   const [budget, setBudget] = useState('');
   const [condition, setCondition] = useState<string>('');
+  const [days, setDays] = useState(DEFAULT_TIMED_DAYS);
   const [photos, setPhotos] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -334,6 +337,7 @@ function AskDialog({ onClose, onPosted }: { onClose: () => void; onPosted: () =>
         budgetMinor: budget.trim() ? Math.round(Number(budget) * 100) : null,
         condition: condition || null,
         photoUrls: photos,
+        days,
       });
       await onPosted();
       toast('Posted. Sellers can answer your hunt now.');
@@ -397,6 +401,12 @@ function AskDialog({ onClose, onPosted }: { onClose: () => void; onPosted: () =>
           Optional. For something rare, "what will you take" is a real answer.
         </span>
       </label>
+
+      <div className="field">
+        <span>Keep it up for</span>
+        <TimedPicker days={days} onChange={setDays} label="Keep it up for" />
+        <span className="field__hint">Then it is deleted, with its answers and photos.</span>
+      </div>
 
       <label className="field">
         <span>Anything else</span>
@@ -509,7 +519,7 @@ function WantDialog({ card, onClose, onChanged }: {
     <Modal title={card.title} onClose={onClose}>
       <p className="faint" style={{ marginTop: 0 }}>
         <PersonLink party={card.buyer} /> · {card.category}
-        {card.condition ? ` · ${conditionWords(card.condition)!.words}` : ''} · {timeAgo(card.createdAt)}
+        {card.condition ? ` · ${conditionWords(card.condition)!.words}` : ''} · {timeAgo(card.createdAt)} · {timeLeft(card.expiresAt)}
       </p>
 
       <div className="kv">

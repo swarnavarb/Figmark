@@ -8,7 +8,9 @@ import { useToast } from '../components/Feedback';
 import { Icon } from '../components/Icon';
 import { ReviewPhotoPicker, ReviewPhotoStrip } from '../components/ReviewPhotos';
 import { Lightbox } from '../components/SocialPost';
-import { PageError } from '../components/ui';
+import { Modal, PageError } from '../components/ui';
+import { TimedPicker } from '../components/TimedPicker';
+import { DEFAULT_TIMED_DAYS, timeLeft } from '@shared/timed';
 import { formatMoney, timeAgo } from '../format';
 import { useReducedMotion } from '../motion';
 import { useSession } from '../session';
@@ -137,7 +139,7 @@ export function DnaPage() {
   return (
     <main className="page dnap" ref={root}>
       <BackLink to="/discover?lens=products" title={<span className="dnap__backtitle"><Icon name="dna" size={15} /> Product DNA</span>} />
-      <Hero view={view} />
+      <Hero view={view} onChanged={load} />
       <StrandNav view={view} />
 
       <div className="dnap__genome">
@@ -203,7 +205,7 @@ export function DnaPage() {
 
 /* ---- hero ------------------------------------------------------------------ */
 
-function Hero({ view }: { view: DnaView }) {
+function Hero({ view, onChanged }: { view: DnaView; onChanged: () => Promise<void> }) {
   const { dna, price, rating, demand } = view;
   return (
     <header className="dnap__hero">
@@ -246,8 +248,147 @@ function Hero({ view }: { view: DnaView }) {
           </div>
         </div>
         <HeatBand heat={demand.heat} label={demand.label} />
+        <HeroActions view={view} onChanged={onChanged} />
       </div>
     </header>
+  );
+}
+
+/* ---- follow, and "I want this" ---------------------------------------------- */
+
+/**
+ * The two things a reader can do with a product besides buying it: follow it
+ * for a while and hear when its market moves, or put a hunt for it on the
+ * Wanted board. Both run for as long as they pick, up to three months, and
+ * are then deleted.
+ */
+function HeroActions({ view, onChanged }: { view: DnaView; onChanged: () => Promise<void> }) {
+  const { user, promptAuth } = useSession();
+  const [sheet, setSheet] = useState<'follow' | 'want' | null>(null);
+  const open = (which: 'follow' | 'want') => (user
+    ? setSheet(which)
+    : promptAuth(which === 'follow' ? 'Sign in to follow this product.' : 'Sign in to post a hunt for this product.'));
+  const others = view.watchers - (view.follow ? 1 : 0);
+  return (
+    <div className="dnap__acts">
+      <button type="button" className={`dnap__act${view.follow ? ' is-on' : ''}`} aria-pressed={Boolean(view.follow)} onClick={() => open('follow')}>
+        <Icon name="bell" size={15} />
+        <span className="dnap__actlabel">{view.follow ? 'Following' : 'Follow'}</span>
+        {view.follow && <span className="dnap__actnote">{timeLeft(view.follow.until)}</span>}
+      </button>
+      {view.hunting ? (
+        <Link className="dnap__act is-on" to={`/social?view=wanted&want=${encodeURIComponent(view.hunting.id)}&buyer=${encodeURIComponent(view.hunting.buyerId)}`}>
+          <Icon name="target" size={15} />
+          <span className="dnap__actlabel">You're hunting it</span>
+          <span className="dnap__actnote">{timeLeft(view.hunting.expiresAt)}</span>
+        </Link>
+      ) : (
+        <button type="button" className="dnap__act dnap__act--want" onClick={() => open('want')}>
+          <Icon name="target" size={15} />
+          <span className="dnap__actlabel">I want this</span>
+        </button>
+      )}
+      {others > 0 && <p className="dnap__watchers">{others} {others === 1 ? 'other person follows' : 'others follow'} it</p>}
+      {sheet === 'follow' && <FollowSheet view={view} onClose={() => setSheet(null)} onDone={async () => { setSheet(null); await onChanged(); }} />}
+      {sheet === 'want' && <WantSheet view={view} onClose={() => setSheet(null)} onDone={async () => { setSheet(null); await onChanged(); }} />}
+    </div>
+  );
+}
+
+function FollowSheet({ view, onClose, onDone }: { view: DnaView; onClose: () => void; onDone: () => Promise<void> }) {
+  const toast = useToast();
+  const [days, setDays] = useState(DEFAULT_TIMED_DAYS);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  async function save(next: number | null) {
+    setBusy(true);
+    setProblem(null);
+    try {
+      await api.followDna(view.dna.id, next);
+      toast(next === null ? 'Stopped following.' : 'Following. You will hear when the price or stock moves.');
+      await onDone();
+    } catch (err) {
+      setProblem(err instanceof ApiRequestError ? err.message : 'That did not save.');
+      setBusy(false);
+    }
+  }
+  return (
+    <Modal title={view.follow ? 'You follow this product' : 'Follow this product'} onClose={onClose}>
+      <p className="dnap__sheettext">
+        Hear when its lowest price goes up or down, when it comes back on sale or sells out, and when a new shop starts selling it.
+      </p>
+      {view.follow && <p className="dnap__sheettext dnap__dim">Now until {new Date(view.follow.until).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} · {timeLeft(view.follow.until)}. Pick again to change it.</p>}
+      <div className="dnap__sheetfield">
+        <span className="dnap__sheetlabel">For how long</span>
+        <TimedPicker days={days} onChange={setDays} label="Follow for how long" />
+        <span className="dnap__sheethint">Then the follow ends by itself and is deleted.</span>
+      </div>
+      {problem && <p className="dnap__problem" role="alert">{problem}</p>}
+      <div className="dnap__sheetbtns">
+        {view.follow
+          ? <button type="button" className="btn btn--quiet" disabled={busy} onClick={() => void save(null)}>Stop following</button>
+          : <button type="button" className="btn btn--quiet" onClick={onClose}>Cancel</button>}
+        <button type="button" className="btn" disabled={busy} onClick={() => void save(days)}>
+          {busy ? 'Saving…' : view.follow ? 'Change' : 'Follow'}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function WantSheet({ view, onClose, onDone }: { view: DnaView; onClose: () => void; onDone: () => Promise<void> }) {
+  const toast = useToast();
+  const [days, setDays] = useState(DEFAULT_TIMED_DAYS);
+  const [budget, setBudget] = useState('');
+  // Behind a tap, so the sheet opens without the keyboard covering the choices.
+  const [budgeting, setBudgeting] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  async function post() {
+    setBusy(true);
+    setProblem(null);
+    try {
+      const amount = budget.trim() ? Math.round(Number(budget.replace(/,/g, '')) * 100) : null;
+      await api.wantDna(view.dna.id, { days, budgetMinor: amount && amount > 0 ? amount : null });
+      toast('On the Wanted board. Shops can answer your hunt now.');
+      await onDone();
+    } catch (err) {
+      setProblem(err instanceof ApiRequestError ? err.message : 'That did not post.');
+      setBusy(false);
+    }
+  }
+  return (
+    <Modal title="I want this" onClose={onClose}>
+      <div className="dnap__wantcard">
+        {view.dna.cover && <img src={view.dna.cover} alt="" decoding="async" />}
+        <div>
+          <strong>{view.dna.name}</strong>
+          <span className="dnap__dim">{view.dna.category} · goes on the Wanted board</span>
+        </div>
+      </div>
+      <div className="dnap__sheetfield">
+        <span className="dnap__sheetlabel">Keep it up for</span>
+        <TimedPicker days={days} onChange={setDays} label="Keep the hunt up for" />
+        <span className="dnap__sheethint">Then it is deleted, with its answers and photos.</span>
+      </div>
+      {budgeting ? (
+        <label className="dnap__sheetfield">
+          <span className="dnap__sheetlabel">Budget</span>
+          <input className="dnap__sheetinput" value={budget} inputMode="decimal" autoFocus
+            placeholder={view.price ? `Shops ask around ${formatMoney(view.price.typicalMinor, view.price.currency)}` : 'What you would pay'}
+            onChange={(event) => setBudget(event.target.value.replace(/[^\d.,]/g, ''))} />
+        </label>
+      ) : (
+        <button type="button" className="dnap__addbudget" onClick={() => setBudgeting(true)}>
+          <Icon name="plus" size={14} /> Add a budget <span className="dnap__dim">(optional, otherwise open to offers)</span>
+        </button>
+      )}
+      {problem && <p className="dnap__problem" role="alert">{problem}</p>}
+      <div className="dnap__sheetbtns">
+        <button type="button" className="btn btn--quiet" onClick={onClose}>Cancel</button>
+        <button type="button" className="btn" disabled={busy} onClick={() => void post()}>{busy ? 'Posting…' : 'Post to Wanted'}</button>
+      </div>
+    </Modal>
   );
 }
 

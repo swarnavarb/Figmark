@@ -27,6 +27,8 @@ const routes = await import(new URL('dna-routes.js', fns));
 const { forgetCatalogue } = await import(new URL('catalog-routes.js', fns));
 const { forgetDnaIndex } = await import(new URL('api/src/dna.js', dist));
 const { getRepository } = await import(new URL('api/src/data/index.js', dist));
+const follows = await import(new URL('api/src/dna-follow.js', dist));
+const wants = await import(new URL('want-routes.js', fns));
 
 const ctx = { error: (...a) => console.error(...a), log: () => {}, warn: () => {}, info: () => {} };
 const req = ({ headers = {}, body, query = {}, params = {} } = {}) => ({
@@ -296,6 +298,104 @@ await check('Discover lists products, the busiest first; search finds them by na
   assert.ok(ids.includes(panda.id));
   const found = await routes.dnaSearchRoute(req({ query: { q: 'grey fog' } }), ctx);
   assert.equal(found.jsonBody.products[0].name, 'Nike Dunk Low Grey Fog');
+});
+
+console.log('following, and hunting from a DNA');
+
+const DAY = 86_400_000;
+const near = (iso, days) => Math.abs(Date.parse(iso) - (Date.now() + days * DAY)) < 60_000;
+
+await check('a follow runs as long as picked, three months at most, and needs a sign-in', async () => {
+  const anon = await routes.dnaFollowRoute(req({ params: { id: panda.id }, body: { days: 30 } }), ctx);
+  assert.equal(anon.status, 401);
+  const tooLong = await routes.dnaFollowRoute(req({ headers: me.headers, params: { id: panda.id }, body: { days: 91 } }), ctx);
+  assert.equal(tooLong.status, 400);
+  const on = await routes.dnaFollowRoute(req({ headers: me.headers, params: { id: panda.id }, body: { days: 14 } }), ctx);
+  assert.equal(on.status, 200, JSON.stringify(on.jsonBody));
+  assert.ok(near(on.jsonBody.follow.until, 14));
+  const view = (await routes.dnaViewRoute(req({ headers: me.headers, params: { id: panda.id } }), ctx)).jsonBody;
+  assert.equal(view.follow.until, on.jsonBody.follow.until);
+  assert.equal(view.watchers, 1);
+  const row = await repository.getSiteContent(dna.dnaFollowId(panda.id, me.id));
+  assert.ok(row.ttl > 14 * 86400 && row.ttl <= 14 * 86400 + 3700, 'the row deletes itself after the follow');
+  const stranger = (await routes.dnaViewRoute(req({ params: { id: panda.id } }), ctx)).jsonBody;
+  assert.equal(stranger.follow, null);
+  assert.equal(stranger.watchers, 1, 'followers are a count, never names');
+  assert.ok(!JSON.stringify(stranger).includes(dna.DNA_FOLLOW_PREFIX), 'no follow rows on the page');
+});
+
+await check('a follower hears when the lowest price moves, and not when it barely does', async () => {
+  const before = (await repository.listNotifications(me.id, 50)).filter((row) => row.kind === 'dna_alert').length;
+  const catalogue = await repository.listListings({ includeHidden: true });
+  const nudged = await repository.changeListing(mine.id, mine.sellerId, (current) => ({ ...current, priceMinor: 945000 }));
+  assert.equal(await follows.alertForListing(repository, nudged, catalogue), 0, 'under 2% is not news');
+  const cut = await repository.changeListing(mine.id, mine.sellerId, (current) => ({ ...current, priceMinor: 850000 }));
+  assert.equal(await follows.alertForListing(repository, cut, catalogue), 1);
+  const rows = (await repository.listNotifications(me.id, 50)).filter((row) => row.kind === 'dna_alert');
+  assert.equal(rows.length, before + 1);
+  assert.match(rows[0].title, /Price down/);
+  assert.equal(rows[0].link, `/dna/${panda.id}`);
+  assert.equal(await follows.alertForListing(repository, cut, catalogue), 0, 'told once');
+});
+
+await check('a follow past its end is deleted, and stopping deletes it now', async () => {
+  const row = await repository.getSiteContent(dna.dnaFollowId(panda.id, me.id));
+  await repository.saveSiteContent({ ...row, data: { ...row.data, until: new Date(Date.now() - 1000).toISOString() } });
+  assert.equal((await follows.followsOf(repository, panda.id)).length, 0);
+  assert.equal(await repository.getSiteContent(dna.dnaFollowId(panda.id, me.id)), null);
+  await routes.dnaFollowRoute(req({ headers: me.headers, params: { id: panda.id }, body: { days: 7 } }), ctx);
+  const off = await routes.dnaFollowRoute(req({ headers: me.headers, params: { id: panda.id }, body: { days: null } }), ctx);
+  assert.deepEqual(off.jsonBody, { follow: null });
+  assert.equal(await repository.getSiteContent(dna.dnaFollowId(panda.id, me.id)), null);
+});
+
+let hunt;
+await check('"I want this" puts a hunt for the product on the Wanted board, once', async () => {
+  const tooLong = await routes.dnaWantRoute(req({ headers: me.headers, params: { id: panda.id }, body: { days: 120 } }), ctx);
+  assert.equal(tooLong.status, 400);
+  const posted = await routes.dnaWantRoute(req({ headers: me.headers, params: { id: panda.id }, body: { days: 60, budgetMinor: 800000 } }), ctx);
+  assert.equal(posted.status, 201, JSON.stringify(posted.jsonBody));
+  assert.ok(near(posted.jsonBody.want.expiresAt, 60));
+  hunt = await repository.getWant(posted.jsonBody.want.id, me.id);
+  assert.equal(hunt.title, 'Nike Dunk Low Panda');
+  assert.equal(hunt.category, 'Sneakers');
+  assert.equal(hunt.budgetMinor, 800000);
+  const board = (await wants.wantsBoardRoute(req(), ctx)).jsonBody;
+  assert.ok(board.wants.some((entry) => entry.id === hunt.id), 'on the board');
+  const again = await routes.dnaWantRoute(req({ headers: me.headers, params: { id: panda.id }, body: { days: 7 } }), ctx);
+  assert.equal(again.jsonBody.existing, true);
+  assert.equal(again.jsonBody.want.id, hunt.id);
+  const view = (await routes.dnaViewRoute(req({ headers: me.headers, params: { id: panda.id } }), ctx)).jsonBody;
+  assert.equal(view.hunting.id, hunt.id);
+});
+
+await check('a hunt posted on the board keeps the time its poster picked, up to three months', async () => {
+  const tooLong = await wants.wantPostRoute(req({ headers: me.headers, body: { title: 'Grey Fog Dunks', category: 'Sneakers', days: 91 } }), ctx);
+  assert.equal(tooLong.status, 400);
+  const week = await wants.wantPostRoute(req({ headers: me.headers, body: { title: 'Grey Fog Dunks', category: 'Sneakers', days: 7 } }), ctx);
+  assert.equal(week.status, 201, JSON.stringify(week.jsonBody));
+  assert.ok(near(week.jsonBody.want.expiresAt, 7));
+  const plain = await wants.wantPostRoute(req({ headers: me.headers, body: { title: 'Jordan 1 Chicago', category: 'Sneakers' } }), ctx);
+  assert.ok(near(plain.jsonBody.want.expiresAt, 30), 'a month when nothing is picked');
+});
+
+await check('once its time is up a hunt is deleted, with its answers, names and place on the DNA', async () => {
+  await repository.saveWant({ ...hunt, expiresAt: new Date(Date.now() - 1000).toISOString() });
+  await repository.saveWantOffer({
+    id: 'wof_dna_1', wantId: hunt.id, sellerId: otherSeller, sellerName: 'Shop', sellerHandle: null, voice: 'shop',
+    listingId: null, priceMinor: null, message: 'I can get it', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+  });
+  await repository.saveWantSeeker({ id: 'wsk_dna_1', wantId: hunt.id, userId: otherSeller, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+  const deleted = await wants.sweepEndedWants(repository);
+  assert.ok(deleted >= 1);
+  assert.equal(await repository.getWant(hunt.id, me.id), null);
+  assert.equal((await repository.listWantOffers(hunt.id)).length, 0);
+  assert.equal((await repository.listWantSeekers(hunt.id)).length, 0);
+  assert.ok(!(await forgetDnaIndex(), await repository.getSiteContent(dna.dnaDocId(panda.id))).data.links
+    .some((entry) => entry.kind === 'want' && entry.id === hunt.id), 'off the DNA');
+  const view = (await routes.dnaViewRoute(req({ headers: me.headers, params: { id: panda.id } }), ctx)).jsonBody;
+  assert.equal(view.hunting, null);
+  assert.ok((await repository.listWantsEndedBefore(new Date().toISOString(), 50)).length === 0, 'nothing ended is left');
 });
 
 console.log(`\n${passed} DNA checks passed`);

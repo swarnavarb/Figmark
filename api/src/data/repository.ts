@@ -300,6 +300,14 @@ export interface Repository {
   listWantIdsSeekingBy(userId: string): Promise<string[]>;
   deleteWantSeeker(id: string, wantId: string): Promise<void>;
   /**
+   * Hunts whose time ran out before `beforeIso`, open or closed, oldest first:
+   * for the clock that deletes them with everything hanging off them.
+   */
+  listWantsEndedBefore(beforeIso: string, limit: number): Promise<Want[]>;
+  /** Delete one hunt row. Its answers, names and photos are the caller's to delete. */
+  deleteWant(id: string, buyerId: string): Promise<void>;
+  deleteWantOffer(id: string, wantId: string): Promise<void>;
+  /**
    * Everyone who has pledged to one pre-order.
    *
    * Read to draw the meter, to name the roster, and to call the pledges in the

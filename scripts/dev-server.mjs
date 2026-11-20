@@ -89,7 +89,7 @@ const {
 } = await import(new URL('want-routes.js', apiRoot));
 const {
   dnaViewRoute, dnaOfListingRoute, dnaOfPostRoute, dnaOfWantRoute, dnaTrendingRoute, dnaSearchRoute,
-  dnaReviewRoute, dnaFixRoute, dnaMergeRoute,
+  dnaReviewRoute, dnaFixRoute, dnaMergeRoute, dnaFollowRoute, dnaWantRoute,
 } = await import(new URL('dna-routes.js', apiRoot));
 const { pushKeyRoute, pushSubscribeRoute, pushUnsubscribeRoute, pushTestRoute } =
   await import(new URL('push-routes.js', apiRoot));
@@ -476,6 +476,8 @@ const routes = [
   ['GET', '/api/dna/view/:id', dnaViewRoute],
   ['POST', '/api/dna/view/:id/reviews', dnaReviewRoute],
   ['POST', '/api/dna/view/:id/merge', dnaMergeRoute],
+  ['POST', '/api/dna/view/:id/follow', dnaFollowRoute],
+  ['POST', '/api/dna/view/:id/want', dnaWantRoute],
   ['GET', '/api/dna/of/listing/:id', dnaOfListingRoute],
   ['GET', '/api/dna/of/post/:channel/:id', dnaOfPostRoute],
   ['GET', '/api/dna/of/want/:buyer/:id', dnaOfWantRoute],

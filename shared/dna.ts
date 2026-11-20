@@ -313,4 +313,38 @@ export interface DnaView {
   /** What this reader may fix: their own listings, posts and hunts on it; and whether they are staff. */
   yourLinks: { kind: DnaLinkKind; id: string; partition: string; title: string }[];
   staff: boolean;
+  /** The reader's follow, while it runs. */
+  follow: { until: string } | null;
+  /** How many people follow it right now: a number, never names. */
+  watchers: number;
+  /** The reader's own open hunt for it, so the button says so instead of posting another. */
+  hunting: { id: string; buyerId: string; expiresAt: string } | null;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Following a DNA                                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One person following one DNA for a while they chose, at most three months.
+ * Kept as `siteContent` row `dnaf:<dnaId>:<userId>` with a Cosmos time-to-live,
+ * so the row goes by itself when the follow ends; the alert check deletes any
+ * it finds past its end as well.
+ *
+ * What it remembers is the market as last told to this person - the lowest
+ * price and which listings were on sale - so the next alert says what changed.
+ */
+export interface DnaFollow {
+  dnaId: string;
+  userId: string;
+  until: string;
+  lowMinor: number | null;
+  onSale: string[];
+  createdAt: string;
+}
+
+export const DNA_FOLLOW_PREFIX = 'dnaf:';
+export const dnaFollowId = (dnaId: string, userId: string) => `${DNA_FOLLOW_PREFIX}${dnaId}:${userId}`;
+
+/** A lowest price that moved less than this is not news. */
+export const PRICE_MOVE_SHARE = 0.02;

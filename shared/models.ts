@@ -3029,6 +3029,10 @@ export interface Want extends BaseDocument {
    * every row behind every card.
    */
   seekerCount?: number;
+  /**
+   * When the hunt ends: as long as its poster chose, up to three months. Past
+   * it the hunt is deleted, with its answers, names and photos.
+   */
   expiresAt: string;
   /** Set when the buyer says they are done, and why. */
   closedAt: string | null;
@@ -3207,6 +3211,8 @@ export type NotificationKind =
   | 'want_listed'
   /** A new ISO matches something this seller has listed. */
   | 'want_matched'
+  /** A Product DNA you follow changed price, came back on sale, or gained a shop. */
+  | 'dna_alert'
   | 'payment_claimed'
   | 'payment_received'
   | 'credit_refunded'
