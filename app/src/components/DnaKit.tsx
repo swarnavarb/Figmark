@@ -346,13 +346,14 @@ export function DnaTile({ summary, index = 0 }: { summary: DnaSummary; index?: n
 /** Discover's row of products people are after. Draws nothing until there are some. */
 export function DnaRail({ category, onAll }: { category?: string | null; onAll: () => void }) {
   const [products, setProducts] = useState<DnaSummary[]>([]);
-  const story = useStory('helix');
+  const story = useStory('lab');
   useEffect(() => {
     void api.dnaTrending(category).then((answer) => setProducts(answer.products.slice(0, 12))).catch(() => undefined);
   }, [category]);
   if (products.length < 2) return null;
   return (
     <section ref={story.ref} className={`dnak__rail ${story.className}`} aria-label="Products">
+      {story.scene}
       <StoryTag>Chapter · The lab</StoryTag>
       <h2 className="dnak__railhead">
         <DnaHelix rungs={6} still /> Product DNA

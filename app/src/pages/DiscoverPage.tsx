@@ -834,9 +834,10 @@ function DiscoverWall({ onJoin }: { onJoin: () => void }) {
 
 /** A row of finds between posts, sideways on a phone. */
 function FindRail({ finds, first, onAll }: { finds: Find[]; first: boolean; onAll: () => void }) {
-  const story = useStory('stamp');
+  const story = useStory('ocean');
   return (
     <section ref={story.ref} className={`discrail ${story.className}`} aria-label={first ? 'Worth a look, for you' : 'More finds'}>
+      {story.scene}
       <StoryTag>Chapter · The treasure</StoryTag>
       <div className="discrail__head">
         <h2>{first ? 'Worth a look, for you' : 'More finds'}</h2>
@@ -951,6 +952,7 @@ function HuntRail({ wants }: { wants: WantRow[] }) {
   const story = useStory('map');
   return (
     <section ref={story.ref} className={`discrail ${story.className}`} aria-label="People are hunting">
+      {story.scene}
       <StoryTag>Chapter · The quest</StoryTag>
       <div className="discrail__head">
         <h2>People are hunting</h2>
@@ -978,9 +980,10 @@ function HuntRail({ wants }: { wants: WantRow[] }) {
 
 /** "Earn store credit": the shops' invitations, as a strip of tickets. */
 function SpreadChapter({ cards, onAll }: { cards: PostCard[]; onAll: () => void }) {
-  const story = useStory('ticket');
+  const story = useStory('carnival');
   return (
     <section ref={story.ref} className={story.className} aria-label="Earn store credit">
+      {story.scene}
       <StoryTag>Chapter · The invitation</StoryTag>
       <h2 className="discsection">
         <Icon name="megaphone" size={15} /> Earn store credit
@@ -996,9 +999,10 @@ const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? name;
 
 /** Things seen on somebody's shelf or in a debate, that can be bought now. */
 function SpottedRail({ items, onAll }: { items: SpottedItem[]; onAll?: () => void }) {
-  const story = useStory('film');
+  const story = useStory('cinema');
   return (
     <section ref={story.ref} className={`discrail ${story.className}`} aria-label="Spotted in posts, buyable now">
+      {story.scene}
       <StoryTag>Chapter · The scene</StoryTag>
       <div className="discrail__head">
         <h2>Spotted in posts</h2>
