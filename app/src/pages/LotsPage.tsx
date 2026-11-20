@@ -1,7 +1,7 @@
 import { LotCostCard } from '../components/LotCosts';
 import { haptic } from '../haptics';
 import { confirmSentence } from '../components/Ask';
-import { Fragment, useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useState, type FormEvent, type ReactNode, type CSSProperties } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { clearLotDraft, readLotDraft, writeLotDraft } from '../lotDraft';
 import { BackBar } from '../components/ScrollManager';
@@ -1317,7 +1317,7 @@ export function LotDetail({ lotId, onBack, customers }: {
           </p>
         )}
         <div className="lothero__bar" aria-hidden="true">
-          <span style={{ width: `${((lotStep + 1) / Math.max(1, lotSteps.length)) * 100}%` }} />
+          <span style={{ '--p': `${((lotStep + 1) / Math.max(1, lotSteps.length)) * 100}%` } as CSSProperties} />
         </div>
         <div className="lothero__foot">
           <p className="lothero__line">

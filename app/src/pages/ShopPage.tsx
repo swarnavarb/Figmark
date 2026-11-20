@@ -3045,7 +3045,7 @@ function MoneyLine({ total, paid, balance, share, due, children }: {
 }) {
   return (
     <div className="mline">
-      <div className="mline__bar" aria-hidden="true"><span style={{ width: `${share}%` }} /></div>
+      <div className="mline__bar" aria-hidden="true"><span style={{ '--p': `${share}%` } as CSSProperties} /></div>
       <div className="mline__row">
         <span>Total <b>{total}</b></span>
         <span>Paid <b>{paid}</b></span>

@@ -1,6 +1,6 @@
 # 006 — Drag-to-dismiss on the Create sheet (missed opportunity)
 
-- **Status**: TODO
+- **Status**: DONE (applied in this branch)
 - **Commit**: a9e1b80
 - **Severity**: LOW (additive)
 - **Category**: Missed opportunities / gestures

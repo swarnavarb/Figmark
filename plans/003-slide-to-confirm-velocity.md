@@ -1,6 +1,6 @@
 # 003 — Let a flick confirm SlideToConfirm, and fill it without layout
 
-- **Status**: TODO
+- **Status**: DONE (applied in this branch)
 - **Commit**: a9e1b80
 - **Severity**: MEDIUM
 - **Category**: Interruptibility / Performance

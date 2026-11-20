@@ -1,6 +1,6 @@
 # 004 — A tiny spring helper, and momentum on the quest sticker spin
 
-- **Status**: TODO
+- **Status**: DONE (applied in this branch)
 - **Commit**: a9e1b80
 - **Severity**: MEDIUM
 - **Category**: Interruptibility (spring physics for gestures)

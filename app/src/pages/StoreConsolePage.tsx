@@ -1,7 +1,7 @@
 import { GiveMoneyPanel } from '../components/GiveMoney';
 import { FeeLockBanner, ProBadge } from '../components/Billing';
 import { isProActive } from '@shared/billing';
-import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode, type CSSProperties } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import type { StoreMember, StoreRight } from '@shared/models';
 import {
@@ -774,7 +774,7 @@ function LotHead({ row }: { row: ForwarderLotRow }) {
         <span className="faint">{row.store.name}</span>
       </span>
       {row.laneLabel && <span className="sc-lot__lane"><Icon name="plane" size={13} /> {row.laneLabel}</span>}
-      <span className="ms-crew__bar" aria-hidden="true"><span style={{ width: `${Math.round(progress * 100)}%` }} /></span>
+      <span className="ms-crew__bar" aria-hidden="true"><span style={{ '--p': `${Math.round(progress * 100)}%` } as CSSProperties} /></span>
       <span className="sc-lot__stats">
         <span><b>{row.pieces}</b> orders</span>
         <span><b>{formatWeight(row.weightGrams)}</b></span>

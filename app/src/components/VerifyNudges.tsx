@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { verifiedChecks } from '@shared/verification';
@@ -96,7 +96,7 @@ export function SetupChecklist({ hasStore, onOpenStore }: { hasStore: boolean; o
         <span className="faint">{folded ? `Next: ${next.label}` : `${done} of ${rows.length} done`}</span>
         <Icon name={folded ? 'down' : 'up'} size={16} />
       </button>
-      <span className="setupcheck__bar" aria-hidden="true"><span style={{ width: `${(done / rows.length) * 100}%` }} /></span>
+      <span className="setupcheck__bar" aria-hidden="true"><span style={{ '--p': `${(done / rows.length) * 100}%` } as CSSProperties} /></span>
       {!folded && <>
       <ol className="setupcheck__list" id="setupcheck-list">
         {rows.map((row) => (

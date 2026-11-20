@@ -1,6 +1,6 @@
 import { formatCount } from '../format';
 import {
-  createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode,
+  createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode,
 } from 'react';
 import { Link } from 'react-router-dom';
 import {
@@ -13,6 +13,7 @@ import { Confetti } from './Confetti';
 import { Modal } from './ui';
 import { useShareSheet, type ShareSpec } from './ShareKit';
 import { reducedMotion } from '../motion';
+import { springKeyframes, Velocity } from '../spring';
 
 /*
  * The collector game's shared pieces.
@@ -218,7 +219,7 @@ export function LevelRing({ level, progress, size = 40 }: { level: number; progr
 export function XpBar({ progress, tone = 'violet' }: { progress: number; tone?: 'violet' | 'gold' }) {
   return (
     <span className={`qxp qxp--${tone}`} aria-hidden="true">
-      <span style={{ width: `${Math.round(Math.min(1, Math.max(0, progress)) * 100)}%` }} />
+      <span style={{ '--p': `${Math.round(Math.min(1, Math.max(0, progress)) * 100)}%` } as CSSProperties} />
     </span>
   );
 }
@@ -373,6 +374,7 @@ export function Spin({ spinKey, children, back }: {
   const node = useRef<HTMLDivElement>(null);
   const angle = useRef(0);
   const drag = useRef<{ x: number; from: number; moved: boolean } | null>(null);
+  const speed = useRef(new Velocity());
   const still = reducedMotion();
 
   const turnTo = useCallback((to: number, from: number, ms: number) => {
@@ -401,6 +403,7 @@ export function Spin({ spinKey, children, back }: {
     const live = matrix ? (Math.atan2(-matrix.m13, matrix.m11) * 180) / Math.PI : angle.current;
     el.getAnimations().forEach((animation) => animation.cancel());
     drag.current = { x: event.clientX, from: live, moved: false };
+    speed.current.reset(live, event.timeStamp);
     el.style.transform = `rotateY(${live}deg)`;
     event.currentTarget.setPointerCapture(event.pointerId);
   }
@@ -412,10 +415,11 @@ export function Spin({ spinKey, children, back }: {
     const dx = event.clientX - held.x;
     if (Math.abs(dx) > 4) held.moved = true;
     angle.current = held.from + dx * 0.9;
+    speed.current.track(angle.current, event.timeStamp);
     el.style.transform = `rotateY(${angle.current}deg)`;
   }
 
-  function up() {
+  function up(event: React.PointerEvent<HTMLDivElement>) {
     const held = drag.current;
     drag.current = null;
     if (!held) return;
@@ -424,10 +428,24 @@ export function Spin({ spinKey, children, back }: {
       turnTo(Math.round(at / 360) * 360 + 360, at, 1000);
       return;
     }
-    // Carry on the way it was flicked, one more full turn, landing face up.
-    const way = at >= held.from ? 1 : -1;
-    const rest = way > 0 ? (Math.floor(at / 360) + 2) * 360 : (Math.ceil(at / 360) - 2) * 360;
-    turnTo(rest, at, 1100);
+    // Carry on the way it was flicked, landing face up: at least one more
+    // turn, and further the harder it was flung. A spring takes the speed it
+    // was let go at, so it never stops dead and starts again.
+    const perSecond = speed.current.at(event.timeStamp) * 1000;
+    const way = perSecond !== 0 ? Math.sign(perSecond) : at >= held.from ? 1 : -1;
+    const carry = Math.min(1080, Math.abs(perSecond) * 0.35);
+    const projected = at + way * Math.max(360, carry);
+    const rest = way > 0 ? Math.ceil(projected / 360) * 360 : Math.floor(projected / 360) * 360;
+    const el = node.current;
+    if (!el || still) {
+      turnTo(rest, at, 1100);
+      return;
+    }
+    el.getAnimations().forEach((animation) => animation.cancel());
+    angle.current = rest;
+    el.style.transform = `rotateY(${rest}deg)`;
+    const { keyframes, ms } = springKeyframes(at, rest, perSecond, (deg) => `rotateY(${deg}deg)`, { duration: 0.9, bounce: 0.2 });
+    el.animate(keyframes, { duration: ms, easing: 'linear' });
   }
 
   return (

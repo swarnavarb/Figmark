@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode, type CSSProperties } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { STORE_KINDS, STORE_KIND_LABELS, applicationGaps, liveLanes, livePlans, liveOfferings, type StoreKind } from '@shared/service-stores';
 import { ApiRequestError, api, type StoreDraft } from '../api';
@@ -211,7 +211,7 @@ export function StoreApplyPage() {
             <Icon name="left" size={14} /> Back
           </button>
           <span className="sa-progress" aria-hidden="true">
-            <span style={{ width: `${(Math.min(at, steps.length) / steps.length) * 100}%` }} />
+            <span style={{ '--p': `${(Math.min(at, steps.length) / steps.length) * 100}%` } as CSSProperties} />
           </span>
           {reviewing ? (
             <button type="button" className="btn btn--lg" disabled={busy || gaps.length > 0} onClick={() => void submit()}>

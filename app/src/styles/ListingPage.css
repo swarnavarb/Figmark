@@ -141,7 +141,7 @@
 .post__bubble {
   max-width: 100%; padding: 9px var(--s3); border-radius: 4px 16px 16px 16px; background: var(--surface-2);
   user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; cursor: default;
-  transition: transform var(--dur-1) var(--bounce), box-shadow var(--dur-1);
+  transition: transform 160ms var(--ease-out), box-shadow var(--dur-1);
 }
 .post--reply .post__bubble { background: rgba(168, 85, 247, 0.1); }
 .post.is-open .post__bubble { transform: scale(1.02); box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.55), 0 10px 24px rgba(0, 0, 0, 0.35); }
@@ -163,7 +163,7 @@
 }
 .posts__send {
   display: grid; place-items: center; flex: none; width: 36px; height: 36px; border: 0; border-radius: 50%; color: #fff;
-  background: var(--grad-hero); cursor: pointer; transition: transform var(--dur-2) var(--bounce), opacity var(--dur-2);
+  background: var(--grad-hero); cursor: pointer; transition: transform var(--spring-bouncy-dur) var(--spring-bouncy), opacity var(--dur-2);
 }
 .posts__send:disabled { opacity: 0.4; cursor: default; }
 .posts__send:not(:disabled):hover { transform: scale(1.08) rotate(-8deg); }

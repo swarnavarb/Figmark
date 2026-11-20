@@ -1,6 +1,6 @@
 # 002 — Replace hand-tuned overshoot curves with real spring tokens
 
-- **Status**: TODO
+- **Status**: DONE (applied in this branch)
 - **Commit**: a9e1b80
 - **Severity**: MEDIUM
 - **Category**: Cohesion & tokens / Interruptibility (spring physics)
