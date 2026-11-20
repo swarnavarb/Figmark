@@ -3761,7 +3761,7 @@ export const api = {
   feedMutes: () => request<{ muted: { id: string; name: string; handle: string | null; shop: boolean }[] }>('/social/mutes'),
   /** What was on screen, in a batch. Fire and forget: a lost batch only means a post counts one view short. */
   seenPosts: (items: SeenEntry[]) => post<{ counted: number }>('/social/seen', { items }),
-  followSuggestions: () => request<{ suggestions: FollowSuggestion[] }>('/social/suggestions'),
+  followSuggestions: (only?: 'people') => request<{ suggestions: FollowSuggestion[] }>(`/social/suggestions${only ? `?only=${only}` : ''}`),
   weeklyBest: () => request<Leaderboard>('/social/leaderboard'),
   /** Product DNA: the whole page, or where a folded-in one went. */
   dna: (id: string) => request<DnaView | { moved: string }>(`/dna/view/${encodeURIComponent(id)}`),

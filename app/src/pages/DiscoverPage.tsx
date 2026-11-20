@@ -15,6 +15,7 @@ import { ContentBadge, SocialPostCard, postHref } from '../components/SocialPost
 import { VoiceProvider } from '../components/SocialVoice';
 import { FollowSuggestions } from '../components/FollowSuggestions';
 import { SpreadRow } from '../components/SpreadKit';
+import { ShopsForYou, useShopsForYou } from '../components/ShopCards';
 import { DnaProductsView, DnaRail } from '../components/DnaKit';
 import { Icon } from '../components/Icon';
 import { StoryTag, useStory } from '../components/Story';
@@ -83,6 +84,8 @@ const RAIL = 4;
 const PEOPLE_AT = 3;
 const HUNTS_AT = 6;
 const SPOTTED_AT = 9;
+/** "Shops for you" comes in this many entries after the second rail of finds. */
+const SHOPS_AFTER_SECOND_RAIL = 3;
 /** Places at the top of the stream kept clear of what the spotlight already shows. */
 const SPOTLIT_GAP = 10;
 
@@ -91,6 +94,7 @@ type Entry =
   | { kind: 'divider'; key: string; text: string }
   | { kind: 'rail'; finds: Find[] }
   | { kind: 'people' }
+  | { kind: 'shops' }
   | { kind: 'hunts'; wants: WantRow[] }
   | { kind: 'spotted'; items: SpottedItem[] };
 
@@ -131,7 +135,7 @@ const flowItems = (cards: PostCard[], lap: number): FlowItem[] => cards.map((car
  * older favourites is seamless: no line marks it. The people, hunt and spotted rails go in
  * once each, a few entries down, so the first screen is still posts.
  */
-function weaveFlow(items: FlowItem[], finds: Find[], extras: { people: boolean; wants: WantRow[]; spotted: SpottedItem[] }): Entry[] {
+function weaveFlow(items: FlowItem[], finds: Find[], extras: { people: boolean; shops: boolean; wants: WantRow[]; spotted: SpottedItem[] }): Entry[] {
   const queue = [...finds];
   const out: Entry[] = [];
   items.forEach((item, index) => {
@@ -147,6 +151,12 @@ function weaveFlow(items: FlowItem[], finds: Find[], extras: { people: boolean; 
     [PEOPLE_AT, extras.people ? { kind: 'people' } : null],
   ];
   for (const [at, entry] of inserts) if (entry) out.splice(Math.min(at, out.length), 0, entry);
+  // The street of shops for you, a few posts after the second treasure: by
+  // then the reader has seen two rows of things, and gets the shops behind them.
+  if (extras.shops) {
+    const rails = out.flatMap((entry, at) => (entry.kind === 'rail' ? [at] : []));
+    if (rails.length >= 2) out.splice(Math.min(rails[1]! + 1 + SHOPS_AFTER_SECOND_RAIL, out.length), 0, { kind: 'shops' });
+  }
   return out;
 }
 
@@ -474,14 +484,16 @@ function DiscoverBody() {
     return deferSpotlit(kept, spotlit);
   }, [flow, narrowed, narrow, spotlit]);
 
+  const shopsForYou = useShopsForYou();
   // Only the first few are drawn; the rest are added as the reader nears the end of them.
   const entries = useMemo(
     () => (flowReady ? weaveFlow(flowShown.slice(0, shown), shownFinds, {
       people: Boolean(user) && !narrowed,
+      shops: !narrowed && Boolean(shopsForYou?.length),
       wants: narrowed ? [] : rails.wants,
       spotted: narrowed ? [] : rails.spotted,
     }) : []),
-    [flowReady, flowShown, shown, shownFinds, user, narrowed, rails.wants, rails.spotted],
+    [flowReady, flowShown, shown, shownFinds, user, narrowed, shopsForYou, rails.wants, rails.spotted],
   );
   // The finds and the lists are a bonus: the stream is ready once its posts are.
   const loading = lens === 'all' ? !flowReady : !stream;
@@ -664,7 +676,7 @@ function DiscoverBody() {
                 <EmptyState title="Quiet right now">
                   Nothing is trending yet. Start a debate or share your shelf with the + below, and be the first thing here.
                 </EmptyState>
-                {user && <FollowSuggestions title="People to follow" />}
+                {user && <FollowSuggestions title="People to follow" people />}
               </>
             )
           ) : (
@@ -672,7 +684,8 @@ function DiscoverBody() {
               {entries.map((entry, index) => {
                 switch (entry.kind) {
                   case 'rail': return <FindRail key={`r${index}`} finds={entry.finds} first={index < 3} onAll={() => setLens('finds')} />;
-                  case 'people': return <FollowSuggestions key="people" title="People to follow" />;
+                  case 'people': return <FollowSuggestions key="people" title="People to follow" people />;
+                  case 'shops': return <ShopsForYou key="shops" shops={shopsForYou} />;
                   case 'hunts': return <HuntRail key="hunts" wants={entry.wants} />;
                   case 'spotted': return <SpottedRail key="spotted" items={entry.items} onAll={() => setLens('finds')} />;
                   case 'divider': return <p key={entry.key} className="discend discend--lap">{entry.text}</p>;
