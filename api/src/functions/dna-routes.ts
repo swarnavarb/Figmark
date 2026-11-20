@@ -8,7 +8,6 @@ import {
 } from '../../../shared/dna.js';
 import { REVIEW_PHOTO_MAX, type Listing, type Order, type Post, type StoreReview, type User, type Want } from '../../../shared/models.js';
 import { reviewRevealed } from '../../../shared/orders.js';
-import { etaLabel } from '../../../shared/delivery-eta.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import {
@@ -258,7 +257,8 @@ async function buildView(repository: Repo, dna: ProductDna, viewerId: string | n
     seen.add(url);
     gallery.push({ url, from, href });
   };
-  for (const review of reviews) for (const url of review.photoUrls ?? []) add(url, 'review', null);
+  // An owner's photo opens their review; every other photo opens what it came from.
+  for (const review of reviews) for (const url of review.photoUrls ?? []) add(url, 'review', `#review-${review.id}`);
   const buyerReviews = await Promise.all([...sellerIds].slice(0, SHOPS_FOR_PHOTOS)
     .map((id) => repository.listReviewsAbout(id).catch(() => [])));
   for (const review of buyerReviews.flat()) {
@@ -274,7 +274,11 @@ async function buildView(repository: Repo, dna: ProductDna, viewerId: string | n
   for (const listing of listings) {
     for (const photo of listing.photos.slice(0, 3)) add(photo.thumbUrl ?? photo.url, 'listing', `/listing/${encodeURIComponent(listing.id)}`);
   }
-  for (const want of openWants) for (const url of want.photoUrls ?? []) add(url, 'hunt', null);
+  for (const want of openWants) {
+    for (const url of want.photoUrls ?? []) {
+      add(url, 'hunt', `/social?view=wanted&want=${encodeURIComponent(want.id)}&buyer=${encodeURIComponent(want.buyerId)}`);
+    }
+  }
 
   // ---- facts -------------------------------------------------------------
   const values = new Map<string, Map<string, number>>();
@@ -295,11 +299,6 @@ async function buildView(repository: Repo, dna: ProductDna, viewerId: string | n
   }
   if (conditions.size > 0) {
     facts.push({ label: 'Listed as', value: [...conditions.entries()].sort(([, a], [, b]) => b - a).map(([value]) => value).slice(0, 3).join(' · ') });
-  }
-  const etas = listings.map((listing) => listing.deliveryEta).filter((eta): eta is NonNullable<Listing['deliveryEta']> => Boolean(eta));
-  if (etas.length > 0) {
-    const usual = etaLabel({ minDays: median(etas.map((eta) => eta.minDays)), maxDays: median(etas.map((eta) => eta.maxDays)) });
-    if (usual) facts.push({ label: 'Usually arrives', value: usual });
   }
 
   // ---- timeline ----------------------------------------------------------

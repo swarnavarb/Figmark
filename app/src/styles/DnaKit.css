@@ -379,8 +379,10 @@
   gap: 12px;
   overflow-x: auto;
   overscroll-behavior-x: contain;
+  overflow-y: hidden;
   scroll-snap-type: x mandatory;
-  padding-bottom: 6px;
+  /* Room for a tile's lift, so the row never scrolls up and down with it. */
+  padding: 6px 2px 8px;
   scrollbar-width: none;
 }
 .dnak__railrow::-webkit-scrollbar { display: none; }
@@ -404,6 +406,135 @@
 .dnak__lenstitle { margin: 4px 0; font-family: 'Bricolage Grotesque', 'Archivo', sans-serif; font-size: calc(22px * var(--text-scale)); line-height: 1.15; }
 .dnak__lenstext { margin: 0; color: var(--text-dim); font-size: calc(14px * var(--text-scale)); }
 .dnak__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(158px, 1fr)); gap: 12px; }
+
+/* ---- a theme per category ----------------------------------------------
+   --th1 and --th2 colour the frame, the body and the price; --thpat is the
+   pattern over the picture's backdrop and along the body. */
+
+.dnak__tile {
+  --th1: var(--aqua);
+  --th2: var(--violet-lit);
+  --thpat: linear-gradient(rgba(6, 214, 231, 0.08) 1px, transparent 1px) 0 0 / 12px 12px;
+  border-color: color-mix(in srgb, var(--th1) 38%, transparent);
+  background:
+    linear-gradient(165deg, color-mix(in srgb, var(--th1) 16%, #0B111D) 0%, color-mix(in srgb, var(--th2) 14%, #0B0E1A) 100%);
+}
+.dnak__tilepattern { position: absolute; inset: 0; background: var(--thpat); opacity: 0.9; }
+.dnak__tilepic img { position: relative; }
+.dnak__tilepic::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0;
+  height: 40%;
+  background: linear-gradient(transparent, color-mix(in srgb, var(--th1) 22%, transparent));
+  pointer-events: none;
+}
+.dnak__tileglyph {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  font-size: calc(15px * var(--text-scale));
+  background: linear-gradient(135deg, var(--th1), var(--th2));
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--th1) 45%, transparent);
+  z-index: 1;
+}
+.dnak__tileseq { z-index: 1; border-color: color-mix(in srgb, var(--th1) 50%, transparent); color: color-mix(in srgb, var(--th1) 55%, #fff); }
+.dnak__tilecat {
+  font-size: calc(10px * var(--text-scale));
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--th1) 70%, #fff);
+}
+.dnak__tile .dnak__tileprice { color: color-mix(in srgb, var(--th1) 60%, #fff); }
+.dnak__tile .dnak__heatfill { background: linear-gradient(90deg, var(--th1), var(--th2)); background-size: 200% 100%; }
+@media (hover: hover) {
+  .dnak__tile:hover { border-color: var(--th1); box-shadow: 0 10px 30px color-mix(in srgb, var(--th1) 25%, transparent); }
+}
+
+/* Figures: spotlights on a display stand. */
+.dnak__tile[data-theme='figures'] {
+  --th1: var(--violet-lit); --th2: var(--coral);
+  --thpat: conic-gradient(from 200deg at 50% -10%, transparent 0 20deg, rgba(196, 181, 253, 0.16) 20deg 34deg, transparent 34deg 52deg, rgba(255, 90, 95, 0.12) 52deg 64deg, transparent 64deg);
+}
+/* Model kits: a blueprint. */
+.dnak__tile[data-theme='kits'] {
+  --th1: var(--blue); --th2: var(--aqua);
+  --thpat: linear-gradient(rgba(96, 165, 250, 0.22) 1px, transparent 1px) 0 0 / 16px 16px,
+    linear-gradient(90deg, rgba(96, 165, 250, 0.22) 1px, transparent 1px) 0 0 / 16px 16px, #0A1A33;
+}
+/* Trading cards: holographic foil, its sheen sweeping across. */
+.dnak__tile[data-theme='cards'] {
+  --th1: var(--gold); --th2: var(--pink);
+  --thpat: linear-gradient(115deg, rgba(251, 191, 36, 0.25), rgba(236, 72, 153, 0.22), rgba(6, 214, 231, 0.22), rgba(163, 230, 53, 0.2), rgba(251, 191, 36, 0.25));
+}
+.dnak__tile[data-theme='cards'] .dnak__tilepattern { background-size: 300% 100%; animation: dnak-foil 5s linear infinite; }
+@keyframes dnak-foil { to { background-position: -300% 0; } }
+/* Anime merch: sakura dots. */
+.dnak__tile[data-theme='anime'] {
+  --th1: var(--pink); --th2: var(--violet-lit);
+  --thpat: radial-gradient(circle, rgba(249, 168, 212, 0.35) 2px, transparent 2.5px) 0 0 / 18px 18px,
+    radial-gradient(circle, rgba(196, 181, 253, 0.25) 1.5px, transparent 2px) 9px 9px / 18px 18px;
+}
+/* Sneakers: stitching. */
+.dnak__tile[data-theme='sneakers'] {
+  --th1: var(--lime); --th2: var(--aqua);
+  --thpat: repeating-linear-gradient(135deg, transparent 0 10px, rgba(163, 230, 53, 0.16) 10px 12px),
+    repeating-linear-gradient(45deg, transparent 0 22px, rgba(6, 214, 231, 0.1) 22px 24px);
+}
+/* Streetwear: bold block stripes. */
+.dnak__tile[data-theme='street'] {
+  --th1: var(--coral); --th2: var(--gold);
+  --thpat: repeating-linear-gradient(90deg, rgba(255, 90, 95, 0.16) 0 14px, transparent 14px 28px);
+}
+/* Bags & watches: quilted leather. */
+.dnak__tile[data-theme='luxe'] {
+  --th1: var(--gold); --th2: #B45309;
+  --thpat: repeating-linear-gradient(45deg, transparent 0 13px, rgba(253, 230, 138, 0.18) 13px 14px),
+    repeating-linear-gradient(-45deg, transparent 0 13px, rgba(253, 230, 138, 0.18) 13px 14px), #1A1206;
+}
+/* Electronics: a circuit board. */
+.dnak__tile[data-theme='tech'] {
+  --th1: var(--aqua); --th2: var(--blue);
+  --thpat: linear-gradient(90deg, transparent 0 46%, rgba(6, 214, 231, 0.2) 46% 48%, transparent 48%) 0 0 / 28px 28px,
+    linear-gradient(transparent 0 70%, rgba(6, 214, 231, 0.2) 70% 72%, transparent 72%) 0 0 / 28px 28px,
+    radial-gradient(circle, rgba(6, 214, 231, 0.45) 2px, transparent 2.5px) 12px 18px / 28px 28px, #04161B;
+}
+/* Beauty: soft bubbles. */
+.dnak__tile[data-theme='beauty'] {
+  --th1: var(--pink-pale); --th2: var(--coral);
+  --thpat: radial-gradient(circle at 20% 30%, rgba(249, 168, 212, 0.25), transparent 30%),
+    radial-gradient(circle at 75% 65%, rgba(252, 165, 165, 0.22), transparent 28%),
+    radial-gradient(circle at 60% 15%, rgba(255, 255, 255, 0.12), transparent 14%);
+}
+/* Collectibles: a trophy case, sparkling. */
+.dnak__tile[data-theme='collect'] {
+  --th1: var(--gold); --th2: var(--violet-lit);
+  --thpat: radial-gradient(circle, rgba(253, 230, 138, 0.55) 1px, transparent 1.5px) 0 0 / 22px 22px,
+    radial-gradient(circle, rgba(196, 181, 253, 0.4) 1px, transparent 1.5px) 11px 11px / 22px 22px;
+}
+/* Books & manga: halftone and speed lines. */
+.dnak__tile[data-theme='books'] {
+  --th1: #F5F5F4; --th2: var(--coral);
+  --thpat: radial-gradient(circle, rgba(255, 255, 255, 0.16) 1.2px, transparent 1.6px) 0 0 / 7px 7px,
+    repeating-conic-gradient(from 0deg at 50% 50%, rgba(255, 255, 255, 0.06) 0 2deg, transparent 2deg 12deg);
+}
+/* Games & consoles: pixels. */
+.dnak__tile[data-theme='games'] {
+  --th1: var(--violet-lit); --th2: var(--lime);
+  --thpat: linear-gradient(45deg, rgba(139, 92, 246, 0.2) 25%, transparent 25% 75%, rgba(139, 92, 246, 0.2) 75%) 0 0 / 16px 16px,
+    linear-gradient(45deg, rgba(163, 230, 53, 0.12) 25%, transparent 25% 75%, rgba(163, 230, 53, 0.12) 75%) 8px 8px / 16px 16px;
+}
+/* Home & decor: arches. */
+.dnak__tile[data-theme='home'] {
+  --th1: #D6A77A; --th2: var(--lime);
+  --thpat: radial-gradient(circle at 50% 100%, transparent 0 9px, rgba(214, 167, 122, 0.25) 9px 11px, transparent 11px) 0 0 / 24px 20px, #17110B;
+}
 
 /* ---- review link beside an order ------------------------------------------ */
 
@@ -431,5 +562,6 @@
   .dnak__cardglow, .dnak__heatfill, .dnak__heat[data-level='4'] .dnak__heatlabel,
   .dnak__pchip, .dnak__tile, .dnak__tile--ghost, .dnak__tilescan { animation: none; }
   .dnak__card, .dnak__tile, .dnak__tilescan { transition: none; }
+  .dnak__tile[data-theme='cards'] .dnak__tilepattern { animation: none; }
   .dnak__tile:hover { transform: none; }
 }

@@ -269,7 +269,7 @@ export interface DnaHuntCard {
 export interface DnaPhoto {
   url: string;
   from: 'listing' | 'post' | 'review' | 'hunt' | 'buyer';
-  /** Where tapping it goes, inside the app. */
+  /** Where tapping it goes, inside the app: a page, or `#review-<id>` for an owner's review on this one. */
   href: string | null;
 }
 

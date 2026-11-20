@@ -282,17 +282,43 @@ export function DnaPicker({ title, seed, current, many = false, listingId, onPic
   );
 }
 
-/** A product as a tile, for Discover's grid and rail. */
+/**
+ * Each kind of thing dressed as itself: a foil shimmer for cards, a blueprint
+ * grid for model kits, stitching for sneakers, a pixel grid for games. Unknown
+ * categories wear the plain lab plate.
+ */
+const THEMES: Record<string, { key: string; glyph: string }> = {
+  Figures: { key: 'figures', glyph: '🦸' },
+  'Model kits': { key: 'kits', glyph: '🛠️' },
+  'Trading cards': { key: 'cards', glyph: '🃏' },
+  'Anime merch': { key: 'anime', glyph: '🌸' },
+  Sneakers: { key: 'sneakers', glyph: '👟' },
+  Streetwear: { key: 'street', glyph: '🧢' },
+  'Bags & watches': { key: 'luxe', glyph: '⌚' },
+  Electronics: { key: 'tech', glyph: '⚡' },
+  Beauty: { key: 'beauty', glyph: '💄' },
+  Collectibles: { key: 'collect', glyph: '🏆' },
+  'Books & manga': { key: 'books', glyph: '📚' },
+  'Games & consoles': { key: 'games', glyph: '🎮' },
+  'Home & decor': { key: 'home', glyph: '🪴' },
+};
+export const themeOf = (category: string) => THEMES[category] ?? { key: 'lab', glyph: '🧬' };
+
+/** A product as a tile, for Discover's grid and rail, themed by its category. */
 export function DnaTile({ summary, index = 0 }: { summary: DnaSummary; index?: number }) {
   const span = priceSpan(summary);
+  const theme = themeOf(summary.category);
   return (
-    <Link to={dnaHref(summary.id)} className="dnak__tile" style={{ ['--i' as string]: index } as CSSProperties}>
+    <Link to={dnaHref(summary.id)} className="dnak__tile" data-theme={theme.key} style={{ ['--i' as string]: index } as CSSProperties}>
       <span className="dnak__tilepic">
+        <span className="dnak__tilepattern" aria-hidden="true" />
         {summary.cover ? <img src={summary.cover} alt="" loading="lazy" decoding="async" /> : <DnaHelix rungs={10} />}
         <span className="dnak__tilescan" aria-hidden="true" />
         <span className="dnak__tileseq">{sequenceOf(summary.id)}</span>
+        <span className="dnak__tileglyph" aria-hidden="true">{theme.glyph}</span>
       </span>
       <span className="dnak__tilebody">
+        <span className="dnak__tilecat">{summary.category}</span>
         <span className="dnak__tilename">{summary.name}</span>
         {span && <span className="dnak__tileprice">{span}</span>}
         <span className="dnak__tilemeta">

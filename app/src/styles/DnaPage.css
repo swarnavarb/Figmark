@@ -120,16 +120,23 @@
 
 .dnap__nav {
   position: sticky;
-  top: calc(var(--nav-h, 56px) + 6px);
+  top: var(--nav-h);
   z-index: var(--z-popover);
   display: flex;
   gap: 8px;
   margin: 14px -16px 4px;
   padding: 8px 16px;
   overflow-x: auto;
+  overflow-y: hidden;
   scrollbar-width: none;
-  background: linear-gradient(180deg, var(--bg) 70%, transparent);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  /* Under the header, and up to the very top while the header is away: its
+     stuck place moves, as Discover's lenses do. */
+  transition: top 280ms var(--ease);
 }
+:root[data-bars='hidden'] .dnap__nav { top: env(safe-area-inset-top, 0px); }
 .dnap__nav::-webkit-scrollbar { display: none; }
 .dnap__navpill {
   --c: var(--dnap-a);
@@ -464,7 +471,9 @@
 .dnap__error { margin: 0; color: var(--danger-text); font-size: calc(13px * var(--text-scale)); }
 .dnap__formacts { display: flex; justify-content: flex-end; gap: 8px; }
 .dnap__reviewlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
-.dnap__review { padding: 12px 14px; border-radius: 16px; background: var(--surface-2); border: 1px solid var(--border); }
+.dnap__review { padding: 12px 14px; border-radius: 16px; background: var(--surface-2); border: 1px solid var(--border); scroll-margin-top: calc(var(--nav-h) + 70px); }
+.dnap__review.is-flash { animation: dnap-flash 1.6s var(--ease-out); }
+@keyframes dnap-flash { 0%, 30% { border-color: var(--aqua); box-shadow: 0 0 0 3px var(--aqua-soft); } }
 .dnap__strand.is-in .dnap__review { animation: dnap-slide 480ms var(--ease-out) both; animation-delay: calc(var(--i) * 60ms); }
 .dnap__reviewhead { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
 .dnap__reviewer { font-weight: 700; }
@@ -537,12 +546,16 @@
   overflow: hidden;
   break-inside: avoid;
   background: #0A101B;
-  cursor: zoom-in;
+  cursor: pointer;
 }
+.dnap__shot--zoom { cursor: zoom-in; }
 .dnap__strand.is-in .dnap__shot { animation: dnap-pop 520ms var(--ease-out) both; animation-delay: calc(var(--i) * 45ms); }
 .dnap__shot img { display: block; width: 100%; height: auto; transition: transform 400ms var(--ease-out); }
 @media (hover: hover) { .dnap__shot:hover img { transform: scale(1.05); } }
 .dnap__shottag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   position: absolute;
   left: 6px;
   bottom: 6px;
@@ -623,10 +636,15 @@
   grid-auto-columns: minmax(168px, 44%);
   gap: 12px;
   overflow-x: auto;
+  overflow-y: hidden;
   overscroll-behavior-x: contain;
   scroll-snap-type: x mandatory;
   scrollbar-width: none;
+  /* Room for a tile's lift, so the row never scrolls up and down with it. */
+  padding: 6px 2px 8px;
+  touch-action: pan-x pan-y;
 }
+.dnap__relatedrow::-webkit-scrollbar { display: none; }
 .dnap__relatedrow > * { scroll-snap-align: start; }
 @media (min-width: 720px) { .dnap__relatedrow { grid-auto-columns: 210px; } }
 
@@ -651,6 +669,7 @@
   .dnap__trendarea, .dnap__strand.is-in .dnap__trendarea { animation: none; opacity: 1; }
   .dnap__gaugefill, .dnap__strand.is-in .dnap__gaugefill { animation: none; stroke-dashoffset: calc(100 - var(--heat)); }
   .dnap__bar span, .dnap__strand.is-in .dnap__bar span { width: var(--w); transition: none; }
-  .dnap__offer, .dnap__shot img, .dnap__write, .dnap__starbtn, .dnap__navpill { transition: none; }
+  .dnap__offer, .dnap__shot img, .dnap__write, .dnap__starbtn, .dnap__navpill, .dnap__nav { transition: none; }
+  .dnap__review.is-flash { animation: none; border-color: var(--aqua); }
   .dnap__shot:hover img { transform: none; }
 }

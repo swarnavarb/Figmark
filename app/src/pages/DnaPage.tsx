@@ -503,7 +503,7 @@ function ReviewsStrand({ view, dnaId, open, onWritten }: { view: DnaView; dnaId:
       {reviews.length === 0 ? <p className="dnap__empty">No reviews yet. Have one? Be the first.</p> : (
         <ul className="dnap__reviewlist">
           {reviews.map((review, at) => (
-            <li key={review.id} className="dnap__review" style={{ ['--i' as string]: Math.min(at, 8) } as CSSProperties}>
+            <li key={review.id} id={`review-${review.id}`} className="dnap__review" style={{ ['--i' as string]: Math.min(at, 8) } as CSSProperties}>
               <header className="dnap__reviewhead">
                 <span className="dnap__reviewer">
                   {review.authorHandle ? <Link to={`/${encodeURIComponent(review.authorHandle)}`}>{review.authorName}</Link> : review.authorName}
@@ -617,22 +617,46 @@ const FROM_WORDS: Record<DnaView['gallery'][number]['from'], string> = {
   listing: 'Listing', post: 'Post', review: 'Owner', hunt: 'Hunt', buyer: 'Buyer',
 };
 
+/**
+ * Each photo opens what it came from - the listing, the post, the hunt - and
+ * an owner's photo scrolls to their review. Only a photo with nowhere to go
+ * opens full screen.
+ */
 function GalleryStrand({ view }: { view: DnaView }) {
   const [open, setOpen] = useState<{ at: number; origin: DOMRect } | null>(null);
-  const photos = view.gallery.map((photo) => photo.url);
+  const loose = view.gallery.filter((photo) => !photo.href);
+  const toReview = (hash: string) => {
+    const target = document.getElementById(hash.slice(1));
+    if (!target) return;
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    target.classList.remove('is-flash');
+    void target.offsetWidth;
+    target.classList.add('is-flash');
+  };
   return (
     <>
       <div className="dnap__gallery">
-        {view.gallery.map((photo, at) => (
-          <button key={photo.url} type="button" className="dnap__shot" style={{ ['--i' as string]: Math.min(at, 12) } as CSSProperties}
-            aria-label={`Open photo ${at + 1} (${FROM_WORDS[photo.from]})`}
-            onClick={(event) => setOpen({ at, origin: event.currentTarget.getBoundingClientRect() })}>
-            <img src={photo.url} alt="" loading="lazy" decoding="async" />
-            <span className="dnap__shottag" data-from={photo.from}>{FROM_WORDS[photo.from]}</span>
-          </button>
-        ))}
+        {view.gallery.map((photo, at) => {
+          const inner = (
+            <>
+              <img src={photo.url} alt="" loading="lazy" decoding="async" />
+              <span className="dnap__shottag" data-from={photo.from}>{FROM_WORDS[photo.from]}<Icon name="right" size={10} /></span>
+            </>
+          );
+          const style = { ['--i' as string]: Math.min(at, 12) } as CSSProperties;
+          const label = `${FROM_WORDS[photo.from]}: open where this photo is from`;
+          if (photo.href?.startsWith('#')) {
+            return <button key={photo.url} type="button" className="dnap__shot" style={style} aria-label={label}
+              onClick={() => toReview(photo.href!)}>{inner}</button>;
+          }
+          if (photo.href) return <Link key={photo.url} to={photo.href} className="dnap__shot" style={style} aria-label={label}>{inner}</Link>;
+          return (
+            <button key={photo.url} type="button" className="dnap__shot dnap__shot--zoom" style={style} aria-label="Open photo"
+              onClick={(event) => setOpen({ at: loose.indexOf(photo), origin: event.currentTarget.getBoundingClientRect() })}>{inner}</button>
+          );
+        })}
       </div>
-      {open && <Lightbox photos={photos} start={open.at} origin={open.origin} about={view.dna.name} onClose={() => setOpen(null)} />}
+      {open && <Lightbox photos={loose.map((photo) => photo.url)} start={open.at} origin={open.origin} about={view.dna.name} onClose={() => setOpen(null)} />}
     </>
   );
 }
