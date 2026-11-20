@@ -132,6 +132,7 @@
   -webkit-background-clip: text; background-clip: text; color: transparent;
 }
 .posts__hint, .posts__empty { margin: 0; font-size: var(--t-xs); color: var(--text-faint); }
+.posts__dnalink { color: var(--violet-lit); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
 .posts__empty { padding: 14px; border-radius: var(--r-md); text-align: center; background: var(--surface-2); color: var(--text-dim); }
 .posts__problem { margin: 0; font-size: var(--t-xs); color: #F87171; }
 /* The ⋮ sits at the top right of the comment, clear of the bubble's press-and-hold. */
