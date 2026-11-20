@@ -6852,7 +6852,7 @@ a.icard__photo:hover { transform: scale(1.05) rotate(-1deg); }
   transition: transform var(--spring-bouncy-dur) var(--spring-bouncy), box-shadow var(--dur-2);
 }
 
-/* ── Post or ask something ──────────────────────────────────────────────── */
+/* ── Ask the seller ──────────────────────────────────────────────────────── */
 .posts {
   gap: var(--s3); margin-top: 22px; position: relative; overflow: hidden;
   /* A conversation, not a spec sheet: a soft violet wash and a tinted rail down the left. */

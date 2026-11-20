@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { REACTIONS, REACTION_META, type ReactionKind } from '@shared/social';
 import { ApiRequestError, api, type ListingPost } from '../api';
 import { timeAgo } from '../format';
@@ -14,8 +15,12 @@ import { Svg } from './ListingBlocks';
  * the messenger uses. There is deliberately no share: a post only means
  * anything next to the listing it is under.
  */
-export function ListingPosts({ listingId, sellerId, posts, onChange }: {
+export function ListingPosts({ listingId, sellerId, shopName, dnaId, posts, onChange }: {
   listingId: string;
+  /** The shop's name, for the invitation to ask. */
+  shopName?: string;
+  /** The Product DNA this listing is part of, for product talk that belongs there. */
+  dnaId?: string | null;
   /** Whose listing it is, so their answers can be marked as the seller's. */
   sellerId: string;
   posts: ListingPost[];
@@ -74,13 +79,16 @@ export function ListingPosts({ listingId, sellerId, posts, onChange }: {
   return (
     <section className="lpcard posts rise" style={{ ['--i' as string]: 3 }}>
       <div className="posts__head">
-        <h2 className="lpcard__title">Post or ask something</h2>
+        <h2 className="lpcard__title">Ask the seller</h2>
         <span className="posts__count">{posts.length}</span>
       </div>
-      <p className="posts__hint">Public to everyone browsing. Hold a post to react or reply.</p>
+      <p className="posts__hint">
+        Questions about this listing, public to everyone browsing. Hold a post to react or reply.
+        {dnaId && <> For reviews and photos of the product itself, see its <Link to={`/dna/${encodeURIComponent(dnaId)}`} className="posts__dnalink">Product DNA</Link>.</>}
+      </p>
 
       {threads.length === 0 && (
-        <p className="posts__empty">Nothing here yet. Be the first to ask the seller something.</p>
+        <p className="posts__empty">No questions yet. Ask {shopName ?? 'the seller'} about condition, shipping or price.</p>
       )}
 
       <div className="posts__list">
@@ -102,7 +110,7 @@ export function ListingPosts({ listingId, sellerId, posts, onChange }: {
       {!user && (
         <button type="button" className="posts__compose posts__compose--locked is-locked"
           onClick={() => promptAuth('Sign in to post, ask the shop or react.')}>
-          <span className="lockmark" aria-hidden="true">🔒</span> Sign in to post or ask something…
+          <span className="lockmark" aria-hidden="true">🔒</span> Sign in to ask the seller…
         </button>
       )}
       {user && (
@@ -116,7 +124,7 @@ export function ListingPosts({ listingId, sellerId, posts, onChange }: {
           )}
           <div className="posts__field">
             <textarea ref={field} rows={1} value={draft} onChange={(e) => setDraft(e.target.value)}
-              placeholder={replyTo ? 'Write a reply…' : 'Post or ask something…'} aria-label="Your post" />
+              placeholder={replyTo ? 'Write a reply…' : 'Ask the seller…'} aria-label="Your post" />
             <button type="submit" className="posts__send" disabled={busy || !draft.trim()} aria-label="Post">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
                 strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 12 20 4l-6 16-3-7-7-1Z" /></svg>

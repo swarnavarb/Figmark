@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import type { DnaSummary } from '@shared/dna';
 import { ApiRequestError, api } from '../api';
@@ -108,12 +108,23 @@ export function DnaCard({ summary, lead = 'Product DNA' }: { summary: DnaSummary
 }
 
 /** The DNA under a listing. Nothing at all for a listing that has none (a private deal). */
-export function ListingDna({ listingId }: { listingId: string }) {
+export function ListingDna({ listingId, onFound }: {
+  listingId: string;
+  /** Told which DNA the listing is part of, so the page can point at it elsewhere. */
+  onFound?: (dna: DnaSummary | null) => void;
+}) {
   const [summary, setSummary] = useState<DnaSummary | null>(null);
+  const tell = useRef(onFound);
+  tell.current = onFound;
   useEffect(() => {
     let live = true;
     setSummary(null);
-    void api.dnaOfListing(listingId).then((found) => { if (live) setSummary(found.dna); }).catch(() => undefined);
+    tell.current?.(null);
+    void api.dnaOfListing(listingId).then((found) => {
+      if (!live) return;
+      setSummary(found.dna);
+      tell.current?.(found.dna);
+    }).catch(() => undefined);
     return () => { live = false; };
   }, [listingId]);
   if (!summary) return null;
