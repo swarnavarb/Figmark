@@ -13,7 +13,8 @@ import type { PhotoBox } from './api';
  * - each loose figure, but not the figures inside a package or printed on it
  *   - the package is the thing for sale - while a figure standing in front of
  *   a box, its feet past the box's edge, is its own thing;
- * - anything else the detector is sure of (a plush it calls a teddy bear);
+ * - anything else it draws a box round, whatever it calls it: a figure
+ *   standing straight is often skis to it, Mickey a dog;
  *
  * and drops what covers most of the photo (the shelf, the wall) or is a speck.
  * Pure, so it can be tried on detections without a browser.
@@ -28,9 +29,15 @@ export interface Detected {
 
 /** Likely enough for a figure or a package; anything else has to be surer. */
 const MIN_LIKELY = 0.1;
-const MIN_OTHER = 0.3;
+const MIN_OTHER = 0.12;
 const FIGURE = new Set(['person', 'teddy bear']);
 const PACKAGE = new Set(['book']);
+/**
+ * What the detector names a toy is often wrong - a figure standing straight
+ * is skis or a tie to it, Mickey a dog - but where it is is right. So any
+ * name will do, except the things a photo of a shelf is taken in front of.
+ */
+const SCENERY = new Set(['dining table', 'bed', 'couch', 'chair', 'bench', 'tv', 'refrigerator', 'oven', 'sink', 'toilet', 'car', 'bus', 'truck', 'train', 'airplane', 'boat', 'traffic light', 'stop sign', 'parking meter', 'fire hydrant']);
 /** A box over this much of the photo is the shelf or the wall, not a thing on it. */
 const MAX_AREA = 0.5;
 /** Under this much of it, a speck. */
@@ -47,9 +54,16 @@ function inside(inner: PhotoBox, outer: PhotoBox): number {
   return w > 0 && h > 0 ? (w * h) / areaOf(inner) : 0;
 }
 
+/** Shared area over combined area, 0 to 1. */
+function sameness(a: PhotoBox, b: PhotoBox): number {
+  const shared = inside(a, b) * areaOf(a);
+  return shared / (areaOf(a) + areaOf(b) - shared);
+}
+
 export function thingsIn(detections: Detected[]): PhotoBox[] {
   const usable = detections.filter(({ label, score, box }) =>
-    score >= (FIGURE.has(label) || PACKAGE.has(label) ? MIN_LIKELY : MIN_OTHER)
+    !SCENERY.has(label)
+    && score >= (FIGURE.has(label) || PACKAGE.has(label) ? MIN_LIKELY : MIN_OTHER)
     && areaOf(box) <= MAX_AREA && areaOf(box) >= MIN_AREA);
 
   // Packages, smallest first, so a card is seen after the blister on it.
@@ -72,7 +86,9 @@ export function thingsIn(detections: Detected[]): PhotoBox[] {
   for (const figure of figures) {
     // A torso found inside its own whole figure is that figure found twice;
     // a figure standing behind another shares less of its box, and stays.
-    if (loose.some((kept) => inside(figure.box, kept.box) >= 0.8 || inside(kept.box, figure.box) >= 0.8)) continue;
+    // Two boxes round mostly the same pixels are one figure seen from two views.
+    if (loose.some((kept) => inside(figure.box, kept.box) >= 0.8 || inside(kept.box, figure.box) >= 0.8
+      || sameness(figure.box, kept.box) >= 0.5)) continue;
     loose.push(figure);
   }
 
