@@ -46,7 +46,7 @@ export function SocialPage() {
       <div className="social socialtab">
         <SocialTop view={view} onView={setView} />
         <VerifyNudge />
-        <main className="page tab-view social">
+        <main className="page social">
           <div className="tab-view" key={view}>
             {view === 'feed' && <><CommunityNotices /><FollowingFeed /></>}
             {view === 'wanted' && <WantedPage />}

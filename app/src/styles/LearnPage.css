@@ -1,7 +1,8 @@
 /* Moved from styles.css: rules only this chunk's code can match. */
 .learn__rail {
   position: sticky; top: calc(var(--nav-h) + 8px); display: grid; gap: 6px;
-  max-height: calc(100vh - var(--nav-h) - var(--tabbar-h) - 24px); overflow-y: auto; scrollbar-width: none;
+  max-height: calc(100vh - var(--nav-h) - var(--tabbar-h) - 24px);
+  max-height: calc(100dvh - var(--nav-h) - var(--tabbar-h) - 24px); overflow-y: auto; scrollbar-width: none;
 }
 .learn__rail::-webkit-scrollbar { display: none; }
 .learn__tab {

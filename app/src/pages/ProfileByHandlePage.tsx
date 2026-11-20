@@ -66,7 +66,7 @@ export function ProfileByHandlePage() {
 
   if (error) {
     return (
-      <main className="page tab-view">
+      <main className="page">
         <ErrorNotice message={error} />
         <Link to="/" className="btn btn--ghost" style={{ marginTop: 14, justifySelf: 'start' }}>Back to the feed</Link>
       </main>

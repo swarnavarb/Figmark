@@ -532,3 +532,8 @@ a.discweek__row:active { transform: scale(0.99); }
 .spreadhero__stats { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0; font-size: var(--t-xs); color: var(--text-dim); }
 .spreadhero__stats b { color: var(--text); font-variant-numeric: tabular-nums; }
 .spreadhero__stats .spreadhero__mine { color: var(--ok); }
+
+@media (pointer: coarse) {
+  /* 16px or iOS zooms the page when the field takes focus. */
+  .discsearch__field input { font-size: max(16px, calc(16px * var(--text-scale))); }
+}

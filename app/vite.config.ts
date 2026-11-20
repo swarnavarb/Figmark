@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath, URL } from 'node:url';
 import react from '@vitejs/plugin-react';
-import type { AtRule, Plugin as PostcssPlugin } from 'postcss';
+import postcss, { type AtRule, type Plugin as PostcssPlugin, type Root, type Rule } from 'postcss';
 import { defineConfig, type Plugin } from 'vite';
 
 /**
@@ -89,10 +89,55 @@ const motionFollowsChoice: PostcssPlugin = {
   },
 };
 
+/**
+ * Hover belongs to a mouse.
+ *
+ * A phone has no hover, but it fakes one on every tap and keeps it until the
+ * next tap somewhere else: a card tapped to open it stays lifted when you come
+ * back, a button stays lit after its job is done. So every `:hover` rule moves
+ * under `@media (hover: hover) and (pointer: fine)`, here at build time rather
+ * than by hand in each of the stylesheets' ~180 hover rules, and a new one is
+ * covered without anyone remembering to.
+ *
+ * Only the `:hover` selectors move. In `.x:hover, .x:active { … }` the
+ * `:active` half stays where it was, so a finger still gets press feedback and
+ * a keyboard still gets `:focus-visible`. The moved copy goes straight after
+ * the rule it came from, so source order, and with it the cascade, is
+ * unchanged. Rules already inside a hover query are left alone.
+ */
+const HOVER_QUERY = '(hover: hover) and (pointer: fine)';
+const hoverMoved = new WeakSet<Rule>();
+
+function insideHoverQuery(rule: Rule): boolean {
+  for (let node: Rule['parent'] | Root['parent'] = rule.parent; node; node = node.parent) {
+    if (node.type !== 'atrule') continue;
+    const at = node as AtRule;
+    if (/keyframes$/i.test(at.name)) return true;
+    if (at.name === 'media' && /\bhover\b/.test(at.params)) return true;
+  }
+  return false;
+}
+
+const hoverNeedsAPointer: PostcssPlugin = {
+  postcssPlugin: 'figmark-hover-needs-a-pointer',
+  Rule(rule) {
+    if (hoverMoved.has(rule) || !rule.selector.includes(':hover') || insideHoverQuery(rule)) return;
+    const hover = rule.selectors.filter((selector) => selector.includes(':hover'));
+    const rest = rule.selectors.filter((selector) => !selector.includes(':hover'));
+    const moved = rule.clone({ selectors: hover });
+    hoverMoved.add(moved);
+    const query = postcss.atRule({ name: 'media', params: HOVER_QUERY });
+    query.append(moved);
+    rule.after(query);
+    if (rest.length) rule.selectors = rest;
+    else rule.remove();
+  },
+};
+
 export default defineConfig({
   plugins: [react(), bootFirst()],
   css: {
-    postcss: { plugins: [motionFollowsChoice] },
+    postcss: { plugins: [motionFollowsChoice, hoverNeedsAPointer] },
   },
   resolve: {
     alias: {

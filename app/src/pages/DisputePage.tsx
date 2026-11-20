@@ -65,7 +65,7 @@ export function DisputePage() {
   const me = role === 'raiser' ? parties.raiser.id : role === 'respondent' ? parties.respondent.id : null;
 
   return (
-    <main className="page tab-view">
+    <main className="page">
       <BackLink to={back.to}>{back.label}</BackLink>
 
       <div className="page__head dhead">

@@ -60,7 +60,7 @@ export function ServicesPage() {
   }, [user]);
 
   return (
-    <main className="page tab-view">
+    <main className="page">
       <div className="page__head">
         <div>
           <h1>Services</h1>
@@ -649,7 +649,7 @@ export function SupplierPage() {
 
   const waiting = (rows ?? []).filter((row) => row.toPress > 0).length;
   return (
-    <main className="page tab-view">
+    <main className="page">
       <WorkSwitcher />
       <div className="page__head">
         <div>
@@ -824,7 +824,7 @@ export function DistributionPage() {
   }
 
   return (
-    <main className="page tab-view">
+    <main className="page">
       <WorkSwitcher />
       <div className="page__head">
         <div>

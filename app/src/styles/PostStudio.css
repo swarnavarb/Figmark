@@ -441,3 +441,8 @@
 }
 .pstudio__perkideas { display: flex; flex-wrap: wrap; gap: 6px; }
 .pstudio__perkideas .chip { font-size: var(--t-xs); }
+
+@media (pointer: coarse) {
+  /* 16px or iOS zooms the page when the field takes focus. */
+  .pstudio__terms textarea { font-size: max(16px, calc(16px * var(--text-scale))); }
+}

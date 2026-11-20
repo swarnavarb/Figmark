@@ -42,7 +42,7 @@ export function LotBoardPage() {
   const { lot, tally } = data;
 
   return (
-    <main className="page tab-view">
+    <main className="page">
       <BackLink to="/shop?tab=lots">Track</BackLink>
 
       <div className="lothead">
