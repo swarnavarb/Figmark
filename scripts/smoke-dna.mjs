@@ -29,6 +29,7 @@ const { forgetDnaIndex } = await import(new URL('api/src/dna.js', dist));
 const { getRepository } = await import(new URL('api/src/data/index.js', dist));
 const follows = await import(new URL('api/src/dna-follow.js', dist));
 const wants = await import(new URL('want-routes.js', fns));
+const { factsFor } = await import(new URL('quest-routes.js', fns));
 
 const ctx = { error: (...a) => console.error(...a), log: () => {}, warn: () => {}, info: () => {} };
 const req = ({ headers = {}, body, query = {}, params = {} } = {}) => ({
@@ -396,6 +397,37 @@ await check('once its time is up a hunt is deleted, with its answers, names and 
   const view = (await routes.dnaViewRoute(req({ headers: me.headers, params: { id: panda.id } }), ctx)).jsonBody;
   assert.equal(view.hunting, null);
   assert.ok((await repository.listWantsEndedBefore(new Date().toISOString(), 50)).length === 0, 'nothing ended is left');
+});
+
+await check('a deleted hunt keeps what it earned in the collector game, and only counts are kept', async () => {
+  const before = (await factsFor(repository, await repository.getUserById(me.id))).wants;
+  const posted = await wants.wantPostRoute(req({ headers: me.headers, body: { title: 'Air Max 1 Patta', category: 'Sneakers', days: 7 } }), ctx);
+  assert.equal(posted.status, 201);
+  const counted = (await factsFor(repository, await repository.getUserById(me.id))).wants;
+  assert.equal(counted.total, before.total + 1);
+  assert.equal(counted.inMonth, before.inMonth + 1);
+  const made = await repository.getWant(posted.jsonBody.want.id, me.id);
+  await repository.saveWant({ ...made, expiresAt: new Date(Date.now() - 1000).toISOString() });
+  await wants.sweepEndedWants(repository);
+  assert.equal(await repository.getWant(made.id, me.id), null);
+  const after = (await factsFor(repository, await repository.getUserById(me.id))).wants;
+  assert.equal(after.total, counted.total, 'the count stays after the hunt is gone');
+  const kept = (await repository.getUserById(me.id)).quest.wantTally;
+  assert.deepEqual(Object.keys(kept).sort(), ['inMonth', 'inWeek', 'month', 'total', 'week']);
+  assert.ok(!JSON.stringify(kept).includes('Patta') && !JSON.stringify(kept).includes(made.createdAt), 'nothing about the hunt itself');
+});
+
+await check('somebody who posted before hunts were counted is counted before a hunt of theirs is deleted', async () => {
+  const hunter = await repository.getUserById(otherSeller);
+  await repository.updateUser({ ...hunter, quest: { ...(hunter.quest ?? { checkIns: [], claimed: {}, reveals: [] }), wantTally: undefined } });
+  const theirs = await repository.listWantsBy(otherSeller);
+  assert.ok(theirs.length >= 1);
+  const old = await repository.getWant('wnt_dna_1', otherSeller);
+  await repository.saveWant({ ...old, expiresAt: new Date(Date.now() - 1000).toISOString() });
+  await wants.sweepEndedWants(repository);
+  assert.equal(await repository.getWant('wnt_dna_1', otherSeller), null);
+  const facts = await factsFor(repository, await repository.getUserById(otherSeller));
+  assert.equal(facts.wants.total, theirs.length, 'the deleted one still counts');
 });
 
 console.log(`\n${passed} DNA checks passed`);

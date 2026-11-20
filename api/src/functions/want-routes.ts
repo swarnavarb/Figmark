@@ -8,6 +8,7 @@ import { getAuthService } from '../auth/index.js';
 import { ownPhotos } from '../storage/index.js';
 import { claimPhotos, releaseWantPhotos } from '../storage/release.js';
 import { DEFAULT_TIMED_DAYS, timedDays, timedUntil } from '../../../shared/timed.js';
+import { addWant, emptyQuestState, wantTallyFrom } from '../../../shared/quest.js';
 import { dnasLinked, removeLink } from '../dna.js';
 import { tooFast } from '../rate-limit.js';
 import { getRepository } from '../data/index.js';
@@ -262,6 +263,8 @@ export async function createWant(
 
   const savedWant = await repository.saveWant(want);
   await claimPhotos(body.photoUrls, `want:${savedWant.id}`);
+  // Counted for the collector game now, so deleting it later takes nothing away.
+  await countWants(repository, user.id, true).catch(() => undefined);
 
   // Matching starts the moment it is posted: whoever already lists something
   // like it hears so, and can answer with the item rather than a promise.
@@ -274,6 +277,24 @@ export async function createWant(
   }, { except: user.id });
 
   return { want: savedWant, matches: matches.length };
+}
+
+/**
+ * Keep the poster's hunt count (see WantTally): add one for a hunt just posted,
+ * and for anybody who posted before hunts were counted, start the count from
+ * the hunts they still have - which already include the new one. Run before a
+ * hunt is deleted too, so a person's first count is never taken after a
+ * deletion.
+ */
+export async function countWants(repository: Repo, userId: string, posted: boolean): Promise<void> {
+  const user = await repository.getUserById(userId);
+  if (!user) return;
+  const state = user.quest ?? emptyQuestState();
+  let tally = state.wantTally;
+  if (!tally) tally = wantTallyFrom((await repository.listWantsBy(userId)).map((want) => want.createdAt));
+  else if (posted) tally = addWant(tally);
+  else return;
+  await repository.updateUser({ ...user, quest: { ...state, wantTally: tally } });
 }
 
 /** Most ended hunts one run deletes, so one run stays short. */
@@ -290,6 +311,8 @@ export async function sweepEndedWants(repository: Repo, now = new Date()): Promi
   let deleted = 0;
   for (const want of ended) {
     try {
+      // What posting it earned in the collector game stays: counted before it goes.
+      await countWants(repository, want.buyerId, false);
       for (const answer of await repository.listWantOffers(want.id)) await repository.deleteWantOffer(answer.id, want.id);
       for (const seeker of await repository.listWantSeekers(want.id)) await repository.deleteWantSeeker(seeker.id, want.id);
       await releaseWantPhotos(want);

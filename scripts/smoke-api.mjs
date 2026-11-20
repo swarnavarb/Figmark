@@ -10667,7 +10667,7 @@ await check('a quest claimed on saves opens again, and pays nothing, once the sa
   const now = Date.now();
   const at = new Date(now).toISOString();
   const facts = (saves) => ({
-    orders: [], reviewsWritten: [], ratingsReceived: [], pageRatings: [], follows: [], posts: [], wants: [],
+    orders: [], reviewsWritten: [], ratingsReceived: [], pageRatings: [], follows: [], posts: [], wants: { total: 0, week: '', inWeek: 0, month: '', inMonth: 0 },
     pledges: 0, disputesLost: 0, collection: [], hasBio: false, hasTags: false, shares: 0, referredSales: 0,
     shareOpens: [], sharesSent: [], invites: [], invitedSellers: 0,
     likes: Array.from({ length: saves }, () => ({ createdAt: at })),
