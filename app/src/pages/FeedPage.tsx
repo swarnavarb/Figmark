@@ -502,7 +502,7 @@ export function FeedPage() {
     <main className="page qfeed">
       {/* The catalogue's cards are its heading; this names the page for screen readers. */}
       <h1 className="sr-only">Shop</h1>
-      {/* The top of the page sits on a block of colour, edge to edge, down to the drops. */}
+      {/* The top of the page sits on a block of colour, edge to edge; the drops come after it. */}
       <div className="qfeed__band" ref={bandRef}>
       <QuestBar />
       {/* Orders still on their way, first: after paying, "where is it?" is the question. */}
@@ -511,10 +511,12 @@ export function FeedPage() {
       {/* Until a section can show, its place holds a skeleton and nothing below it draws. */}
       {!showDaily && pending(true)}
       {browsing && showDaily && <DailyDrop listings={rated} now={now} />}
-      {/* Drops sit up top, before the catalogue: an event on now beats any one item. */}
+      </div>
+
+      {/* Drops sit up top, before the catalogue: an event on now beats any one item.
+          On the page, out of the block of colour. */}
       {showDaily && !showDrops && pending(false)}
       {browsing && showDrops && <DropsStage drops={drops} />}
-      </div>
 
       {showDrops && (
       <div className="stack" id="catalogue" style={{ marginBottom: 14 }}>
