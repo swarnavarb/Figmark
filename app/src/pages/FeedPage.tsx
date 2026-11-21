@@ -693,7 +693,7 @@ function useProgressive(total: number, resetKey: string) {
 /* ── The band of colour at the top ─────────────────────────────────────── */
 
 /**
- * Where the band starts on the page, as --band-top on it, so its pinstripes
+ * Where the band starts on the page, as --band-top on it, so its halftone
  * carry on from the header's without a break. The header's height is its
  * content's on a phone, and a notice can sit between the two, so it is
  * measured rather than assumed.

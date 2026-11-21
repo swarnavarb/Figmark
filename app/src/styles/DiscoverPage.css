@@ -249,7 +249,6 @@
      before it has stuck would leave a gap where it was. */
   transition: top 280ms var(--ease);
 }
-:root[data-bars='hidden'] .dislens { top: env(safe-area-inset-top, 0px); }
 .dislens::-webkit-scrollbar { display: none; }
 /* Six lenses fit a phone's width without scrolling: the marks go, the words stay. */
 @media (max-width: 479px) {

@@ -212,7 +212,6 @@
      stuck place moves, as Discover's lenses do. */
   transition: top 280ms var(--ease);
 }
-:root[data-bars='hidden'] .dnap__nav { top: env(safe-area-inset-top, 0px); }
 .dnap__nav::-webkit-scrollbar { display: none; }
 .dnap__navpill {
   --c: var(--dnap-a);

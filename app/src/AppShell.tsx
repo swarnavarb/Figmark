@@ -116,6 +116,7 @@ export function AppShell() {
       <ScrollBars />
       <ViewportSync />
       <header className="nav">
+        <span className="nav__pattern" aria-hidden="true" />
         <NavLink to="/" className="brand" aria-label="Figmark home">
           <span className="brand__mark" aria-hidden="true" />
           <span className="brand__name">Figmark</span>
