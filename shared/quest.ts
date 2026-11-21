@@ -1,4 +1,4 @@
-import type { Listing, QuestState } from './models.js';
+import type { Listing, QuestState, WantTally } from './models.js';
 import { FORUM_UNLOCK_LEVELS } from './enums.js';
 
 /**
@@ -353,7 +353,8 @@ export interface QuestFacts {
   likes: { createdAt: string }[];
   follows: { createdAt: string }[];
   posts: { createdAt: string }[];
-  wants: { createdAt: string }[];
+  /** Wanted posts, counted as they were posted (see WantTally). */
+  wants: WantTally;
   pledges: number;
   disputesLost: number;
   /** XP community managers' approved decisions took away. */
@@ -401,6 +402,60 @@ export const DETAILED_REVIEW_CHARS = 80;
 export const EARLY_BACK_HOURS = 24;
 /** Accounts made before this joined in the founding season. */
 export const FOUNDING_BEFORE = '2027-07-01T00:00:00+05:30';
+
+/* -------------------------------------------------------------------------- */
+/* Wanted posts, counted                                                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A hunt is deleted when its time is up, but what posting it earned is not:
+ * the game counts hunts as they are posted - in all, this week and this month -
+ * and keeps only those numbers.
+ */
+export function emptyWantTally(now = Date.now()): WantTally {
+  return { total: 0, week: weekKey(now), inWeek: 0, month: monthKey(now), inMonth: 0 };
+}
+
+/** The tally as of `now`: a week or month that has ended counts nothing. */
+export function currentWantTally(tally: WantTally, now = Date.now()): WantTally {
+  const week = weekKey(now);
+  const month = monthKey(now);
+  return {
+    total: tally.total,
+    week,
+    inWeek: tally.week === week ? tally.inWeek : 0,
+    month,
+    inMonth: tally.month === month ? tally.inMonth : 0,
+  };
+}
+
+/** One more hunt posted at `now`. */
+export function addWant(tally: WantTally | undefined, now = Date.now()): WantTally {
+  const current = currentWantTally(tally ?? emptyWantTally(now), now);
+  return { ...current, total: current.total + 1, inWeek: current.inWeek + 1, inMonth: current.inMonth + 1 };
+}
+
+/** The first tally of somebody who posted before hunts were counted, from the hunts they still have. */
+export function wantTallyFrom(postedAt: readonly string[], now = Date.now()): WantTally {
+  const week = weekKey(now);
+  const month = monthKey(now);
+  return {
+    total: postedAt.length,
+    week,
+    inWeek: postedAt.filter((at) => weekKey(at) === week).length,
+    month,
+    inMonth: postedAt.filter((at) => monthKey(at) === month).length,
+  };
+}
+
+function wantsIn(tally: WantTally, kind: TaskKind, now: number): number {
+  const current = currentWantTally(tally, now);
+  if (kind === 'milestone' || kind === 'starter') return current.total;
+  if (kind === 'weekly') return current.inWeek;
+  if (kind === 'monthly') return current.inMonth;
+  // No daily task counts hunts; a day's count is not kept.
+  return 0;
+}
 
 export function emptyQuestState(): QuestState {
   return { checkIns: [], claimed: {}, reveals: [] };
@@ -562,7 +617,8 @@ function stampsFor(metric: Metric, { facts, state }: MeasureContext): string[] {
     case 'save': return facts.likes.map((like) => like.createdAt);
     case 'follow': return facts.follows.map((follow) => follow.createdAt);
     case 'post': return facts.posts.map((post) => post.createdAt);
-    case 'want': return facts.wants.map((want) => want.createdAt);
+    // Counted, not stamped: countIn reads the tally.
+    case 'want': return [];
     case 'collect': return facts.collection.map((item) => item.addedAt);
     case 'checkin': {
       // A repaired day keeps a streak alive; it was not a visit, so it fills no check-in quest.
@@ -588,6 +644,7 @@ function periodOf(kind: TaskKind, now: number): string {
 
 function countIn(metric: Metric, kind: TaskKind, context: MeasureContext): number {
   if (metric === 'board') return context.facts.boardPoints?.[monthKey(context.now)] ?? 0;
+  if (metric === 'want') return wantsIn(context.facts.wants, kind, context.now);
   const stamps = stampsFor(metric, context);
   if (kind === 'milestone' || kind === 'starter') return stamps.length;
   const period = periodOf(kind, context.now);
@@ -1184,7 +1241,7 @@ const STICKERS: readonly StickerDef[] = [
   { id: 'bounty-hunter', name: 'Bounty Hunter', hue: 'gold', glyph: 'star', tiers: [1, 5, 15, 40, 100],
     meaning: 'Posts what they are hunting for, so shops know what to bring in.',
     how: 'Post Wanted requests',
-    have: ({ facts }) => facts.wants.length },
+    have: ({ facts }) => facts.wants.total },
   { id: 'champion', name: 'Champion', hue: 'gold', glyph: 'crown', tiers: [1, 3, 10, 25, 50],
     meaning: 'Wins photo competitions and weekly challenges.',
     how: 'Win competitions',
@@ -1293,7 +1350,7 @@ function recordXp(facts: QuestFacts): XpLine[] {
     line('People who opened your links', facts.shareOpens.length, XP.shareOpen),
     line('Leaderboard podiums', facts.podiums ?? 0, XP.podium),
     line('Social posts', facts.posts.length, XP.post),
-    line('Wanted posts', facts.wants.length, XP.want),
+    line('Wanted posts', facts.wants.total, XP.want),
     line('Shops followed', facts.follows.length, XP.follow),
     line('Items saved', facts.likes.length, XP.like),
     { label: 'Low ratings from sellers', xp: -(actionXp(stars(2)) + actionXp(stars(1), ACTION_XP * 2)), detail: `${stars(2)} two-star × −${ACTION_XP}, ${stars(1)} one-star × −${ACTION_XP * 2}` },

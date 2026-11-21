@@ -111,7 +111,7 @@
   padding: 3px 10px; border-radius: var(--r-pill);
   background: linear-gradient(115deg, #FF5B1F, var(--gold)); color: #fff; font-size: var(--t-xs);
 }
-.wanted .alsome .btn:not(.btn--quiet) { background: var(--sx-grad); border-color: transparent; color: #fff; }
+.wanted .alsome .btn:not(.btn--quiet) { background: var(--acid); border-color: transparent; color: var(--ink-black); }
 /* ISO: photos on a request, and who answered. */
 .want__photo { width: 56px; height: 56px; flex: 0 0 auto; border-radius: var(--r-md); object-fit: cover; }
 .isophotos--view .isophotos__tile { width: 96px; height: 96px; }

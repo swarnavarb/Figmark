@@ -462,9 +462,9 @@ export function SpreadNudge({ storeId, storeName, about, compact = false }: {
  * small card - the shop, what it pays per friend, the timer, how many joined.
  * Tapping one opens the post, where the link is.
  */
-export function SpreadRow({ cards, grid = false }: { cards: PostCard[]; grid?: boolean }) {
+export function SpreadRow({ cards, grid = false, story = false }: { cards: PostCard[]; grid?: boolean; story?: boolean }) {
   return (
-    <div className={`spreadrow${grid ? ' spreadrow--grid' : ''}`}>
+    <div className={`spreadrow${grid ? ' spreadrow--grid' : ''}${story ? ' story__row' : ''}`}>
       {cards.map((card, index) => {
         const referral = card.social.referral;
         if (!referral) return null;

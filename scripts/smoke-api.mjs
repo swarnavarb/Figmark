@@ -10667,7 +10667,7 @@ await check('a quest claimed on saves opens again, and pays nothing, once the sa
   const now = Date.now();
   const at = new Date(now).toISOString();
   const facts = (saves) => ({
-    orders: [], reviewsWritten: [], ratingsReceived: [], pageRatings: [], follows: [], posts: [], wants: [],
+    orders: [], reviewsWritten: [], ratingsReceived: [], pageRatings: [], follows: [], posts: [], wants: { total: 0, week: '', inWeek: 0, month: '', inMonth: 0 },
     pledges: 0, disputesLost: 0, collection: [], hasBio: false, hasTags: false, shares: 0, referredSales: 0,
     shareOpens: [], sharesSent: [], invites: [], invitedSellers: 0,
     likes: Array.from({ length: saves }, () => ({ createdAt: at })),
@@ -13329,6 +13329,18 @@ await check('suggestions name people you engage with, never anybody followed or 
   assert.ok(rows.every((entry) => entry.id !== reader.id));
   await toggleFollow(req({ headers: reader.headers, params: { id: row.followKey } }), ctx);
   assert.ok(!(await suggestionsR(req({ headers: reader.headers }), ctx)).jsonBody.suggestions.some((entry) => entry.id === writer.id));
+});
+
+await check('people-only suggestions are people, with somebody to show even with nothing to go on', async () => {
+  const fresh = await newBuyer('People Only Reader');
+  const poster = await newBuyer('People Only Poster');
+  resetRateLimits();
+  await createPost(req({ headers: poster.headers, body: { body: 'My shelf this week' } }), ctx);
+  const rows = (await suggestionsR(req({ headers: fresh.headers, query: { only: 'people' } }), ctx)).jsonBody.suggestions;
+  assert.ok(rows.length > 0, 'somebody to suggest');
+  assert.ok(rows.every((entry) => entry.shop === false && entry.followKey.startsWith('person:')), JSON.stringify(rows));
+  assert.ok(rows.every((entry) => typeof entry.postCount === 'number'));
+  assert.ok(rows.every((entry) => entry.id !== fresh.id));
 });
 
 await check('the week\'s best ranks loved shelves and argued debates', async () => {

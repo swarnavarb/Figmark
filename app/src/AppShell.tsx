@@ -116,6 +116,7 @@ export function AppShell() {
       <ScrollBars />
       <ViewportSync />
       <header className="nav">
+        <span className="nav__pattern" aria-hidden="true" />
         <NavLink to="/" className="brand" aria-label="Figmark home">
           <span className="brand__mark" aria-hidden="true" />
           <span className="brand__name">Figmark</span>
@@ -125,6 +126,13 @@ export function AppShell() {
             the things that are not a section - search, who you are, and the
             way out. */}
         <nav className="nav__links">
+          {/* Development shares the code and the look of the real site, so the
+              header says which one this is, in a word, on every page. */}
+          {testEnvironment && (
+            <span className="navenv" role="note"
+              aria-label={`${testEnvironment}: a test site with test data. Nothing here is real.`}
+              title="A test site with test data. Nothing here is real.">DEV</span>
+          )}
           {/* The social tab's search, with items in it: a glass icon that
               opens the search sheet, marked while a search is on. */}
           <button type="button" className={`navsearch${query || params.get('photo') ? ' is-set' : ''}`} onClick={() => setSearching(true)}
@@ -188,15 +196,6 @@ export function AppShell() {
         </div>
       )}
 
-      {/* Development shares the code and the look of the real site, so say on
-          every page which one this is. */}
-      {testEnvironment && (
-        <div className="page page--notice">
-          <p className="notice notice--info notice--standing">
-            <strong>{testEnvironment.toUpperCase()}</strong> - this is a test site with test data. Nothing here is real.
-          </p>
-        </div>
-      )}
 
       {/* Each worker has its own memory, so a tester's new account or item is
           there on one page load and gone on the next. Say so before it reads as a bug. */}
@@ -244,7 +243,7 @@ export function AppShell() {
  * colours, to set the first page's tone before paint.
  */
 const TONE_STATUS: Record<TabId, string> = {
-  buy: '#5B5EF1',
+  buy: '#B6FF2E',
   discover: '#8B2FC9',
   sell: '#177ACE',
   services: '#3A8C4E',

@@ -2,11 +2,13 @@ import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 
 /**
- * Get the bars out of the way while reading, and back the moment you turn.
+ * Get the tab bar out of the way while reading, and back the moment you turn.
  *
- * Scrolling down is reading, so the header and the tab bar slide off and the
- * page gets the whole screen; scrolling up is looking for somewhere to go, so
- * they come straight back. Near the top they always show, because that is
+ * Scrolling down is reading, so the tab bar slides off; scrolling up is
+ * looking for somewhere to go, so it comes straight back. The header stays:
+ * it is joined to the status bar under the clock, which Safari colours once
+ * and does not change as the page scrolls, so a header that slid away left a
+ * band of its colour behind. Near the top they always show, because that is
  * where people look for them. Small jitters are ignored, or a thumb resting on
  * the glass would make the bars flicker.
  *

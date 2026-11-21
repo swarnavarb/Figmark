@@ -58,7 +58,7 @@
   background: radial-gradient(120% 120% at 100% 0%, rgba(236, 72, 153, 0.2), transparent 60%), var(--surface);
 }
 .lp__privateicon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: var(--r-md); background: var(--pink-soft); font-size: var(--t-lg); flex: none; }
-.buybox__ask:hover { border-color: var(--border-strong); }
+.buybox__ask:hover { border-color: rgba(243, 242, 238, 0.4); }
 @media (min-width: 900px) {
   .lp__rail { position: sticky; top: 76px; }
 }
@@ -72,7 +72,7 @@
   border-radius: var(--r-pill); background: var(--surface-2);
   box-shadow: inset 0 0 0 1px var(--border);
 }
-.buybox__buy:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(236, 72, 153, 0.4); background: var(--grad-hero); }
+.buybox__buy:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 12px 28px var(--acid-glow); background: var(--acid); }
 .buybox__save { flex: 0 0 48px; padding: 0; justify-content: center; }
 .buybox__opening::after { content: '…'; display: inline-block; width: 1em; text-align: left; animation: lp-dots 1s steps(4) infinite; }
 .pocard__head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--s3); align-items: center; }
@@ -101,7 +101,7 @@
 .sellercard__who { display: grid; gap: 0; min-width: 0; color: #fff; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.45); }
 .sellercard__who .dtile__label, .sellercard__who .sellercard__where, .sellercard__who .sellercard__name { color: #fff; }
 .sellercard__stat dd small { font-size: var(--t-xs); color: var(--text-faint); font-weight: var(--w-semi); }
-.sellercard__acts .btn:not(.btn--ghost) { background: var(--sf-grad, var(--grad-hero)); color: #fff; border: 0; }
+.sellercard__acts .btn:not(.btn--ghost) { background: var(--acid); color: var(--ink-black); border: 0; }
 .lshare__text { display: grid; gap: 2px; flex: 1; min-width: 0; }
 
 /*
@@ -132,6 +132,7 @@
   -webkit-background-clip: text; background-clip: text; color: transparent;
 }
 .posts__hint, .posts__empty { margin: 0; font-size: var(--t-xs); color: var(--text-faint); }
+.posts__dnalink { color: var(--violet-lit); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
 .posts__empty { padding: 14px; border-radius: var(--r-md); text-align: center; background: var(--surface-2); color: var(--text-dim); }
 .posts__problem { margin: 0; font-size: var(--t-xs); color: #F87171; }
 /* The ⋮ sits at the top right of the comment, clear of the bubble's press-and-hold. */
@@ -214,7 +215,7 @@
 .lshare__icon { font-size: calc(22px * var(--text-scale)); line-height: 1; }
 .lshare__go {
   flex: 0 0 auto; padding: 7px 14px; border-radius: var(--r-pill); font-weight: 700; font-size: var(--t-sm);
-  color: #fff; background: linear-gradient(135deg, var(--lshare-from), var(--lshare-to));
+  color: var(--ink-black); background: var(--acid);
 }
 
 /* Sold out: ask to be told when it is back. */
@@ -255,7 +256,7 @@
 .buybar__title { font-size: var(--t-2xs); color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .buybar__price { font-size: var(--t-lg); font-variant-numeric: tabular-nums; line-height: 1.15; }
 .buybar__cart { flex: 0 0 44px; height: 44px; padding: 0; justify-content: center; }
-.buybar__buy { flex: none; height: 44px; padding: 0 var(--s4); background: var(--grad-hero); }
+.buybar__buy { flex: none; height: 44px; padding: 0 var(--s4); background: var(--acid); color: var(--ink-black); }
 @keyframes buybar-in { from { opacity: 0; transform: translate(-50%, 16px); } to { opacity: 1; transform: translate(-50%, 0); } }
 @media (prefers-reduced-motion: reduce) { .buybar { animation: none; } }
 /* Room under the page for the bar, so it never sits on the last of it. */

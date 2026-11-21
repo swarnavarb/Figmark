@@ -17,6 +17,7 @@ import { useToast } from '../components/Feedback';
 import { Spinner } from '../components/Spinner';
 import { FollowSuggestions } from '../components/FollowSuggestions';
 import { useSession } from '../session';
+import { PostDna } from '../components/DnaKit';
 import '../styles/SocialPage.css';
 
 /**
@@ -623,6 +624,8 @@ function PostPageBody() {
         ) : (
           <SocialPostCard key={voice.storeId ?? 'me'} card={card} openComments onRemoved={() => setGone(true)} />
         ))}
+        {/* The products this post shows or names, each its own Product DNA. */}
+        {card && !gone && <PostDna channelId={card.post.channelId} postId={card.post.id} about={card.post.body} />}
       </main>
     </div>
   );

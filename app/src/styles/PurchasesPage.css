@@ -6,7 +6,7 @@
   border: 1px solid var(--border); transition: border-color var(--dur-1) ease, background var(--dur-1) ease;
 }
 .alloc__name { font-weight: var(--w-semi); min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.icard__go:hover { background: var(--grad-hero); transform: translateY(-1px); }
+.icard__go:hover { background: var(--acid); transform: translateY(-1px); }
 .cartbox::after {
   content: ''; position: absolute; right: -60px; top: -60px; width: 180px; height: 180px; border-radius: 50%; pointer-events: none;
   background: radial-gradient(circle, rgba(6, 214, 231, 0.18), transparent 70%);

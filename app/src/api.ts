@@ -1,4 +1,5 @@
 import type { PayoutSummary } from '@shared/payouts';
+import type { DnaLinkKind, DnaSummary, DnaView } from '@shared/dna';
 import type { DayRange, DaySource, ShopDays } from '@shared/step-days';
 import type { LotCostKey, LotSplit } from '@shared/lot-costs';
 import type { CancelFlag, CancelSettings, CancelStats, FeeSettlement, FeeStatement, GiftMethod, GiverKind, PlatformFees, Pricing, ProFeatureId, ProGrant, ProPlan, StoreGift } from '@shared/billing';
@@ -3760,8 +3761,33 @@ export const api = {
   feedMutes: () => request<{ muted: { id: string; name: string; handle: string | null; shop: boolean }[] }>('/social/mutes'),
   /** What was on screen, in a batch. Fire and forget: a lost batch only means a post counts one view short. */
   seenPosts: (items: SeenEntry[]) => post<{ counted: number }>('/social/seen', { items }),
-  followSuggestions: () => request<{ suggestions: FollowSuggestion[] }>('/social/suggestions'),
+  followSuggestions: (only?: 'people') => request<{ suggestions: FollowSuggestion[] }>(`/social/suggestions${only ? `?only=${only}` : ''}`),
   weeklyBest: () => request<Leaderboard>('/social/leaderboard'),
+  /** Product DNA: the whole page, or where a folded-in one went. */
+  dna: (id: string) => request<DnaView | { moved: string }>(`/dna/view/${encodeURIComponent(id)}`),
+  dnaOfListing: (id: string) => request<{ dna: DnaSummary | null }>(`/dna/of/listing/${encodeURIComponent(id)}`),
+  dnaOfPost: (channelId: string, id: string) =>
+    request<{ dnas: DnaSummary[]; yours: boolean }>(`/dna/of/post/${encodeURIComponent(channelId)}/${encodeURIComponent(id)}`),
+  dnaOfWant: (buyerId: string, id: string) =>
+    request<{ dna: DnaSummary | null; yours: boolean }>(`/dna/of/want/${encodeURIComponent(buyerId)}/${encodeURIComponent(id)}`),
+  dnaTrending: (category?: string | null) =>
+    request<{ products: DnaSummary[] }>(`/dna/trending${category ? `?category=${encodeURIComponent(category)}` : ''}`),
+  dnaSearch: (q: string, listingId?: string) => {
+    const query = new URLSearchParams({ q });
+    if (listingId) query.set('listing', listingId);
+    return request<{ products: DnaSummary[] }>(`/dna/search?${query.toString()}`);
+  },
+  reviewDna: (id: string, body: { rating: number; body: string; photoUrls: string[] }) =>
+    post<{ ok: true }>(`/dna/view/${encodeURIComponent(id)}/reviews`, body),
+  fixDna: (body: { kind: DnaLinkKind; id: string; partition: string; action: 'remove' | 'move' | 'tag' | 'new'; from?: string; to?: string }) =>
+    post<{ dna: string | null }>('/dna/fix', body),
+  mergeDna: (id: string, into: string) => post<{ dna: string }>(`/dna/view/${encodeURIComponent(id)}/merge`, { into }),
+  /** Follow a product for `days` (up to 90), or stop with null. */
+  followDna: (id: string, days: number | null) =>
+    post<{ follow: { until: string } | null }>(`/dna/view/${encodeURIComponent(id)}/follow`, { days }),
+  /** "I want this": a hunt on the Wanted board for the product, for `days`. */
+  wantDna: (id: string, body: { days: number; budgetMinor?: number | null }) =>
+    post<{ want: { id: string; buyerId: string; expiresAt: string }; existing: boolean }>(`/dna/view/${encodeURIComponent(id)}/want`, body),
   topicPosts: (slug: string) =>
     request<{ topic: { key: string; label: string }; posts: PostCard[] }>(`/social/topics/${encodeURIComponent(slug)}`),
   socialHome: (as?: string | null, before?: string, following = false) => {
@@ -3884,6 +3910,8 @@ export const api = {
   postWant: (body: {
     title: string; details: string; category: string;
     budgetMinor: number | null; condition: string | null; photoUrls?: string[];
+    /** How long it stays up before it is deleted: 1 to 90 days. */
+    days?: number;
   }) => post<{ want: WantCard }>('/wants/new', body),
   // The buyer is on the path because a want is stored under whoever posted it.
   want: (id: string, buyerId: string) =>

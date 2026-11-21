@@ -386,7 +386,7 @@
   margin: 0 -18px -18px; padding: var(--s3) 18px calc(var(--s3) + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--border); background: var(--surface);
 }
-.pstudio__go { background: var(--grad-hero); border-color: transparent; color: #fff; }
+.pstudio__go { background: var(--acid); border-color: transparent; color: var(--ink-black); }
 
 @media (prefers-reduced-motion: reduce) {
   .pstudio__hero, .pstudio__heroemoji, .pstudio__preview, .ppreview__options li, .pstudio__store { animation: fade-in 160ms ease both; }

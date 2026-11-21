@@ -240,6 +240,17 @@ export async function findSales(
   return found;
 }
 
+/**
+ * The listings whose titles the words name, best first: a caption with no
+ * photo, or a hunt's title. The same telling-words rule as a photo's caption.
+ */
+export function textSales(catalogue: Listing[], about: string): Listing[] {
+  const ready = prepare(catalogue);
+  return captionMatches(ready.index, ready.pool, about)
+    .sort((a, b) => b.score - a.score)
+    .map((entry) => entry.listing);
+}
+
 /** How the pool compares with the photo: as a whole, any item in it, and each item Claude named. */
 interface Looks {
   /** The whole photo, or any item in it: what probable matches are ranked from. */

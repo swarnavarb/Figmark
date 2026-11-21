@@ -246,6 +246,32 @@ async function seen(request: HttpRequest, _context: InvocationContext) {
   return json(200, { counted });
 }
 
+/** What a person has been up to lately, for saying why they are worth following. */
+interface Lately {
+  hearts: number; replies: number; posts: number; newest: number;
+  flexes: number; debates: number; polls: number; hunts: number; sales: number; threads: number; photos: number;
+}
+
+/** Every true thing worth saying about what someone posts, the most telling first. */
+function reasonsFor(them: Lately, now: number): string[] {
+  const reasons: string[] = [];
+  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+  if (them.hearts >= 5) reasons.push(`${them.hearts} loves on their recent posts`);
+  if (them.replies >= 3) reasons.push('Their posts get people talking');
+  if (them.flexes > 0) reasons.push('Shows off their shelf');
+  if (them.debates > 0) reasons.push('Starts a good debate');
+  if (them.polls > 0) reasons.push('Asks what collectors think');
+  if (them.hunts > 0) reasons.push('Helps others find pieces');
+  if (them.sales > 0) reasons.push('Trades with collectors here');
+  if (them.threads > 0) reasons.push('Writes the long reads');
+  if (them.photos >= 2) reasons.push(`${plural(them.photos, 'photo', 'photos')} of their finds`);
+  if (them.posts >= 3) reasons.push(`${them.posts} posts lately`);
+  if (now - them.newest < 2 * 86_400_000) reasons.push('Posted in the last day or two');
+  if (them.hearts > 0 && them.hearts < 5) reasons.push('Their posts get loved');
+  reasons.push('A new voice on Figmark');
+  return reasons;
+}
+
 /** How many people and shops to suggest. */
 const SUGGESTIONS = 12;
 
@@ -260,6 +286,8 @@ const SUGGESTIONS = 12;
 async function suggestions(request: HttpRequest, _context: InvocationContext) {
   const { viewer, repository, user } = await account(request);
   if (!user) return error(401, 'unauthorized', 'Sign in first.');
+  // `?only=people`: Discover's "People to follow" - collectors, never a shop.
+  const peopleOnly = request.query.get('only') === 'people';
   const [follows, recent, liked] = await Promise.all([
     repository.listFollowsBy(viewer.id),
     repository.listRecentPosts(300),
@@ -270,6 +298,7 @@ async function suggestions(request: HttpRequest, _context: InvocationContext) {
   const tally = new Map<string, { score: number; reason: string; shop: boolean }>();
   const offer = (followKey: string, score: number, reason: string) => {
     const shop = !isPersonFollow(followKey);
+    if (peopleOnly && shop) return;
     const id = shop ? followKey : followKey.slice(PERSON_FOLLOW.length);
     if (id === viewer.id || followKeys.has(followKey) || screen.muted.has(id)) return;
     const was = tally.get(followKey);
@@ -310,8 +339,45 @@ async function suggestions(request: HttpRequest, _context: InvocationContext) {
     for (const listing of inCategories[index]!) offer(listing.sellerId, 3, `Sells ${category}`);
   });
 
+  // People only, and not enough to go on: whoever is posting and being
+  // loved for it lately, speaking as themselves rather than as a shop. Each
+  // gets the truest thing about what they post, and no two in a row read the
+  // same while there is anything else true to say.
+  const postsBy = new Map<string, number>();
+  if (peopleOnly) {
+    const owners = await channelOwners(recent, repository);
+    const lately = new Map<string, Lately>();
+    for (const post of recent) {
+      if (asShop(post, owners.get(post.channelId))) continue;
+      postsBy.set(post.authorId, (postsBy.get(post.authorId) ?? 0) + 1);
+      const them = lately.get(post.authorId) ?? { hearts: 0, replies: 0, posts: 0, flexes: 0, debates: 0, polls: 0, hunts: 0, sales: 0, threads: 0, photos: 0, newest: 0 };
+      them.posts += 1;
+      them.hearts += post.reactions?.length ?? post.likeCount ?? 0;
+      them.replies += post.comments?.length ?? post.replyCount ?? 0;
+      if (post.flex) them.flexes += 1;
+      if (post.debate) them.debates += 1;
+      if (post.poll) them.polls += 1;
+      if (post.answersWant) them.hunts += 1;
+      if (post.kind === 'sale' || post.listingId) them.sales += 1;
+      if (post.kind === 'thread') them.threads += 1;
+      if (post.photoUrl || post.photoUrls?.length) them.photos += 1;
+      them.newest = Math.max(them.newest, Date.parse(post.createdAt) || 0);
+      lately.set(post.authorId, them);
+    }
+    if (tally.size < SUGGESTIONS) {
+      const said = new Map<string, number>();
+      const ranked = [...lately.entries()].sort((a, b) => b[1].hearts - a[1].hearts || b[1].posts - a[1].posts);
+      for (const [id, them] of ranked) {
+        const options = reasonsFor(them, Date.now());
+        const reason = options.reduce((best, option) => ((said.get(option) ?? 0) < (said.get(best) ?? 0) ? option : best), options[0]!);
+        said.set(reason, (said.get(reason) ?? 0) + 1);
+        offer(`${PERSON_FOLLOW}${id}`, 0.2 + Math.min(them.hearts, 50) / 100, reason);
+      }
+    }
+  }
+
   // Nothing to go on yet: the shops most people follow.
-  if (tally.size < SUGGESTIONS) {
+  if (!peopleOnly && tally.size < SUGGESTIONS) {
     // The shop index is held for a minute, so this costs no read of every shop.
     const owners = [...await shopIndex(repository)]
       .sort((a, b) => b.followerCount - a.followerCount).slice(0, SUGGESTIONS);
@@ -337,6 +403,7 @@ async function suggestions(request: HttpRequest, _context: InvocationContext) {
       shop: entry.shop,
       followerCount: entry.shop ? person.sellerProfile!.followerCount : person.followerCount ?? 0,
       reason: entry.reason,
+      ...(peopleOnly ? { postCount: postsBy.get(id) ?? 0 } : {}),
     });
     if (rows.length >= SUGGESTIONS) break;
   }

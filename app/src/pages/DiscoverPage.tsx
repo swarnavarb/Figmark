@@ -15,7 +15,10 @@ import { ContentBadge, SocialPostCard, postHref } from '../components/SocialPost
 import { VoiceProvider } from '../components/SocialVoice';
 import { FollowSuggestions } from '../components/FollowSuggestions';
 import { SpreadRow } from '../components/SpreadKit';
+import { ShopsForYou, useShopsForYou } from '../components/ShopCards';
+import { DnaProductsView, DnaRail } from '../components/DnaKit';
 import { Icon } from '../components/Icon';
+import { StoryTag, useStory } from '../components/Story';
 import { Spinner } from '../components/Spinner';
 import { useToast } from '../components/Feedback';
 import { EmptyState, ErrorNotice, Thumb, leadPhoto } from '../components/ui';
@@ -44,7 +47,7 @@ import '../styles/DiscoverPage.css';
  * nothing is shown twice on the first screens.
  */
 
-type Lens = 'all' | 'live' | 'spread' | 'debates' | 'shelves' | 'finds' | 'week';
+type Lens = 'all' | 'live' | 'spread' | 'debates' | 'shelves' | 'finds' | 'products' | 'week';
 type IconName = Parameters<typeof Icon>[0]['name'];
 
 const LENSES: { id: Exclude<Lens, 'week'>; label: string; icon: IconName }[] = [
@@ -54,6 +57,7 @@ const LENSES: { id: Exclude<Lens, 'week'>; label: string; icon: IconName }[] = [
   { id: 'debates', label: 'Debates', icon: 'forum' },
   { id: 'shelves', label: 'Shelves', icon: 'camera' },
   { id: 'finds', label: 'Finds', icon: 'tag' },
+  { id: 'products', label: 'Products', icon: 'dna' },
 ];
 
 /** Older addresses, and the lenses folded into others. */
@@ -65,7 +69,7 @@ function lensFrom(value: string | null, hash: string): Lens {
   if (hash === '#competitions') return 'live';
   if (!value) return 'all';
   if (LEGACY_LENS[value]) return LEGACY_LENS[value]!;
-  return (['all', 'live', 'spread', 'debates', 'shelves', 'finds', 'week'] as const).find((lens) => lens === value) ?? 'all';
+  return (['all', 'live', 'spread', 'debates', 'shelves', 'finds', 'products', 'week'] as const).find((lens) => lens === value) ?? 'all';
 }
 
 /** An item worth surfacing, and the one word that says why. Ranked on the server. */
@@ -80,6 +84,8 @@ const RAIL = 4;
 const PEOPLE_AT = 3;
 const HUNTS_AT = 6;
 const SPOTTED_AT = 9;
+/** "Shops for you" comes in this many entries after the second rail of finds. */
+const SHOPS_AFTER_SECOND_RAIL = 3;
 /** Places at the top of the stream kept clear of what the spotlight already shows. */
 const SPOTLIT_GAP = 10;
 
@@ -88,6 +94,7 @@ type Entry =
   | { kind: 'divider'; key: string; text: string }
   | { kind: 'rail'; finds: Find[] }
   | { kind: 'people' }
+  | { kind: 'shops' }
   | { kind: 'hunts'; wants: WantRow[] }
   | { kind: 'spotted'; items: SpottedItem[] };
 
@@ -128,7 +135,7 @@ const flowItems = (cards: PostCard[], lap: number): FlowItem[] => cards.map((car
  * older favourites is seamless: no line marks it. The people, hunt and spotted rails go in
  * once each, a few entries down, so the first screen is still posts.
  */
-function weaveFlow(items: FlowItem[], finds: Find[], extras: { people: boolean; wants: WantRow[]; spotted: SpottedItem[] }): Entry[] {
+function weaveFlow(items: FlowItem[], finds: Find[], extras: { people: boolean; shops: boolean; wants: WantRow[]; spotted: SpottedItem[] }): Entry[] {
   const queue = [...finds];
   const out: Entry[] = [];
   items.forEach((item, index) => {
@@ -144,6 +151,12 @@ function weaveFlow(items: FlowItem[], finds: Find[], extras: { people: boolean; 
     [PEOPLE_AT, extras.people ? { kind: 'people' } : null],
   ];
   for (const [at, entry] of inserts) if (entry) out.splice(Math.min(at, out.length), 0, entry);
+  // The street of shops for you, a few posts after the second treasure: by
+  // then the reader has seen two rows of things, and gets the shops behind them.
+  if (extras.shops) {
+    const rails = out.flatMap((entry, at) => (entry.kind === 'rail' ? [at] : []));
+    if (rails.length >= 2) out.splice(Math.min(rails[1]! + 1 + SHOPS_AFTER_SECOND_RAIL, out.length), 0, { kind: 'shops' });
+  }
   return out;
 }
 
@@ -471,14 +484,16 @@ function DiscoverBody() {
     return deferSpotlit(kept, spotlit);
   }, [flow, narrowed, narrow, spotlit]);
 
+  const shopsForYou = useShopsForYou();
   // Only the first few are drawn; the rest are added as the reader nears the end of them.
   const entries = useMemo(
     () => (flowReady ? weaveFlow(flowShown.slice(0, shown), shownFinds, {
       people: Boolean(user) && !narrowed,
+      shops: !narrowed && Boolean(shopsForYou?.length),
       wants: narrowed ? [] : rails.wants,
       spotted: narrowed ? [] : rails.spotted,
     }) : []),
-    [flowReady, flowShown, shown, shownFinds, user, narrowed, rails.wants, rails.spotted],
+    [flowReady, flowShown, shown, shownFinds, user, narrowed, shopsForYou, rails.wants, rails.spotted],
   );
   // The finds and the lists are a bonus: the stream is ready once its posts are.
   const loading = lens === 'all' ? !flowReady : !stream;
@@ -531,7 +546,7 @@ function DiscoverBody() {
     void load();
   }
 
-  const showChips = (lens === 'all' || lens === 'finds') && categories.length > 1;
+  const showChips = (lens === 'all' || lens === 'finds' || lens === 'products') && categories.length > 1;
 
   return (
     <main className="page discpage">
@@ -624,14 +639,10 @@ function DiscoverBody() {
         <>
           {spots.length > 0 && !words.length && <SpotlightDeck spots={spots} />}
           {spreads.length > 0 && !narrowed && (
-            <>
-              <h2 className="discsection">
-                <Icon name="megaphone" size={15} /> Earn store credit
-                <button type="button" className="discsection__all" onClick={() => setLens('spread')}>See all <Icon name="right" size={12} /></button>
-              </h2>
-              <SpreadRow cards={spreads} />
-            </>
+            <SpreadChapter cards={spreads} onAll={() => setLens('spread')} />
           )}
+          {/* Products people are after, each with its own Product DNA. */}
+          {!words.length && <DnaRail category={category} onAll={() => setLens('products')} />}
           {rails.topics.length > 0 && !narrowed && (
             <nav className="distopics" aria-label="Topics">
               {rails.topics.slice(0, TOPICS_INLINE).map((topic) => (
@@ -665,7 +676,7 @@ function DiscoverBody() {
                 <EmptyState title="Quiet right now">
                   Nothing is trending yet. Start a debate or share your shelf with the + below, and be the first thing here.
                 </EmptyState>
-                {user && <FollowSuggestions title="People to follow" />}
+                {user && <FollowSuggestions title="People to follow" people />}
               </>
             )
           ) : (
@@ -673,7 +684,8 @@ function DiscoverBody() {
               {entries.map((entry, index) => {
                 switch (entry.kind) {
                   case 'rail': return <FindRail key={`r${index}`} finds={entry.finds} first={index < 3} onAll={() => setLens('finds')} />;
-                  case 'people': return <FollowSuggestions key="people" title="People to follow" />;
+                  case 'people': return <FollowSuggestions key="people" title="People to follow" people />;
+                  case 'shops': return <ShopsForYou key="shops" shops={shopsForYou} />;
                   case 'hunts': return <HuntRail key="hunts" wants={entry.wants} />;
                   case 'spotted': return <SpottedRail key="spotted" items={entry.items} onAll={() => setLens('finds')} />;
                   case 'divider': return <p key={entry.key} className="discend discend--lap">{entry.text}</p>;
@@ -686,6 +698,8 @@ function DiscoverBody() {
             </div>
           )}
         </>
+      ) : lens === 'products' ? (
+        <DnaProductsView category={category} />
       ) : lens === 'finds' ? (
         <FindsView finds={shownFinds} spotted={rails.spotted} category={category} />
       ) : lens === 'week' ? (
@@ -833,13 +847,16 @@ function DiscoverWall({ onJoin }: { onJoin: () => void }) {
 
 /** A row of finds between posts, sideways on a phone. */
 function FindRail({ finds, first, onAll }: { finds: Find[]; first: boolean; onAll: () => void }) {
+  const story = useStory('ocean');
   return (
-    <section className="discrail" aria-label={first ? 'Worth a look, for you' : 'More finds'}>
+    <section ref={story.ref} className={`discrail ${story.className}`} aria-label={first ? 'Worth a look, for you' : 'More finds'}>
+      {story.scene}
+      <StoryTag>Chapter · The treasure</StoryTag>
       <div className="discrail__head">
         <h2>{first ? 'Worth a look, for you' : 'More finds'}</h2>
         <button type="button" className="discrail__all" onClick={onAll}>See all</button>
       </div>
-      <div className="discrail__row">
+      <div className="discrail__row story__row">
         {finds.map((find) => <FindCard key={find.listing.id} find={find} />)}
       </div>
     </section>
@@ -945,13 +962,16 @@ function FindsView({ finds, spotted, category }: { finds: Find[]; spotted: Spott
  * collects. A shop answers with an offer; a collector can join the hunt.
  */
 function HuntRail({ wants }: { wants: WantRow[] }) {
+  const story = useStory('map');
   return (
-    <section className="discrail" aria-label="People are hunting">
+    <section ref={story.ref} className={`discrail ${story.className}`} aria-label="People are hunting">
+      {story.scene}
+      <StoryTag>Chapter · The quest</StoryTag>
       <div className="discrail__head">
         <h2>People are hunting</h2>
         <Link to="/social?view=wanted" className="discrail__all">See all</Link>
       </div>
-      <div className="discrail__row">
+      <div className="discrail__row story__row">
         {wants.map((want) => (
           <Link key={want.id} className="discitem"
             to={`/social?view=wanted&want=${encodeURIComponent(want.id)}&buyer=${encodeURIComponent(want.buyerId)}`}>
@@ -971,18 +991,37 @@ function HuntRail({ wants }: { wants: WantRow[] }) {
   );
 }
 
+/** "Earn store credit": the shops' invitations, as a strip of tickets. */
+function SpreadChapter({ cards, onAll }: { cards: PostCard[]; onAll: () => void }) {
+  const story = useStory('carnival');
+  return (
+    <section ref={story.ref} className={story.className} aria-label="Earn store credit">
+      {story.scene}
+      <StoryTag>Chapter · The invitation</StoryTag>
+      <h2 className="discsection">
+        <Icon name="megaphone" size={15} /> Earn store credit
+        <button type="button" className="discsection__all" onClick={onAll}>See all <Icon name="right" size={12} /></button>
+      </h2>
+      <SpreadRow cards={cards} story />
+    </section>
+  );
+}
+
 /** A name, cut to the first word: "Karan Malhotra" is Karan on a small label. */
 const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? name;
 
 /** Things seen on somebody's shelf or in a debate, that can be bought now. */
 function SpottedRail({ items, onAll }: { items: SpottedItem[]; onAll?: () => void }) {
+  const story = useStory('cinema');
   return (
-    <section className="discrail" aria-label="Spotted in posts, buyable now">
+    <section ref={story.ref} className={`discrail ${story.className}`} aria-label="Spotted in posts, buyable now">
+      {story.scene}
+      <StoryTag>Chapter · The scene</StoryTag>
       <div className="discrail__head">
         <h2>Spotted in posts</h2>
         {onAll && <button type="button" className="discrail__all" onClick={onAll}>See all</button>}
       </div>
-      <div className="discrail__row">
+      <div className="discrail__row story__row">
         {items.map((item) => (
           <Link key={item.listingId} className="discitem" to={`/listing/${encodeURIComponent(item.listingId)}`}>
             <ItemArt seed={item.listingId} title={item.title} category={null} photo={item.photoUrl ? { url: item.photoUrl } : null} badge="sale" />

@@ -87,6 +87,10 @@ const {
 const {
   wantsBoardRoute, wantPostRoute, wantReadRoute, wantOfferRoute, wantCloseRoute, wantAlsoMeRoute,
 } = await import(new URL('want-routes.js', apiRoot));
+const {
+  dnaViewRoute, dnaOfListingRoute, dnaOfPostRoute, dnaOfWantRoute, dnaTrendingRoute, dnaSearchRoute,
+  dnaReviewRoute, dnaFixRoute, dnaMergeRoute, dnaFollowRoute, dnaWantRoute,
+} = await import(new URL('dna-routes.js', apiRoot));
 const { pushKeyRoute, pushSubscribeRoute, pushUnsubscribeRoute, pushTestRoute } =
   await import(new URL('push-routes.js', apiRoot));
 const { deviceReportRoute, deviceFiguresRoute } = await import(new URL('device-routes.js', apiRoot));
@@ -469,6 +473,17 @@ const routes = [
   ['POST', '/api/me/loyalty/rewards/:id/use', useRewardRoute],
   ['POST', '/api/orders/:id/loyalty-pick', pickAtCheckoutRoute],
   ['GET', '/api/ops/audit', adminAuditRoute],
+  ['GET', '/api/dna/view/:id', dnaViewRoute],
+  ['POST', '/api/dna/view/:id/reviews', dnaReviewRoute],
+  ['POST', '/api/dna/view/:id/merge', dnaMergeRoute],
+  ['POST', '/api/dna/view/:id/follow', dnaFollowRoute],
+  ['POST', '/api/dna/view/:id/want', dnaWantRoute],
+  ['GET', '/api/dna/of/listing/:id', dnaOfListingRoute],
+  ['GET', '/api/dna/of/post/:channel/:id', dnaOfPostRoute],
+  ['GET', '/api/dna/of/want/:buyer/:id', dnaOfWantRoute],
+  ['GET', '/api/dna/trending', dnaTrendingRoute],
+  ['GET', '/api/dna/search', dnaSearchRoute],
+  ['POST', '/api/dna/fix', dnaFixRoute],
   ['GET', '/api/wants', wantsBoardRoute],
   ['POST', '/api/wants/new', wantPostRoute],
   ['GET', '/api/wants/:id', wantReadRoute],

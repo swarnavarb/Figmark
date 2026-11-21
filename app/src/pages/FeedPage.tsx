@@ -418,6 +418,8 @@ export function FeedPage() {
     </div>
   );
 
+  const bandRef = useBandTop();
+
   // The chosen badge in view: most categories sit past the edge on a phone.
   const zonesRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -500,6 +502,8 @@ export function FeedPage() {
     <main className="page qfeed">
       {/* The catalogue's cards are its heading; this names the page for screen readers. */}
       <h1 className="sr-only">Shop</h1>
+      {/* The top of the page sits on a block of colour, edge to edge; the drops come after it. */}
+      <div className="qfeed__band" ref={bandRef}>
       <QuestBar />
       {/* Orders still on their way, first: after paying, "where is it?" is the question. */}
       {browsing && <ActiveOrders />}
@@ -507,7 +511,10 @@ export function FeedPage() {
       {/* Until a section can show, its place holds a skeleton and nothing below it draws. */}
       {!showDaily && pending(true)}
       {browsing && showDaily && <DailyDrop listings={rated} now={now} />}
-      {/* Drops sit up top, before the catalogue: an event on now beats any one item. */}
+      </div>
+
+      {/* Drops sit up top, before the catalogue: an event on now beats any one item.
+          On the page, out of the block of colour. */}
       {showDaily && !showDrops && pending(false)}
       {browsing && showDrops && <DropsStage drops={drops} />}
 
@@ -683,6 +690,37 @@ function useProgressive(total: number, resetKey: string) {
     return () => watcher.disconnect();
   }, [sentinel]);
   return [drawn, setSentinel] as const;
+}
+
+/* ── The band of colour at the top ─────────────────────────────────────── */
+
+/**
+ * Where the band starts on the page, as --band-top on it, so its halftone
+ * carry on from the header's without a break. The header's height is its
+ * content's on a phone, and a notice can sit between the two, so it is
+ * measured rather than assumed.
+ */
+function useBandTop() {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const band = ref.current;
+    if (!band) return;
+    // Layout offsets, not the on-screen box: the page slides in on arrival,
+    // and a measure taken mid-slide would be off by the slide.
+    const measure = () => {
+      let top = 0;
+      for (let node: HTMLElement | null = band; node; node = node.offsetParent as HTMLElement | null) top += node.offsetTop;
+      band.style.setProperty('--band-top', `${top}px`);
+    };
+    measure();
+    const watch = new ResizeObserver(measure);
+    const nav = document.querySelector('.nav');
+    if (nav) watch.observe(nav);
+    watch.observe(document.body);
+    window.addEventListener('resize', measure);
+    return () => { watch.disconnect(); window.removeEventListener('resize', measure); };
+  }, []);
+  return ref;
 }
 
 /* ── The top bar ───────────────────────────────────────────────────────── */

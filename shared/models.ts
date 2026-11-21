@@ -530,6 +530,17 @@ export interface CollectionGroup {
 }
 
 /** What the collector game has to remember, because no other row records it. */
+/** Wanted posts as counts: all of them, and those in the current week and month. */
+export interface WantTally {
+  total: number;
+  /** The week `inWeek` counts, as its Monday's day key. */
+  week: string;
+  inWeek: number;
+  /** The month `inMonth` counts, YYYY-MM. */
+  month: string;
+  inMonth: number;
+}
+
 export interface QuestState {
   /** Day keys (YYYY-MM-DD, India time) the person checked in on, oldest first. */
   checkIns: string[];
@@ -550,6 +561,12 @@ export interface QuestState {
    * toward a check-in quest.
    */
   repairs?: string[];
+  /**
+   * How many Wanted posts this person has made: in all, this week and this
+   * month. Counted when each is posted, so a hunt deleted when its time is up
+   * keeps what it earned. Counts only - nothing about any hunt is kept here.
+   */
+  wantTally?: WantTally;
   /** The last XP and level worked out, so a name can wear its level without a recount. */
   xpCache?: number;
   levelCache?: number;
@@ -3029,6 +3046,10 @@ export interface Want extends BaseDocument {
    * every row behind every card.
    */
   seekerCount?: number;
+  /**
+   * When the hunt ends: as long as its poster chose, up to three months. Past
+   * it the hunt is deleted, with its answers, names and photos.
+   */
   expiresAt: string;
   /** Set when the buyer says they are done, and why. */
   closedAt: string | null;
@@ -3207,6 +3228,8 @@ export type NotificationKind =
   | 'want_listed'
   /** A new ISO matches something this seller has listed. */
   | 'want_matched'
+  /** A Product DNA you follow changed price, came back on sale, or gained a shop. */
+  | 'dna_alert'
   | 'payment_claimed'
   | 'payment_received'
   | 'credit_refunded'

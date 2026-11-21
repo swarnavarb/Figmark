@@ -28,7 +28,72 @@
 .picker:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
 .cat__glyph { display: block; color: var(--cat-hue, var(--text-dim)); transition: color var(--dur-1) var(--ease); }
 .qfeed { padding-top: 0; }
+/* The header's colour carried on behind the top of the Buy page, edge to edge
+   with rounded lower corners, so header and band read as one block of acid
+   green against the dark page below. Plain at the top, where it meets the
+   header; flowing ink-to-violet lines rise from its foot and dissolve into a
+   halftone on the way up (::before, ::after). The green deepens toward ink at
+   the foot, and casts a green glow onto the page. */
+.qfeed__band {
+  position: relative; isolation: isolate;
+  display: flow-root;
+  margin: 0 calc(-1 * max(var(--page-pad), env(safe-area-inset-right, 0px))) 18px calc(-1 * max(var(--page-pad), env(safe-area-inset-left, 0px)));
+  /* Room at the foot for the wave lines to show under the last card. */
+  padding: 1px max(var(--page-pad), env(safe-area-inset-right, 0px)) 30px max(var(--page-pad), env(safe-area-inset-left, 0px));
+  background:
+    linear-gradient(180deg, rgba(11, 11, 12, 0) 25%, rgba(11, 11, 12, 0.32) 100%),
+    var(--top-pattern) 0 calc(-1 * var(--band-top, var(--nav-h))) / var(--top-pattern-size),
+    var(--top-grad);
+  border-radius: 0 0 28px 28px;
+  box-shadow: 0 18px 40px -24px rgba(182, 255, 46, 0.6);
+}
+/* Wider than the page, the header runs past the band's sides: the gradient is
+   laid against the screen so its colours stay under the header's. */
+/* The lines: a landscape of waves, denser and heavier toward the foot, faded
+   in from nothing so the plain top of the band meets the header cleanly. */
+.qfeed__band::before,
+.qfeed__band::after {
+  content: ''; position: absolute; inset: 0; z-index: -1;
+  border-radius: inherit; pointer-events: none;
+}
+.qfeed__band::before {
+  background: url('../assets/buy-waves.svg') center bottom / max(100%, 560px) auto no-repeat;
+  -webkit-mask-image: linear-gradient(0deg, #000 0, #000 90px, transparent 230px);
+  mask-image: linear-gradient(0deg, #000 0, #000 90px, transparent 230px);
+}
+/* The halftone, carried on from the header (.nav__pattern) on the same grid,
+   shifted by where the band starts: it picks up at the strength the header
+   left it, fills in, and thins out again where the lines take over. */
+.qfeed__band::after {
+  background: var(--buy-dots);
+  background-position: 0 calc(-1 * var(--band-top, var(--nav-h)));
+  -webkit-mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.5) 0, #000 60px), linear-gradient(0deg, transparent 50px, #000 170px);
+  -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.5) 0, #000 60px), linear-gradient(0deg, transparent 50px, #000 170px);
+  mask-composite: intersect;
+}
+@media (min-width: 1181px) {
+  .qfeed__band {
+    background-attachment: scroll, fixed, fixed;
+    background-position: 0 0, 0 0, 0 0;
+    background-size: auto, var(--top-pattern-size), 100vw 100%;
+  }
+}
 .qbar--buy { flex-wrap: nowrap; gap: 6px; }
+/* Signed out, the pill has nothing in it: no empty outline left on the band. */
+.qduo:empty { display: none; }
+/* The quest bar on the acid green band: ink pills, chalk white words, acid
+   green for the progress rings and the points. */
+.qbar--buy .qduo { background: var(--ink-black); border-color: var(--ink-black); }
+.qbar--buy .qchip { color: var(--chalk); }
+.qbar--buy .qchip__text small { color: rgba(243, 242, 238, 0.62); }
+.qbar--buy .qchip__text span { color: var(--acid); }
+.qbar--buy .qring circle:first-child { stroke: rgba(243, 242, 238, 0.16); }
+.qbar--buy .qring circle:nth-child(2) { stroke: var(--acid); }
+.qbar--buy .qduo > .qchip + .qchip::before { background: rgba(243, 242, 238, 0.2); }
+.qbar--buy > .btn--ghost { background: var(--ink-black); border-color: var(--ink-black); color: var(--chalk); box-shadow: none; }
+.qbar--buy > .btn--ghost:hover:not(:disabled) { background: #1B1E14; border-color: #1B1E14; }
+.qbar--buy .qdot { background: var(--acid); color: var(--ink-black); }
 .qduo {
   display: inline-flex; align-items: center; min-width: 0;
   border-radius: var(--r-pill); background: var(--surface-2); border: 1px solid var(--border-strong);
