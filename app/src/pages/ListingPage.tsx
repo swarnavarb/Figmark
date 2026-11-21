@@ -602,6 +602,12 @@ export function ListingPage() {
                     <dd className="sellercard__note">Bought here again</dd>
                   </div>
                 )}
+                {/* Always there, so the card never runs short: what has been checked about this shop. */}
+                <div className={`sellercard__stat${seller.tier === 'unverified' ? '' : ' sellercard__stat--ok'}`}>
+                  <dt><Svg name="shield" size={13} /> Verification</dt>
+                  <dd>{seller.tier === 'pro' ? 'Business' : seller.tier === 'verified' ? 'Verified' : 'Not yet'}</dd>
+                  <dd className="sellercard__note">{TIER_NOTES[seller.tier] ?? 'Verification level'}</dd>
+                </div>
                 <div className="sellercard__stat">
                   <dt><Svg name="calendar" size={13} /> Here since</dt>
                   <dd>{new Date(seller.memberSince).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}</dd>

@@ -15,30 +15,84 @@
 .protnote a { color: var(--ok-pale); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; white-space: nowrap; }
 
 /* For a signed-out visitor, above everything else on the first screen:
-   what this is, in one line, and the one way in. */
+   what this is, what it offers as four tiles, and the one way in. */
 .fmintro {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 16px 24px;
+  display: grid; gap: 18px;
+  grid-template-areas: 'copy' 'feats' 'cta';
   margin: 0 0 22px;
   padding: 20px;
   border-radius: 20px;
   background: var(--surface);
   border: 1px solid var(--border);
 }
-.fmintro__copy { flex: 1 1 320px; min-width: 0; }
+.fmintro__copy { grid-area: copy; min-width: 0; }
 .fmintro__title {
   margin: 0;
-  font-size: clamp(22px, 5vw, 32px);
-  line-height: 1.12;
+  font-size: clamp(24px, 5.6vw, 36px);
+  line-height: 1.1;
   letter-spacing: -0.025em;
   font-weight: 800;
   color: var(--text);
   text-wrap: balance;
 }
-/* The features, as one line. */
-.fmintro__line { margin: 10px 0 0; color: var(--text-dim); font-size: var(--t-base); line-height: 1.5; max-width: 62ch; text-wrap: pretty; }
-.fmintro__cta { flex: none; min-width: 140px; justify-content: center; }
-@media (max-width: 560px) { .fmintro__cta { width: 100%; } }
-@media (min-width: 900px) { .fmintro { padding: 26px 32px; } }
+.fmintro__cta { grid-area: cta; justify-content: center; width: 100%; }
+.fmintro__feats {
+  grid-area: feats;
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
+}
+.fmfeat {
+  display: grid; gap: 6px; align-content: start;
+  padding: 14px;
+  border-radius: 14px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  /* In one after another, a beat apart. */
+  animation: fmfeat-in 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--i, 0) * 90ms + 120ms);
+}
+.fmfeat__icon {
+  width: 40px; height: 40px; border-radius: 12px;
+  display: grid; place-items: center;
+  color: var(--fm-hue);
+  background: color-mix(in srgb, var(--fm-hue) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fm-hue) 35%, transparent);
+  margin-bottom: 4px;
+}
+.fmfeat--check   { --fm-hue: var(--ok); }
+.fmfeat--ride    { --fm-hue: var(--blue-text); }
+.fmfeat--twinkle { --fm-hue: var(--warn); }
+.fmfeat--lock    { --fm-hue: var(--violet-pale); }
+.fmfeat__title { color: var(--text); font-size: var(--t-base); line-height: 1.25; }
+.fmfeat__title em { font-style: normal; font-weight: 500; color: var(--text-faint); font-size: var(--t-xs); }
+.fmfeat__text { color: var(--text-dim); font-size: var(--t-sm); line-height: 1.4; }
+
+@keyframes fmfeat-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+/* Each icon's own small loop: slow, and mostly at rest. */
+.fmfeat__draw { stroke-dasharray: 12; animation: fm-draw 3.2s ease-in-out infinite; }
+@keyframes fm-draw { 0%, 15% { stroke-dashoffset: 12; } 35%, 100% { stroke-dashoffset: 0; } }
+.fmfeat__mover { animation: fm-ride 2.8s ease-in-out infinite; }
+@keyframes fm-ride { 0%, 100% { transform: translateX(-1.5px); } 50% { transform: translateX(1.5px); } }
+.fmfeat__star { transform-origin: 12px 12px; animation: fm-twinkle 3s ease-in-out infinite; }
+@keyframes fm-twinkle { 0%, 70%, 100% { transform: scale(1) rotate(0); } 80% { transform: scale(1.18) rotate(-10deg); } 90% { transform: scale(0.96) rotate(4deg); } }
+.fmfeat__shackle { animation: fm-lock 3.4s ease-in-out infinite; }
+@keyframes fm-lock { 0%, 20% { transform: translateY(-2px); } 35%, 85% { transform: none; } 100% { transform: translateY(-2px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .fmfeat, .fmfeat__draw, .fmfeat__mover, .fmfeat__star, .fmfeat__shackle { animation: none; }
+}
+@media (min-width: 900px) {
+  .fmintro {
+    padding: 28px 32px; gap: 22px 32px;
+    grid-template-columns: 1fr auto;
+    grid-template-areas: 'copy cta' 'feats feats';
+    align-items: center;
+  }
+  .fmintro__cta { width: auto; min-width: 160px; }
+  .fmintro__feats { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  .fmfeat { padding: 16px; }
+}
 
 /* ── The footer ──
    Deep ink under a hairline of the brand ramp, a soft glow behind the mark,
