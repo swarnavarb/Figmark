@@ -672,13 +672,15 @@ code, kbd, samp, pre {
 
 /* ── Section tones ─────────────────────────────────────────────────────── */
 
-/* Buy: jewel teal, run left to right so the block of colour under the header
-   on the Buy page (.qfeed__band) carries on from it column for column. Both
-   ends keep white text and icons readable. */
+/* Buy: acid green, with ink black on it and chalk white beside it (Acid
+   Green #B6FF2E, Ink Black #0B0B0C, Chalk White #F3F2EE). Run left to right so
+   the block of colour under the header on the Buy page (.qfeed__band) carries
+   on from it column for column. Too light for white: what sits on it is ink
+   (see the Buy header's ink, after .nav .navlogin). */
 :root[data-tone='buy'] {
-  --top-grad: linear-gradient(90deg, #0F766E 0%, #0D9488 100%);
-  --top-rgb: 14 133 122;
-  --top-ink: #5EEAD4;
+  --top-grad: linear-gradient(90deg, #B6FF2E 0%, #C4FF55 100%);
+  --top-rgb: 182 255 46;
+  --top-ink: #B6FF2E;
 }
 :root[data-tone='sell'] {
   --top-grad: linear-gradient(115deg, #0891B2 0%, #2563EB 100%);
@@ -5439,6 +5441,22 @@ body.is-locked { overflow: hidden; }
 .nav .bell__panel, .nav .pmenu__panel { color: var(--text); }
 .nav .pmenu__btn { background: #fff; }
 .nav .navlogin { background: #fff; border-color: #fff; color: #0B0F1A; }
+/* The Buy header is acid green: ink black on it, chalk white frosted buttons. */
+:root[data-tone='buy'] .nav { color: #0B0B0C; }
+:root[data-tone='buy'] .nav .brand__mark { box-shadow: 0 0 0 2px #0B0B0C; }
+:root[data-tone='buy'] .nav .navsearch, :root[data-tone='buy'] .nav .navcart, :root[data-tone='buy'] .nav .bell__button {
+  border-color: rgba(11, 11, 12, 0.16); background: rgba(243, 242, 238, 0.6); color: #0B0B0C;
+}
+:root[data-tone='buy'] .nav .navsearch:hover, :root[data-tone='buy'] .nav .navcart:hover, :root[data-tone='buy'] .nav .bell__button:hover {
+  background: rgba(243, 242, 238, 0.9); border-color: rgba(11, 11, 12, 0.28);
+}
+:root[data-tone='buy'] .nav .navcart.is-active { border-color: #0B0B0C; color: #0B0B0C; background: #F3F2EE; }
+:root[data-tone='buy'] .nav .navsearch.is-set::after { background: #0B0B0C; }
+:root[data-tone='buy'] .nav .pmenu__btn { background: #0B0B0C; }
+:root[data-tone='buy'] .nav .navlogin { background: #0B0B0C; border-color: #0B0B0C; color: #F3F2EE; }
+/* Its search sheet stays dark, white words on ink, with acid green for accents. */
+:root[data-tone='buy'] .mktsearch { --sx-grad: linear-gradient(90deg, #0B0B0C 0%, #1B1E14 100%); }
+:root[data-tone='buy'] .mktsearch .socsearch__bar { background: var(--sx-grad); }
 
 /* The social sheet, in the section's colour, with the social palette's
    accents traded for that colour's light tint. */
