@@ -596,6 +596,14 @@ code, kbd, samp, pre {
 .nav::after { opacity: 0; transition: opacity var(--dur-2) var(--ease); }
 :root[data-scrolled] .nav::before { opacity: 0; }
 :root[data-scrolled] .nav::after { opacity: 1; }
+/* Scrolled, the strip under the clock and the Dynamic Island goes clear: the
+   page shows through it, and the header's glass starts just below it. */
+:root[data-scrolled] .nav::after {
+  background: linear-gradient(180deg,
+    rgb(var(--top-rgb) / 0.72) 0, rgb(var(--top-rgb) / 0.72) calc(100% - var(--glass-tail)), rgb(var(--top-rgb) / 0) 100%);
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, transparent var(--strip-h), #000 calc(var(--strip-h) + 14px), #000 calc(100% - var(--glass-tail)), transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0, transparent var(--strip-h), #000 calc(var(--strip-h) + 14px), #000 calc(100% - var(--glass-tail)), transparent 100%);
+}
 
 .brand { display: flex; align-items: center; gap: 10px; flex: none; }
 /* The first coloured thing anyone sees, so it carries the full brand ramp
@@ -674,11 +682,12 @@ code, kbd, samp, pre {
   --top-grad: linear-gradient(90deg, #B6FF2E 0%, #B6FF2E 100%);
   --top-rgb: 182 255 46;
   --top-ink: #B6FF2E;
-  /* Fine ink pinstripes over the green, to take the glare off it. One tile
-     for the header and the block under it, laid so the stripes run on. */
-  --top-pattern: linear-gradient(135deg,
-    rgba(11, 11, 12, 0.13) 0 9%, transparent 9% 50%, rgba(11, 11, 12, 0.13) 50% 59%, transparent 59%);
-  --top-pattern-size: 9px 9px;
+  /* No pattern on the header: the strip under the clock has to be one plain
+     colour (it is what Safari tints its bar with), so the header stays plain
+     to match it, and the pattern lives on the block under it instead, rising
+     from that block's foot (.qfeed__band::before in FeedPage.css). */
+  --top-pattern: none;
+  --top-pattern-size: auto;
 }
 :root[data-tone='buy'] .nav::before {
   background:
@@ -8697,6 +8706,11 @@ a.ocust__name:hover { color: var(--accent-text); }
   pointer-events: none;
 }
 :root[data-bars='hidden'] .shell:not(.shell--social) > .topstrip::after { opacity: 1; }
+/* Scrolled, the strip is clear (see :root[data-scrolled] .nav::after), and so
+   is the tail it trails once the header has slid away. */
+:root[data-scrolled] .topstrip { background-color: transparent; }
+:root[data-scrolled] .topstrip::after,
+:root[data-scrolled] .shell:not(.shell--social) > .topstrip::after { opacity: 0; }
 /*
  * What Safari looks for: the fixed or sticky box WebKit hit-tests 4px inside
  * the top edge (LocalFrameView::fixedContainerEdges), at least 90% of the
