@@ -50,7 +50,7 @@
   backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
 }
 @media (hover: hover) and (pointer: fine) { .dischero__btn:hover:not(.is-on) { border-color: var(--border-strong); } }
-.dischero__btn.is-on { background: var(--grad-hero); color: #fff; border-color: transparent; box-shadow: var(--shadow-violet); }
+.dischero__btn.is-on { background: var(--chalk); color: var(--ink-black); border-color: transparent; box-shadow: none; }
 /* Live: a lit dot, the colour of "now", breathing. */
 .dischero__pulse {
   position: relative; display: inline-block; width: 8px; height: 8px; border-radius: 50%;
