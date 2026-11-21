@@ -36,7 +36,7 @@ import { ActiveOrders } from '../components/ActiveOrders';
 import { FeedSkeletonParts } from '../components/PageSkeletons';
 import { CollectorChip, Glyph, RarityRibbon, StoreChip, XpBar, useQuest } from '../components/Quest';
 import { EmptyState, ErrorNotice, Icon, Thumb, leadPhoto } from '../components/ui';
-import { SellerBadge, WelcomePanel } from '../components/Trust';
+import { SellerLevel, SellerTick, WelcomePanel } from '../components/Trust';
 import { useSave } from '../components/useSave';
 import { formatMoney, timeAgo } from '../format';
 import { useRecentlyViewed } from '../recentViews';
@@ -999,8 +999,8 @@ export const LootCard = memo(function LootCard({ listing, priority = false }: { 
               <Glyph name="crest" size={13} />
               {listing.seller.photoUrl && <StorePic url={listing.seller.photoUrl} />}
             </span>
-            <span className="qseller__name">{listing.seller.storefrontName}{listing.seller.pro && <ProBadge />}</span>
-            <span className="qseller__lv"><SellerBadge seller={listing.seller} /></span>
+            <span className="qseller__name">{listing.seller.storefrontName}<SellerTick tier={listing.seller.tier} size={14} />{listing.seller.pro && <ProBadge />}</span>
+            <span className="qseller__lv"><SellerLevel seller={listing.seller} /></span>
           </span>
         )}
       </div>

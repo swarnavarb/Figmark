@@ -7317,7 +7317,7 @@ button.authpop__grip::before { content: ''; position: absolute; inset: -14px -30
 .guestwall__lock { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 50%; font-size: calc(28px * var(--text-scale)); background: var(--surface-2); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08); }
 .guestwall h1 { margin: 0; font-size: var(--t-xl); }
 .guestwall p { margin: 0; max-width: 360px; color: var(--text-dim); }
-.navlogin, .navsignup { white-space: nowrap; }
+.navlogin { white-space: nowrap; }
 .is-locked { position: relative; }
 .lockmark { font-size: 0.85em; opacity: 0.85; margin-right: var(--s1); }
 
@@ -11257,3 +11257,12 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Cpath d='M180 148h166v44H230v56h103v42H230v83h-50z'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Cpath d='M180 148h166v44H230v56h103v42H230v83h-50z'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
 }
+
+/* The blue tick: a verified person or shop, wherever their name is. */
+.vtick {
+  display: inline-flex; vertical-align: -0.1em; margin-left: 6px; filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.45));
+  padding: 0; border: 0; background: none; color: inherit; font: inherit; line-height: 0; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: transform var(--dur-2) var(--ease);
+}
+.vtick:active { transform: scale(0.88); }
+.vtick:focus-visible { outline: 2px solid #1D9BF0; outline-offset: 2px; border-radius: 50%; }

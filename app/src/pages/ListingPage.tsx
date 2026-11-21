@@ -15,7 +15,7 @@ import { haptic } from '../haptics';
 import { BackLink } from '../components/ScrollManager';
 import { useSave } from '../components/useSave';
 import { Canopy, DetailBlocks, Gallery, Svg, Urgency } from '../components/ListingBlocks';
-import { ProtectedNote, ShieldCheck } from '../components/Trust';
+import { ProtectedNote, SellerTick } from '../components/Trust';
 import { ListingPosts } from '../components/ListingPosts';
 import { ListingDna } from '../components/DnaKit';
 import { Glyph, RarityRibbon } from '../components/Quest';
@@ -41,12 +41,6 @@ import { ShopDriveBanner, SpreadNudge, SpreadStudio } from '../components/Spread
 import '../styles/ListingPage.css';
 
 /** What each verification tier means, in a line. */
-const TIER_LABELS: Record<string, string> = {
-  unverified: 'Not verified',
-  verified: 'Verified',
-  pro: 'Verified business',
-};
-
 const TIER_NOTES: Record<string, string> = {
   unverified: 'Not verified yet',
   verified: 'ID, phone and bank checked',
@@ -532,14 +526,17 @@ export function ListingPage() {
                   <span className="dtile__label">Posted by</span>
                   {/* The shop's name is its address: tapping it opens its page. */}
                   <span className="sellercard__nameline">
-                    <PersonLink party={{ name: seller.storefrontName, handle: seller.username, level: seller.level }} className="sellercard__name" levelFrom={3} />
+                    <PersonLink party={{ name: seller.storefrontName, handle: seller.username, level: seller.level }} className="sellercard__name" levelFrom={3} after={<SellerTick tier={seller.tier} size={18} />} />
                     {seller.pro && <ProBadge size="md" />}
                   </span>
                   <span className="sellercard__where"><Svg name="pin" size={13} /> {seller.dispatchRegion ?? 'Location not set'}</span>
                 </div>
-                <span className={`sellercard__tier sellercard__tier--${seller.tier}`} title={TIER_NOTES[seller.tier] ?? 'Verification level'}>
-                  {seller.tier === 'unverified' ? <Svg name="shield" size={13} /> : <ShieldCheck size={13} />} {TIER_LABELS[seller.tier] ?? seller.tier}
-                </span>
+                {/* A checked shop wears the blue tick beside its name; one that is not says so here. */}
+                {seller.tier === 'unverified' && (
+                  <span className="sellercard__tier" title={TIER_NOTES.unverified}>
+                    <Svg name="shield" size={13} /> Not verified
+                  </span>
+                )}
               </div>
               </div>
 
