@@ -244,7 +244,7 @@ export function AppShell() {
  * colours, to set the first page's tone before paint.
  */
 const TONE_STATUS: Record<TabId, string> = {
-  buy: '#0E857A',
+  buy: '#B6FF2E',
   discover: '#8B2FC9',
   sell: '#177ACE',
   services: '#3A8C4E',
