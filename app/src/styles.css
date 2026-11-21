@@ -8698,10 +8698,12 @@ a.ocust__name:hover { color: var(--accent-text); }
   pointer-events: none;
 }
 /* Scrolling down, with the header slid away, the strip under the clock and the
-   Dynamic Island goes clear and the page shows through it (ScrollBars.tsx also
-   takes the theme-color away then, which Safari would otherwise paint there).
-   Scrolling back up, the header returns attached to the solid strip. */
-:root[data-bars='hidden'] .topstrip { background-color: transparent; }
+   Dynamic Island goes, and the page shows through. Gone from the layout rather
+   than made transparent: Safari kept painting its bar in the colour of a strip
+   that was still there, only clear. ScrollBars.tsx also takes the theme-color
+   away then, which Safari would otherwise fall back to. Scrolling back up, the
+   strip and the header return together, attached. */
+:root[data-bars='hidden'] .topstrip { display: none; }
 /*
  * What Safari looks for: the fixed or sticky box WebKit hit-tests 4px inside
  * the top edge (LocalFrameView::fixedContainerEdges), at least 90% of the
