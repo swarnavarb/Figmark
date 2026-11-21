@@ -71,23 +71,23 @@ const stroke = { fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLin
 /** What Figmark offers, one tile each. `motion` names the icon's own small loop. */
 const FEATURES: { title: string; text: string; motion: string; upcoming?: boolean; icon: ReactNode }[] = [
   {
-    title: 'Verified sellers', motion: 'check',
-    text: 'Every shop checks its ID before it can sell.',
+    title: 'ID-checked sellers', motion: 'check',
+    text: 'No anonymous shops',
     icon: <svg viewBox="0 0 24 24" width="22" height="22" {...stroke}><path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6L12 3Z" /><path className="fmfeat__draw" d="m8.8 12.2 2.2 2.2 4.3-4.6" /></svg>,
   },
   {
-    title: 'Every stage tracked', motion: 'ride',
-    text: 'Follow your pre-order from overseas to your door.',
+    title: 'Track every step', motion: 'ride',
+    text: 'From overseas to your door',
     icon: <svg viewBox="0 0 24 24" width="22" height="22" {...stroke}><g className="fmfeat__mover"><path d="M3 7h11v9H3zM14 10h4l3 3v3h-7" /><circle cx="7" cy="17.5" r="1.8" /><circle cx="17" cy="17.5" r="1.8" /></g></svg>,
   },
   {
-    title: 'Real reviews', motion: 'twinkle',
-    text: 'Only buyers whose order arrived can review a shop.',
+    title: 'Honest reviews', motion: 'twinkle',
+    text: 'Only from delivered orders',
     icon: <svg viewBox="0 0 24 24" width="22" height="22" {...stroke}><path className="fmfeat__star" d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z" /></svg>,
   },
   {
     title: 'Buyer Protection', motion: 'lock', upcoming: true,
-    text: 'Your money held until your item arrives.',
+    text: 'Paid out only when it arrives',
     icon: <svg viewBox="0 0 24 24" width="22" height="22" {...stroke}><rect x="5" y="11" width="14" height="10" rx="2" /><path className="fmfeat__shackle" d="M8 11V8a4 4 0 0 1 8 0v3" /><path d="M12 15v2" /></svg>,
   },
 ];
@@ -108,8 +108,10 @@ export function WelcomePanel() {
         {FEATURES.map((feature, index) => (
           <li key={feature.title} className={`fmfeat fmfeat--${feature.motion}`} style={{ ['--i' as string]: index }}>
             <span className="fmfeat__icon" aria-hidden="true">{feature.icon}</span>
-            <b className="fmfeat__title">{feature.title}{feature.upcoming && <em> {UPCOMING}</em>}</b>
-            <span className="fmfeat__text">{feature.text}</span>
+            <span className="fmfeat__words">
+              <b className="fmfeat__title">{feature.title}</b>
+              <span className="fmfeat__text">{feature.upcoming && <em className="fmfeat__soon">Upcoming</em>}{feature.text}</span>
+            </span>
           </li>
         ))}
       </ul>
