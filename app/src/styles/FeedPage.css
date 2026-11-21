@@ -30,29 +30,45 @@
 .qfeed { padding-top: 0; }
 /* The header's colour carried on behind the top of the Buy page, edge to edge
    with rounded lower corners, so header and band read as one block of acid
-   green against the dark page below. A chalk white light pools in its lower
-   corner, and it casts a green glow onto the page. */
+   green against the dark page below. The header's ink pinstripes run on over
+   it, shifted by where the band starts (measured, as --band-top) so they meet
+   without a seam; the green
+   deepens toward ink at the foot, and casts a green glow onto the page. */
 .qfeed__band {
   display: flow-root;
   margin: 0 calc(-1 * max(var(--page-pad), env(safe-area-inset-right, 0px))) 18px calc(-1 * max(var(--page-pad), env(safe-area-inset-left, 0px)));
   padding: 1px max(var(--page-pad), env(safe-area-inset-right, 0px)) 4px max(var(--page-pad), env(safe-area-inset-left, 0px));
   background:
-    radial-gradient(60% 85% at 90% 100%, rgba(243, 242, 238, 0.5), transparent 70%),
+    linear-gradient(180deg, rgba(11, 11, 12, 0) 25%, rgba(11, 11, 12, 0.32) 100%),
+    var(--top-pattern) 0 calc(-1 * var(--band-top, var(--nav-h))) / var(--top-pattern-size),
     var(--top-grad);
   border-radius: 0 0 28px 28px;
   box-shadow: 0 18px 40px -24px rgba(182, 255, 46, 0.6);
 }
 /* Wider than the page, the header runs past the band's sides: the gradient is
    laid against the screen so its colours stay under the header's. */
-@media (min-width: 1200px) {
+@media (min-width: 1181px) {
   .qfeed__band {
-    background-attachment: scroll, fixed;
-    background-size: auto, 100vw 100%;
+    background-attachment: scroll, fixed, fixed;
+    background-position: 0 0, 0 0, 0 0;
+    background-size: auto, var(--top-pattern-size), 100vw 100%;
   }
 }
 .qbar--buy { flex-wrap: nowrap; gap: 6px; }
 /* Signed out, the pill has nothing in it: no empty outline left on the band. */
 .qduo:empty { display: none; }
+/* The quest bar on the acid green band: ink pills, chalk white words, acid
+   green for the progress rings and the points. */
+.qbar--buy .qduo { background: #0B0B0C; border-color: #0B0B0C; }
+.qbar--buy .qchip { color: #F3F2EE; }
+.qbar--buy .qchip__text small { color: rgba(243, 242, 238, 0.62); }
+.qbar--buy .qchip__text span { color: #B6FF2E; }
+.qbar--buy .qring circle:first-child { stroke: rgba(243, 242, 238, 0.16); }
+.qbar--buy .qring circle:nth-child(2) { stroke: #B6FF2E; }
+.qbar--buy .qduo > .qchip + .qchip::before { background: rgba(243, 242, 238, 0.2); }
+.qbar--buy > .btn--ghost { background: #0B0B0C; border-color: #0B0B0C; color: #F3F2EE; box-shadow: none; }
+.qbar--buy > .btn--ghost:hover:not(:disabled) { background: #1B1E14; border-color: #1B1E14; }
+.qbar--buy .qdot { background: #B6FF2E; color: #0B0B0C; }
 .qduo {
   display: inline-flex; align-items: center; min-width: 0;
   border-radius: var(--r-pill); background: var(--surface-2); border: 1px solid var(--border-strong);
