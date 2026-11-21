@@ -39,11 +39,14 @@
 .fmintro__feats {
   grid-area: feats;
   list-style: none; margin: 0; padding: 0;
-  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
+  /* A phone stacks them as slim rows; wider screens put them side by side. */
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px;
 }
+@media (min-width: 600px) { .fmintro__feats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* Slim: the icon beside two short lines. */
 .fmfeat {
-  display: grid; gap: 6px; align-content: start;
-  padding: 14px;
+  display: flex; align-items: center; gap: 10px; min-width: 0;
+  padding: 10px 12px;
   border-radius: 14px;
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015));
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -52,20 +55,25 @@
   animation-delay: calc(var(--i, 0) * 90ms + 120ms);
 }
 .fmfeat__icon {
-  width: 40px; height: 40px; border-radius: 12px;
+  flex: none; width: 34px; height: 34px; border-radius: 10px;
   display: grid; place-items: center;
   color: var(--fm-hue);
   background: color-mix(in srgb, var(--fm-hue) 16%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fm-hue) 35%, transparent);
-  margin-bottom: 4px;
 }
+.fmfeat__icon svg { width: 19px; height: 19px; }
 .fmfeat--check   { --fm-hue: var(--ok); }
 .fmfeat--ride    { --fm-hue: var(--blue-text); }
 .fmfeat--twinkle { --fm-hue: var(--warn); }
 .fmfeat--lock    { --fm-hue: var(--violet-pale); }
-.fmfeat__title { color: var(--text); font-size: var(--t-base); line-height: 1.25; }
-.fmfeat__title em { font-style: normal; font-weight: 500; color: var(--text-faint); font-size: var(--t-xs); }
-.fmfeat__text { color: var(--text-dim); font-size: var(--t-sm); line-height: 1.4; }
+.fmfeat__words { display: grid; gap: 1px; min-width: 0; }
+.fmfeat__title { color: var(--text); font-size: var(--t-sm); line-height: 1.25; letter-spacing: -0.01em; }
+.fmfeat__text { color: var(--text-dim); font-size: var(--t-xs); line-height: 1.3; }
+.fmfeat__soon {
+  display: inline-block; margin-right: 5px; padding: 0 5px; border-radius: 4px; vertical-align: 1px;
+  font-style: normal; font-size: var(--t-2xs); font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--fm-hue); background: color-mix(in srgb, var(--fm-hue) 16%, transparent);
+}
 
 @keyframes fmfeat-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 
@@ -91,7 +99,7 @@
   }
   .fmintro__cta { width: auto; min-width: 160px; }
   .fmintro__feats { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-  .fmfeat { padding: 16px; }
+  .fmfeat { padding: 12px 14px; }
 }
 
 /* ── The footer ──
