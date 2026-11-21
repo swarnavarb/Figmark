@@ -261,3 +261,12 @@
 @media (prefers-reduced-motion: reduce) { .buybar { animation: none; } }
 /* Room under the page for the bar, so it never sits on the last of it. */
 .buybar__room { height: 76px; }
+
+/* The shop's checked identity, in the colour that means "safe" everywhere else. */
+.sellercard__tier--verified, .sellercard__tier--pro {
+  color: #ECFDF5; background: rgba(4, 37, 26, 0.55); box-shadow: inset 0 0 0 1px rgba(110, 231, 183, 0.8);
+}
+/* The level and Shop tags sit on the shop's own colour: keep them readable on any hue. */
+.sellercard__who .lvtag__title { background: none; color: rgba(255, 255, 255, 0.92); text-shadow: 0 1px 4px rgba(0, 0, 0, 0.55); }
+.sellercard__who .lvtag__shop { color: #fff; background: rgba(0, 0, 0, 0.35); border-color: rgba(255, 255, 255, 0.55); }
+.sellercard__pending { margin: 0; font-size: var(--t-xs); color: var(--text-faint); line-height: 1.45; }

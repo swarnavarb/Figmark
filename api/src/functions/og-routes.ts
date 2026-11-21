@@ -205,7 +205,7 @@ async function metaFor(repository: Repo, origin: string, url: URL): Promise<Meta
   };
   const fallbackMeta: Meta = {
     title: 'Figmark - import pre-orders, Buyer Protection and real reviews',
-    description: 'Join pre-orders from import resellers, track every stage, and pay with Buyer Protection. Collect cards and level up as you shop.',
+    description: 'Join pre-orders from import resellers, track every stage, and pay with Buyer Protection. Every seller verifies their identity before they can sell.',
     image: `${origin}${DEFAULT_IMAGE}`,
     large: true,
     fallback: '/',
@@ -233,7 +233,7 @@ async function metaFor(repository: Repo, origin: string, url: URL): Promise<Meta
         }
       : {
           title: `${name} invited you to Figmark`,
-          description: 'Pre-orders from import resellers, Buyer Protection on payments and reviews only real buyers can leave. Collect cards and level up as you shop.',
+          description: 'Pre-orders from import resellers, Buyer Protection on payments and reviews only real buyers can leave. Every seller verifies their identity before they can sell.',
           image: inviteCardUrl(origin, first, false, inviter), large: true, fallback: `/?i=${encodeURIComponent(first)}`, ...CARD_TAGS,
         };
   }

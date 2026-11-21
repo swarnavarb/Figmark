@@ -35,7 +35,8 @@ import { SkeletonGrid } from '../components/Feedback';
 import { ActiveOrders } from '../components/ActiveOrders';
 import { FeedSkeletonParts } from '../components/PageSkeletons';
 import { CollectorChip, Glyph, RarityRibbon, StoreChip, XpBar, useQuest } from '../components/Quest';
-import { EmptyState, ErrorNotice, Icon, LevelChip, Thumb, leadPhoto } from '../components/ui';
+import { EmptyState, ErrorNotice, Icon, Thumb, leadPhoto } from '../components/ui';
+import { SellerBadge, WelcomePanel } from '../components/Trust';
 import { useSave } from '../components/useSave';
 import { formatMoney, timeAgo } from '../format';
 import { useRecentlyViewed } from '../recentViews';
@@ -504,6 +505,8 @@ export function FeedPage() {
       <h1 className="sr-only">Shop</h1>
       {/* The top of the page sits on a block of colour, edge to edge; the drops come after it. */}
       <div className="qfeed__band" ref={bandRef}>
+      {/* A first visit starts with what this place is and why it is safe to pay here. */}
+      {browsing && <WelcomePanel />}
       <QuestBar />
       {/* Orders still on their way, first: after paying, "where is it?" is the question. */}
       {browsing && <ActiveOrders />}
@@ -997,7 +1000,7 @@ export const LootCard = memo(function LootCard({ listing, priority = false }: { 
               {listing.seller.photoUrl && <StorePic url={listing.seller.photoUrl} />}
             </span>
             <span className="qseller__name">{listing.seller.storefrontName}{listing.seller.pro && <ProBadge />}</span>
-            <span className="qseller__lv"><LevelChip tag={listing.seller.level} /></span>
+            <span className="qseller__lv"><SellerBadge seller={listing.seller} /></span>
           </span>
         )}
       </div>
