@@ -1,15 +1,4 @@
-/* ── Trust: the welcome, the protection note, seller badges, the footer ── */
-
-.sbadge {
-  display: inline-flex; align-items: center; gap: 4px;
-  font-size: var(--t-2xs); font-weight: 700; letter-spacing: 0.01em;
-  color: var(--ok-pale);
-  background: var(--ok-soft);
-  border: 1px solid rgba(52, 211, 153, 0.35);
-  border-radius: 999px;
-  padding: 2px 7px 2px 5px;
-  white-space: nowrap;
-}
+/* ── Trust: the welcome, the protection note, the footer ── */
 
 .protnote {
   display: flex; gap: 10px; align-items: flex-start;
@@ -25,73 +14,105 @@
 .protnote__mark { color: var(--ok); flex: none; display: flex; padding-top: 1px; }
 .protnote a { color: var(--ok-pale); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; white-space: nowrap; }
 
-/* For a signed-out visitor, above everything else on the first screen. */
+/* For a signed-out visitor, above everything else on the first screen:
+   what this is, in one line, and the one way in. */
 .fmintro {
-  display: grid; gap: 18px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 16px 24px;
   margin: 0 0 22px;
-  padding: 22px 20px;
+  padding: 20px;
   border-radius: 20px;
   background: var(--surface);
   border: 1px solid var(--border);
 }
+.fmintro__copy { flex: 1 1 320px; min-width: 0; }
 .fmintro__title {
   margin: 0;
-  font-size: clamp(24px, 5.4vw, 36px);
+  font-size: clamp(22px, 5vw, 32px);
   line-height: 1.12;
   letter-spacing: -0.025em;
   font-weight: 800;
   color: var(--text);
   text-wrap: balance;
 }
-.fmintro__copy { min-width: 0; }
-.fmintro__lede { margin: 10px 0 0; color: var(--text-dim); font-size: var(--t-base); line-height: 1.55; max-width: 58ch; }
-.fmintro__acts { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
-.fmintro__points { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
-.fmintro__points li { display: flex; gap: 12px; align-items: flex-start; font-size: var(--t-sm); color: var(--text-dim); line-height: 1.45; }
-.fmintro__points b { display: block; color: var(--text); font-size: var(--t-base); margin-bottom: 2px; }
-.fmintro__icon {
-  flex: none; width: 34px; height: 34px; border-radius: 10px;
-  display: grid; place-items: center;
-  background: var(--ok-soft); color: var(--ok);
-}
-@media (min-width: 900px) {
-  .fmintro { grid-template-columns: 1.25fr 1fr; align-items: center; padding: 32px; gap: 32px; }
-}
+/* The features, as one line. */
+.fmintro__line { margin: 10px 0 0; color: var(--text-dim); font-size: var(--t-base); line-height: 1.5; max-width: 62ch; text-wrap: pretty; }
+.fmintro__cta { flex: none; min-width: 140px; justify-content: center; }
+@media (max-width: 560px) { .fmintro__cta { width: 100%; } }
+@media (min-width: 900px) { .fmintro { padding: 26px 32px; } }
 
-/* ── The footer ── */
+/* ── The footer ──
+   Deep ink under a hairline of the brand ramp, a soft glow behind the mark,
+   the safeguards as seals, and the links set small and quiet. */
 .sitefoot {
+  position: relative; isolation: isolate; overflow: hidden;
   margin-top: auto;
-  border-top: 1px solid var(--border);
-  background: var(--surface);
+  background: linear-gradient(180deg, #0B0E17 0%, #05070C 100%);
   color: var(--text-dim);
   font-size: var(--t-sm);
   /* Clear of the floating tab bar on a phone. */
-  padding: 32px max(var(--page-pad), 16px) calc(var(--tabbar-h) + 28px);
+  padding: 48px max(var(--page-pad), 20px) calc(var(--tabbar-h) + 24px);
+}
+.sitefoot::before {
+  content: ''; position: absolute; inset: 0 0 auto; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(124, 58, 237, 0.7) 25%, rgba(236, 72, 153, 0.8) 50%, rgba(255, 90, 95, 0.7) 75%, transparent);
+}
+.sitefoot__glow {
+  position: absolute; z-index: -1; top: -180px; left: -120px; width: 520px; height: 360px;
+  background: radial-gradient(closest-side, rgba(124, 58, 237, 0.22), transparent);
+  pointer-events: none;
 }
 .sitefoot__inner {
   max-width: var(--page-max, 1180px); margin: 0 auto;
-  display: grid; gap: 28px;
+  display: grid; gap: 40px;
 }
-.sitefoot__brand p { margin: 10px 0 0; max-width: 36ch; line-height: 1.5; }
+.sitefoot__brand { display: grid; gap: 16px; align-content: start; }
 .sitefoot__brand .brand { color: var(--text); text-decoration: none; }
 /* The header drops the wordmark on a phone to make room; the footer has room. */
-.sitefoot__brand .brand__name { display: inline; }
-.sitefoot__cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 16px; }
-.sitefoot__cols div { display: grid; gap: 8px; align-content: start; }
-.sitefoot__cols h2 {
-  margin: 0 0 2px;
-  font-size: var(--t-2xs); text-transform: uppercase; letter-spacing: 0.08em;
-  color: var(--text-faint); font-weight: 700;
+.sitefoot__brand .brand__name { display: inline; font-size: var(--t-lg); }
+.sitefoot__brand .brand__mark { width: 36px; height: 36px; border-radius: 10px; }
+.sitefoot__tag { margin: 0; max-width: 34ch; color: var(--text); font-size: var(--t-md); line-height: 1.45; letter-spacing: -0.01em; }
+.sitefoot__seals { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.sitefoot__seals li {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 11px; border-radius: 999px;
+  font-size: var(--t-xs); font-weight: 600; color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.09);
 }
-.sitefoot__cols a { color: var(--text-dim); text-decoration: none; overflow-wrap: anywhere; }
-.sitefoot__cols a:hover { color: var(--text); text-decoration: underline; }
+.sitefoot__seals svg { color: var(--ok); }
+.sitefoot__seals em { font-style: normal; color: var(--text-faint); font-weight: 500; }
+.sitefoot__mail {
+  display: inline-grid; gap: 2px; width: fit-content;
+  padding: 12px 16px; border-radius: 14px;
+  text-decoration: none;
+  background: linear-gradient(#10131D, #10131D) padding-box,
+    linear-gradient(120deg, rgba(124, 58, 237, 0.6), rgba(236, 72, 153, 0.5)) border-box;
+  border: 1px solid transparent;
+  transition: transform var(--dur-2) var(--ease);
+}
+.sitefoot__mail:hover { transform: translateY(-1px); }
+.sitefoot__mail span { font-size: var(--t-2xs); text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-faint); }
+.sitefoot__mail b { color: var(--text); font-size: var(--t-base); font-weight: 600; overflow-wrap: anywhere; }
+.sitefoot__cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px 16px; }
+.sitefoot__cols div { display: grid; gap: 10px; align-content: start; }
+.sitefoot__cols h2 {
+  margin: 0 0 4px;
+  font-size: var(--t-2xs); text-transform: uppercase; letter-spacing: 0.12em;
+  color: var(--text); font-weight: 700;
+}
+.sitefoot__cols a { width: fit-content; color: var(--text-dim); text-decoration: none; transition: color var(--dur-2) var(--ease); }
+.sitefoot__cols a:hover { color: var(--text); }
 .sitefoot__base {
   max-width: var(--page-max, 1180px);
-  margin: 28px auto 0; padding-top: 16px;
-  border-top: 1px solid var(--border);
-  color: var(--text-faint); font-size: var(--t-xs);
+  margin: 40px auto 0; padding-top: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  display: flex; align-items: center; gap: 10px;
+  color: var(--text-faint); font-size: var(--t-xs); letter-spacing: 0.02em;
 }
+.sitefoot__dot { width: 3px; height: 3px; border-radius: 50%; background: currentColor; }
+@media (prefers-reduced-motion: reduce) { .sitefoot__mail { transition: none; } }
 @media (min-width: 900px) {
-  .sitefoot__inner { grid-template-columns: 1fr 2fr; }
+  .sitefoot { padding-top: 64px; }
+  .sitefoot__inner { grid-template-columns: 1.1fr 2fr; gap: 64px; }
   .sitefoot__cols { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }

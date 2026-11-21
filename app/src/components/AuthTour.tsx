@@ -31,7 +31,7 @@ const SLIDES: Slide[] = [
     tone: 'violet',
     title: 'Import more. Worry less.',
     points: [
-      ['Your money is safe', 'with Buyer Protection, the seller is paid only once your order arrives'],
+      ['Your money is safe', 'with Buyer Protection (Upcoming), the seller is paid only once your order arrives'],
       ['Every seller is accountable', 'reviews come only from orders that really happened'],
       ['No more guessing', 'follow every pre-order from overseas to your doorstep'],
     ],

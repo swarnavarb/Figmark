@@ -161,10 +161,7 @@ export function AppShell() {
           {user ? (
             <ProfileMenu name={user.displayName} onSignOut={() => void signOut()} />
           ) : (
-            <>
-              <button type="button" className="btn btn--sm btn--ghost navsignup" onClick={() => promptAuth(undefined, 'signup')}>Sign up</button>
-              <button type="button" className="btn btn--sm navlogin" onClick={() => promptAuth(undefined, 'signin')}>Log in</button>
-            </>
+            <button type="button" className="btn btn--sm navlogin" onClick={() => promptAuth(undefined, 'signin')}>Log in</button>
           )}
         </nav>
       </header>
