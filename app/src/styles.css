@@ -10350,10 +10350,10 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .spread-nudge__acts { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; }
 .spread-nudge__go, .spread__go {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  background: var(--acid); border-color: transparent; color: var(--ink-black);
-  box-shadow: 0 8px 20px -10px var(--acid-glow);
+  background: var(--grad-gold); border-color: transparent; color: #1A1206;
+  box-shadow: 0 8px 20px -10px rgba(249, 115, 22, 0.8);
 }
-.spread-nudge__go:hover:not(:disabled), .spread__go:hover:not(:disabled) { filter: brightness(1.06); background: var(--acid); color: var(--ink-black); }
+.spread-nudge__go:hover:not(:disabled), .spread__go:hover:not(:disabled) { filter: brightness(1.06); background: var(--grad-gold); color: #1A1206; }
 .spread-nudge > .spread-nudge__go { justify-self: stretch; }
 .spread-nudge--live { border-style: solid; }
 @media (max-width: 380px) {
