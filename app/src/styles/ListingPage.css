@@ -101,7 +101,7 @@
 .sellercard__who { display: grid; gap: 0; min-width: 0; color: #fff; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.45); }
 .sellercard__who .dtile__label, .sellercard__who .sellercard__where, .sellercard__who .sellercard__name { color: #fff; }
 .sellercard__stat dd small { font-size: var(--t-xs); color: var(--text-faint); font-weight: var(--w-semi); }
-.sellercard__acts .btn:not(.btn--ghost) { background: var(--sf-grad, var(--grad-hero)); color: #fff; border: 0; }
+.sellercard__acts .btn:not(.btn--ghost) { background: var(--acid); color: var(--ink-black); border: 0; }
 .lshare__text { display: grid; gap: 2px; flex: 1; min-width: 0; }
 
 /*

@@ -418,7 +418,7 @@
 .lrow__extra { grid-column: 1 / -1; padding: var(--s1) 10px; background: var(--surface-2); }
 .pbook__lothead { display: flex; align-items: center; gap: var(--s3); min-width: 0; }
 .pbook__table { border-collapse: collapse; min-width: 100%; font-size: var(--t-xs); }
-.pbook__tools .btn.is-on { border-color: var(--blue-text); color: #BFDBFE; background: rgba(59, 130, 246, 0.12); }
+.pbook__tools .btn.is-on { border-color: var(--chalk); color: var(--ink-black); background: var(--chalk); }
 .pbook__static .field { flex: 1 1 160px; }
 .pbook__splitrow > *, .pbook__formularow > * { min-width: 0; }
 
@@ -523,8 +523,8 @@
 .segwrap > .segtabs { padding: 0; background: none; box-shadow: none; }
 .segtab:hover:not(.is-on) { color: var(--text); background: rgba(255, 255, 255, 0.04); }
 .segtab.is-on {
-  background: var(--grad-blue); color: #fff;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 6px 16px rgba(99, 102, 241, 0.35);
+  background: var(--chalk); color: var(--ink-black);
+  box-shadow: none;
 }
 .segtab.is-on .segtab__n { background: rgba(255, 255, 255, 0.24); color: #fff; }
 .segtab--hot .segtab__n { background: var(--coral); color: var(--coral-ink); }
