@@ -30,11 +30,12 @@
 .qfeed { padding-top: 0; }
 /* The header's colour carried on behind the top of the Buy page, edge to edge
    with rounded lower corners, so header and band read as one block of acid
-   green against the dark page below. The header's ink pinstripes run on over
-   it, shifted by where the band starts (measured, as --band-top) so they meet
-   without a seam; the green
-   deepens toward ink at the foot, and casts a green glow onto the page. */
+   green against the dark page below. Plain at the top, where it meets the
+   header; flowing ink-to-violet lines rise from its foot and dissolve into a
+   halftone on the way up (::before, ::after). The green deepens toward ink at
+   the foot, and casts a green glow onto the page. */
 .qfeed__band {
+  position: relative; isolation: isolate;
   display: flow-root;
   margin: 0 calc(-1 * max(var(--page-pad), env(safe-area-inset-right, 0px))) 18px calc(-1 * max(var(--page-pad), env(safe-area-inset-left, 0px)));
   padding: 1px max(var(--page-pad), env(safe-area-inset-right, 0px)) 4px max(var(--page-pad), env(safe-area-inset-left, 0px));
@@ -47,6 +48,24 @@
 }
 /* Wider than the page, the header runs past the band's sides: the gradient is
    laid against the screen so its colours stay under the header's. */
+/* The lines: a landscape of waves, denser and heavier toward the foot, faded
+   in from nothing so the plain top of the band meets the header cleanly. */
+.qfeed__band::before,
+.qfeed__band::after {
+  content: ''; position: absolute; inset: 0; z-index: -1;
+  border-radius: inherit; pointer-events: none;
+}
+.qfeed__band::before {
+  background: url('../assets/buy-waves.svg') center bottom / max(100%, 560px) auto no-repeat;
+  -webkit-mask-image: linear-gradient(0deg, #000 0, #000 150px, transparent 360px);
+  mask-image: linear-gradient(0deg, #000 0, #000 150px, transparent 360px);
+}
+/* The halftone the lines break up into, a soft band above them. */
+.qfeed__band::after {
+  background: radial-gradient(circle, rgba(11, 11, 12, 0.2) 1.1px, transparent 1.6px) 0 0 / 7px 7px;
+  -webkit-mask-image: linear-gradient(0deg, transparent 200px, #000 300px, #000 360px, transparent 470px);
+  mask-image: linear-gradient(0deg, transparent 200px, #000 300px, #000 360px, transparent 470px);
+}
 @media (min-width: 1181px) {
   .qfeed__band {
     background-attachment: scroll, fixed, fixed;
