@@ -13,7 +13,7 @@
     : starts(['/shop', '/sell', '/lots', '/lot/', '/routes']) ? ['sell', '#177ACE']
     : starts(['/discover']) ? ['discover', '#8B2FC9']
     : starts(['/quests']) ? ['quests', '#C46A08']
-    : ['buy', '#5B5EF1'];
+    : ['buy', '#0E857A'];
   if (path.indexOf('/social/f/') === 0) tone[1] = '#C627CB';
   document.documentElement.setAttribute('data-tone', tone[0]);
   document.querySelector('meta[name="theme-color"]').content = tone[1];

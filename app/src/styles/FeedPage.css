@@ -28,17 +28,31 @@
 .picker:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
 .cat__glyph { display: block; color: var(--cat-hue, var(--text-dim)); transition: color var(--dur-1) var(--ease); }
 .qfeed { padding-top: 0; }
-/* A block of deep teal behind the top of the Buy page, edge to edge with rounded
-   lower corners: teal against the violet header and the navy below. */
+/* The header's colour carried on behind the top of the Buy page, edge to edge
+   with rounded lower corners, so header and band read as one block of teal
+   against the navy below. A soft light pools in its lower corner, and it
+   casts a teal glow onto the page. */
 .qfeed__band {
-  --band: #115E59;
   display: flow-root;
   margin: 0 calc(-1 * max(var(--page-pad), env(safe-area-inset-right, 0px))) 18px calc(-1 * max(var(--page-pad), env(safe-area-inset-left, 0px)));
   padding: 1px max(var(--page-pad), env(safe-area-inset-right, 0px)) 4px max(var(--page-pad), env(safe-area-inset-left, 0px));
-  background: var(--band);
+  background:
+    radial-gradient(70% 90% at 90% 100%, rgba(94, 234, 212, 0.22), transparent 70%),
+    var(--top-grad);
   border-radius: 0 0 28px 28px;
+  box-shadow: 0 18px 36px -22px rgba(20, 184, 166, 0.55);
+}
+/* Wider than the page, the header runs past the band's sides: the gradient is
+   laid against the screen so its colours stay under the header's. */
+@media (min-width: 1200px) {
+  .qfeed__band {
+    background-attachment: scroll, fixed;
+    background-size: auto, 100vw 100%;
+  }
 }
 .qbar--buy { flex-wrap: nowrap; gap: 6px; }
+/* Signed out, the pill has nothing in it: no empty outline left on the band. */
+.qduo:empty { display: none; }
 .qduo {
   display: inline-flex; align-items: center; min-width: 0;
   border-radius: var(--r-pill); background: var(--surface-2); border: 1px solid var(--border-strong);
