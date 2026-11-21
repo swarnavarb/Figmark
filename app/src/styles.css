@@ -596,13 +596,6 @@ code, kbd, samp, pre {
 .nav::after { opacity: 0; transition: opacity var(--dur-2) var(--ease); }
 :root[data-scrolled] .nav::before { opacity: 0; }
 :root[data-scrolled] .nav::after { opacity: 1; }
-/* On the Buy page the header runs on into the block of colour under it
-   (.qfeed__band): no line or shading where they meet. No border at all, as a
-   transparent one would show the background repeating into it. */
-:root:has(.qfeed__band) .nav::before {
-  border-bottom: 0;
-  background: var(--top-band), var(--top-grad);
-}
 
 .brand { display: flex; align-items: center; gap: 10px; flex: none; }
 /* The first coloured thing anyone sees, so it carries the full brand ramp
@@ -678,9 +671,28 @@ code, kbd, samp, pre {
    on from it column for column. Too light for white: what sits on it is ink
    (see the Buy header's ink, after .nav .navlogin). */
 :root[data-tone='buy'] {
-  --top-grad: linear-gradient(90deg, #B6FF2E 0%, #C4FF55 100%);
+  --top-grad: linear-gradient(90deg, #B6FF2E 0%, #B6FF2E 100%);
   --top-rgb: 182 255 46;
   --top-ink: #B6FF2E;
+  /* Fine ink pinstripes over the green, to take the glare off it. One tile
+     for the header and the block under it, laid so the stripes run on. */
+  --top-pattern: linear-gradient(135deg,
+    rgba(11, 11, 12, 0.13) 0 9%, transparent 9% 50%, rgba(11, 11, 12, 0.13) 50% 59%, transparent 59%);
+  --top-pattern-size: 9px 9px;
+}
+:root[data-tone='buy'] .nav::before {
+  background:
+    var(--top-pattern) 0 0 / var(--top-pattern-size),
+    var(--top-band),
+    linear-gradient(180deg, rgba(8, 11, 18, 0) 55%, rgba(8, 11, 18, 0.18) 100%),
+    var(--top-grad);
+}
+/* On the Buy page the header runs on into the block of colour under it
+   (.qfeed__band): no line or shading where they meet. No border at all, as a
+   transparent one would show the background repeating into it. */
+:root:has(.qfeed__band) .nav::before {
+  border-bottom: 0;
+  background: var(--top-pattern) 0 0 / var(--top-pattern-size), var(--top-band), var(--top-grad);
 }
 :root[data-tone='sell'] {
   --top-grad: linear-gradient(115deg, #0891B2 0%, #2563EB 100%);
@@ -1873,6 +1885,21 @@ summary::-webkit-details-marker { display: none; }
 .tab-create__btn:active { transform: scale(0.93); }
 .tab-create__btn:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 .tab-create__btn.is-open svg { transform: rotate(45deg); }
+/* On the Buy tab the + is the header's acid green, with an ink cross. */
+:root[data-tone='buy'] .tab-create__btn {
+  background: #B6FF2E; color: #0B0B0C; border-color: rgba(11, 11, 12, 0.25);
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--bg) 88%, transparent),
+    0 8px 22px rgba(182, 255, 46, 0.3),
+    0 0 26px rgba(182, 255, 46, 0.38);
+}
+:root[data-tone='buy'] .tab-create__btn:hover {
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--bg) 88%, transparent),
+    0 10px 28px rgba(182, 255, 46, 0.42),
+    0 0 34px rgba(182, 255, 46, 0.52);
+}
+:root[data-tone='buy'] .tab-create__btn:focus-visible { outline-color: #B6FF2E; }
 .tab-item__glyph {
   display: block;
   transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1);
@@ -5457,6 +5484,13 @@ body.is-locked { overflow: hidden; }
 /* Its search sheet stays dark, white words on ink, with acid green for accents. */
 :root[data-tone='buy'] .mktsearch { --sx-grad: linear-gradient(90deg, #0B0B0C 0%, #1B1E14 100%); }
 :root[data-tone='buy'] .mktsearch .socsearch__bar { background: var(--sx-grad); }
+
+/* A test site says so in the header, in a word, before the search. */
+.navenv {
+  flex: 0 0 auto; display: inline-grid; place-items: center; height: 22px; padding: 0 8px;
+  border-radius: 6px; background: #0B0B0C; color: #B6FF2E;
+  font-size: var(--t-2xs); font-weight: 800; letter-spacing: 0.12em; line-height: 1;
+}
 
 /* The social sheet, in the section's colour, with the social palette's
    accents traded for that colour's light tint. */
