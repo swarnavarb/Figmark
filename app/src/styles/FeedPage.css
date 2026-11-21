@@ -29,18 +29,18 @@
 .cat__glyph { display: block; color: var(--cat-hue, var(--text-dim)); transition: color var(--dur-1) var(--ease); }
 .qfeed { padding-top: 0; }
 /* The header's colour carried on behind the top of the Buy page, edge to edge
-   with rounded lower corners, so header and band read as one block of teal
-   against the navy below. A soft light pools in its lower corner, and it
-   casts a teal glow onto the page. */
+   with rounded lower corners, so header and band read as one block of acid
+   green against the dark page below. A chalk white light pools in its lower
+   corner, and it casts a green glow onto the page. */
 .qfeed__band {
   display: flow-root;
   margin: 0 calc(-1 * max(var(--page-pad), env(safe-area-inset-right, 0px))) 18px calc(-1 * max(var(--page-pad), env(safe-area-inset-left, 0px)));
   padding: 1px max(var(--page-pad), env(safe-area-inset-right, 0px)) 4px max(var(--page-pad), env(safe-area-inset-left, 0px));
   background:
-    radial-gradient(70% 90% at 90% 100%, rgba(94, 234, 212, 0.22), transparent 70%),
+    radial-gradient(60% 85% at 90% 100%, rgba(243, 242, 238, 0.5), transparent 70%),
     var(--top-grad);
   border-radius: 0 0 28px 28px;
-  box-shadow: 0 18px 36px -22px rgba(20, 184, 166, 0.55);
+  box-shadow: 0 18px 40px -24px rgba(182, 255, 46, 0.6);
 }
 /* Wider than the page, the header runs past the band's sides: the gradient is
    laid against the screen so its colours stay under the header's. */
