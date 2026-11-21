@@ -59,16 +59,16 @@
 .qduo:empty { display: none; }
 /* The quest bar on the acid green band: ink pills, chalk white words, acid
    green for the progress rings and the points. */
-.qbar--buy .qduo { background: #0B0B0C; border-color: #0B0B0C; }
-.qbar--buy .qchip { color: #F3F2EE; }
+.qbar--buy .qduo { background: var(--ink-black); border-color: var(--ink-black); }
+.qbar--buy .qchip { color: var(--chalk); }
 .qbar--buy .qchip__text small { color: rgba(243, 242, 238, 0.62); }
-.qbar--buy .qchip__text span { color: #B6FF2E; }
+.qbar--buy .qchip__text span { color: var(--acid); }
 .qbar--buy .qring circle:first-child { stroke: rgba(243, 242, 238, 0.16); }
-.qbar--buy .qring circle:nth-child(2) { stroke: #B6FF2E; }
+.qbar--buy .qring circle:nth-child(2) { stroke: var(--acid); }
 .qbar--buy .qduo > .qchip + .qchip::before { background: rgba(243, 242, 238, 0.2); }
-.qbar--buy > .btn--ghost { background: #0B0B0C; border-color: #0B0B0C; color: #F3F2EE; box-shadow: none; }
+.qbar--buy > .btn--ghost { background: var(--ink-black); border-color: var(--ink-black); color: var(--chalk); box-shadow: none; }
 .qbar--buy > .btn--ghost:hover:not(:disabled) { background: #1B1E14; border-color: #1B1E14; }
-.qbar--buy .qdot { background: #B6FF2E; color: #0B0B0C; }
+.qbar--buy .qdot { background: var(--acid); color: var(--ink-black); }
 .qduo {
   display: inline-flex; align-items: center; min-width: 0;
   border-radius: var(--r-pill); background: var(--surface-2); border: 1px solid var(--border-strong);

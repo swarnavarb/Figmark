@@ -5488,7 +5488,7 @@ body.is-locked { overflow: hidden; }
 /* A test site says so in the header, in a word, before the search. */
 .navenv {
   flex: 0 0 auto; display: inline-grid; place-items: center; height: 22px; padding: 0 8px;
-  border-radius: 6px; background: #0B0B0C; color: #B6FF2E;
+  border-radius: 6px; background: var(--ink-black); color: var(--acid);
   font-size: var(--t-2xs); font-weight: 800; letter-spacing: 0.12em; line-height: 1;
 }
 
