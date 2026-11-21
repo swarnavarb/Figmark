@@ -680,6 +680,8 @@ code, kbd, samp, pre {
      from that block's foot (.qfeed__band::before in FeedPage.css). */
   --top-pattern: none;
   --top-pattern-size: auto;
+  /* The Buy page's halftone: one grid for the header and the band under it. */
+  --buy-dots: radial-gradient(circle, rgba(11, 11, 12, 0.2) 1.1px, transparent 1.6px) 0 0 / 7px 7px;
 }
 :root[data-tone='buy'] .nav::before {
   background:
@@ -691,6 +693,19 @@ code, kbd, samp, pre {
 /* On the Buy page the header runs on into the block of colour under it
    (.qfeed__band): no line or shading where they meet. No border at all, as a
    transparent one would show the background repeating into it. */
+/* The halftone that the Buy page's band builds into waves starts here, in
+   the header, below the solid strip under the clock: faint at first, laid on
+   the same grid as the band's so the two run on without a break. Only on the
+   page with the band, and only at the top: scrolled, the header is glass. */
+.nav__pattern { display: none; }
+:root[data-tone='buy']:has(.qfeed__band) .nav__pattern {
+  display: block; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: var(--buy-dots);
+  -webkit-mask-image: linear-gradient(180deg, transparent calc(var(--strip-h) + 6px), rgba(0, 0, 0, 0.5) 100%);
+  mask-image: linear-gradient(180deg, transparent calc(var(--strip-h) + 6px), rgba(0, 0, 0, 0.5) 100%);
+  transition: opacity var(--dur-2) var(--ease);
+}
+:root[data-scrolled] .nav__pattern { opacity: 0; }
 :root:has(.qfeed__band) .nav::before {
   border-bottom: 0;
   background: var(--top-pattern) 0 0 / var(--top-pattern-size), var(--top-band), var(--top-grad);
@@ -4841,9 +4856,7 @@ a.psheet__row:hover { background: var(--surface-hover); }
 
 /* ── Bars that step aside while you read ───────────────────────────────── */
 
-.nav { transition: transform var(--dur-2) var(--ease); }
 .tabbar { transition: transform var(--dur-2) var(--ease); }
-:root[data-bars='hidden'] .nav { transform: translateY(calc(-100% - var(--glass-tail))); }
 /* Past the bar's own height by the + button's lift, so no rim of it is left showing. */
 :root[data-bars='hidden'] .tabbar { transform: translateY(calc(100% + var(--tabbar-gap) + 24px)); }
 
@@ -5015,7 +5028,7 @@ a.psheet__row:hover { background: var(--surface-hover); }
   color: var(--text); text-align: left; cursor: pointer;
   transition: top var(--dur-2) var(--ease);
 }
-:root:not([data-bars='hidden']) .chpin { top: calc(var(--nav-h) + 8px); }
+:root .chpin { top: calc(var(--nav-h) + 8px); }
 .chpin__bar { display: grid; gap: 3px; width: 3px; flex: 0 0 auto; }
 .chpin__bar span { display: block; border-radius: 2px; background: rgba(255, 255, 255, 0.18); }
 .chpin__bar span.is-on { background: var(--sx-blaze); }
@@ -8687,7 +8700,7 @@ a.ocust__name:hover { color: var(--accent-text); }
 }
 :root:has(.roombar--forum) .topstrip { --top-rgb: 198 39 203; }
 /* A blurred tail the strip can trail, so the page passes under it rather than
-   meeting an edge. Off for now: with the header slid away the strip is clear. */
+   meeting an edge. Off: the header no longer slides away, so it never shows. */
 .topstrip::after {
   content: ''; position: absolute; top: 100%; left: 0; right: 0; height: var(--glass-tail);
   /* No backdrop-filter here: a backdrop filter on the strip makes iOS draw
@@ -8697,13 +8710,6 @@ a.ocust__name:hover { color: var(--accent-text); }
   transition: opacity var(--dur-2) var(--ease);
   pointer-events: none;
 }
-/* Scrolling down, with the header slid away, the strip under the clock and the
-   Dynamic Island goes, and the page shows through. Gone from the layout rather
-   than made transparent: Safari kept painting its bar in the colour of a strip
-   that was still there, only clear. ScrollBars.tsx also takes the theme-color
-   away then, which Safari would otherwise fall back to. Scrolling back up, the
-   strip and the header return together, attached. */
-:root[data-bars='hidden'] .topstrip { display: none; }
 /*
  * What Safari looks for: the fixed or sticky box WebKit hit-tests 4px inside
  * the top edge (LocalFrameView::fixedContainerEdges), at least 90% of the
@@ -10234,7 +10240,7 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
   scroll-margin-top: calc(var(--nav-h) + 12px);
   transition: top var(--dur-2) var(--ease), box-shadow var(--dur-2) var(--ease), border-color var(--dur-2) var(--ease), background var(--dur-2) var(--ease);
 }
-:root:not([data-bars='hidden']) .tabs--sticky { top: calc(var(--nav-h) + 8px); }
+:root .tabs--sticky { top: calc(var(--nav-h) + 8px); }
 /* A gap above the tabs, unless the shelf right above already leaves one. */
 .qprofile .tabs--sticky { margin-top: 16px; }
 .qprofile .qpreview { margin-bottom: 16px; }
