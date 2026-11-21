@@ -4,7 +4,7 @@ import { ReportButton } from './ReportButton';
 import { useNow } from '../clock';
 import { RaiseDisputeModal, ReportModal } from './DisputeFlows';
 import { useSession } from '../session';
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useLocation } from 'react-router-dom';
 import { ApiRequestError, api, type PostBoost, type PostCard } from '../api';
@@ -297,7 +297,7 @@ export function ContentBadge({ type }: { type: ContentType }) {
   return <span className={`ctype ctype--${type}`}>{CONTENT_TYPES[type]}</span>;
 }
 
-export function SocialPostCard({
+function SocialPostCardView({
   card: initial, openComments = false, onRemoved, onReposted, nested = false, rank, inForum = false, canModerate = false, onPinned,
   promoted = false, inDiscover = false,
 }: {
@@ -1811,3 +1811,11 @@ function PostShareSheet({ card, onClose, onShared }: {
 }
 
 export { Confetti } from './Confetti';
+
+/**
+ * A post in a stream. Kept from drawing again when nothing it was given
+ * changed: a long stream re-renders whenever the page around it does (a
+ * "new posts" note, a lens count), and every post redrawing for that is most
+ * of what made scrolling Discover heavy.
+ */
+export const SocialPostCard = memo(SocialPostCardView);

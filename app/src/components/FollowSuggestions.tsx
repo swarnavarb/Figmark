@@ -68,11 +68,20 @@ export function FollowSuggestions({ title = 'People to follow', people = false, 
       {story.scene}
       <StoryTag>Chapter · The cast</StoryTag>
       <h2 className="fsug__title"><Icon name="users" size={15} /> {title}</h2>
+      {people ? (
+        <div className="fcast__stage">
+          {/* The front curtain: down until the band is first seen, then it
+              rises and rolls up under the heading, where it stays. */}
+          <span className="fcast__curtain" aria-hidden="true"><i><b /></i></span>
+          <div className="fsug__row story__row">
+            {rows.map((row) => (
+              <CastCard key={row.followKey} row={row} busy={busy === row.followKey} onFollow={() => void follow(row)} />
+            ))}
+          </div>
+        </div>
+      ) : (
       <div className="fsug__row story__row">
-        {rows.map((row) => people ? (
-          <CastCard key={row.followKey} row={row} busy={busy === row.followKey}
-            onFollow={() => void follow(row)} onDismiss={() => void dismiss(row)} />
-        ) : (
+        {rows.map((row) => (
           <div key={row.followKey} className="fsug__card">
             <button type="button" className="fsug__x" aria-label={`Not now: ${row.name}`} onClick={() => void dismiss(row)}>
               <Icon name="close" size={12} />
@@ -85,6 +94,7 @@ export function FollowSuggestions({ title = 'People to follow', people = false, 
           </div>
         ))}
       </div>
+      )}
       {error && <p className="spost__error" role="alert">{error}</p>}
     </section>
   );
@@ -113,9 +123,7 @@ function Who({ row }: { row: FollowSuggestion }) {
  * light on a velvet ground. Below, their name on the playbill, star billing,
  * their numbers, and why they are suggested. Shops never get one.
  */
-function CastCard({ row, busy, onFollow, onDismiss }: {
-  row: FollowSuggestion; busy: boolean; onFollow: () => void; onDismiss: () => void;
-}) {
+function CastCard({ row, busy, onFollow }: { row: FollowSuggestion; busy: boolean; onFollow: () => void }) {
   const face = (
     <>
       <span className="fcast__spot">
@@ -135,9 +143,6 @@ function CastCard({ row, busy, onFollow, onDismiss }: {
     <div className="fcast">
       <span className="fcast__lamp" aria-hidden="true"><i /></span>
       <span className="fcast__beam" aria-hidden="true" />
-      <button type="button" className="fcast__x" aria-label={`Not now: ${row.name}`} onClick={onDismiss}>
-        <Icon name="close" size={12} />
-      </button>
       {row.handle
         ? <Link to={`/${encodeURIComponent(row.handle)}`} className="fcast__who">{face}</Link>
         : <span className="fcast__who">{face}</span>}
