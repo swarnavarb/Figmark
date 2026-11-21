@@ -587,6 +587,13 @@ code, kbd, samp, pre {
 .nav::after { opacity: 0; transition: opacity var(--dur-2) var(--ease); }
 :root[data-scrolled] .nav::before { opacity: 0; }
 :root[data-scrolled] .nav::after { opacity: 1; }
+/* On the Buy page the header runs on into the block of colour under it
+   (.qfeed__band): no line or shading where they meet. No border at all, as a
+   transparent one would show the background repeating into it. */
+:root:has(.qfeed__band) .nav::before {
+  border-bottom: 0;
+  background: var(--top-band), var(--top-grad);
+}
 
 .brand { display: flex; align-items: center; gap: 10px; flex: none; }
 /* The first coloured thing anyone sees, so it carries the full brand ramp
@@ -656,6 +663,14 @@ code, kbd, samp, pre {
 
 /* ── Section tones ─────────────────────────────────────────────────────── */
 
+/* Buy: jewel teal, run left to right so the block of colour under the header
+   on the Buy page (.qfeed__band) carries on from it column for column. Both
+   ends keep white text and icons readable. */
+:root[data-tone='buy'] {
+  --top-grad: linear-gradient(90deg, #0F766E 0%, #0D9488 100%);
+  --top-rgb: 14 133 122;
+  --top-ink: #5EEAD4;
+}
 :root[data-tone='sell'] {
   --top-grad: linear-gradient(115deg, #0891B2 0%, #2563EB 100%);
   --top-rgb: 23 122 206;
