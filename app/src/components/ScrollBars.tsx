@@ -20,6 +20,38 @@ const ALWAYS_SHOW_ABOVE = 80;
 /** Past this the page is under the header, and the header is see-through. */
 const SCROLLED_PAST = 4;
 
+/**
+ * The phone's status bar, clear while the header is away. Safari paints the
+ * strip under the clock from theme-color when nothing colours it, so the tag
+ * comes out while the bars are hidden (the strip itself goes clear in the
+ * stylesheet) and goes back, as a new tag, when they return. A new tag rather
+ * than an edited one: Safari does not always notice an edit. AppShell puts in
+ * a fresh one whenever the section changes, so this only restores one when
+ * none is there.
+ */
+let heldStatusColour: string | null = null;
+function clearStatusBar(clear: boolean) {
+  const tags = document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]');
+  if (clear) {
+    if (!tags.length) return;
+    heldStatusColour = tags[tags.length - 1]?.content ?? heldStatusColour;
+    tags.forEach((tag) => tag.remove());
+  } else if (!tags.length && heldStatusColour) {
+    const meta = document.createElement('meta');
+    meta.name = 'theme-color';
+    meta.content = heldStatusColour;
+    document.head.append(meta);
+  }
+}
+
+/** Show or hide the bars, with the status bar to match. */
+function setBars(hidden: boolean) {
+  const root = document.documentElement;
+  if (hidden) root.dataset.bars = 'hidden';
+  else delete root.dataset.bars;
+  clearStatusBar(hidden);
+}
+
 function markScrolled() {
   const root = document.documentElement;
   if (window.scrollY > SCROLLED_PAST) root.dataset.scrolled = '';
@@ -31,7 +63,7 @@ export function ScrollBars() {
 
   // A new page starts with its bars showing, whatever the last one did.
   useEffect(() => {
-    delete document.documentElement.dataset.bars;
+    setBars(false);
     markScrolled();
   }, [pathname]);
 
@@ -46,11 +78,11 @@ export function ScrollBars() {
       const root = document.documentElement;
       markScrolled();
       if (now < ALWAYS_SHOW_ABOVE) {
-        delete root.dataset.bars;
+        if ('bars' in root.dataset) setBars(false);
       } else if (delta > JITTER) {
-        root.dataset.bars = 'hidden';
+        if (!('bars' in root.dataset)) setBars(true);
       } else if (delta < -JITTER) {
-        delete root.dataset.bars;
+        if ('bars' in root.dataset) setBars(false);
       } else {
         return;
       }
@@ -65,7 +97,7 @@ export function ScrollBars() {
     return () => {
       window.removeEventListener('scroll', onScroll);
       if (frame) window.cancelAnimationFrame(frame);
-      delete document.documentElement.dataset.bars;
+      setBars(false);
       delete document.documentElement.dataset.scrolled;
     };
   }, []);
