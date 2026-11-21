@@ -38,7 +38,8 @@
   position: relative; isolation: isolate;
   display: flow-root;
   margin: 0 calc(-1 * max(var(--page-pad), env(safe-area-inset-right, 0px))) 18px calc(-1 * max(var(--page-pad), env(safe-area-inset-left, 0px)));
-  padding: 1px max(var(--page-pad), env(safe-area-inset-right, 0px)) 4px max(var(--page-pad), env(safe-area-inset-left, 0px));
+  /* Room at the foot for the wave lines to show under the last card. */
+  padding: 1px max(var(--page-pad), env(safe-area-inset-right, 0px)) 30px max(var(--page-pad), env(safe-area-inset-left, 0px));
   background:
     linear-gradient(180deg, rgba(11, 11, 12, 0) 25%, rgba(11, 11, 12, 0.32) 100%),
     var(--top-pattern) 0 calc(-1 * var(--band-top, var(--nav-h))) / var(--top-pattern-size),
@@ -57,8 +58,8 @@
 }
 .qfeed__band::before {
   background: url('../assets/buy-waves.svg') center bottom / max(100%, 560px) auto no-repeat;
-  -webkit-mask-image: linear-gradient(0deg, #000 0, #000 150px, transparent 360px);
-  mask-image: linear-gradient(0deg, #000 0, #000 150px, transparent 360px);
+  -webkit-mask-image: linear-gradient(0deg, #000 0, #000 90px, transparent 230px);
+  mask-image: linear-gradient(0deg, #000 0, #000 90px, transparent 230px);
 }
 /* The halftone, carried on from the header (.nav__pattern) on the same grid,
    shifted by where the band starts: it picks up at the strength the header
@@ -66,9 +67,9 @@
 .qfeed__band::after {
   background: var(--buy-dots);
   background-position: 0 calc(-1 * var(--band-top, var(--nav-h)));
-  -webkit-mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.5) 0, #000 90px), linear-gradient(0deg, transparent 110px, #000 300px);
+  -webkit-mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.5) 0, #000 60px), linear-gradient(0deg, transparent 50px, #000 170px);
   -webkit-mask-composite: source-in;
-  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.5) 0, #000 90px), linear-gradient(0deg, transparent 110px, #000 300px);
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.5) 0, #000 60px), linear-gradient(0deg, transparent 50px, #000 170px);
   mask-composite: intersect;
 }
 @media (min-width: 1181px) {
