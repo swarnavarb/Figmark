@@ -86,6 +86,10 @@ function toSellerCard(user: SellerCardSource) {
     dispatchRegion: user.sellerProfile?.dispatchRegion ?? null,
     followerCount: user.sellerProfile?.followerCount ?? 0,
     trustScore: user.sellerTrust.score,
+    // Whether any order with the shop has completed. Until one has, the score
+    // is the formula's starting point, so the card says "not rated yet". The
+    // count itself stays private, as a shop's sales always do.
+    rated: (user.sellerTrust.completedTransactions ?? 0) > 0,
     // Worked out from the shop's orders against the delivery time each listing
     // promised (api/src/seller-stats.ts); null until five orders are measured.
     onTimeDispatchRate: user.sellerTrust.onTimeDispatchRate,

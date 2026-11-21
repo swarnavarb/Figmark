@@ -15,6 +15,7 @@ import { haptic } from '../haptics';
 import { BackLink } from '../components/ScrollManager';
 import { useSave } from '../components/useSave';
 import { Canopy, DetailBlocks, Gallery, Svg, Urgency } from '../components/ListingBlocks';
+import { ProtectedNote, ShieldCheck } from '../components/Trust';
 import { ListingPosts } from '../components/ListingPosts';
 import { ListingDna } from '../components/DnaKit';
 import { Glyph, RarityRibbon } from '../components/Quest';
@@ -40,6 +41,12 @@ import { ShopDriveBanner, SpreadNudge, SpreadStudio } from '../components/Spread
 import '../styles/ListingPage.css';
 
 /** What each verification tier means, in a line. */
+const TIER_LABELS: Record<string, string> = {
+  unverified: 'Not verified',
+  verified: 'Verified',
+  pro: 'Verified business',
+};
+
 const TIER_NOTES: Record<string, string> = {
   unverified: 'Not verified yet',
   verified: 'ID, phone and bank checked',
@@ -118,7 +125,10 @@ export function ListingPage() {
   useEffect(() => {
     const box = boxRef.current;
     if (!box) return;
-    const watch = new IntersectionObserver(([entry]) => setBoxGone(entry ? !entry.isIntersecting : false));
+    // Only once the box has gone up past the top: while it is still further
+    // down the page, the bar would sit over the title and photos above it.
+    const watch = new IntersectionObserver(([entry]) =>
+      setBoxGone(entry ? !entry.isIntersecting && entry.boundingClientRect.top < 0 : false));
     watch.observe(box);
     return () => watch.disconnect();
   }, [data !== null]); // eslint-disable-line react-hooks/exhaustive-deps -- once the box exists
@@ -356,6 +366,7 @@ export function ListingPage() {
           {' '}Save it and you are told if the price drops.
         </p>
       )}
+      {!data.isOwn && buyable && !shut && <ProtectedNote />}
       {data.affiliate?.referredBy && !data.isOwn && <ReferredBy party={data.affiliate.referredBy}
         offLabel={linkOff > 0 ? formatMoney(linkOff, listing.currency) : null} />}
     </div>
@@ -521,13 +532,13 @@ export function ListingPage() {
                   <span className="dtile__label">Posted by</span>
                   {/* The shop's name is its address: tapping it opens its page. */}
                   <span className="sellercard__nameline">
-                    <PersonLink party={{ name: seller.storefrontName, handle: seller.username, level: seller.level }} className="sellercard__name" />
+                    <PersonLink party={{ name: seller.storefrontName, handle: seller.username, level: seller.level }} className="sellercard__name" levelFrom={3} />
                     {seller.pro && <ProBadge size="md" />}
                   </span>
                   <span className="sellercard__where"><Svg name="pin" size={13} /> {seller.dispatchRegion ?? 'Location not set'}</span>
                 </div>
-                <span className="sellercard__tier" title={TIER_NOTES[seller.tier] ?? 'Verification level'}>
-                  <Svg name="shield" size={13} /> {seller.tier}
+                <span className={`sellercard__tier sellercard__tier--${seller.tier}`} title={TIER_NOTES[seller.tier] ?? 'Verification level'}>
+                  {seller.tier === 'unverified' ? <Svg name="shield" size={13} /> : <ShieldCheck size={13} />} {TIER_LABELS[seller.tier] ?? seller.tier}
                 </span>
               </div>
               </div>
@@ -550,40 +561,59 @@ export function ListingPage() {
                 </div>
               )}
               <dl className="sellercard__stats">
-                <div className={`sellercard__stat sellercard__stat--${seller.trustScore >= 80 ? 'ok' : seller.trustScore >= 50 ? 'warn' : 'low'}`}>
-                  <dt><Svg name="star" size={13} /> Trust</dt>
-                  <dd>{seller.trustScore}<small>/100</small></dd>
-                  <dd className="sellercard__note">From buyer reviews</dd>
-                </div>
+                {/* A score with no completed order behind it is the formula's
+                    starting point, not anything buyers said: say so instead. */}
+                {seller.rated === false ? (
+                  <div className="sellercard__stat">
+                    <dt><Svg name="star" size={13} /> Trust</dt>
+                    <dd>Not rated yet</dd>
+                    <dd className="sellercard__note">Rated once buyers complete orders</dd>
+                  </div>
+                ) : (
+                  <div className={`sellercard__stat sellercard__stat--${seller.trustScore >= 80 ? 'ok' : seller.trustScore >= 50 ? 'warn' : 'low'}`}>
+                    <dt><Svg name="star" size={13} /> Trust</dt>
+                    <dd>{seller.trustScore}<small>/100</small></dd>
+                    <dd className="sellercard__note">From buyer reviews</dd>
+                  </div>
+                )}
                 <div className="sellercard__stat">
                   <dt><Svg name="users" size={13} /> Followers</dt>
                   <dd>{seller.followerCount}</dd>
                   <dd className="sellercard__note">Get their new drops</dd>
                 </div>
-                {/* How many a shop has sold is never shown: how fast it answers is. */}
-                <div className={`sellercard__stat${seller.confirmHours == null ? '' : seller.confirmHours <= 12 ? ' sellercard__stat--ok' : seller.confirmHours <= 48 ? ' sellercard__stat--warn' : ' sellercard__stat--low'}`}>
-                  <dt><Svg name="bolt" size={13} /> Confirms in</dt>
-                  <dd>{seller.confirmHours == null ? 'New' : confirmLabel(seller.confirmHours)}</dd>
-                  <dd className="sellercard__note">Typical time to accept an order or payment</dd>
-                </div>
-                <div className={`sellercard__stat${seller.onTimeDispatchRate == null ? '' : seller.onTimeDispatchRate >= 0.9 ? ' sellercard__stat--ok' : seller.onTimeDispatchRate >= 0.7 ? ' sellercard__stat--warn' : ' sellercard__stat--low'}`}>
-                  <dt><Svg name="clock" size={13} /> On time</dt>
-                  <dd>{seller.onTimeDispatchRate == null ? 'New' : <>{Math.round(seller.onTimeDispatchRate * 100)}<small>%</small></>}</dd>
-                  <dd className="sellercard__note">
-                    {seller.onTimeDispatchRate == null ? 'Shown once enough orders arrive' : 'Arrived within the promised days'}
-                  </dd>
-                </div>
-                <div className="sellercard__stat">
-                  <dt><Svg name="reply" size={13} /> Repeat buyers</dt>
-                  <dd>{seller.repeatCustomerRate == null ? '—' : <>{Math.round(seller.repeatCustomerRate * 100)}<small>%</small></>}</dd>
-                  <dd className="sellercard__note">Bought here again</dd>
-                </div>
+                {/* How many a shop has sold is never shown: how fast it answers is.
+                    A stat with nothing behind it yet is left out rather than shown
+                    as "New" or a dash: a row of blanks reads as a shop with nothing to show. */}
+                {seller.confirmHours != null && (
+                  <div className={`sellercard__stat${seller.confirmHours <= 12 ? ' sellercard__stat--ok' : seller.confirmHours <= 48 ? ' sellercard__stat--warn' : ' sellercard__stat--low'}`}>
+                    <dt><Svg name="bolt" size={13} /> Confirms in</dt>
+                    <dd>{confirmLabel(seller.confirmHours)}</dd>
+                    <dd className="sellercard__note">Typical time to accept an order or payment</dd>
+                  </div>
+                )}
+                {seller.onTimeDispatchRate != null && (
+                  <div className={`sellercard__stat${seller.onTimeDispatchRate >= 0.9 ? ' sellercard__stat--ok' : seller.onTimeDispatchRate >= 0.7 ? ' sellercard__stat--warn' : ' sellercard__stat--low'}`}>
+                    <dt><Svg name="clock" size={13} /> On time</dt>
+                    <dd>{Math.round(seller.onTimeDispatchRate * 100)}<small>%</small></dd>
+                    <dd className="sellercard__note">Arrived within the promised days</dd>
+                  </div>
+                )}
+                {seller.repeatCustomerRate != null && (
+                  <div className="sellercard__stat">
+                    <dt><Svg name="reply" size={13} /> Repeat buyers</dt>
+                    <dd>{Math.round(seller.repeatCustomerRate * 100)}<small>%</small></dd>
+                    <dd className="sellercard__note">Bought here again</dd>
+                  </div>
+                )}
                 <div className="sellercard__stat">
                   <dt><Svg name="calendar" size={13} /> Here since</dt>
                   <dd>{new Date(seller.memberSince).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}</dd>
                   <dd className="sellercard__note">On Figmark</dd>
                 </div>
               </dl>
+              {(seller.confirmHours == null || seller.onTimeDispatchRate == null) && (
+                <p className="sellercard__pending">Reply speed and on-time delivery show here once the shop has enough orders.</p>
+              )}
 
             </div>
           )}

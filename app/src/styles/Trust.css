@@ -1,0 +1,97 @@
+/* ── Trust: the welcome, the protection note, seller badges, the footer ── */
+
+.sbadge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: var(--t-2xs); font-weight: 700; letter-spacing: 0.01em;
+  color: var(--ok-pale);
+  background: var(--ok-soft);
+  border: 1px solid rgba(52, 211, 153, 0.35);
+  border-radius: 999px;
+  padding: 2px 7px 2px 5px;
+  white-space: nowrap;
+}
+
+.protnote {
+  display: flex; gap: 10px; align-items: flex-start;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  background: var(--ok-soft);
+  border: 1px solid rgba(52, 211, 153, 0.3);
+  color: var(--text);
+  font-size: var(--t-sm);
+  line-height: 1.45;
+}
+.protnote__mark { color: var(--ok); flex: none; display: flex; padding-top: 1px; }
+.protnote a { color: var(--ok-pale); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; white-space: nowrap; }
+
+/* For a signed-out visitor, above everything else on the first screen. */
+.fmintro {
+  display: grid; gap: 18px;
+  margin: 0 0 22px;
+  padding: 22px 20px;
+  border-radius: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.fmintro__title {
+  margin: 0;
+  font-size: clamp(24px, 5.4vw, 36px);
+  line-height: 1.12;
+  letter-spacing: -0.025em;
+  font-weight: 800;
+  color: var(--text);
+  text-wrap: balance;
+}
+.fmintro__copy { min-width: 0; }
+.fmintro__lede { margin: 10px 0 0; color: var(--text-dim); font-size: var(--t-base); line-height: 1.55; max-width: 58ch; }
+.fmintro__acts { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.fmintro__points { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.fmintro__points li { display: flex; gap: 12px; align-items: flex-start; font-size: var(--t-sm); color: var(--text-dim); line-height: 1.45; }
+.fmintro__points b { display: block; color: var(--text); font-size: var(--t-base); margin-bottom: 2px; }
+.fmintro__icon {
+  flex: none; width: 34px; height: 34px; border-radius: 10px;
+  display: grid; place-items: center;
+  background: var(--ok-soft); color: var(--ok);
+}
+@media (min-width: 900px) {
+  .fmintro { grid-template-columns: 1.25fr 1fr; align-items: center; padding: 32px; gap: 32px; }
+}
+
+/* ── The footer ── */
+.sitefoot {
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-dim);
+  font-size: var(--t-sm);
+  /* Clear of the floating tab bar on a phone. */
+  padding: 32px max(var(--page-pad), 16px) calc(var(--tabbar-h) + 28px);
+}
+.sitefoot__inner {
+  max-width: var(--page-max, 1180px); margin: 0 auto;
+  display: grid; gap: 28px;
+}
+.sitefoot__brand p { margin: 10px 0 0; max-width: 36ch; line-height: 1.5; }
+.sitefoot__brand .brand { color: var(--text); text-decoration: none; }
+/* The header drops the wordmark on a phone to make room; the footer has room. */
+.sitefoot__brand .brand__name { display: inline; }
+.sitefoot__cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 16px; }
+.sitefoot__cols div { display: grid; gap: 8px; align-content: start; }
+.sitefoot__cols h2 {
+  margin: 0 0 2px;
+  font-size: var(--t-2xs); text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--text-faint); font-weight: 700;
+}
+.sitefoot__cols a { color: var(--text-dim); text-decoration: none; overflow-wrap: anywhere; }
+.sitefoot__cols a:hover { color: var(--text); text-decoration: underline; }
+.sitefoot__base {
+  max-width: var(--page-max, 1180px);
+  margin: 28px auto 0; padding-top: 16px;
+  border-top: 1px solid var(--border);
+  color: var(--text-faint); font-size: var(--t-xs);
+}
+@media (min-width: 900px) {
+  .sitefoot__inner { grid-template-columns: 1fr 2fr; }
+  .sitefoot__cols { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}

@@ -193,7 +193,7 @@ export function SimilarItems({ listingId }: { listingId: string }) {
                   <b className="simcard__price">{formatMoney(item.priceMinor, item.currency)}</b>
                   <EarnPill amountMinor={earnOf(item)} currency={item.currency} />
                 </span>
-                <small className="simcard__shop">{item.seller?.storefrontName ?? item.category}<LevelChip tag={item.seller?.level} inline /></small>
+                <small className="simcard__shop">{item.seller?.storefrontName ?? item.category}{(item.seller?.level?.level ?? 0) >= 3 && <LevelChip tag={item.seller?.level} inline />}</small>
               </span>
             </Link>
           ))}

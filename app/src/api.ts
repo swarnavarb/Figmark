@@ -416,6 +416,8 @@ export interface SellerCard {
   dispatchRegion: string | null;
   followerCount: number;
   trustScore: number;
+  /** False while no order with this shop has completed: the score is only the starting point then. */
+  rated?: boolean;
   onTimeDispatchRate: number | null;
   /** Orders behind the on-time rate. */
   onTimeMeasured?: number;
