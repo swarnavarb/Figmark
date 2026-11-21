@@ -63,7 +63,7 @@
  * where each class is used; see the note at the top of styles.css.
  */
 .streams__tab:hover { color: var(--text); }
-.streams__tab.is-on { background: var(--grad-blue); color: var(--accent-ink); box-shadow: 0 2px 10px rgba(124, 58, 237, 0.4); }
+.streams__tab.is-on { background: var(--chalk); color: var(--ink-black); box-shadow: none; }
 .forumroom { --page-max: 720px; }
 .forumhero__back { margin-left: -8px; }
 .forumhero__back:hover, .forumhero__icon:hover { background: rgba(255, 255, 255, 0.18); }
