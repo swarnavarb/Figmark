@@ -596,14 +596,6 @@ code, kbd, samp, pre {
 .nav::after { opacity: 0; transition: opacity var(--dur-2) var(--ease); }
 :root[data-scrolled] .nav::before { opacity: 0; }
 :root[data-scrolled] .nav::after { opacity: 1; }
-/* Scrolled, the strip under the clock and the Dynamic Island goes clear: the
-   page shows through it, and the header's glass starts just below it. */
-:root[data-scrolled] .nav::after {
-  background: linear-gradient(180deg,
-    rgb(var(--top-rgb) / 0.72) 0, rgb(var(--top-rgb) / 0.72) calc(100% - var(--glass-tail)), rgb(var(--top-rgb) / 0) 100%);
-  -webkit-mask-image: linear-gradient(180deg, transparent 0, transparent var(--strip-h), #000 calc(var(--strip-h) + 14px), #000 calc(100% - var(--glass-tail)), transparent 100%);
-  mask-image: linear-gradient(180deg, transparent 0, transparent var(--strip-h), #000 calc(var(--strip-h) + 14px), #000 calc(100% - var(--glass-tail)), transparent 100%);
-}
 
 .brand { display: flex; align-items: center; gap: 10px; flex: none; }
 /* The first coloured thing anyone sees, so it carries the full brand ramp
@@ -8694,8 +8686,8 @@ a.ocust__name:hover { color: var(--accent-text); }
   background-color: rgb(var(--top-rgb));
 }
 :root:has(.roombar--forum) .topstrip { --top-rgb: 198 39 203; }
-/* With the marketplace header slid away, the strip trails the same blurred
-   tail the header has, so the page passes under it rather than meeting an edge. */
+/* A blurred tail the strip can trail, so the page passes under it rather than
+   meeting an edge. Off for now: with the header slid away the strip is clear. */
 .topstrip::after {
   content: ''; position: absolute; top: 100%; left: 0; right: 0; height: var(--glass-tail);
   /* No backdrop-filter here: a backdrop filter on the strip makes iOS draw
@@ -8705,12 +8697,11 @@ a.ocust__name:hover { color: var(--accent-text); }
   transition: opacity var(--dur-2) var(--ease);
   pointer-events: none;
 }
-:root[data-bars='hidden'] .shell:not(.shell--social) > .topstrip::after { opacity: 1; }
-/* Scrolled, the strip is clear (see :root[data-scrolled] .nav::after), and so
-   is the tail it trails once the header has slid away. */
-:root[data-scrolled] .topstrip { background-color: transparent; }
-:root[data-scrolled] .topstrip::after,
-:root[data-scrolled] .shell:not(.shell--social) > .topstrip::after { opacity: 0; }
+/* Scrolling down, with the header slid away, the strip under the clock and the
+   Dynamic Island goes clear and the page shows through it (ScrollBars.tsx also
+   takes the theme-color away then, which Safari would otherwise paint there).
+   Scrolling back up, the header returns attached to the solid strip. */
+:root[data-bars='hidden'] .topstrip { background-color: transparent; }
 /*
  * What Safari looks for: the fixed or sticky box WebKit hit-tests 4px inside
  * the top edge (LocalFrameView::fixedContainerEdges), at least 90% of the
