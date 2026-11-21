@@ -241,8 +241,9 @@
   position: sticky; top: var(--nav-h); z-index: var(--z-popover);
   display: flex; gap: 6px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
   margin-inline: calc(var(--page-pad) * -1); padding: var(--s2) var(--page-pad);
-  background: color-mix(in srgb, var(--bg) 88%, transparent);
-  backdrop-filter: blur(24px) saturate(1.4); -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  /* Near solid, not frosted: under the header the blur hid little, and it was
+     redrawn on every frame of every animation scrolling beneath it. */
+  background: color-mix(in srgb, var(--bg) 97%, transparent);
   /* It sticks under the header, and to the very top while the header is
      away. Its stuck place moves rather than the bar itself: a bar shifted up
      before it has stuck would leave a gap where it was. */
@@ -322,6 +323,14 @@
 }
 
 .discover__stream { display: grid; gap: 14px; }
+/* Speed: what is far off screen is not laid out or painted at all until the
+   reader scrolls near it (the browser keeps its last height, so nothing
+   jumps). A post with its menu open draws as usual, so the menu is never cut. */
+.discover__stream > .spost:not(:has(.spost__menu)),
+.discover__stream > .story {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 440px;
+}
 
 /* A rail of finds between posts: sideways on a phone, a row of four wider. */
 .discrail { display: grid; gap: var(--s2); }

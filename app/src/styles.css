@@ -10514,6 +10514,10 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 /* The scene: behind everything, never in the way of a tap. */
 .storyscene { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
 .storyscene > * { position: absolute; }
+/* A scene's foreground (the treasure's fish, chest and diver): over the cards, never in the way of a tap. */
+.storyscene--front { z-index: 3; }
+/* Flung: the row's cards lean against the slide and swing back (Story.tsx, swingRows). */
+.story__row.is-flung > * { rotate: calc(var(--fling, 0) * 3deg); }
 .story:not(.is-live) .storyscene *, .story:not(.is-live) .storyscene *::before, .story:not(.is-live) .storyscene *::after {
   animation-play-state: paused;
 }
@@ -10649,6 +10653,9 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 26' fill='%23BAE6FD'%3E%3Cpath d='M50 6 c3 -3 7 -3 9 0 c-2 3 -6 3 -9 0z m0 0 l-3 -2 l0 4z'/%3E%3Cpath d='M38 14 c3 -3 7 -3 9 0 c-2 3 -6 3 -9 0z m0 0 l-3 -2 l0 4z'/%3E%3Cpath d='M52 20 c3 -3 7 -3 9 0 c-2 3 -6 3 -9 0z m0 0 l-3 -2 l0 4z'/%3E%3Cpath d='M24 8 c3 -3 7 -3 9 0 c-2 3 -6 3 -9 0z m0 0 l-3 -2 l0 4z'/%3E%3Cpath d='M26 20 c3 -3 7 -3 9 0 c-2 3 -6 3 -9 0z m0 0 l-3 -2 l0 4z'/%3E%3Cpath d='M12 14 c3 -3 7 -3 9 0 c-2 3 -6 3 -9 0z m0 0 l-3 -2 l0 4z'/%3E%3C/svg%3E") center / contain no-repeat;
   animation: sc-shoal 2.6s ease-in-out infinite alternate;
 }
+/* A second, smaller school, higher and later, the other way round. */
+.sc-school--late { animation-duration: 27s; animation-delay: -13s; animation-direction: reverse; }
+.sc-school--late i { top: 18%; scale: -0.7 0.7; opacity: 0.45; }
 @keyframes sc-school { from { transform: translateX(0); } to { transform: translateX(calc(100% + 64px)); } }
 @keyframes sc-shoal { from { transform: translateY(-6px) scaleY(0.9); } to { transform: translateY(6px) scaleY(1.05); } }
 .sc-jelly {
@@ -10703,16 +10710,16 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .sc-dive { inset: 0; animation: sc-dive var(--dive) ease-in-out infinite; }
 @keyframes sc-dive {
   0% { transform: translate(calc(100% + 20px), 26px); }
-  36% { transform: translate(calc(60% + 34px), calc(100% - var(--hem) - 70px)); }
-  56% { transform: translate(calc(60% + 30px), calc(100% - var(--hem) - 74px)); }
+  36% { transform: translate(calc(60% + 40px), calc(100% - var(--hem) - 80px)); }
+  56% { transform: translate(calc(60% + 36px), calc(100% - var(--hem) - 84px)); }
   100% { transform: translate(-80px, 10px); }
 }
-.sc-diver {
-  position: absolute; left: 0; top: 0; width: 54px; height: 22px;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 54 22'%3E%3Cpath d='M44 9 L53 4 L52 9 L54 14 L44 12Z' fill='%230EA5E9'/%3E%3Cpath d='M8 11 C10 6 16 6 22 7 L42 8 C46 8 46 13 42 13 L22 14 C16 15 10 15 8 11Z' fill='%238FB4D9'/%3E%3Crect x='20' y='3' width='16' height='5' rx='2.5' fill='%23FACC15'/%3E%3Ccircle cx='8' cy='10' r='5' fill='%238FB4D9'/%3E%3Cpath d='M3 8.5 h5 v3 h-5z' fill='%237DD3FC' stroke='%238FB4D9' stroke-width='.8'/%3E%3Cpath d='M12 14 L18 19 M14 14 L22 18' stroke='%238FB4D9' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat;
-  filter: drop-shadow(0 0 3px rgba(186, 230, 253, 0.55));
-  animation: sc-pitch var(--dive) ease-in-out infinite;
-}
+.sc-diver { position: absolute; left: 0; top: 0; width: 92px; height: 35px; animation: sc-pitch var(--dive) ease-in-out infinite; }
+.sc-diver__body { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+/* Fins: a flutter kick, the two out of step. */
+.sc-diver__fin { transform-box: fill-box; transform-origin: 0 50%; animation: sc-kick 0.7s ease-in-out infinite alternate; }
+.sc-diver__fin--far { animation-delay: -0.35s; }
+@keyframes sc-kick { from { transform: rotate(-14deg); } to { transform: rotate(12deg); } }
 @keyframes sc-pitch {
   0% { transform: rotate(-22deg); }
   32% { transform: rotate(-16deg); }
@@ -10720,25 +10727,43 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
   62%, 100% { transform: rotate(16deg); }
 }
 .sc-diver__lamp {
-  position: absolute; right: 100%; top: -4px; width: 64px; height: 34px; opacity: 0; transform-origin: 100% 50%;
+  position: absolute; right: calc(100% - 6px); top: 4px; width: 64px; height: 34px; opacity: 0; transform-origin: 100% 50%;
   background: linear-gradient(270deg, rgba(254, 249, 195, 0.55), rgba(254, 249, 195, 0));
   clip-path: polygon(100% 42%, 100% 58%, 0 100%, 0 0);
   animation: sc-lamp var(--dive) ease-in-out infinite;
 }
 @keyframes sc-lamp { 0%, 18% { opacity: 0; } 28%, 56% { opacity: 1; } 66%, 100% { opacity: 0; } }
 .sc-diver__bubble {
-  position: absolute; left: 4px; top: 0; width: 5px; height: 5px; border-radius: 50%;
+  position: absolute; left: 10px; top: 2px; width: 5px; height: 5px; border-radius: 50%;
   border: 1px solid rgba(224, 242, 254, 0.75); opacity: 0;
   animation: sc-breath 2.2s ease-out infinite; animation-delay: calc(var(--n) * 0.5s);
 }
 @keyframes sc-breath { 0% { opacity: 0; transform: translate(0, 0) scale(0.6); } 20% { opacity: 0.9; } 100% { opacity: 0; transform: translate(-4px, -46px) scale(1.3); } }
+
+/* The reef: a sea fan, a brain coral, branching coral swaying in the current. */
+.sc-coral { bottom: calc(var(--hem) + 2px); background: center bottom / contain no-repeat; }
+.sc-coral--fan {
+  left: 26%; width: 46px; height: 50px; opacity: 0.85; transform-origin: 50% 100%;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 46 50'%3E%3Cg fill='none' stroke='%23FB923C' stroke-linecap='round'%3E%3Cpath d='M23 50 L23 30' stroke-width='3'/%3E%3Cpath d='M23 32 C14 26 8 18 6 8 M23 30 C18 20 16 10 17 2 M23 30 C28 20 30 10 29 2 M23 32 C32 26 38 18 40 8' stroke-width='2.2'/%3E%3Cpath d='M6 8 C14 4 32 4 40 8 M8 16 C16 12 30 12 38 16 M11 23 C18 20 28 20 35 23' stroke-width='1' opacity='.75'/%3E%3C/g%3E%3C/svg%3E");
+  animation: sc-weed 5s ease-in-out -1s infinite alternate;
+}
+.sc-coral--brain {
+  left: 42%; width: 40px; height: 22px; opacity: 0.9;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 22'%3E%3Cpath d='M1 22 C1 8 10 2 20 2 C30 2 39 8 39 22Z' fill='%23A78BFA'/%3E%3Cg fill='none' stroke='%236D28D9' stroke-width='1.1' stroke-linecap='round' opacity='.7'%3E%3Cpath d='M6 18 C8 12 12 14 13 9 C15 5 19 9 21 6 M10 21 C12 17 16 18 18 14 C20 10 25 13 27 9 M20 21 C23 18 27 19 29 15 C31 12 34 14 35 18'/%3E%3C/g%3E%3C/svg%3E");
+}
+.sc-coral--branch {
+  left: 74%; width: 34px; height: 46px; opacity: 0.9; transform-origin: 50% 100%;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 34 46'%3E%3Cg fill='none' stroke='%23F472B6' stroke-width='3.4' stroke-linecap='round'%3E%3Cpath d='M17 46 L17 26 C17 20 12 18 10 10 M17 30 C20 24 26 22 26 12 M10 18 C6 16 4 12 5 6 M26 18 C29 16 31 12 30 7 M17 26 L18 14'/%3E%3C/g%3E%3Cg fill='%23FBCFE8'%3E%3Ccircle cx='10' cy='10' r='2'/%3E%3Ccircle cx='26' cy='12' r='2'/%3E%3Ccircle cx='5' cy='6' r='2'/%3E%3Ccircle cx='30' cy='7' r='2'/%3E%3Ccircle cx='18' cy='14' r='2'/%3E%3C/g%3E%3C/svg%3E");
+  animation: sc-weed 4.2s ease-in-out infinite alternate;
+}
+.sc-coral--far { left: 8%; scale: 0.75; opacity: 0.6; animation-delay: -2s; }
 
 /* ── The cast: a stage ────────────────────────────────────────────────── */
 .story--stage {
   --tone: 253, 164, 175; --story-in: story-focus;
   --story-bg: radial-gradient(70% 90% at 50% 0%, rgba(167, 139, 250, 0.22), transparent 65%), linear-gradient(180deg, #24102A 0%, #1A0B1E 60%, #110713 100%);
 }
-@keyframes story-focus { from { opacity: 0; filter: blur(6px); transform: scale(0.94); } }
+@keyframes story-focus { from { opacity: 0; transform: scale(0.94); } }
 .sc-haze {
   left: -10%; right: -10%; top: 0; height: 70%;
   background: radial-gradient(50% 60% at 30% 20%, rgba(254, 243, 199, 0.08), transparent 70%), radial-gradient(45% 55% at 75% 30%, rgba(253, 164, 175, 0.08), transparent 70%);
@@ -10754,14 +10779,10 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
     linear-gradient(180deg, rgba(0, 0, 0, 0) 60%, rgba(0, 0, 0, 0.45)),
     repeating-linear-gradient(90deg, #5B0A1F 0 6px, #9F1239 6px 14px, #BE123C 14px 17px, #7F0D2C 17px 24px);
   transform-origin: 50% 0;
-  animation: sc-billow 5s ease-in-out 1.6s infinite alternate;
+  animation: sc-billow 5s ease-in-out infinite alternate;
 }
-.story--stage.is-shown .sc-curtain--left { animation: sc-open-left 1.6s cubic-bezier(0.65, 0, 0.25, 1) both; }
-.story--stage.is-shown .sc-curtain--right { animation: sc-open-right 1.6s cubic-bezier(0.65, 0, 0.25, 1) both; }
-.story--stage:not(.is-shown):not(.is-armed) .sc-curtain--left { transform: translateX(-88%); }
-.story--stage:not(.is-shown):not(.is-armed) .sc-curtain--right { transform: translateX(88%); }
-@keyframes sc-open-left { from { transform: translateX(0); } to { transform: translateX(-88%); } }
-@keyframes sc-open-right { from { transform: translateX(0); } to { transform: translateX(88%); } }
+.sc-curtain--left { transform: translateX(-88%); }
+.sc-curtain--right { transform: translateX(88%); }
 @keyframes sc-billow { from { transform: skewX(-1.5deg); } to { transform: skewX(1.5deg); } }
 .sc-footlights {
   left: 0; right: 0; bottom: calc(var(--hem) - 2px); height: 10px;
@@ -10772,7 +10793,8 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 
 /* ── The quest: a treasure map ────────────────────────────────────────── */
 .story--map {
-  --tone: 154, 52, 18; --story-in: story-step;
+  --tone: 154, 52, 18; --story-in: story-step; --quest: 15s;
+  padding-bottom: calc(var(--hem) + 60px);
   --story-bg:
     radial-gradient(40% 50% at 12% 30%, rgba(146, 64, 14, 0.14), transparent 70%),
     radial-gradient(35% 45% at 88% 75%, rgba(146, 64, 14, 0.16), transparent 70%),
@@ -10794,19 +10816,126 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .story--map.is-shown .sc-trail { animation: sc-ink 2.6s cubic-bezier(0.45, 0, 0.3, 1) 0.2s forwards; }
 .story--map:not(.is-armed):not(.is-shown) .sc-trail { clip-path: none; }
 @keyframes sc-ink { to { clip-path: inset(0 0 0 0); } }
-.sc-foot {
-  left: var(--x); top: var(--y); width: 7px; height: 11px; border-radius: 50% 50% 45% 45%;
-  background: rgba(92, 51, 23, 0.55); transform: rotate(70deg); opacity: 0;
-  animation: sc-step 4.2s ease-out var(--d) infinite;
+/* The story along the bottom of the map: footprints the explorer leaves, the X, the dig. */
+.sc-prints {
+  left: 0; right: 0; bottom: calc(var(--hem) + 8px); height: 12px;
+  clip-path: inset(0 100% 0 0);
+  animation: sc-prints var(--quest) linear infinite;
 }
-.sc-foot--r { transform: rotate(110deg); }
-@keyframes sc-step { 0%, 8% { opacity: 0; } 12%, 55% { opacity: 1; } 75%, 100% { opacity: 0; } }
+.sc-prints i {
+  position: absolute; left: var(--x); bottom: 0; width: 5px; height: 8px; border-radius: 50% 50% 45% 45%;
+  background: rgba(92, 51, 23, 0.55); rotate: 80deg;
+}
+.sc-prints i.is-right { bottom: 4px; rotate: 100deg; }
+@keyframes sc-prints {
+  0% { clip-path: inset(0 100% 0 0); opacity: 1; }
+  50% { clip-path: inset(0 calc(20% + 36px) 0 0); }
+  86% { clip-path: inset(0 calc(20% + 36px) 0 0); opacity: 1; }
+  92% { opacity: 0; }
+  100% { clip-path: inset(0 calc(20% + 36px) 0 0); opacity: 0; }
+}
 .sc-x {
-  right: 7%; top: calc(var(--hem) + 18px); width: 22px; height: 22px;
+  left: 80%; bottom: calc(var(--hem) + 6px); width: 20px; height: 20px;
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 22 22'%3E%3Cpath d='M3 4 L19 18 M18 3 L4 19' stroke='%23B91C1C' stroke-width='3.4' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat;
-  animation: sc-mark 1.8s ease-in-out infinite;
+  animation: sc-mark var(--quest) ease-in-out infinite;
 }
-@keyframes sc-mark { 0%, 100% { transform: scale(1) rotate(0deg); } 50% { transform: scale(1.18) rotate(-6deg); } }
+@keyframes sc-mark { 0%, 66% { opacity: 1; transform: scale(1); } 70%, 96% { opacity: 0; transform: scale(0.6); } 100% { opacity: 1; transform: scale(1); } }
+.sc-walk { inset: 0; animation: sc-walk var(--quest) linear infinite; }
+@keyframes sc-walk {
+  0% { transform: translateX(-36px); opacity: 0; }
+  3% { opacity: 1; }
+  50%, 100% { transform: translateX(calc(80% - 36px)); }
+  86% { opacity: 1; }
+  92%, 100% { opacity: 0; }
+}
+.sc-explorer { position: absolute; left: 0; bottom: calc(var(--hem) + 8px); width: 38px; height: 48px; animation: sc-explorer var(--quest) linear infinite; }
+.sc-explorer svg { display: block; width: 100%; height: 100%; overflow: visible; }
+@keyframes sc-explorer {
+  0.00% { transform: translateY(0px); }
+  2.50% { transform: translateY(-4px); }
+  5.00% { transform: translateY(0px); }
+  7.50% { transform: translateY(-4px); }
+  10.00% { transform: translateY(0px); }
+  12.50% { transform: translateY(-4px); }
+  15.00% { transform: translateY(0px); }
+  17.50% { transform: translateY(-4px); }
+  20.00% { transform: translateY(0px); }
+  22.50% { transform: translateY(-4px); }
+  25.00% { transform: translateY(0px); }
+  27.50% { transform: translateY(-4px); }
+  30.00% { transform: translateY(0px); }
+  32.50% { transform: translateY(-4px); }
+  35.00% { transform: translateY(0px); }
+  37.50% { transform: translateY(-4px); }
+  40.00% { transform: translateY(0px); }
+  42.50% { transform: translateY(-4px); }
+  45.00% { transform: translateY(0px); }
+  47.50% { transform: translateY(-4px); }
+  50.00% { transform: translateY(0px); }
+  74% { transform: translateY(0); }
+  76% { transform: translateY(-11px); }
+  78% { transform: translateY(0); }
+  80% { transform: translateY(-8px); }
+  82%, 100% { transform: translateY(0); }
+}
+.sc-explorer__shovel { transform-box: fill-box; transform-origin: 30% 0; opacity: 0; animation: sc-shovel var(--quest) ease-in-out infinite; }
+@keyframes sc-shovel {
+  0%, 50% { opacity: 0; transform: rotate(0deg); }
+  51% { opacity: 1; }
+  54%, 60%, 66% { transform: rotate(30deg); }
+  57%, 63%, 69% { transform: rotate(-6deg); }
+  72% { opacity: 1; transform: rotate(0deg); }
+  74%, 100% { opacity: 0; }
+}
+.sc-dirt {
+  left: calc(80% + 6px); bottom: calc(var(--hem) + 12px); width: 4px; height: 4px; border-radius: 50%;
+  background: #7A4A1E; opacity: 0;
+  animation: sc-dirt var(--quest) ease-out infinite; animation-delay: calc(var(--n) * 60ms);
+}
+@keyframes sc-dirt {
+  0%, 54% { opacity: 0; transform: translate(0, 0); }
+  55%, 61%, 67% { opacity: 1; transform: translate(0, 0); }
+  58%, 64%, 70% { opacity: 0; transform: translate(calc((var(--n) - 0.4) * 9px), -14px); }
+  71%, 100% { opacity: 0; transform: translate(0, 0); }
+}
+/* What the dig turns up: the chest, out of the ground and open. */
+.sc-dig {
+  left: calc(80% - 6px); bottom: calc(var(--hem) + 6px); width: 34px; height: 26px; opacity: 0;
+  animation: sc-unearth var(--quest) ease-out infinite;
+}
+.sc-dig > i { position: absolute; }
+@keyframes sc-unearth {
+  0%, 68% { opacity: 0; transform: translateY(10px) scale(0.5); }
+  74% { opacity: 1; transform: translateY(-4px) scale(1.06); }
+  76%, 86% { opacity: 1; transform: translateY(0) scale(1); }
+  92%, 100% { opacity: 0; transform: translateY(0) scale(1); }
+}
+.sc-dig__box {
+  left: 0; right: 0; bottom: 0; height: 16px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 22'%3E%3Crect x='1' y='1' width='46' height='20' rx='2' fill='%237C4A1E' stroke='%233B200A' stroke-width='1.4'/%3E%3Cpath d='M1 8 H47 M1 15 H47' stroke='%235C3412' stroke-width='1'/%3E%3Crect x='6' y='1' width='5' height='20' fill='%23D4A017' opacity='.9'/%3E%3Crect x='37' y='1' width='5' height='20' fill='%23D4A017' opacity='.9'/%3E%3Crect x='20' y='3' width='8' height='9' rx='1.5' fill='%23F4C542' stroke='%233B200A' stroke-width='.8'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+}
+.sc-dig__lid {
+  left: -1px; right: -1px; bottom: 15px; height: 11px; transform-origin: 100% 100%;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 50 15'%3E%3Cpath d='M1 14 C1 3 49 3 49 14Z' fill='%238B5524' stroke='%233B200A' stroke-width='1.4'/%3E%3Cpath d='M7 14 C8 7 9 6 12 5 M38 5 C41 6 42 7 43 14' stroke='%23D4A017' stroke-width='4' fill='none'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+  animation: sc-dig-lid var(--quest) ease-in-out infinite;
+}
+@keyframes sc-dig-lid { 0%, 76% { transform: rotate(0deg); } 80% { transform: rotate(42deg); } 83%, 100% { transform: rotate(34deg); } }
+.sc-dig__glow {
+  left: -26px; right: -26px; bottom: 6px; height: 56px; border-radius: 50%; opacity: 0;
+  background: radial-gradient(closest-side, rgba(253, 224, 71, 0.8), rgba(251, 191, 36, 0.25) 55%, transparent);
+  animation: sc-dig-glow var(--quest) ease-out infinite;
+}
+@keyframes sc-dig-glow { 0%, 77% { opacity: 0; transform: scale(0.6); } 82% { opacity: 1; transform: scale(1); } 90%, 100% { opacity: 0; transform: scale(0.8); } }
+.sc-spark {
+  left: 13px; bottom: 14px; width: 9px; height: 9px; opacity: 0;
+  background: #F4C542; clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
+  animation: sc-spark var(--quest) ease-out infinite; animation-delay: calc(var(--n) * 50ms);
+}
+@keyframes sc-spark {
+  0%, 78% { opacity: 0; transform: translate(0, 0) scale(0.4); }
+  83% { opacity: 1; transform: translate(calc((var(--n) - 2) * 10px), calc(-18px - var(--n) * 2px)) scale(1) rotate(45deg); }
+  90%, 100% { opacity: 0; transform: translate(calc((var(--n) - 2) * 15px), -30px) scale(0.6) rotate(90deg); }
+}
 .sc-compass {
   right: calc(7% + 34px); top: calc(var(--hem) + 6px); width: 40px; height: 40px; border-radius: 50%; opacity: 0.6;
   border: 1.5px dashed #7A4A1E;
@@ -10820,10 +10949,11 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 
 /* ── The scene: a cinema ──────────────────────────────────────────────── */
 .story--cinema {
-  --tone: 253, 230, 138; --story-in: story-reel;
+  --tone: 253, 230, 138; --story-in: story-reel; --film: 16s;
+  padding-bottom: calc(var(--hem) + 82px);
   --story-bg: radial-gradient(120% 90% at 50% 50%, #1C1510 0%, #110D0A 70%, #080605 100%);
 }
-@keyframes story-reel { from { opacity: 0; transform: translateX(40px); filter: brightness(1.8) saturate(0); } }
+@keyframes story-reel { from { opacity: 0; transform: translateX(40px); } }
 .sc-beam {
   right: -10%; top: -20%; width: 90%; height: 140%; transform-origin: 100% 0;
   background: linear-gradient(225deg, rgba(254, 243, 199, 0.22), rgba(254, 243, 199, 0.04) 55%, transparent 75%);
@@ -10837,30 +10967,121 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
   animation: sc-dust 6.4s ease-in-out var(--d) infinite;
 }
 @keyframes sc-dust { 0%, 100% { opacity: 0; transform: translate(0, 0); } 30% { opacity: 0.8; } 50% { transform: translate(10px, -14px); } 70% { opacity: 0.4; } }
+/* The screen: a strip of film along the bottom, sprocket holes and all, the short playing on it. */
+.sc-film {
+  left: 12px; right: 12px; bottom: calc(var(--hem) + 6px); height: 66px; overflow: hidden; border-radius: 3px;
+  color: #1A120B;
+  background: radial-gradient(80% 120% at 50% 50%, #F5E6C8, #D9BC85 70%, #A9864F);
+  box-shadow: 0 0 24px rgba(254, 243, 199, 0.18);
+}
+.sc-film > i { position: absolute; }
+.sc-film::before, .sc-film::after {
+  content: ''; position: absolute; z-index: 2; left: 0; right: 0; height: 9px;
+  background: repeating-linear-gradient(90deg, transparent 0 4px, rgba(254, 243, 199, 0.7) 4px 10px, transparent 10px 14px) 0 50% / 100% 4px no-repeat, #0D0907;
+}
+.sc-film::before { top: 0; }
+.sc-film::after { bottom: 0; }
+.sc-film svg { display: block; width: 100%; height: 100%; fill: currentColor; overflow: visible; }
+.sc-film__light {
+  inset: 0; background: radial-gradient(70% 90% at 50% 50%, transparent 55%, rgba(26, 18, 11, 0.45));
+  animation: sc-projector 0.16s steps(2) infinite;
+}
+.sc-film__count {
+  left: 50%; top: 50%; width: 36px; height: 36px; margin: -18px 0 0 -18px; border-radius: 50%; overflow: hidden;
+  border: 1.5px solid currentColor;
+  background:
+    linear-gradient(currentColor 0 0) center / 1px 100% no-repeat,
+    linear-gradient(currentColor 0 0) center / 100% 1px no-repeat;
+  animation: sc-film-count var(--film) linear infinite;
+}
+.sc-film__count b {
+  position: absolute; inset: 0;
+  background: conic-gradient(rgba(26, 18, 11, 0.35) 0 90deg, transparent 90deg);
+  animation: sc-countdown 1.1s linear infinite;
+}
+.sc-film__count span {
+  position: absolute; inset: 0; display: grid; place-items: center; opacity: 0;
+  font: 800 20px/1 var(--display);
+}
+.sc-film__count span:nth-of-type(1) { animation: sc-film-3 var(--film) steps(1) infinite; }
+.sc-film__count span:nth-of-type(2) { animation: sc-film-2 var(--film) steps(1) infinite; }
+.sc-film__count span:nth-of-type(3) { animation: sc-film-1 var(--film) steps(1) infinite; }
+@keyframes sc-film-count { 0%, 13% { opacity: 1; } 13.5%, 100% { opacity: 0; } }
+@keyframes sc-film-3 { 0% { opacity: 1; } 4.5%, 100% { opacity: 0; } }
+@keyframes sc-film-2 { 0% { opacity: 0; } 4.5% { opacity: 1; } 9%, 100% { opacity: 0; } }
+@keyframes sc-film-1 { 0% { opacity: 0; } 9% { opacity: 1; } 13.5%, 100% { opacity: 0; } }
+.sc-film__flash { inset: 0; background: #FFFBEB; opacity: 0; animation: sc-film-flash var(--film) linear infinite; }
+@keyframes sc-film-flash { 0%, 13% { opacity: 0; } 13.8% { opacity: 1; } 15.5%, 100% { opacity: 0; } }
+.sc-film__walk { left: 0; right: 0; top: 9px; bottom: 9px; animation: sc-film-walk var(--film) linear infinite; }
+@keyframes sc-film-walk {
+  0%, 14% { transform: translateX(-30px); opacity: 0; }
+  15% { opacity: 1; }
+  45%, 100% { transform: translateX(38%); }
+  87% { opacity: 1; }
+  90%, 100% { opacity: 0; }
+}
+.sc-film__walk svg { position: absolute; left: 0; bottom: 1px; width: 28px; height: 36px; animation: sc-film-step var(--film) linear infinite; }
+@keyframes sc-film-step {
+  15.00% { transform: translateY(0px); }
+  17.14% { transform: translateY(-2px); }
+  19.29% { transform: translateY(0px); }
+  21.43% { transform: translateY(-2px); }
+  23.57% { transform: translateY(0px); }
+  25.71% { transform: translateY(-2px); }
+  27.86% { transform: translateY(0px); }
+  30.00% { transform: translateY(-2px); }
+  32.14% { transform: translateY(0px); }
+  34.29% { transform: translateY(-2px); }
+  36.43% { transform: translateY(0px); }
+  38.57% { transform: translateY(-2px); }
+  40.71% { transform: translateY(0px); }
+  42.86% { transform: translateY(-2px); }
+  45.00% { transform: translateY(0px); }
+  58% { transform: translateY(0); }
+  60% { transform: translateY(-9px); }
+  62% { transform: translateY(0); }
+  64% { transform: translateY(-6px); }
+  66%, 100% { transform: translateY(0); }
+}
+.sc-film__held { animation: sc-film-held var(--film) steps(1) infinite; }
+@keyframes sc-film-held { 0% { opacity: 1; } 45.5%, 100% { opacity: 0; } }
+.sc-film__box { left: calc(38% + 24px); bottom: 10px; width: 11px; height: 10px; opacity: 0; animation: sc-film-box var(--film) linear infinite; }
+@keyframes sc-film-box { 0%, 45.4% { opacity: 0; } 45.5%, 87% { opacity: 1; } 90%, 100% { opacity: 0; } }
+.sc-film__pop { left: calc(38% + 22px); bottom: 16px; width: 14px; height: 17px; opacity: 0; transform-origin: 50% 100%; animation: sc-film-pop var(--film) ease-out infinite; }
+@keyframes sc-film-pop {
+  0%, 54% { opacity: 0; transform: translateY(8px) scale(0.3); }
+  57% { opacity: 1; transform: translateY(-6px) scale(1.15); }
+  60%, 87% { opacity: 1; transform: translateY(0) scale(1); }
+  90%, 100% { opacity: 0; transform: translateY(0) scale(1); }
+}
+.sc-film__heart {
+  left: calc(38% + 20px + var(--n) * 7px); bottom: 30px; width: 8px; height: 7px; opacity: 0;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 7'%3E%3Cpath d='M4 7 L0.6 3.4 C-0.6 2 0.4 0 2 0 C3 0 3.6 0.6 4 1.2 C4.4 0.6 5 0 6 0 C7.6 0 8.6 2 7.4 3.4Z' fill='%231A120B'/%3E%3C/svg%3E") center / contain no-repeat;
+  animation: sc-film-heart var(--film) ease-out infinite; animation-delay: calc(var(--n) * 0.3s);
+}
+@keyframes sc-film-heart {
+  0%, 59% { opacity: 0; transform: translate(0, 0) scale(0.5); }
+  62% { opacity: 1; transform: translate(0, -4px) scale(1); }
+  80%, 100% { opacity: 0; transform: translate(calc((var(--n) - 1) * 8px), -22px) scale(1.2); }
+}
+.sc-film__end {
+  left: 0; right: 0; top: 50%; margin-top: -10px; text-align: center; opacity: 0;
+  font: italic 800 17px/20px var(--display); letter-spacing: 0.04em;
+  animation: sc-film-end var(--film) ease-out infinite;
+}
+@keyframes sc-film-end { 0%, 89% { opacity: 0; transform: scale(0.9); } 92%, 98% { opacity: 1; transform: scale(1); } 100% { opacity: 0; } }
 .sc-scratch {
-  top: 0; bottom: 0; left: 0; width: 1px; background: rgba(254, 243, 199, 0.35); opacity: 0;
+  top: 0; bottom: 0; left: 0; width: 1px; background: rgba(26, 18, 11, 0.4); opacity: 0;
   animation: sc-scratch 2.6s steps(1) infinite;
 }
 .sc-scratch--late { animation-duration: 3.7s; animation-delay: -1.2s; }
 @keyframes sc-scratch {
   0% { opacity: 0.5; transform: translateX(80px); }
   12% { opacity: 0; }
-  40% { opacity: 0.4; transform: translateX(290px); }
+  40% { opacity: 0.4; transform: translateX(260px); }
   48% { opacity: 0; }
   72% { opacity: 0.35; transform: translateX(170px); }
   78% { opacity: 0; }
-}
-.sc-leader {
-  right: 6%; top: calc(var(--hem) + 6px); width: 46px; height: 46px; border-radius: 50%; overflow: hidden; opacity: 0.4;
-  border: 1.5px solid rgba(254, 243, 199, 0.7);
-  background:
-    linear-gradient(rgba(254, 243, 199, 0.5), rgba(254, 243, 199, 0.5)) center / 1px 100% no-repeat,
-    linear-gradient(rgba(254, 243, 199, 0.5), rgba(254, 243, 199, 0.5)) center / 100% 1px no-repeat;
-}
-.sc-leader i {
-  position: absolute; inset: 0;
-  background: conic-gradient(rgba(254, 243, 199, 0.55) 0 60deg, transparent 60deg);
-  animation: sc-countdown 1.2s linear infinite;
 }
 @keyframes sc-countdown { to { transform: rotate(360deg); } }
 
