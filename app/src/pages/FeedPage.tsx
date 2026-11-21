@@ -500,6 +500,8 @@ export function FeedPage() {
     <main className="page qfeed">
       {/* The catalogue's cards are its heading; this names the page for screen readers. */}
       <h1 className="sr-only">Shop</h1>
+      {/* The top of the page sits on a block of colour, edge to edge, down to the drops. */}
+      <div className="qfeed__band">
       <QuestBar />
       {/* Orders still on their way, first: after paying, "where is it?" is the question. */}
       {browsing && <ActiveOrders />}
@@ -510,6 +512,7 @@ export function FeedPage() {
       {/* Drops sit up top, before the catalogue: an event on now beats any one item. */}
       {showDaily && !showDrops && pending(false)}
       {browsing && showDrops && <DropsStage drops={drops} />}
+      </div>
 
       {showDrops && (
       <div className="stack" id="catalogue" style={{ marginBottom: 14 }}>

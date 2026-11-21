@@ -28,6 +28,16 @@
 .picker:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
 .cat__glyph { display: block; color: var(--cat-hue, var(--text-dim)); transition: color var(--dur-1) var(--ease); }
 .qfeed { padding-top: 0; }
+/* A block of deep teal behind the top of the Buy page, edge to edge with rounded
+   lower corners: teal against the violet header and the navy below. */
+.qfeed__band {
+  --band: #115E59;
+  display: flow-root;
+  margin: 0 calc(-1 * max(var(--page-pad), env(safe-area-inset-right, 0px))) 18px calc(-1 * max(var(--page-pad), env(safe-area-inset-left, 0px)));
+  padding: 1px max(var(--page-pad), env(safe-area-inset-right, 0px)) 4px max(var(--page-pad), env(safe-area-inset-left, 0px));
+  background: var(--band);
+  border-radius: 0 0 28px 28px;
+}
 .qbar--buy { flex-wrap: nowrap; gap: 6px; }
 .qduo {
   display: inline-flex; align-items: center; min-width: 0;
