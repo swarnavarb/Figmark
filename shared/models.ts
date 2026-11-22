@@ -1,6 +1,7 @@
 import type { ShopOrderStatus } from './shop-status.js';
 import type { StoredBoardScore } from './boards.js';
 import type { CancelFlag, FeeTerms, ProState } from './billing.js';
+import type { BundleCount, ListingPiece, OrderPiece } from './pieces.js';
 import type { CostStep, ItemCostSheet, ProfitTemplate, SavedCalc } from './profit.js';
 import type { DealState } from './deals.js';
 import type { DeliveryEta } from './delivery-eta.js';
@@ -1252,6 +1253,32 @@ export interface Listing extends BaseDocument {
    * this existed are all single items.
    */
   bundle?: boolean;
+  /**
+   * How many things a lot sold all together holds: the seller's count,
+   * Figmark's own from the photos, and the one the platform fee is charged
+   * on (the larger). See shared/pieces.ts. Absent on single items and on
+   * lots listed before it was asked.
+   */
+  bundleCount?: BundleCount | null;
+  /**
+   * Sold piece by piece from one photo: each thing in the lead photo with its
+   * own title, price and place in the picture. Absent, or empty, for an
+   * ordinary listing. While present, `priceMinor` is the cheapest piece still
+   * for sale and `quantityAvailable` the number of pieces left.
+   */
+  pieces?: ListingPiece[] | null;
+  /**
+   * What a set sold all together holds: each thing in the lead photo, with
+   * its share of the set's price. For the seller and the fee; buyers buy the
+   * set. Absent on single items and on sets listed before it was asked.
+   */
+  setItems?: ListingPiece[] | null;
+  /**
+   * Every place the seller's phone found a thing in the lead photo when it
+   * was listed: part of what the fee is counted from, kept so an edit
+   * cannot count lower than the photo shows.
+   */
+  foundBoxes?: RegionBox[] | null;
   photos: ListingPhoto[];
   /**
    * The ladder a buyer reads before this item is in a lot.
@@ -1928,6 +1955,17 @@ export interface Order extends BaseDocument {
   affiliate?: OrderAffiliate | null;
   /** Figmark's platform fee as agreed when the order was placed. Absent on orders from before fees. */
   feeTerms?: FeeTerms | null;
+  /**
+   * The pieces of a listing sold piece by piece that this order bought,
+   * snapshotted with their prices. Quantity is then 1 and the unit price the
+   * pieces' sum; the platform fee is charged on each piece's own price.
+   */
+  pieces?: OrderPiece[] | null;
+  /**
+   * How many things one unit of this order is, for the platform fee: a lot
+   * sold all together counts every item in it. Absent means one.
+   */
+  feeUnits?: number | null;
   /** When the seller called this order off (cancelled, or turned it down after it was paid): counts towards their cancellation rate. */
   sellerCancelledAt?: string | null;
   /**

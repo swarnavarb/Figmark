@@ -15,6 +15,7 @@ import { haptic } from '../haptics';
 import { BackLink } from '../components/ScrollManager';
 import { useSave } from '../components/useSave';
 import { Canopy, DetailBlocks, Gallery, Svg, Urgency } from '../components/ListingBlocks';
+import { PieceBoard, PiecePicker, piecesCount } from '../components/Pieces';
 import { ProtectedNote, SellerTick } from '../components/Trust';
 import { ListingPosts } from '../components/ListingPosts';
 import { ListingDna } from '../components/DnaKit';
@@ -76,6 +77,8 @@ export function ListingPage() {
   const [quantity, setQuantity] = useState(1);
   /** The offer whose details and terms are open, from the row or the wholesale callout. */
   const [busy, setBusy] = useState(false);
+  /** Buy on a listing sold piece by piece: the picker, opened with whatever was already ticked on the photo. */
+  const [picking, setPicking] = useState<{ initial: string[] } | null>(null);
   const [editing, setEditing] = useState(false);
   // Just published from the Sell screen: the moment it goes live gets marked.
   const location = useLocation();
@@ -172,17 +175,32 @@ export function ListingPage() {
   // who ends up holding the money. Landing the buyer on their purchases list
   // instead skipped that question entirely and left an unpaid order behind
   // looking like a completed one.
-  const buy = () =>
-    run('', async () => {
+  const pieces = listing.pieces ?? [];
+  const byPiece = pieces.length > 0;
+  const buy = (initial: string[] = []) =>
+    byPiece ? setPicking({ initial }) : run('', async () => {
       haptic();
       const placed = await api.order(listing.id, quantity, via, ref, fromPost);
       navigate(`/order/${placed.order.id}`);
+    });
+  // Pieces ticked in the picker: one checkout for all of them, or the cart.
+  const buyPieces = (ids: string[], to: 'checkout' | 'cart') =>
+    run('', async () => {
+      haptic();
+      const placed = await api.order(listing.id, 1, via, ref, fromPost, ids);
+      setPicking(null);
+      if (to === 'checkout') {
+        navigate(`/order/${placed.order.id}`);
+        return;
+      }
+      window.dispatchEvent(new Event('figmark:cart'));
+      toast(`${placed.order.itemName} ${ids.length === 1 ? 'is' : 'are'} in your cart.`, 'ok');
     });
 
   // Into the cart and stay here: the order is made unpaid, exactly as Buy now
   // makes it, and waits in the cart until it is paid or booked.
   const addToCart = () =>
-    run('', async () => {
+    byPiece ? setPicking({ initial: [] }) : run('', async () => {
       haptic();
       await api.order(listing.id, quantity, via, ref, fromPost);
       window.dispatchEvent(new Event('figmark:cart'));
@@ -221,8 +239,10 @@ export function ListingPage() {
             {formatMoney(Math.max(100, listing.priceMinor - linkOff), listing.currency)}{' '}
             <s className="buybox__was">{formatMoney(listing.priceMinor, listing.currency)}</s>
           </span>
-        ) : <span className="buybox__price">{formatMoney(listing.priceMinor, listing.currency)}</span>}
-        {isMultiple(listing) || listing.quantityAvailable > 0
+        ) : <span className="buybox__price">{byPiece && <small className="buybox__from">from </small>}{formatMoney(listing.priceMinor, listing.currency)}</span>}
+        {byPiece && listing.quantityAvailable > 0
+          ? <span className="badge badge--accent">{piecesCount(pieces)}</span>
+          : isMultiple(listing) || listing.quantityAvailable > 0
           ? <StockChip listing={listing} />
           : <span className="badge badge--danger">Sold out</span>}
       </div>
@@ -285,7 +305,7 @@ export function ListingPage() {
       ) : (
         <div className="buybox__acts">
           {/* More than one to be had: how many, before the checkout opens. */}
-          {maxQuantity > 1 && (
+          {maxQuantity > 1 && !byPiece && (
             <span className="qtystep" role="group" aria-label="Quantity">
               <button type="button" onClick={() => setQuantity((n) => Math.max(1, n - 1))}
                 disabled={busy || quantity <= 1} aria-label="One fewer">−</button>
@@ -302,7 +322,7 @@ export function ListingPage() {
           ) : (
             <button className={`btn btn--lg buybox__buy${lock}`} onClick={gate(() => buy(), 'Sign in to buy this item.')}
               disabled={busy || !inStock}>
-              {busy ? <span className="buybox__opening">Working on it</span> : <>{lockMark}{listing.preOrder ? 'Buy a place now' : 'Buy now'}</>}
+              {busy ? <span className="buybox__opening">Working on it</span> : <>{lockMark}{listing.preOrder ? 'Buy a place now' : byPiece ? 'Pick & buy' : 'Buy now'}</>}
             </button>
           )}
           {!shut && (
@@ -385,8 +405,21 @@ export function ListingPage() {
                 </span>
               )}
               {isTakingBookings(listing.preOrder) && <span className="badge badge--accent">Pre-order</span>}
+              {byPiece && <span className="badge badge--accent">{piecesCount(pieces)} · priced separately</span>}
+              {listing.bundle && listing.bundleCount && <span className="badge badge--accent">Lot of {listing.bundleCount.declared}</span>}
             </span>
           </Gallery>
+          {/* Several things in one photo, each with its price: pick from the photo itself. */}
+          {byPiece && photos[0] && (
+            <PieceBoard src={photos[0]} pieces={pieces} title={listing.title}
+              disabled={data.isOwn || !buyable || busy || Boolean(shut)}
+              onBuy={(ids) => gate(() => buy(ids), 'Sign in to buy these.')()} />
+          )}
+          {picking && photos[0] && (
+            <PiecePicker src={photos[0]} pieces={pieces} initial={picking.initial} busy={busy}
+              advancePercent={listing.advancePercent} shippingMinor={listing.shippingMinor}
+              onClose={() => setPicking(null)} onCheckout={(ids, to) => void buyPieces(ids, to)} cartLabel="Add to cart" />
+          )}
 
           <div className="detail__section rise" style={{ marginTop: 18, ['--i' as string]: 1 }}>
             <h1 className="lp__title">{listing.title}</h1>

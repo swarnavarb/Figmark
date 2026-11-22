@@ -3,6 +3,7 @@ import { shopRefusal } from '../../../shared/shop-status.js';
 import { randomUUID } from 'node:crypto';
 import type { Listing, Order, Pledge } from '../../../shared/models.js';
 import { fullRuleOf, isGoingAhead } from '../../../shared/preorder.js';
+import { isPieceSold } from '../../../shared/pieces.js';
 import { creditLeft, isExpired, isMultiple, orderMoney, rupees } from '../../../shared/payments.js';
 import { orderTotalMinor } from '../../../shared/service-stores.js';
 import { repriceBasket } from '../offers.js';
@@ -35,8 +36,25 @@ export interface Refusal {
  * discount of the link the checkout was opened through - the same sum Buy
  * makes in catalog-routes.ts.
  */
-export function checkoutUnitPriceMinor(listing: Pick<Listing, 'priceMinor'>, order: Pick<Order, 'affiliate'>): number {
+export function checkoutUnitPriceMinor(
+  listing: Pick<Listing, 'priceMinor' | 'pieces'>, order: Pick<Order, 'affiliate'> & { pieces?: Order['pieces'] },
+): number {
+  // Pieces ticked from one photo: the sum of their prices now. A link's
+  // discount is per item and does not apply to a basket of pieces.
+  if (order.pieces?.length) {
+    return order.pieces.reduce((sum, piece) =>
+      sum + (listing.pieces?.find((entry) => entry.id === piece.id)?.priceMinor ?? piece.priceMinor), 0);
+  }
   return Math.max(100, listing.priceMinor - (order.affiliate?.buyerOffMinor ?? 0));
+}
+
+/** The pieces an order holds, at their prices on the listing now. */
+export function repricePieces(listing: Pick<Listing, 'pieces'>, order: Order): void {
+  if (!order.pieces?.length) return;
+  order.pieces = order.pieces.map((piece) => {
+    const now = listing.pieces?.find((entry) => entry.id === piece.id);
+    return now ? { ...piece, title: now.title, priceMinor: now.priceMinor } : piece;
+  });
 }
 
 /** Why this checkout cannot become an order right now, or null when it can. */
@@ -58,6 +76,15 @@ export function unavailableReason(listing: Listing | null, order: Order): string
   if (listing.feeHold) return 'This shop is not taking orders right now.';
   if (firstDibsFor(listing, order.buyerId) === 'waiting') {
     return 'The people who voted for this get first dibs. It opens to everybody soon.';
+  }
+  if (order.pieces?.length) {
+    // Each piece is one of a kind: gone the moment somebody else's order holds it.
+    for (const piece of order.pieces) {
+      const now = listing.pieces?.find((entry) => entry.id === piece.id);
+      if (!now) return `${piece.title} is no longer for sale.`;
+      if (isPieceSold(now) && now.soldOrderId !== order.id) return `${piece.title} has just sold. Pick again from what is left.`;
+    }
+    return null;
   }
   if (!isMultiple(listing) && order.quantity > listing.quantityAvailable) {
     return listing.quantityAvailable > 0 ? `Only ${listing.quantityAvailable} left.` : 'This item has sold out.';
@@ -99,6 +126,7 @@ export function preOrderRefusal(listing: Listing, pledges: readonly Pledge[], bu
  */
 export async function repriceCheckout(repository: Repo, order: Order, listing: Listing): Promise<boolean> {
   if (order.placedAt !== null) return false;
+  repricePieces(listing, order);
   const now = checkoutUnitPriceMinor(listing, order);
   if (now === order.unitPriceMinor) return false;
   // Measured from the price they first saw, however many times it has moved since.
@@ -183,7 +211,11 @@ export async function placeOrder(
   if (!(await repository.takeStock(order))) {
     order.placedAt = null;
     await repository.updateOrder(order);
-    return { code: 'unavailable', message: isMultiple(listing) ? 'This item is no longer for sale.' : 'This item has just sold out.' };
+    return {
+      code: 'unavailable',
+      message: order.pieces?.length ? 'One of those pieces has just sold. Pick again from what is left.'
+        : isMultiple(listing) ? 'This item is no longer for sale.' : 'This item has just sold out.',
+    };
   }
   if (listing.privateFor) order.privateDeal = true;
 
@@ -197,6 +229,8 @@ export async function placeOrder(
   // rate, or of the shop's Pro, never moves what this sale owes.
   const seller = await repository.getUserById(order.sellerId);
   order.feeTerms = await termsFor(repository, 'shop', seller);
+  // A lot sold all together pays the fee per item in it, as counted now.
+  order.feeUnits = listing.bundle && listing.bundleCount && listing.bundleCount.charged > 1 ? listing.bundleCount.charged : null;
   // Shown on the checkout only; an order is at the price it was placed at.
   order.priceChange = null;
   // The timeline opens when the order did, not when Buy was first pressed.

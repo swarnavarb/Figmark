@@ -564,7 +564,7 @@ function union(a: RegionBox, b: RegionBox): RegionBox {
  * into the separate shapes it makes, with the pieces of one thing put back
  * together.
  */
-function segment(raw: Raw, given?: View): Segmented {
+function segment(raw: Raw, given?: View, max = MAX_REGIONS): Segmented {
   const scale = SEGMENT_CELLS / Math.max(raw.width, raw.height);
   const small = shrinkRaw(raw, Math.min(1, scale));
   const { width, height } = small;
@@ -643,7 +643,7 @@ function segment(raw: Raw, given?: View): Segmented {
   merged.sort((a, b) => area(b) - area(a));
   const largest = area(merged[0]!);
   // A speck beside the main thing - a logo, a price sticker - is not an item.
-  merged = merged.filter((box) => area(box) >= largest * SPECK).slice(0, MAX_REGIONS);
+  merged = merged.filter((box) => area(box) >= largest * SPECK).slice(0, max);
   return { subject, items: merged.length >= 2 ? merged : [] };
 }
 
@@ -653,8 +653,8 @@ export function subjectBox(raw: Raw): RegionBox | null {
 }
 
 /** The separate items in a photo, largest first; empty when it shows one thing, or nothing can be told apart. */
-export function detectItems(raw: Raw): RegionBox[] {
-  return segment(workingCopy(raw)).items;
+export function detectItems(raw: Raw, max = MAX_REGIONS): RegionBox[] {
+  return segment(workingCopy(raw), undefined, max).items;
 }
 
 /** The pixels inside a box. */

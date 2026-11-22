@@ -18,6 +18,7 @@ import type { RouteStep } from '@shared/routes';
 import type { Lot, PreOrderFullRule, PreOrderShortRule } from '@shared/models';
 import { fillFrom, type PostTemplate } from '@shared/templates';
 import { PhotoManager } from '../components/PhotoManager';
+import { PhotoGroupBox, emptyGroup, groupBody, groupPriceMinor, groupProblems, type PhotoGroup } from '../components/PieceEditor';
 import { CategoryFields } from '../components/CategoryFields';
 import { ApiRequestError, api, type LotSummary, type PhotoDraft } from '../api';
 import { ErrorNotice, Icon, Modal, Thumb, leadPhoto } from '../components/ui';
@@ -105,6 +106,8 @@ type SellDraft = {
   savedAt?: number;
   /** The copy of this form kept with the shop, once it has been saved as a draft. */
   serverDraftId?: string | null;
+  /** A photo of several things: sold separately, as a lot, or as one item. */
+  group?: PhotoGroup;
 };
 
 /** How many visits' drafts are kept. Each visit has its own key, and nothing else ever removed them. */
@@ -357,6 +360,11 @@ function SellForm({ serverDraft, draftMissing }: {
   // None when the form starts from an existing item: that item is the template.
   const [templateId, setTemplateId] = useState<string>(() => restored?.templateId ?? (prefill?.fromItem || prefill?.copyOf ? '' : lastTemplate() ?? ''));
   const [photos, setPhotos] = useState<PhotoDraft[]>(restored?.photos ?? prefill?.photos ?? []);
+  /** What the lead photo holds, and how the seller chose to sell it. */
+  const [group, setGroup] = useState<PhotoGroup>(() => {
+    const kept = restored?.group;
+    return kept ? { ...kept, reading: false } : emptyGroup();
+  });
   const [preLot, setPreLot] = useState<RouteStep[] | null>(restored?.preLot ?? null);
   const [shape, setShape] = useState<Shape>(restored?.shape ?? 'single');
   const [lots, setLots] = useState<LotSummary[]>([]);
@@ -391,7 +399,7 @@ function SellForm({ serverDraft, draftMissing }: {
   latest.current = {
     title, description, category, attributes, price, costSheet, terms, shareToChannel, shareToFeed,
     preOrderMode, fillThreshold, preOrderDays, whenShort, whenFull, tags, calc, templateId, photos, preLot, shape, lotId,
-    createdListingId, serverDraftId,
+    createdListingId, serverDraftId, group,
   };
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -400,7 +408,7 @@ function SellForm({ serverDraft, draftMissing }: {
     return () => window.clearTimeout(timer);
   }, [draftKey, title, description, category, attributes, price, costSheet, terms, shareToChannel, shareToFeed,
     preOrderMode, fillThreshold, preOrderDays, whenShort, whenFull, tags, calc, templateId, photos, preLot, shape, lotId,
-    createdListingId]);
+    createdListingId, group]);
   useEffect(() => () => {
     if (!published.current && latest.current) writeDraft(draftKey, latest.current);
   }, [draftKey]);
@@ -539,12 +547,17 @@ function SellForm({ serverDraft, draftMissing }: {
     }
   }
 
-  const priceMinor = Math.round(Number(price || 0) * 100);
+  /** Sold piece by piece: each piece has its price, and the listing reads "from" the cheapest. */
+  const separately = group.mode === 'pieces' && !deal && !preOrderMode;
+  const asLot = group.mode === 'lot' && !deal && !preOrderMode;
+  const priceMinor = separately || asLot ? groupPriceMinor(group) : Math.round(Number(price || 0) * 100);
+  const groupNeeded = separately || asLot ? groupProblems(group) : [];
   // A lot listing needs a lot; there is nothing to publish into otherwise.
   // A lot is bookkeeping the shop does when the lot is packed, which is
   // usually long after the item goes up. Nothing waits on it.
   const etaIssue = termsProblem(terms);
-  const canPublish = title.trim().length > 2 && priceMinor >= MIN_PRICE_MINOR && priceMinor <= MAX_PRICE_MINOR && !etaIssue;
+  const canPublish = title.trim().length > 2 && priceMinor >= MIN_PRICE_MINOR && priceMinor <= MAX_PRICE_MINOR && !etaIssue
+    && groupNeeded.length === 0;
   // Everything still standing between this form and a listing, said at once
   // and from the start - not one line at a time beside a button that will not press.
   const basicsNeeded = [
@@ -552,6 +565,7 @@ function SellForm({ serverDraft, draftMissing }: {
     priceMinor < MIN_PRICE_MINOR ? (price ? `a price of at least ${formatMoney(MIN_PRICE_MINOR)}` : 'a price')
       : priceMinor > MAX_PRICE_MINOR ? `a price of at most ${formatMoney(MAX_PRICE_MINOR)}` : null,
     etaIssue ? 'a delivery time' : null,
+    ...groupNeeded,
   ].filter((text): text is string => Boolean(text));
   // The category's required questions are asked after the first press of
   // Publish, with the unanswered ones marked, rather than leaving a button
@@ -635,6 +649,10 @@ function SellForm({ serverDraft, draftMissing }: {
     if (!canPublish) {
       setTriedPublish(true);
       haptic('error');
+      if (groupNeeded.length > 0 && title.trim().length > 2) {
+        document.querySelector<HTMLElement>('.pcs-edit, .pcs-ask')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
       document.querySelector<HTMLElement>(title.trim().length <= 2 ? '#sell-title' : etaIssue && priceMinor >= MIN_PRICE_MINOR && priceMinor <= MAX_PRICE_MINOR ? '#sell-eta input' : '#sell-price')
         ?.focus();
       return;
@@ -673,6 +691,8 @@ function SellForm({ serverDraft, draftMissing }: {
           ? { ...termsBody({ ...terms, quantityMode: 'multiple' }), expiresAt: closesAt }
           : termsBody(terms)),
         bundle: false,
+        // A photo of several things: each piece priced, or a counted lot.
+        ...(separately || asLot ? groupBody(group) : {}),
         // A private deal is never announced: only its buyer ever sees it.
         shareToChannel: deal ? false : shareToChannel,
         shareToFeed: deal ? false : shareToFeed,
@@ -873,16 +893,25 @@ function SellForm({ serverDraft, draftMissing }: {
             {verified
               ? <PhotoManager photos={photos} onChange={setPhotos} label={null} />
               : <span className="lbox__hint">Add photos once you are verified - the rest of the draft is kept.</span>}
+            {verified && !deal && !preOrderMode && (
+              <PhotoGroupBox photoUrl={(photos.find((photo) => photo.isPrimary) ?? photos[0])?.url ?? null}
+                group={group} onChange={setGroup} />
+            )}
           </LBox>
 
           <LBox icon="🏷️" title="The item">
             <label className="field">
               <span>Title</span>
               <input id="sell-title" value={title} onChange={(e) => setTitle(e.target.value)}
-                placeholder="1/7 scale figure, sealed" aria-invalid={triedPublish && title.trim().length <= 2 ? true : undefined} />
+                placeholder={separately ? 'Marvel Legends lot - pick what you want' : asLot ? 'Marvel Legends lot of 12' : '1/7 scale figure, sealed'} aria-invalid={triedPublish && title.trim().length <= 2 ? true : undefined} />
             </label>
             {/* Price and stock side by side: the two numbers every listing has.
                 Stock used to sit under "More options", three taps from here. */}
+            {separately || asLot ? (
+              <p className="feehint">{separately
+                ? <>Each item has its own price above. Buyers see <b>from {priceMinor > 0 ? formatMoney(priceMinor) : '₹—'}</b>, and sold items are crossed out on the photo.</>
+                : <>Sold as one set for <b>{priceMinor > 0 ? formatMoney(priceMinor) : '₹—'}</b>, priced above.</>}</p>
+            ) : (<>
             <div className="field-row sellnums">
               <label className="field">
                 <span>Price (₹)</span>
@@ -907,6 +936,7 @@ function SellForm({ serverDraft, draftMissing }: {
               )}
             </div>
             <FeeHint kind="shop" priceMinor={priceMinor} />
+            </>)}
             {/* What is it? Tags, not a dropdown: every category is visible at
                 once, and the line under them says what lives in the one picked. */}
             <div className="field" role="group" aria-label="Category">
