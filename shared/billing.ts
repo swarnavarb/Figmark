@@ -501,6 +501,44 @@ export function platformFee(
   return { feeMinor: split.baseMinor, gstMinor: split.gstMinor, totalMinor: split.totalMinor, beforeDiscountMinor };
 }
 
+type Fee = ReturnType<typeof platformFee>;
+
+function addFees(parts: { fee: Fee; times: number }[]): Fee {
+  return parts.reduce<Fee>((sum, { fee, times }) => ({
+    feeMinor: sum.feeMinor + fee.feeMinor * times,
+    gstMinor: sum.gstMinor + fee.gstMinor * times,
+    totalMinor: sum.totalMinor + fee.totalMinor * times,
+    beforeDiscountMinor: sum.beforeDiscountMinor + fee.beforeDiscountMinor * times,
+  }), { feeMinor: 0, gstMinor: 0, totalMinor: 0, beforeDiscountMinor: 0 });
+}
+
+/**
+ * The platform fee on a sale of several things, as if each were sold on its
+ * own - which is what it would have cost to list them one by one.
+ *
+ * - `pieces`: things sold separately from one photo, each at its own price.
+ * - `units`: things in a lot sold all together, the price shared out evenly.
+ *
+ * With neither it is `platformFee` on the amount. See shared/pieces.ts.
+ */
+export function saleFee(
+  terms: FeeTerms,
+  sale: { amountMinor: number; pieces?: readonly { priceMinor: number }[] | null; units?: number | null },
+): Fee {
+  if (terms.kind !== 'forwarder' && sale.pieces && sale.pieces.length > 0) {
+    return addFees(sale.pieces.map((piece) => ({ fee: platformFee(terms, { amountMinor: piece.priceMinor }), times: 1 })));
+  }
+  const units = Math.max(1, Math.round(sale.units ?? 1));
+  if (terms.kind === 'forwarder' || units <= 1 || sale.amountMinor <= 0) return platformFee(terms, { amountMinor: sale.amountMinor });
+  // Shared out in whole paise: some units carry one paisa more, so the shares add back up.
+  const share = Math.floor(sale.amountMinor / units);
+  const over = sale.amountMinor - share * units;
+  return addFees([
+    { fee: platformFee(terms, { amountMinor: share }), times: units - over },
+    { fee: platformFee(terms, { amountMinor: share + 1 }), times: over },
+  ]);
+}
+
 /** "3%", "₹10 flat", "₹10 per kg" - a band in words, for a hint under a price. */
 export function bandWords(band: FeeBand, money: (minor: number) => string): string {
   return band.mode === 'percent' ? `${(band.value / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })}%` : `${money(band.value)} flat`;

@@ -62,7 +62,7 @@ export function sameness(a: PhotoBox, b: PhotoBox): number {
   return shared / (areaOf(a) + areaOf(b) - shared);
 }
 
-export function thingsIn(detections: Detected[]): PhotoBox[] {
+export function thingsIn(detections: Detected[], max = MAX_THINGS): PhotoBox[] {
   const usable = detections.filter(({ label, score, box }) =>
     !SCENERY.has(label)
     && score >= (FIGURE.has(label) || PACKAGE.has(label) ? MIN_LIKELY : MIN_OTHER)
@@ -102,7 +102,7 @@ export function thingsIn(detections: Detected[]): PhotoBox[] {
   const prominence = ({ score, box }: Detected) => score * Math.sqrt(areaOf(box));
   return [...packages, ...loose]
     .sort((a, b) => prominence(b) - prominence(a))
-    .slice(0, MAX_THINGS)
+    .slice(0, max)
     .map(({ box }) => box.map((part) => Math.round(part * 1000) / 1000) as PhotoBox);
 }
 

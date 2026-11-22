@@ -1,3 +1,8 @@
+import {
+  MAX_BUNDLE_COUNT, chargedUnits, cleanPieces, fromPriceMinor, hasPieces, isPieceSold, piecesName, publicPieces,
+  type BundleCount, type ListingPiece, type OrderPiece,
+} from '../../../shared/pieces.js';
+import { countLotItems, readStoredPieces } from '../pieces.js';
 import { listedInShop, shopRefusal, shopStatusOf } from '../../../shared/shop-status.js';
 import { isProActive } from '../../../shared/billing.js';
 import { lockTimedOffers, repriceBasket, snapshotFromListing } from '../offers.js';
@@ -266,6 +271,8 @@ function publicListing(listing: Listing): Listing {
   } = listing;
   // Who voted is the voters' business: a reader sees only when it opens.
   if (firstDibs) (rest as Listing).firstDibs = { ...firstDibs, voterIds: [] };
+  // Which order holds each piece is the shop's business: a reader sees only that it sold.
+  if (rest.pieces?.length) (rest as Listing).pieces = publicPieces(rest.pieces);
   const highest = Math.max(0, ...(priceHistory ?? []).map((entry) => entry.priceMinor));
   return highest > listing.priceMinor
     ? { ...rest, priceHistory: [{ priceMinor: highest, at: listing.createdAt }] }
@@ -895,6 +902,12 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     dealFromId?: string | null;
     /** Listed because a stock poll asked for it: its voters get first dibs. */
     fromPoll?: { channelId?: unknown; postId?: unknown; optionId?: unknown } | null;
+    /** Sold piece by piece from the lead photo: see shared/pieces.ts. */
+    pieces?: unknown;
+    /** A lot sold all together: how many things the seller says it holds. */
+    bundleItems?: number | null;
+    /** How many the seller's own phone found in the photos; only ever raises the count. */
+    bundleSeen?: number | null;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -980,8 +993,36 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
   } catch (err) {
     return error(400, 'invalid_listing', (err as Error).message);
   }
+  // Sold piece by piece: each piece its own price, and the listing's price
+  // the cheapest of them. Never a private deal or a pre-order, which are
+  // promises about one item.
+  let pieces: ListingPiece[] | null = null;
+  if (body.pieces !== undefined && body.pieces !== null) {
+    if (body.privateFor || body.preOrder) return error(400, 'invalid_listing', 'A private deal or a pre-order is one item, not a photo of several.');
+    if (photos.length === 0) return error(400, 'invalid_listing', 'Add the photo the items are in.');
+    const cleaned = cleanPieces(body.pieces);
+    if ('error' in cleaned) return error(400, 'invalid_pieces', cleaned.error);
+    pieces = cleaned.pieces;
+    body.priceMinor = fromPriceMinor(pieces);
+  }
   const priceMinor = listablePrice(body.priceMinor);
   if (priceMinor === null) return error(400, 'invalid_listing', PRICE_RANGE_MESSAGE);
+
+  // A lot sold all together: the fee is per item in it, on the larger of the
+  // seller's count and Figmark's own from the photos.
+  let bundleCount: BundleCount | null = null;
+  if (body.bundle === true && !pieces) {
+    // A client from before the count was asked sends none: one, and Figmark's own count still applies.
+    const declared = body.bundleItems == null ? 1 : Math.round(Number(body.bundleItems));
+    if (!Number.isFinite(declared) || declared < 1 || declared > MAX_BUNDLE_COUNT) {
+      return error(400, 'invalid_listing', `Say how many items are in the lot (1 to ${MAX_BUNDLE_COUNT}).`);
+    }
+    const counted = await countLotItems(photos.map((photo) => photo.blobName).filter((name): name is string => Boolean(name)))
+      .catch(() => 0);
+    const seen = Math.min(MAX_BUNDLE_COUNT, Math.max(0, Math.round(Number(body.bundleSeen ?? 0)) || 0));
+    const detected = Math.max(counted, seen);
+    bundleCount = { declared, detected, charged: chargedUnits(declared, detected) };
+  }
 
   // How long it takes to reach the buyer is the first thing every buyer asks,
   // so every item says it. A private deal made from one of the shop's items
@@ -1053,8 +1094,11 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     status: 'active',
     priceMinor,
     currency: 'INR',
-    quantityAvailable: Math.max(1, Math.round(body.quantityAvailable ?? 1)),
+    quantityAvailable: pieces ? pieces.length : Math.max(1, Math.round(body.quantityAvailable ?? 1)),
     ...listingTerms(body, priceMinor),
+    // Each piece is one of a kind: there is no shelf count to leave open.
+    ...(pieces ? { quantityMode: 'fixed' as const, pieces } : {}),
+    ...(bundleCount ? { bundleCount } : {}),
     // Pre-order and shipment lot are independent: a listing opts into demand
     // pooling here, and gets tagged into a lot separately, from the seller's
     // lot console.
@@ -1071,7 +1115,7 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     lotId,
     sourcing,
     /** Sold as one assorted lot rather than as a single named item. */
-    bundle: body.bundle === true,
+    bundle: body.bundle === true && !pieces,
     /* Photos as the manager arranged them: at most six, first one primary
        unless the seller said otherwise. The cap is here rather than in the
        browser because a document with forty images in it is the kind of thing
@@ -1477,7 +1521,7 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
   const user = await auth.requireCapability(request, ['buy']);
   const repository = await getRepository();
 
-  let body: { listingId?: string; quantity?: number; via?: string; plan?: 'book'; ref?: string; fromPost?: unknown };
+  let body: { listingId?: string; quantity?: number; via?: string; plan?: 'book'; ref?: string; fromPost?: unknown; pieceIds?: unknown };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -1506,10 +1550,25 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
   if (typeof asked !== 'number' || !Number.isInteger(asked) || asked < 1 || asked > MAX_ORDER_QUANTITY) {
     return error(400, 'invalid_quantity', `Quantity must be a whole number from 1 to ${MAX_ORDER_QUANTITY}.`);
   }
-  const quantity = asked;
-  if (!isMultiple(listing) && quantity > listing.quantityAvailable) {
+  let quantity = asked;
+  // Pieces from one photo: the buyer ticks which, and checks them out together.
+  let pieces: OrderPiece[] | null = null;
+  if (hasPieces(listing)) {
+    const ids = Array.isArray(body.pieceIds) ? [...new Set(body.pieceIds.filter((id): id is string => typeof id === 'string'))] : [];
+    if (ids.length === 0) return error(400, 'pick_pieces', 'Pick which items you want.');
+    pieces = [];
+    for (const id of ids) {
+      const piece = listing.pieces!.find((entry) => entry.id === id);
+      if (!piece) return error(409, 'unavailable', 'One of those items is no longer for sale.');
+      if (isPieceSold(piece)) return error(409, 'insufficient_stock', `${piece.title} has already sold.`);
+      pieces.push({ id: piece.id, title: piece.title, priceMinor: piece.priceMinor, box: piece.boxes[0] ?? null });
+    }
+    if (body.plan === 'book') return error(400, 'invalid_order', 'Pick pay or advance for items from a photo.');
+    quantity = 1;
+  } else if (!isMultiple(listing) && quantity > listing.quantityAvailable) {
     return error(409, 'insufficient_stock', `Only ${listing.quantityAvailable} left.`);
   }
+  const itemName = pieces ? piecesName(pieces) : listing.title;
 
   // A link followed straight into Buy is remembered like one opened first.
   // The credit itself is read back from the account, never from the request,
@@ -1533,6 +1592,11 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
       // that brought the buyer and whatever the seller charges now.
       if (affiliate && open.affiliate?.referrerId !== affiliate.referrerId) open.affiliate = affiliate;
       open.quantity = quantity;
+      // A checkout of pieces is what was ticked this time.
+      if (pieces) {
+        open.pieces = pieces;
+        open.itemName = itemName;
+      }
       if (fromPost && !open.fromPost) open.fromPost = fromPost;
       await repriceCheckout(repository, open, listing);
       open.hold = { ...open.hold, amountMinor: open.unitPriceMinor * quantity };
@@ -1550,7 +1614,7 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
 
   const now = new Date().toISOString();
   // A buyer who came through somebody's link pays the shop's link price.
-  const unitPriceMinor = checkoutUnitPriceMinor(listing, { affiliate });
+  const unitPriceMinor = checkoutUnitPriceMinor(listing, { affiliate, pieces });
   const amountMinor = unitPriceMinor * quantity;
   const now2 = new Date().toISOString();
 
@@ -1592,9 +1656,10 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
     sellerId: listing.sellerId,
     buyerId: user.id,
     listingId: listing.id,
-    itemName: listing.title,
+    itemName,
     condition: listing.condition,
     quantity,
+    ...(pieces ? { pieces } : {}),
     unitWeightGrams: 0,
     unitPriceMinor,
     currency: listing.currency,
@@ -1945,7 +2010,12 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
   // if somebody else wrote it in between: sold count, pre-order fill and stock
   // a buyer took are never rolled back by a seller saving a title.
   const change = (current: Listing): Listing | null => {
-    const price = newPrice ?? current.priceMinor;
+    // Sold piece by piece: the price and the count are the pieces', not the form's.
+    if (hasPieces(current)) {
+      body.priceMinor = undefined;
+      body.quantityAvailable = undefined;
+    }
+    const price = hasPieces(current) ? current.priceMinor : newPrice ?? current.priceMinor;
     const next: Listing = { ...current, ...listingTerms(body, price, current.affiliate), updatedAt: new Date().toISOString() };
     // A private deal stays one: no commission, and a new clock is at most a day from now.
     if (current.privateFor) {
@@ -1972,7 +2042,7 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
         next.priceHistory = [...history, { priceMinor: next.priceMinor, at: next.updatedAt }].slice(-20);
       }
     }
-    if (stockDelta !== 0) next.quantityAvailable = Math.max(0, current.quantityAvailable + stockDelta);
+    if (stockDelta !== 0 && !hasPieces(current)) next.quantityAvailable = Math.max(0, current.quantityAvailable + stockDelta);
     if (next.expiresAt && isExpired(next) && body.expiresAt !== undefined) {
       refusal = error(400, 'invalid_expiry', 'Pick an expiry in the future, or none.');
       return null;
@@ -2047,6 +2117,39 @@ async function forwarders(request: HttpRequest, _context: InvocationContext) {
   return json(200, { forwarders: entries });
 }
 
+/**
+ * POST /api/pieces/detect - the things for sale in one of the seller's photos.
+ *
+ * What the sell form asks when a photo goes in, so it can say "this looks
+ * like 12 items - sell them separately or all together?" and lay out a row
+ * for each. A guess the seller corrects: they mark what it missed and take
+ * off what is not for sale.
+ */
+async function detectPieces(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireCapability(request, ['sell']);
+  const slow = await tooFast(user.id, 'photopicture');
+  if (slow) return slow;
+  const body = await request.json().catch(() => ({})) as { url?: unknown; blobName?: unknown };
+  const url = typeof body.url === 'string' ? body.url : '';
+  const name = (url ? await ownPhotoName(url) : null) ?? (typeof body.blobName === 'string' ? body.blobName : null);
+  if (!name || !/^[A-Za-z0-9._-]{8,120}$/.test(name)) return error(400, 'invalid_photo', 'That photo did not come through.');
+  const info = await (await getPhotoStore()).publicInfo(name);
+  if (!info) return error(404, 'not_found', 'That photo is not there any more.');
+  // Somebody else's photo is not the caller's to read for them.
+  if (info.uploadedBy && info.uploadedBy !== user.id) {
+    const attached = info.attachedTo?.startsWith('listing:') ? await getRepository().then((r) => r.getListing(info.attachedTo!.slice(8))) : null;
+    const owner = attached ? await getRepository().then((r) => r.getUserById(attached.sellerId)) : null;
+    if (!owner || (owner.id !== user.id && !can(owner, user.id, 'listings'))) {
+      const uploader = await getRepository().then((r) => r.getUserById(info.uploadedBy!));
+      if (!uploader || !can(uploader, user.id, 'listings')) return error(403, 'forbidden', 'That is not your photo.');
+    }
+  }
+  const reading = await readStoredPieces(name);
+  return json(200, { pieces: reading.pieces, method: reading.method, vision: visionAvailable() });
+}
+
+export const detectPiecesRoute = handler(detectPieces);
 export const feedRoute = handler(feed);
 export const listingDetailRoute = handler(listingDetail);
 export const createListingRoute = handler(createListing);
@@ -2085,6 +2188,7 @@ app.http('seller-follow', { ...anon, methods: ['POST'], route: 'sellers/{id}/fol
 app.http('listing-edit', { ...anon, methods: ['POST'], route: 'listings/{id}/edit', handler: editListingRoute });
 app.http('listing-delete', { ...anon, methods: ['POST'], route: 'listings/{id}/delete', handler: deleteListingRoute });
 app.http('order-create', { ...anon, methods: ['POST'], route: 'orders', handler: createOrderRoute });
+app.http('pieces-detect', { ...anon, methods: ['POST'], route: 'pieces/detect', handler: detectPiecesRoute });
 app.http('me-activity', { ...anon, methods: ['GET'], route: 'me/activity', handler: myActivityRoute });
 app.http('me-saved', { ...anon, methods: ['GET'], route: 'me/saved', handler: mySavedRoute });
 app.http('me-listings', { ...anon, methods: ['GET'], route: 'me/listings', handler: myListingsRoute });

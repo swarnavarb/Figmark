@@ -159,3 +159,32 @@ export function detectThings(photo: PhotoQuery, better?: (boxes: PhotoBox[]) => 
   }
   return quick;
 }
+
+/**
+ * Every thing on a sale photo the seller just added, for the sell form: the
+ * whole photo and each quarter of it, as many as `max`. Read from the photo
+ * as uploaded; one the browser may not read the pixels of (another site's,
+ * without CORS) finds nothing, and the server's reading stands alone.
+ */
+export async function detectAllThings(url: string, max = 60): Promise<PhotoBox[]> {
+  try {
+    const model = await loadDetector();
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.src = url;
+    await image.decode();
+    const scale = Math.min(1, LOOK_EDGE / Math.max(image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    canvas.getContext('2d')!.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const all = look(model, canvas, [0, 0, canvas.width, canvas.height]);
+    for (const part of quarters(canvas.width, canvas.height)) {
+      await breathe();
+      all.push(...look(model, canvas, part));
+    }
+    return thingsIn(all, max);
+  } catch {
+    return [];
+  }
+}

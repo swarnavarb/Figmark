@@ -122,6 +122,69 @@ export async function describeItems(bytes: Uint8Array, contentType: string): Pro
   }).slice(0, MAX_ITEMS);
 }
 
+/** Things a sale photo may be split into: a shelf of figures, not a warehouse. */
+const MAX_PIECES = 60;
+
+const PIECES_SCHEMA = {
+  type: 'object',
+  properties: {
+    items: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          boxes: { type: 'array', items: { type: 'array', items: { type: 'number' } } },
+        },
+        required: ['name', 'boxes'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['items'],
+  additionalProperties: false,
+} as const;
+
+const PIECES_SYSTEM = [
+  'You help sellers on Figmark, a marketplace for collectibles - action figures, scale figures, model kits,',
+  'trading cards, sneakers, plush and the like - list a sale photo that shows several things for sale at once.',
+  `List every separate thing a buyer could buy on its own that is visible in the photo, at most ${MAX_PIECES}.`,
+  'Accessories lying beside a figure (spare hands, effects, weapons, a stand) belong to the nearest figure and are',
+  'not items of their own, and neither are furniture, backgrounds, packaging filler or bags of loose parts.',
+  'If the SAME physical item appears more than once in the photo - a front and back view, or a close-up of it -',
+  'that is ONE item: give it once, with one box for each place it appears. Two copies of the same product that',
+  'are clearly separate physical items are two items.',
+  'Name each as a seller would title it: the line or brand, the character or model, and the version if you can',
+  'tell (for example "Marvel Legends Wolverine (classic yellow)"). When unsure, describe it plainly.',
+  'Each box is [left, top, right, bottom], each a fraction from 0 to 1 of the photo\'s width (left, right) or',
+  'height (top, bottom), drawn tight around the item.',
+].join(' ');
+
+/** One thing in a sale photo: its name, and each place it appears. */
+export interface PhotoPiece {
+  name: string;
+  boxes: RegionBox[];
+}
+
+/**
+ * Every thing for sale in a photo, each once, with every place it appears.
+ * Null when vision is off or the photo could not be read; empty when Claude
+ * saw nothing for sale.
+ */
+export async function describePieces(bytes: Uint8Array, contentType: string): Promise<PhotoPiece[] | null> {
+  const raw = await ask(bytes, contentType, PIECES_SYSTEM, PIECES_SCHEMA,
+    'List each separate item for sale in this photo, with a box for every place it appears.');
+  if (!raw) return null;
+  const items = Array.isArray((raw as { items?: unknown }).items) ? (raw as { items: unknown[] }).items : [];
+  const out: PhotoPiece[] = [];
+  for (const item of items as { name?: unknown; boxes?: unknown }[]) {
+    const name = typeof item?.name === 'string' ? item.name.trim().slice(0, 120) : '';
+    const boxes = (Array.isArray(item?.boxes) ? item.boxes : []).map(boxOf).filter((box): box is RegionBox => box !== null).slice(0, 4);
+    if (boxes.length > 0) out.push({ name, boxes });
+  }
+  return out.slice(0, MAX_PIECES);
+}
+
 /** One structured look at a photo; the parsed answer, or null for any failure. */
 async function ask(bytes: Uint8Array, contentType: string, system: string, schema: object, question: string): Promise<unknown> {
   if (!config.vision) return null;
@@ -131,7 +194,7 @@ async function ask(bytes: Uint8Array, contentType: string, system: string, schem
   try {
     const response = await client.beta.messages.create({
       model: config.vision.model,
-      max_tokens: 4000,
+      max_tokens: 8000,
       // Naming items in one photo is a quick look, not a hard problem.
       output_config: {
         effort: 'low',
