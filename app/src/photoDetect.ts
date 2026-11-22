@@ -38,6 +38,8 @@ interface RawDetection {
 const MIN_SCORE = 0.05;
 /** The photo is looked at no larger than this: more is time, not things. */
 const LOOK_EDGE = 2000;
+/** Things a search photo is told apart into: a shelf shot is searched figure by figure. */
+const SEARCH_THINGS = 30;
 /** How long the first look may take, model download included, before the search goes on without it. */
 const PATIENCE_MS = 25_000;
 
@@ -64,8 +66,27 @@ export function warmDetector(): void {
   void loadDetector().catch(() => undefined);
 }
 
-/** The photo drawn no larger than LOOK_EDGE. Asked for with CORS, so a stored photo's pixels can be read. */
-async function canvasOf(url: string): Promise<HTMLCanvasElement> {
+/**
+ * An address this page may read the pixels of. A photo already uploaded is
+ * kept in Blob Storage, another origin that sends no CORS headers: drawn
+ * from there, the canvas is tainted and the detector reads nothing. The API
+ * serves the same photo from this origin, so that is read instead.
+ */
+export function readableUrl(url: string): string {
+  try {
+    const at = new URL(url, window.location.href);
+    if (at.protocol === 'data:' || at.protocol === 'blob:' || at.origin === window.location.origin) return url;
+    const name = decodeURIComponent(at.pathname.split('/').pop() ?? '');
+    if (/^[A-Za-z0-9._-]{8,120}$/.test(name)) return `/api/photos/${encodeURIComponent(name)}`;
+  } catch {
+    /* Not an address: read it as it is. */
+  }
+  return url;
+}
+
+/** The photo drawn no larger than LOOK_EDGE, from an address whose pixels may be read. */
+async function canvasOf(address: string): Promise<HTMLCanvasElement> {
+  const url = readableUrl(address);
   const image = new Image();
   if (!url.startsWith('data:') && !url.startsWith('blob:')) image.crossOrigin = 'anonymous';
   image.src = url;
@@ -136,7 +157,7 @@ export async function findThings(url: string, options: { quick?: boolean; max?: 
   const answer = () => combineThings({ detected: fuseDetections(all).map((fused) => fused.box), blobs }, options.max ?? MAX_THINGS)
     .map((thing) => thing.boxes[0]!);
   for (const [index, { grid, overlap }] of TILINGS.entries()) {
-    if (options.quick && grid > 2) break;
+    if (options.quick && index > 1) break;
     for (const tile of tilesOf(canvas.width, canvas.height, grid, overlap)) {
       all.push(...look(model, canvas, tile));
       if (grid > 1) await breathe();
@@ -168,7 +189,7 @@ export function detectThings(photo: PhotoQuery, better?: (boxes: PhotoBox[]) => 
     // One reading: the quick answer is what it has after the first two tilings.
     let early: (boxes: PhotoBox[]) => void = () => undefined;
     const quick = new Promise<PhotoBox[]>((resolve) => { early = resolve; });
-    const close = findThings(source, { max: 20, better: early }).then((boxes) => { early(boxes); return boxes; });
+    const close = findThings(source, { max: SEARCH_THINGS, better: early }).then((boxes) => { early(boxes); return boxes; });
     close.catch(() => early([]));
     const patient = new Promise<PhotoBox[]>((resolve) => { setTimeout(() => resolve([]), PATIENCE_MS); });
     found = {

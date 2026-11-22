@@ -3,7 +3,7 @@ import type { PhotoBox, PhotoItem } from './api';
 import { MAX_THINGS as SHARED_MAX, sameness, insideOf } from '@shared/photo-things';
 
 /** At most this many things are offered for a search photo. */
-export const MAX_THINGS = Math.min(20, SHARED_MAX);
+export const MAX_THINGS = Math.min(30, SHARED_MAX);
 const inside = insideOf;
 
 /**

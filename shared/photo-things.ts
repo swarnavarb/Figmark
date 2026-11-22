@@ -39,9 +39,13 @@ export interface Detection {
 /** The most things one photo is told apart into. */
 export const MAX_THINGS = 60;
 
-/** The tilings looked at, finest last: the whole photo, then 2x2, 3x3 and 4x4 overlapping tiles. */
+/** The tilings looked at, finest last: the whole photo, then 2x2 (twice: snug and wide), 3x3 and 4x4 overlapping tiles. */
 export const TILINGS: readonly { grid: number; overlap: number }[] = [
-  { grid: 1, overlap: 0 }, { grid: 2, overlap: 0.2 }, { grid: 3, overlap: 0.25 }, { grid: 4, overlap: 0.3 },
+  { grid: 1, overlap: 0 }, { grid: 2, overlap: 0.2 },
+  // Four big tiles, three quarters of the photo each: a boxed figure too big
+  // for the finer tiles is seen whole, and larger than in the whole photo.
+  { grid: 2, overlap: 0.5 },
+  { grid: 3, overlap: 0.25 }, { grid: 4, overlap: 0.3 },
 ];
 
 /** The tiles of a W x H picture for one tiling, in pixels: x, y, width, height. */
@@ -60,15 +64,22 @@ export function tilesOf(W: number, H: number, grid: number, overlap: number): [n
 
 /** What a photo of a shelf is taken in front of, or on: never a thing for sale. */
 const SCENERY = new Set([
-  'dining table', 'bed', 'couch', 'chair', 'bench', 'tv', 'refrigerator', 'oven', 'sink', 'toilet', 'traffic light',
-  'stop sign', 'parking meter', 'fire hydrant', 'car', 'truck', 'bus', 'train', 'boat', 'laptop', 'keyboard', 'potted plant',
+  'dining table', 'bed', 'couch', 'chair', 'bench', 'oven', 'sink', 'toilet', 'traffic light',
+  'stop sign', 'parking meter', 'fire hydrant', 'car', 'truck', 'bus', 'train', 'boat', 'potted plant',
 ]);
+/**
+ * What the detector calls a boxed or carded toy: flat, printed and square,
+ * it reads as a book, a screen, a fridge door or a suitcase. In a collector's
+ * photo that is the package, and the figure printed on it or seen through
+ * its window is the package too, not a thing of its own.
+ */
+const PACKAGE = new Set(['book', 'tv', 'laptop', 'refrigerator', 'suitcase', 'cell phone', 'microwave', 'keyboard', 'remote']);
 /** A detection under this is noise unless other looks agree with it. */
 const MIN_SCORE = 0.08;
 /** Votes a fused box needs: one sure look, or several unsure ones. */
 const MIN_VOTE = 0.25;
-/** Over this much of the photo is the shelf, not a thing on it. */
-const MAX_AREA = 0.25;
+/** Over this much of the photo is the shelf, not a thing on it - a big boxed set can be a quarter of it. */
+const MAX_AREA = 0.3;
 /** Under this much, a speck. */
 const MIN_AREA = 0.0015;
 
@@ -105,7 +116,7 @@ export function fuseDetections(detections: readonly Detection[]): Fused[] {
   const usable = detections
     .filter((d) => !d.cut && !SCENERY.has(d.label) && d.score >= MIN_SCORE && areaOf(d.box) >= MIN_AREA && areaOf(d.box) <= MAX_AREA)
     .sort((a, b) => b.score - a.score);
-  const clusters: { looks: { w: number; box: Box }[]; box: Box; vote: number }[] = [];
+  const clusters: { looks: { w: number; box: Box }[]; box: Box; vote: number; packed: number }[] = [];
   for (const d of usable) {
     let best: (typeof clusters)[number] | null = null;
     let bestIou = 0;
@@ -116,8 +127,9 @@ export function fuseDetections(detections: readonly Detection[]): Fused[] {
     if (best) {
       best.looks.push({ w: d.score, box: d.box });
       best.vote += d.score;
+      if (PACKAGE.has(d.label)) best.packed += d.score;
     } else {
-      clusters.push({ looks: [{ w: d.score, box: d.box }], box: d.box, vote: d.score });
+      clusters.push({ looks: [{ w: d.score, box: d.box }], box: d.box, vote: d.score, packed: PACKAGE.has(d.label) ? d.score : 0 });
     }
   }
   // Each kept box is the looks at it averaged, the surer ones counting more.
@@ -126,19 +138,26 @@ export function fuseDetections(detections: readonly Detection[]): Fused[] {
     cluster.box = [0, 1, 2, 3].map((k) => cluster.looks.reduce((sum, look) => sum + look.w * look.box[k]!, 0) / total) as Box;
   }
   const voted = clusters.filter((cluster) => cluster.vote >= MIN_VOTE);
-  // A box round the middles of two or more smaller things is the group they stand in.
+  const isPackage = (cluster: (typeof clusters)[number]) => cluster.packed * 2 >= cluster.vote;
+  // A box round the middles of two or more smaller things is the group they
+  // stand in. A package holds a figure and its parts, so it is a group only
+  // when it holds other packages.
   const things = voted.filter((cluster) => voted.filter((other) => other !== cluster
+    && (!isPackage(cluster) || isPackage(other))
     && areaOf(other.box) < 0.7 * areaOf(cluster.box)
     && holds(cluster.box, centre(other.box))
     && insideOf(other.box, cluster.box) > 0.6).length < 2);
-  // A torso inside its own figure is the figure seen twice.
-  const kept: Fused[] = [];
-  for (const cluster of things.sort((a, b) => b.vote - a.vote)) {
-    if (kept.some((k) => insideOf(cluster.box, k.box) >= 0.75
-      && (areaOf(cluster.box) < 0.45 * areaOf(k.box) || insideOf(k.box, cluster.box) >= 0.6))) continue;
-    kept.push({ box: rounded(cluster.box), vote: cluster.vote });
+  // Packages first, so what is printed on one or seen through its window goes with it.
+  const order = (a: (typeof clusters)[number], b: (typeof clusters)[number]) =>
+    Number(isPackage(b)) - Number(isPackage(a)) || b.vote - a.vote;
+  // A torso inside its own figure is the figure seen twice; a figure inside a package is the package.
+  const kept: (Fused & { packaged: boolean })[] = [];
+  for (const cluster of things.sort(order)) {
+    if (kept.some((k) => (k.packaged && !isPackage(cluster) && insideOf(cluster.box, k.box) >= 0.65)
+      || (insideOf(cluster.box, k.box) >= 0.75 && (areaOf(cluster.box) < 0.45 * areaOf(k.box) || insideOf(k.box, cluster.box) >= 0.6)))) continue;
+    kept.push({ box: rounded(cluster.box), vote: cluster.vote, packaged: isPackage(cluster) });
   }
-  return kept;
+  return kept.map(({ box, vote }) => ({ box, vote }));
 }
 
 /* ── The backdrop ─────────────────────────────────────────────────────── */

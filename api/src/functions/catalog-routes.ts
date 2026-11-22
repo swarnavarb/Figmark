@@ -493,7 +493,7 @@ async function photoSearch(request: HttpRequest, _context: InvocationContext) {
   const region = body.region === undefined || body.region === null ? null : readBox(body.region);
   if (body.region != null && !region) return error(400, 'invalid_region', 'Pick an item inside the photo.');
   // The things the phone found in the photo, if it looked: a box that is not one is passed over.
-  const boxes = (Array.isArray(body.boxes) ? body.boxes : []).slice(0, MAX_REGIONS)
+  const boxes = (Array.isArray(body.boxes) ? body.boxes : []).slice(0, SEARCH_ITEMS)
     .map(readBox).filter((box): box is RegionBox => box !== null);
 
   let raw: Raw | null = null;
@@ -567,6 +567,9 @@ interface Searched {
   items: FoundItem[];
 }
 
+/** Things a search photo is told apart into, at most: a shelf shot is searched figure by figure. */
+const SEARCH_ITEMS = 30;
+
 /** Items smaller than this share of the photo are not worth offering on their own when they are the only one. */
 const LONE_ITEM_MAX = 0.5;
 
@@ -579,10 +582,10 @@ async function searchWholePhoto(bytes: Uint8Array, contentType: string, raw: Raw
   // The same reading the sell form makes of a sale photo (api/src/photo-things.ts):
   // what Claude names, what the phone found, and what stands off the backdrop.
   const { things, descriptions: read } = await thingsInPhoto(bytes, contentType, raw, found);
-  const boxes = things.slice(0, MAX_REGIONS).map((thing) => ({ box: thing.boxes[0]!, description: thing.description }));
+  const boxes = things.slice(0, SEARCH_ITEMS).map((thing) => ({ box: thing.boxes[0]!, description: thing.description }));
   // One item filling most of the photo is the photo: nothing to choose between.
   const offered = boxes.length >= 2 || (boxes.length === 1 && boxes[0]!.box[2] * boxes[0]!.box[3] < LONE_ITEM_MAX)
-    ? boxes.slice(0, MAX_REGIONS)
+    ? boxes.slice(0, SEARCH_ITEMS)
     : [];
   // Numbered as the shopper reads the photo: left to right, then top to bottom.
   offered.sort((a, b) => a.box[0] + a.box[2] / 2 - (b.box[0] + b.box[2] / 2) || a.box[1] - b.box[1]);
