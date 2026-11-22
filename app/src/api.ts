@@ -1366,10 +1366,10 @@ export interface ReviewsAbout {
 export interface NewListing {
   /** Sold piece by piece from the lead photo: each with its title, price and place in the photo. */
   pieces?: { id?: string; title: string; priceMinor: number; boxes: PhotoBox[] }[] | null;
-  /** A lot sold all together: how many items the seller says it holds. */
-  bundleItems?: number | null;
-  /** How many items this device found in the photos. */
-  bundleSeen?: number | null;
+  /** A set sold all together: each thing in the lead photo; the price is shared out among them. */
+  setItems?: { title: string; boxes: PhotoBox[] }[] | null;
+  /** Every place the photo readers found a thing in the lead photo. */
+  seen?: PhotoBox[] | null;
   /** What one unit cost (Pro), step by step. */
   costSheet?: { templateId: string | null; templateName: string | null; steps: CostStep[] } | null;
   /** A private deal for this one buyer: never in the catalog, channels or feed. */

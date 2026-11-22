@@ -1,8 +1,9 @@
 import {
-  MAX_BUNDLE_COUNT, chargedUnits, cleanPieces, fromPriceMinor, hasPieces, isPieceSold, piecesName, publicPieces,
+  MAX_BUNDLE_COUNT, cleanBox, cleanPieces, cleanSetItems, fromPriceMinor, hasPieces, isPieceSold, mergePieces, piecesLeft, piecesName, publicPieces,
   type BundleCount, type ListingPiece, type OrderPiece,
 } from '../../../shared/pieces.js';
-import { countLotItems, readStoredPieces } from '../pieces.js';
+import { FIND_SLACK, countThings, readStoredPieces } from '../pieces.js';
+import { thingsInPhoto } from '../photo-things.js';
 import { listedInShop, shopRefusal, shopStatusOf } from '../../../shared/shop-status.js';
 import { isProActive } from '../../../shared/billing.js';
 import { lockTimedOffers, repriceBasket, snapshotFromListing } from '../offers.js';
@@ -273,6 +274,8 @@ function publicListing(listing: Listing): Listing {
   if (firstDibs) (rest as Listing).firstDibs = { ...firstDibs, voterIds: [] };
   // Which order holds each piece is the shop's business: a reader sees only that it sold.
   if (rest.pieces?.length) (rest as Listing).pieces = publicPieces(rest.pieces);
+  // What the fee was counted from is the shop's and Figmark's business.
+  delete (rest as Listing).foundBoxes;
   const highest = Math.max(0, ...(priceHistory ?? []).map((entry) => entry.priceMinor));
   return highest > listing.priceMinor
     ? { ...rest, priceHistory: [{ priceMinor: highest, at: listing.createdAt }] }
@@ -573,20 +576,10 @@ const LONE_ITEM_MAX = 0.5;
  * not mention - each fingerprinted on its own.
  */
 async function searchWholePhoto(bytes: Uint8Array, contentType: string, raw: Raw | null, found: RegionBox[] = []): Promise<Searched> {
-  const read = visionAvailable() ? await describeItems(bytes, contentType) : null;
-  const boxes: { box: RegionBox; description: PhotoDescription | null }[] = [];
-  for (const item of read ?? []) if (item.box) boxes.push({ box: item.box, description: item });
-  // What the phone found, then what this finds where the backdrop is plain:
-  // each only where nothing already stands. The phone's detector has already
-  // kept a thing found twice once, and a figure standing behind another
-  // shares much of its box, so its boxes give way only to one nearly the same.
-  const add = (box: RegionBox, same: number) => {
-    if (boxes.length < MAX_REGIONS && !boxes.some((known) => overlapOfBoxes(known.box, box) >= same)) {
-      boxes.push({ box, description: null });
-    }
-  };
-  for (const box of found) add(box, 0.8);
-  for (const box of raw ? detectItems(raw) : []) add(box, 0.5);
+  // The same reading the sell form makes of a sale photo (api/src/photo-things.ts):
+  // what Claude names, what the phone found, and what stands off the backdrop.
+  const { things, descriptions: read } = await thingsInPhoto(bytes, contentType, raw, found);
+  const boxes = things.slice(0, MAX_REGIONS).map((thing) => ({ box: thing.boxes[0]!, description: thing.description }));
   // One item filling most of the photo is the photo: nothing to choose between.
   const offered = boxes.length >= 2 || (boxes.length === 1 && boxes[0]!.box[2] * boxes[0]!.box[3] < LONE_ITEM_MAX)
     ? boxes.slice(0, MAX_REGIONS)
@@ -904,10 +897,12 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     fromPoll?: { channelId?: unknown; postId?: unknown; optionId?: unknown } | null;
     /** Sold piece by piece from the lead photo: see shared/pieces.ts. */
     pieces?: unknown;
-    /** A lot sold all together: how many things the seller says it holds. */
+    /** A set sold all together: each thing in the lead photo. The price is shared out among them. */
+    setItems?: unknown;
+    /** Every place the seller's phone found a thing in the lead photo: part of what the fee is counted from. */
+    seen?: unknown;
+    /** Older clients: how many things a lot holds. Only ever a floor; the photo is counted too. */
     bundleItems?: number | null;
-    /** How many the seller's own phone found in the photos; only ever raises the count. */
-    bundleSeen?: number | null;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -993,6 +988,10 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
   } catch (err) {
     return error(400, 'invalid_listing', (err as Error).message);
   }
+  // The lead photo, and the places the seller's phone found things in it.
+  const leadBlob = (photos.find((photo) => photo.isPrimary) ?? photos[0])?.blobName ?? null;
+  const seen = (Array.isArray(body.seen) ? body.seen : []).slice(0, 120).map(cleanBox).filter((box): box is RegionBox => box !== null);
+
   // Sold piece by piece: each piece its own price, and the listing's price
   // the cheapest of them. Never a private deal or a pre-order, which are
   // promises about one item.
@@ -1002,26 +1001,33 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     if (photos.length === 0) return error(400, 'invalid_listing', 'Add the photo the items are in.');
     const cleaned = cleanPieces(body.pieces);
     if ('error' in cleaned) return error(400, 'invalid_pieces', cleaned.error);
-    pieces = cleaned.pieces;
+    // Each row is charged for every different thing in it, as Figmark sees them.
+    const counted = await countThings(leadBlob, cleaned.pieces.map((piece) => piece.boxes), seen).catch(() => null);
+    pieces = cleaned.pieces.map((piece, index) => ({ ...piece, units: counted?.perRow[index] ?? 1 }));
     body.priceMinor = fromPriceMinor(pieces);
   }
   const priceMinor = listablePrice(body.priceMinor);
   if (priceMinor === null) return error(400, 'invalid_listing', PRICE_RANGE_MESSAGE);
 
-  // A lot sold all together: the fee is per item in it, on the larger of the
-  // seller's count and Figmark's own from the photos.
+  // A set sold all together: the fee is per different thing in it, counted
+  // from the photo by Figmark - never from a number the seller typed.
   let bundleCount: BundleCount | null = null;
+  let setItems: ListingPiece[] | null = null;
   if (body.bundle === true && !pieces) {
-    // A client from before the count was asked sends none: one, and Figmark's own count still applies.
-    const declared = body.bundleItems == null ? 1 : Math.round(Number(body.bundleItems));
-    if (!Number.isFinite(declared) || declared < 1 || declared > MAX_BUNDLE_COUNT) {
-      return error(400, 'invalid_listing', `Say how many items are in the lot (1 to ${MAX_BUNDLE_COUNT}).`);
+    if (body.setItems !== undefined && body.setItems !== null) {
+      if (photos.length === 0) return error(400, 'invalid_listing', 'Add the photo the set is in.');
+      const cleaned = cleanSetItems(body.setItems, priceMinor);
+      if ('error' in cleaned) return error(400, 'invalid_pieces', cleaned.error);
+      setItems = cleaned.items;
     }
-    const counted = await countLotItems(photos.map((photo) => photo.blobName).filter((name): name is string => Boolean(name)))
-      .catch(() => 0);
-    const seen = Math.min(MAX_BUNDLE_COUNT, Math.max(0, Math.round(Number(body.bundleSeen ?? 0)) || 0));
-    const detected = Math.max(counted, seen);
-    bundleCount = { declared, detected, charged: chargedUnits(declared, detected) };
+    const counted = await countThings(leadBlob, (setItems ?? []).map((item) => item.boxes), seen)
+      .catch(() => ({ charged: 1, found: 0, perRow: [] as number[] }));
+    const declared = setItems ? setItems.length : Math.round(Number(body.bundleItems ?? 1));
+    if (!Number.isFinite(declared) || declared < 1 || declared > MAX_BUNDLE_COUNT) {
+      return error(400, 'invalid_listing', `A set holds 1 to ${MAX_BUNDLE_COUNT} items.`);
+    }
+    // With its items marked, the count is the photo's; an older client's number is only a floor.
+    bundleCount = { declared, detected: counted.found, charged: setItems ? counted.charged : Math.max(declared, counted.charged) };
   }
 
   // How long it takes to reach the buyer is the first thing every buyer asks,
@@ -1099,6 +1105,8 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     // Each piece is one of a kind: there is no shelf count to leave open.
     ...(pieces ? { quantityMode: 'fixed' as const, pieces } : {}),
     ...(bundleCount ? { bundleCount } : {}),
+    ...(setItems ? { setItems } : {}),
+    ...((pieces || setItems) && seen.length ? { foundBoxes: seen } : {}),
     // Pre-order and shipment lot are independent: a listing opts into demand
     // pooling here, and gets tagged into a lot separately, from the seller's
     // lot console.
@@ -1561,7 +1569,7 @@ async function createOrder(request: HttpRequest, _context: InvocationContext) {
       const piece = listing.pieces!.find((entry) => entry.id === id);
       if (!piece) return error(409, 'unavailable', 'One of those items is no longer for sale.');
       if (isPieceSold(piece)) return error(409, 'insufficient_stock', `${piece.title} has already sold.`);
-      pieces.push({ id: piece.id, title: piece.title, priceMinor: piece.priceMinor, box: piece.boxes[0] ?? null });
+      pieces.push({ id: piece.id, title: piece.title, priceMinor: piece.priceMinor, box: piece.boxes[0] ?? null, ...(piece.units && piece.units > 1 ? { units: piece.units } : {}) });
     }
     if (body.plan === 'book') return error(400, 'invalid_order', 'Pick pay or advance for items from a photo.');
     quantity = 1;
@@ -1973,6 +1981,10 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
     affiliateOffMinor?: number | null;
     deliveryEta?: DeliveryEta | null;
     photos?: { blobName?: string; url: string; isPrimary?: boolean }[];
+    /** The pieces of a listing sold piece by piece, as the seller left them: see mergePieces. */
+    pieces?: unknown;
+    /** What a set holds, as the seller left it. */
+    setItems?: unknown;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -1981,6 +1993,35 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
   }
 
   if (body.title !== undefined && !body.title.trim()) return error(400, 'invalid_listing', 'A title is required.');
+  // The items in the photo, edited after publishing. Sold pieces stay as they
+  // sold; the fee count is worked out from the photo again, and never drops
+  // below what the photo showed when it was listed.
+  const leadBlob = (listing.photos.find((photo) => photo.isPrimary) ?? listing.photos[0])?.blobName ?? null;
+  let editedPieces: { pieces: ListingPiece[]; ids: (string | null)[] } | null = null;
+  if (body.pieces !== undefined && body.pieces !== null) {
+    if (!hasPieces(listing)) return error(400, 'invalid_pieces', 'This item is not sold piece by piece.');
+    const sent = Array.isArray(body.pieces) ? body.pieces as { id?: unknown }[] : [];
+    const cleaned = cleanPieces(sent);
+    if ('error' in cleaned) return error(400, 'invalid_pieces', cleaned.error);
+    const counted = await countThings(leadBlob, cleaned.pieces.map((piece) => piece.boxes), listing.foundBoxes ?? []).catch(() => null);
+    editedPieces = {
+      pieces: cleaned.pieces.map((piece, index) => ({ ...piece, units: counted?.perRow[index] ?? 1 })),
+      ids: sent.map((entry) => (typeof entry?.id === 'string' ? entry.id : null)),
+    };
+  }
+  let editedSet: { items: unknown; charged: number; found: number; rows: number } | null = null;
+  if (body.setItems !== undefined && body.setItems !== null) {
+    if (!listing.bundle) return error(400, 'invalid_pieces', 'This item is not sold as a set.');
+    const check = cleanSetItems(body.setItems, listing.priceMinor);
+    if ('error' in check) return error(400, 'invalid_pieces', check.error);
+    const counted = await countThings(leadBlob, check.items.map((item) => item.boxes), listing.foundBoxes ?? []).catch(() => null);
+    editedSet = {
+      items: body.setItems,
+      charged: Math.max(counted?.charged ?? 1, Math.ceil((listing.bundleCount?.detected ?? 0) * (1 - FIND_SLACK))),
+      found: Math.max(counted?.found ?? 0, listing.bundleCount?.detected ?? 0),
+      rows: check.items.length,
+    };
+  }
   // Once given, a delivery time can be changed but not taken away.
   if (body.deliveryEta !== undefined) {
     const etaIssue = etaProblem(body.deliveryEta);
@@ -2032,6 +2073,14 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
     if (body.title !== undefined) next.title = body.title.trim();
     if (body.description !== undefined) next.description = body.description.trim();
     if (photos) next.photos = photos;
+    if (editedPieces && hasPieces(current)) {
+      const merged = mergePieces(current.pieces!, editedPieces.pieces, editedPieces.ids);
+      const left = piecesLeft(merged).length;
+      next.pieces = merged;
+      next.priceMinor = fromPriceMinor(merged);
+      next.quantityAvailable = left;
+      if (next.status === 'active' || next.status === 'sold_out') next.status = left > 0 ? 'active' : 'sold_out';
+    }
     if (body.priceMinor !== undefined) {
       next.priceMinor = price;
       // Kept so Insights can say what a price change did to demand.
@@ -2043,6 +2092,16 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
       }
     }
     if (stockDelta !== 0 && !hasPieces(current)) next.quantityAvailable = Math.max(0, current.quantityAvailable + stockDelta);
+    // A set's items share its price as it is now, whichever of the two changed.
+    if (current.bundle && (editedSet || (body.priceMinor !== undefined && current.setItems?.length))) {
+      const items = cleanSetItems(editedSet?.items ?? current.setItems, next.priceMinor);
+      if (!('error' in items)) {
+        next.setItems = items.items.map((item, index) => ({ ...item, id: current.setItems?.[index]?.id ?? item.id }));
+        if (editedSet) {
+          next.bundleCount = { declared: editedSet.rows, detected: editedSet.found, charged: editedSet.charged };
+        }
+      }
+    }
     if (next.expiresAt && isExpired(next) && body.expiresAt !== undefined) {
       refusal = error(400, 'invalid_expiry', 'Pick an expiry in the future, or none.');
       return null;

@@ -18,7 +18,7 @@ import type { RouteStep } from '@shared/routes';
 import type { Lot, PreOrderFullRule, PreOrderShortRule } from '@shared/models';
 import { fillFrom, type PostTemplate } from '@shared/templates';
 import { PhotoManager } from '../components/PhotoManager';
-import { PhotoGroupBox, emptyGroup, groupBody, groupFromMinor, groupProblems, type PhotoGroup } from '../components/PieceEditor';
+import { PhotoGroupBox, emptyGroup, groupBody, groupPriceMinor, groupProblems, type PhotoGroup } from '../components/PieceEditor';
 import { CategoryFields } from '../components/CategoryFields';
 import { ApiRequestError, api, type LotSummary, type PhotoDraft } from '../api';
 import { ErrorNotice, Icon, Modal, Thumb, leadPhoto } from '../components/ui';
@@ -550,7 +550,7 @@ function SellForm({ serverDraft, draftMissing }: {
   /** Sold piece by piece: each piece has its price, and the listing reads "from" the cheapest. */
   const separately = group.mode === 'pieces' && !deal && !preOrderMode;
   const asLot = group.mode === 'lot' && !deal && !preOrderMode;
-  const priceMinor = separately ? groupFromMinor(group) : Math.round(Number(price || 0) * 100);
+  const priceMinor = separately || asLot ? groupPriceMinor(group) : Math.round(Number(price || 0) * 100);
   const groupNeeded = separately || asLot ? groupProblems(group) : [];
   // A lot listing needs a lot; there is nothing to publish into otherwise.
   // A lot is bookkeeping the shop does when the lot is packed, which is
@@ -650,7 +650,7 @@ function SellForm({ serverDraft, draftMissing }: {
       setTriedPublish(true);
       haptic('error');
       if (groupNeeded.length > 0 && title.trim().length > 2) {
-        document.querySelector<HTMLElement>('.pcs-edit, .pcs-lot')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        document.querySelector<HTMLElement>('.pcs-edit, .pcs-ask')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
       }
       document.querySelector<HTMLElement>(title.trim().length <= 2 ? '#sell-title' : etaIssue && priceMinor >= MIN_PRICE_MINOR && priceMinor <= MAX_PRICE_MINOR ? '#sell-eta input' : '#sell-price')
@@ -895,7 +895,7 @@ function SellForm({ serverDraft, draftMissing }: {
               : <span className="lbox__hint">Add photos once you are verified - the rest of the draft is kept.</span>}
             {verified && !deal && !preOrderMode && (
               <PhotoGroupBox photoUrl={(photos.find((photo) => photo.isPrimary) ?? photos[0])?.url ?? null}
-                group={group} onChange={setGroup} lotPriceMinor={asLot ? priceMinor : 0} />
+                group={group} onChange={setGroup} />
             )}
           </LBox>
 
@@ -907,12 +907,14 @@ function SellForm({ serverDraft, draftMissing }: {
             </label>
             {/* Price and stock side by side: the two numbers every listing has.
                 Stock used to sit under "More options", three taps from here. */}
-            {separately ? (
-              <p className="feehint">Each item has its own price above. Buyers see <b>from {priceMinor > 0 ? formatMoney(priceMinor) : '₹—'}</b>, and sold items are crossed out on the photo.</p>
+            {separately || asLot ? (
+              <p className="feehint">{separately
+                ? <>Each item has its own price above. Buyers see <b>from {priceMinor > 0 ? formatMoney(priceMinor) : '₹—'}</b>, and sold items are crossed out on the photo.</>
+                : <>Sold as one set for <b>{priceMinor > 0 ? formatMoney(priceMinor) : '₹—'}</b>, priced above.</>}</p>
             ) : (<>
             <div className="field-row sellnums">
               <label className="field">
-                <span>{asLot ? "Price for the whole lot (₹)" : "Price (₹)"}</span>
+                <span>Price (₹)</span>
                 <input id="sell-price" type="number" min="1" step="1" value={price} inputMode="numeric"
                   onChange={(e) => setPrice(e.target.value)} placeholder="1450"
                   aria-invalid={triedPublish && (priceMinor < MIN_PRICE_MINOR || priceMinor > MAX_PRICE_MINOR) ? true : undefined} />
@@ -933,7 +935,7 @@ function SellForm({ serverDraft, draftMissing }: {
                 </div>
               )}
             </div>
-            {!asLot && <FeeHint kind="shop" priceMinor={priceMinor} />}
+            <FeeHint kind="shop" priceMinor={priceMinor} />
             </>)}
             {/* What is it? Tags, not a dropdown: every category is visible at
                 once, and the line under them says what lives in the one picked. */}

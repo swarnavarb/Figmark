@@ -1267,6 +1267,18 @@ export interface Listing extends BaseDocument {
    * for sale and `quantityAvailable` the number of pieces left.
    */
   pieces?: ListingPiece[] | null;
+  /**
+   * What a set sold all together holds: each thing in the lead photo, with
+   * its share of the set's price. For the seller and the fee; buyers buy the
+   * set. Absent on single items and on sets listed before it was asked.
+   */
+  setItems?: ListingPiece[] | null;
+  /**
+   * Every place the seller's phone found a thing in the lead photo when it
+   * was listed: part of what the fee is counted from, kept so an edit
+   * cannot count lower than the photo shows.
+   */
+  foundBoxes?: RegionBox[] | null;
   photos: ListingPhoto[];
   /**
    * The ladder a buyer reads before this item is in a lot.

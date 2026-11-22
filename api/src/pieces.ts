@@ -1,139 +1,100 @@
 import type { RegionBox } from '../../shared/models.js';
 import { MAX_PIECES } from '../../shared/pieces.js';
-import { detectItems, likeness, overlapOfBoxes, regionFingerprint } from './image-hash.js';
+import { sameness } from '../../shared/photo-things.js';
+import { distinctCount, thingsInPhoto } from './photo-things.js';
 import { decodeJpeg, type Raw } from './storage/compress.js';
 import { getPhotoStore } from './storage/index.js';
-import { describePieces, visionAvailable } from './vision.js';
+import { visionAvailable } from './vision.js';
 
 /**
- * The things for sale in a sale photo, each once.
+ * A sale photo of several things, on the server: what is in it (the same
+ * reading photo search makes, api/src/photo-things.ts), and how many
+ * different things the seller is selling, for the platform fee.
  *
- * What the seller is shown when a photo looks like more than one thing -
- * "sell these separately, or all together?" - and what Figmark counts the
- * things in a lot by, for its fee. Two readers, as with photo search:
- *
- * - Claude, when vision is on, names each thing and says every place it
- *   appears, so a front and a back view of one figure come back as one.
- * - The backdrop, always: whatever stands off a plain backdrop is a thing,
- *   and two things that look the same by their fingerprints are taken to be
- *   one thing shown twice.
- *
- * Either may miss things - a cluttered shelf has no plain backdrop - which is
- * why the seller marks what was missed, and why the count only ever raises
- * the fee: what the seller says is never lowered by it.
+ * The count is Figmark's, never the seller's: it is worked out from the
+ * picture, over every place the seller marked, every place their phone found
+ * and every place Claude named. Places that show the same thing - a front and
+ * a back view - count once; different things count apiece, however the
+ * seller grouped them. A seller may take a few wrong finds off the list
+ * (a stand, a bag of parts); taking most of them off does not lower the fee.
  */
 export interface FoundPiece {
-  /** What Claude called it; null when only the backdrop found it. */
   label: string | null;
-  /** Each place it appears, largest first. More than one when it is shown more than once. */
   boxes: RegionBox[];
 }
 
 export interface PieceReading {
   pieces: FoundPiece[];
-  /** Which readers took part. */
   method: 'vision' | 'shape' | 'both' | 'none';
 }
 
-/** Two boxes this much the same are one thing found by both readers. */
-const SAME_PLACE = 0.45;
+/** Of what was found, the share a seller may take off as wrong finds without it lowering the fee. */
+export const FIND_SLACK = 0.15;
 
-/** Group boxes whose pictures say they are the same thing, so each is counted once. */
-function groupAlike(raw: Raw, boxes: RegionBox[]): RegionBox[][] {
-  const prints = boxes.map((box) => regionFingerprint(raw, box));
-  const groups: { boxes: RegionBox[]; prints: (string | null)[] }[] = [];
-  for (const [index, box] of boxes.entries()) {
-    const print = prints[index] ?? null;
-    const home = print
-      ? groups.find((group) => group.prints.some((other) => other && likeness(print, other)?.sameItem))
-      : undefined;
-    if (home) {
-      home.boxes.push(box);
-      home.prints.push(print);
-    } else {
-      groups.push({ boxes: [box], prints: [print] });
-    }
-  }
-  return groups.map((group) => group.boxes);
-}
+/** Readings already made, by photo: a stored photo never changes, and the seller's publish reads it again. */
+const readings = new Map<string, Promise<{ reading: PieceReading; raw: Raw | null }>>();
+const READINGS_MAX = 200;
 
-/** Read as a person reads a shelf: top row first, left to right. */
-function readingOrder(a: FoundPiece, b: FoundPiece): number {
-  const [ax, ay, , ah] = a.boxes[0]!;
-  const [bx, by, , bh] = b.boxes[0]!;
-  const row = Math.min(ah, bh) / 2;
-  const acy = ay + ah / 2; const bcy = by + bh / 2;
-  if (Math.abs(acy - bcy) > row) return acy - bcy;
-  return ax - bx;
-}
-
-/** The things in one photo's bytes. */
-export async function readPieces(bytes: Uint8Array, contentType: string): Promise<PieceReading> {
+async function read(blobName: string): Promise<{ reading: PieceReading; raw: Raw | null }> {
+  const store = await getPhotoStore();
+  const found = await store.read(blobName).catch(() => null);
+  if (!found) return { reading: { pieces: [], method: 'none' }, raw: null };
   let raw: Raw | null = null;
   try {
-    raw = contentType === 'image/jpeg' || contentType === 'image/jpg' ? decodeJpeg(bytes) : null;
+    raw = decodeJpeg(found.bytes);
   } catch {
     raw = null;
   }
-  const read = visionAvailable() ? await describePieces(bytes, contentType) : null;
-  const pieces: FoundPiece[] = (read ?? []).map((piece) => ({ label: piece.name || null, boxes: piece.boxes }));
-  const shapes = raw ? detectItems(raw, MAX_PIECES) : [];
-  // What stands off the backdrop that Claude did not already name.
-  const fresh = shapes.filter((box) => !pieces.some((piece) => piece.boxes.some((known) => overlapOfBoxes(known, box) >= SAME_PLACE)));
-  if (raw && fresh.length > 0) {
-    for (const group of groupAlike(raw, fresh)) pieces.push({ label: null, boxes: group });
-  }
-  pieces.sort(readingOrder);
-  const method = read !== null && read.length > 0 ? (fresh.length > 0 ? 'both' : 'vision') : fresh.length > 0 ? 'shape' : 'none';
-  return { pieces: pieces.slice(0, MAX_PIECES), method };
+  const { things } = await thingsInPhoto(found.bytes, found.contentType, raw);
+  const named = things.some((thing) => thing.source === 'named');
+  const shaped = things.some((thing) => thing.source !== 'named');
+  return {
+    raw,
+    reading: {
+      pieces: things.slice(0, MAX_PIECES).map((thing) => ({ label: thing.label, boxes: thing.boxes })),
+      method: named && shaped ? 'both' : named ? 'vision' : shaped ? 'shape' : 'none',
+    },
+  };
 }
 
-/** Readings already made, by photo: a stored photo never changes, and the seller's publish reads it again. */
-const readings = new Map<string, Promise<PieceReading>>();
-const READINGS_MAX = 200;
-
-/** The things in one of our stored photos; none when it cannot be read. */
-export function readStoredPieces(blobName: string): Promise<PieceReading> {
+function stored(blobName: string) {
   const known = readings.get(blobName);
   if (known) return known;
-  const work = (async () => {
-    const store = await getPhotoStore();
-    const found = await store.read(blobName).catch(() => null);
-    if (!found) return { pieces: [], method: 'none' } as PieceReading;
-    return readPieces(found.bytes, found.contentType);
-  })();
+  const work = read(blobName);
   if (readings.size >= READINGS_MAX) readings.delete(readings.keys().next().value!);
   readings.set(blobName, work);
   work.catch(() => readings.delete(blobName));
   return work;
 }
 
+/** The things in one of our stored photos; none when it cannot be read. */
+export async function readStoredPieces(blobName: string): Promise<PieceReading> {
+  return (await stored(blobName)).reading;
+}
+
 /**
- * How many separate things a lot's photos show, each counted once - across
- * photos as well, so a close-up of one figure in the second photo does not
- * count it twice. Zero when nothing could be told apart: the seller's count
- * stands alone then.
+ * How many different things a sale photo holds, for the fee.
+ *
+ * - `marked`: the places the seller kept, one list per row.
+ * - `seen`: the places the seller's phone found, sent with the listing.
+ *
+ * Returns the count charged on, Figmark's own count of what it found, and
+ * for each row how many different things it holds - a row the seller made
+ * of two different figures is two.
  */
-export async function countLotItems(blobNames: readonly string[]): Promise<number> {
-  const store = await getPhotoStore();
-  const seen: string[] = [];
-  let count = 0;
-  for (const name of blobNames.slice(0, 6)) {
-    const found = await store.read(name).catch(() => null);
-    if (!found) continue;
-    let raw: Raw | null = null;
-    try {
-      raw = decodeJpeg(found.bytes);
-    } catch {
-      continue;
-    }
-    const reading = await readStoredPieces(name);
-    for (const piece of reading.pieces) {
-      const print = regionFingerprint(raw, piece.boxes[0]!);
-      if (print && seen.some((other) => likeness(print, other)?.sameItem)) continue;
-      if (print) seen.push(print);
-      count += 1;
-    }
+export async function countThings(blobName: string | null, marked: readonly RegionBox[][], seen: readonly RegionBox[] = []): Promise<{
+  charged: number; found: number; perRow: number[];
+}> {
+  const { reading, raw } = blobName ? await stored(blobName) : { reading: { pieces: [], method: 'none' as const }, raw: null };
+  const named = visionAvailable() ? reading.pieces.filter((piece) => piece.label).flatMap((piece) => piece.boxes) : [];
+  const kept = marked.flat();
+  // Everything found, by anybody, each place once.
+  const everything: RegionBox[] = [];
+  for (const box of [...kept, ...seen, ...named]) {
+    if (!everything.some((other) => sameness(other, box) >= 0.5)) everything.push(box);
   }
-  return count;
+  const keptCount = distinctCount(raw, [...kept, ...named.filter((box) => !kept.some((other) => sameness(other, box) >= 0.5))]);
+  const found = distinctCount(raw, everything);
+  const charged = Math.max(1, keptCount, Math.ceil(found * (1 - FIND_SLACK)));
+  return { charged, found, perRow: marked.map((boxes) => Math.max(1, distinctCount(raw, boxes))) };
 }

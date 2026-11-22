@@ -43,6 +43,12 @@ export interface ListingPiece {
   soldAt?: string | null;
   /** The order holding it. The shop's business: never sent to anybody else. */
   soldOrderId?: string | null;
+  /**
+   * How many different things Figmark sees in its places, for the fee: one,
+   * unless the seller put different things in one row. Worked out from the
+   * picture when the listing is saved; absent means one.
+   */
+  units?: number;
 }
 
 /** A piece as an order remembers it: what was bought, at what price, and where it was in the photo. */
@@ -51,14 +57,18 @@ export interface OrderPiece {
   title: string;
   priceMinor: number;
   box: RegionBox | null;
+  /** Different things in it, for the fee; absent means one. */
+  units?: number;
 }
 
 /**
- * How many things a lot sold all together holds.
+ * How many things a set sold all together holds.
  *
- * `declared` is the seller's word, `detected` Figmark's own count from the
- * photos, and `charged` the one the fee is worked out on: whichever is more,
- * so saying fewer than the photo shows does not lower the fee.
+ * `declared` is how many rows the seller listed, `detected` how many
+ * different things Figmark found in the photo, and `charged` the count the
+ * fee is worked out on - Figmark's, from the picture: rows that show the
+ * same thing count once, different things count apiece, and taking most of
+ * what was found off the list does not lower it.
  */
 export interface BundleCount {
   declared: number;
@@ -158,6 +168,50 @@ export function piecesName(pieces: readonly Pick<OrderPiece, 'title'>[]): string
   const names = pieces.map((piece) => piece.title);
   if (names.length <= 3) return names.join(', ');
   return `${names.slice(0, 2).join(', ')} + ${names.length - 2} more`;
+}
+
+/**
+ * What a set sold all together holds, checked: each with a place in the
+ * photo, a title when the seller gave one ("Item 3" when not), and its share
+ * of the set's price - the price spread evenly, the odd paise on the first.
+ */
+export function cleanSetItems(value: unknown, priceMinor: number): { items: ListingPiece[] } | { error: string } {
+  if (!Array.isArray(value)) return { error: 'The items in the set did not come through.' };
+  if (value.length < 2) return { error: 'A set needs at least two items marked on the photo.' };
+  if (value.length > MAX_PIECES) return { error: `At most ${MAX_PIECES} items can be in one set.` };
+  const items: ListingPiece[] = [];
+  const share = Math.floor(priceMinor / value.length);
+  const odd = priceMinor - share * value.length;
+  for (const [index, raw] of (value as Record<string, unknown>[]).entries()) {
+    const title = typeof raw?.title === 'string' ? raw.title.trim().replace(/\s+/g, ' ').slice(0, MAX_TITLE) : '';
+    const boxes = (Array.isArray(raw?.boxes) ? raw.boxes : []).map(cleanBox).filter((box): box is RegionBox => box !== null).slice(0, MAX_VIEWS);
+    if (boxes.length === 0) return { error: `Mark where item ${index + 1} is in the photo.` };
+    items.push({ id: `pz_${randomId()}`, title: title.length >= 2 ? title : `Item ${index + 1}`, priceMinor: share + (index === 0 ? odd : 0), boxes });
+  }
+  return { items };
+}
+
+/**
+ * A seller's edit of the pieces on a published listing, laid over what is
+ * stored. A sold piece stays exactly as it sold - its title, price and place
+ * are part of an order - whether or not the edit still lists it. Pieces
+ * still for sale take the edit; one left out is taken down; one with no id
+ * of ours is new.
+ */
+export function mergePieces(current: readonly ListingPiece[], edited: readonly ListingPiece[], sentIds: readonly (string | null)[]): ListingPiece[] {
+  const byId = new Map(current.map((piece) => [piece.id, piece]));
+  const out: ListingPiece[] = [];
+  const used = new Set<string>();
+  edited.forEach((piece, index) => {
+    const id = sentIds[index];
+    const was = id ? byId.get(id) : undefined;
+    if (was && isPieceSold(was)) { out.push(was); used.add(was.id); return; }
+    if (was) { out.push({ ...piece, id: was.id, soldAt: null, soldOrderId: null }); used.add(was.id); return; }
+    out.push(piece);
+  });
+  // Sold pieces the edit left out are kept: an order is still about them.
+  for (const piece of current) if (isPieceSold(piece) && !used.has(piece.id)) out.push(piece);
+  return out;
 }
 
 /* ── Reading a price list ──────────────────────────────────────────────── */

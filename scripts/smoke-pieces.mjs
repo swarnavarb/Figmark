@@ -168,26 +168,76 @@ await check('the fee on the order is per piece', async () => {
 });
 
 console.log('sold all together');
-await check('a lot needs its count, and is charged on it', async () => {
-  const nonsense = await createListing(req({ headers: shop, body: { title: 'Blind box lot', priceMinor: 4_00_000, deliveryEta: { minDays: 3, maxDays: 5 }, bundle: true, bundleItems: 0 } }), ctx);
-  assert.equal(nonsense.status, 400, 'a count of nothing is refused');
-  const older = await createListing(req({ headers: shop, body: { title: 'Blind box lot', priceMinor: 4_00_000, deliveryEta: { minDays: 3, maxDays: 5 }, bundle: true } }), ctx);
-  assert.equal(older.status, 201, 'a client that sends no count still lists');
-  assert.equal(older.jsonBody.listing.bundleCount.charged, 1);
-  const madeLot = await createListing(req({ headers: shop, body: {
-    title: 'Blind box lot', priceMinor: 4_00_000, deliveryEta: { minDays: 3, maxDays: 5 }, bundle: true, bundleItems: 4, bundleSeen: 10,
+const { readFileSync } = await import('node:fs');
+const { getPhotoStore } = await import(new URL('api/src/storage/index.js', dist));
+const store = await getPhotoStore();
+const shelf = await store.upload(new Uint8Array(readFileSync(new URL('../test-fixtures/photos/shelf.jpg', import.meta.url))), 'image/jpeg', session.jsonBody.user.id);
+const shelfPhoto = { blobName: shelf.blobName, url: shelf.url, isPrimary: true };
+const found = JSON.parse(readFileSync(new URL('../test-fixtures/photos/shelf-things.json', import.meta.url), 'utf8')).map((thing) => thing.boxes[0]);
+const setBody = (extra) => ({ title: 'Marvel Legends shelf', priceMinor: 25_00_000, deliveryEta: { minDays: 3, maxDays: 5 }, bundle: true, photos: [shelfPhoto], ...extra });
+
+await check('a client that sends no items still lists a set, charged at least what it says', async () => {
+  const older = await createListing(req({ headers: shop, body: { title: 'Blind box lot', priceMinor: 4_00_000, deliveryEta: { minDays: 3, maxDays: 5 }, bundle: true, bundleItems: 6 } }), ctx);
+  assert.equal(older.status, 201, JSON.stringify(older.jsonBody));
+  assert.equal(older.jsonBody.listing.bundleCount.charged, 6);
+});
+
+await check('a set lists every item, shares its price among them, and is charged per item', async () => {
+  const items = found.map((box, index) => ({ title: index === 0 ? 'Green Goblin' : '', boxes: [box] }));
+  const made = await createListing(req({ headers: shop, body: setBody({ setItems: items, seen: found }) }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  const listing = made.jsonBody.listing;
+  assert.equal(listing.setItems.length, found.length);
+  assert.equal(listing.setItems[1].title, 'Item 2', 'an unnamed item gets a name');
+  assert.equal(listing.setItems.reduce((sum, item) => sum + item.priceMinor, 0), 25_00_000, 'the shares add back up');
+  assert.ok(listing.bundleCount.charged >= found.length - 2, `different figures are counted apart (${listing.bundleCount.charged} of ${found.length})`);
+  assert.equal(listing.pieces, undefined, 'buyers buy the set as one');
+});
+
+await check('calling twenty-five different figures one item does not make the fee one', async () => {
+  // One row holding every figure's place, and the phone's finds sent as they were.
+  const made = await createListing(req({ headers: shop, body: setBody({ setItems: [{ title: 'Everything', boxes: found.slice(0, 4) }, { title: 'And this', boxes: [found[4]] }], seen: found }) }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  const charged = made.jsonBody.listing.bundleCount.charged;
+  assert.ok(charged >= Math.ceil(found.length * 0.85) - 2, `charged on ${charged}, found ${found.length}`);
+});
+
+await check('the same thing shown twice is one item; two different things in one row are two', async () => {
+  const one = found[5];
+  const again = [one[0] + 0.004, one[1] + 0.004, one[2], one[3]];
+  const made = await createListing(req({ headers: shop, body: {
+    title: 'Two figures', deliveryEta: { minDays: 3, maxDays: 5 }, photos: [shelfPhoto],
+    pieces: [
+      { title: 'Wolverine, front and back', priceMinor: 1_75_000, boxes: [one, again] },
+      { title: 'Two figures in one row', priceMinor: 3_00_000, boxes: [found[12], found[30]] },
+    ],
   } }), ctx);
-  assert.equal(madeLot.status, 201, JSON.stringify(madeLot.jsonBody));
-  const listing = madeLot.jsonBody.listing;
-  assert.deepEqual(listing.bundleCount, { declared: 4, detected: 10, charged: 10 }, 'the larger count is charged');
-  const opened = (await openCheckout(req({ headers: buyer.headers, body: { listingId: listing.id } }), ctx)).jsonBody.order;
-  assert.equal(await placeOrder(repository, opened, 'paid', buyer.id, { tellSeller: false }), null);
-  const placed = await repository.getOrder(opened.id);
-  assert.equal(placed.feeUnits, 10);
-  placed.payments = [{ id: 'p2', kind: 'payment', amountMinor: placed.unitPriceMinor, method: 'upi', at: new Date().toISOString(), confirmedAt: new Date().toISOString() }];
-  placed.paymentStatus = 'paid';
-  const line = orderFeeLine(placed);
-  assert.equal(line.totalMinor, B.saleFee(placed.feeTerms, { amountMinor: 4_00_000, units: 10 }).totalMinor);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  const [same, two] = made.jsonBody.listing.pieces;
+  assert.equal(same.units ?? 1, 1);
+  assert.equal(two.units, 2);
+});
+
+await check('a published piece listing is edited: sold pieces stay, others change, new ones join', async () => {
+  const { editListingRoute: editListing } = await import(new URL('catalog-routes.js', fns));
+  const before = await repository.getListing(lot.id);
+  const sold = before.pieces.filter((piece) => piece.soldAt);
+  const edited = await editListing(req({ headers: shop, params: { id: lot.id }, body: {
+    pieces: [
+      ...before.pieces.map((piece) => ({ id: piece.id, title: piece.soldAt ? 'Renamed after selling' : `${piece.title} (boxed)`, priceMinor: 9_99_900, boxes: piece.boxes })),
+      { title: 'Doctor Strange', priceMinor: 2_00_000, boxes: [[0.69, 0.41, 0.065, 0.165]] },
+    ],
+  } }), ctx);
+  assert.equal(edited.status, 200, JSON.stringify(edited.jsonBody));
+  const after = edited.jsonBody.listing;
+  for (const piece of sold) {
+    const kept = after.pieces.find((entry) => entry.id === piece.id);
+    assert.equal(kept.title, piece.title, 'a sold piece keeps its title');
+    assert.equal(kept.priceMinor, piece.priceMinor, 'and its price');
+  }
+  assert.equal(after.pieces.length, before.pieces.length + 1);
+  assert.equal(after.status, 'active', 'a new piece puts a sold-out listing back on sale');
+  assert.equal(after.quantityAvailable, 1);
 });
 
 console.log(`\n${passed} checks passed`);

@@ -523,10 +523,11 @@ function addFees(parts: { fee: Fee; times: number }[]): Fee {
  */
 export function saleFee(
   terms: FeeTerms,
-  sale: { amountMinor: number; pieces?: readonly { priceMinor: number }[] | null; units?: number | null },
+  sale: { amountMinor: number; pieces?: readonly { priceMinor: number; units?: number }[] | null; units?: number | null },
 ): Fee {
   if (terms.kind !== 'forwarder' && sale.pieces && sale.pieces.length > 0) {
-    return addFees(sale.pieces.map((piece) => ({ fee: platformFee(terms, { amountMinor: piece.priceMinor }), times: 1 })));
+    // A piece holding several different things pays for each of them.
+    return addFees(sale.pieces.map((piece) => ({ fee: saleFee(terms, { amountMinor: piece.priceMinor, units: piece.units ?? 1 }), times: 1 })));
   }
   const units = Math.max(1, Math.round(sale.units ?? 1));
   if (terms.kind === 'forwarder' || units <= 1 || sale.amountMinor <= 0) return platformFee(terms, { amountMinor: sale.amountMinor });
