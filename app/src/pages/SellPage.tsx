@@ -693,6 +693,8 @@ function SellForm({ serverDraft, draftMissing }: {
         bundle: false,
         // A photo of several things: each piece priced, or a counted lot.
         ...(separately || asLot ? groupBody(group) : {}),
+        // Sold as one item, what was found in the lead photo still goes with it: the fee counts it.
+        ...(!separately && !asLot && !deal && !preOrderMode && group.photoUrl === ((photos.find((photo) => photo.isPrimary) ?? photos[0])?.url ?? null) ? groupBody(group) : {}),
         // A private deal is never announced: only its buyer ever sees it.
         shareToChannel: deal ? false : shareToChannel,
         shareToFeed: deal ? false : shareToFeed,

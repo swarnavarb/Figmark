@@ -1,7 +1,7 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
 import { saleFee, type FeeTerms } from '@shared/billing';
 import { MAX_PIECES, parsePriceList, spreadUnits } from '@shared/pieces';
-import { readingOrder, sameness } from '@shared/photo-things';
+import { readingOrder, sameness, viewsLineup } from '@shared/photo-things';
 import { mergeThings, overlayScan, type FoundThing } from '../photoThings';
 import { api, type PhotoBox } from '../api';
 import { formatMoney } from '../format';
@@ -123,7 +123,8 @@ export function groupBody(group: PhotoGroup): {
   if (group.mode === 'lot') {
     return { bundle: true, setItems: group.pieces.map((piece) => ({ title: piece.title.trim(), boxes: piece.boxes })), seen };
   }
-  return {};
+  // Sold as one item, the photo is still counted: what was found goes with it.
+  return seen.length ? { seen } : {};
 }
 
 /** The listing's own price: the cheapest piece while sold individually, the set's price as a set. */
@@ -188,14 +189,16 @@ export function PhotoGroupBox({ photoUrl, group, onChange }: {
         const fresh = found.filter((piece) => !touched.some((kept) => kept.boxes.some((box) => piece.boxes.some((other) => sameness(box, other) >= 0.45))));
         const pieces = [...touched, ...fresh].sort(readingOrder).slice(0, MAX_PIECES);
         const asked = now.mode === 'pieces' || now.mode === 'lot';
+        // Views of one thing side by side - a product's collage - are one item (shared/photo-things.ts).
+        const count = viewsLineup(found.map((piece) => piece.boxes[0]!)) ? 1 : found.length;
         return {
           ...now,
           reading: !final,
-          found: found.length,
+          found: count,
           seen: found.flatMap((piece) => piece.boxes),
           pieces,
           // One thing or none, and nothing chosen yet: an ordinary listing, with a way in.
-          mode: final && !asked && found.length < 2 ? 'single' : now.mode,
+          mode: final && !asked && count < 2 ? 'single' : now.mode,
         };
       });
     };
@@ -212,7 +215,8 @@ export function PhotoGroupBox({ photoUrl, group, onChange }: {
     return (
       <button type="button" className="pcs-way" onClick={() => onChange({ ...group, mode: 'ask' })}>
         {group.found >= 2
-          ? <>📦 This photo shows about <b>{group.found}</b> items. <u>Sell them individually or as a set?</u></>
+          ? <>📦 This photo shows about <b>{group.found}</b> different items, and the fee counts each of them even as one listing.
+            {' '}<u>Sell them individually or as a set?</u> Views of one item, or the same item twice, count once.</>
           : <>📦 Selling several things in this photo? <u>Mark them and price each one</u></>}
       </button>
     );

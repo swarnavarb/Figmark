@@ -297,6 +297,42 @@ export function backdropBlobs(rgba: ArrayLike<number>, width: number, height: nu
   return boxes.sort((a, b) => areaOf(b) - areaOf(a));
 }
 
+/* ── Views of one thing ──────────────────────────────────────────────── */
+
+/** A subject at least this much of the photo's height (or width, stacked) is a whole view, not a thing on a shelf. */
+const VIEW_SPAN = 0.45;
+/** A collage of views holds a few, not a shelf's worth. */
+const MAX_VIEWS = 6;
+
+/**
+ * Whether a photo is views of one thing laid side by side - a product's
+ * collage: the same figure up close, full length, from the back - rather
+ * than different things together. Two to six big subjects in a row (or a
+ * column), each filling most of the photo's height (width), of a size, not
+ * overlapping; anything smaller is part of the view it stands in. The
+ * picture alone cannot always tell such views of one thing from as many
+ * different things posed alike, and in that doubt the fee counts one.
+ */
+export function viewsLineup(boxes: readonly Box[]): boolean {
+  for (const across of [true, false]) {
+    const span = (box: Box) => (across ? box[3] : box[2]);
+    const big = boxes.filter((box) => span(box) >= VIEW_SPAN);
+    if (big.length < 2 || big.length > MAX_VIEWS) continue;
+    const spans = big.map(span);
+    if (Math.min(...spans) < 0.6 * Math.max(...spans)) continue;
+    // Side by side: no two big ones share much of their place along the row.
+    const start = (box: Box) => (across ? box[0] : box[1]);
+    const size = (box: Box) => (across ? box[2] : box[3]);
+    const apart = big.every((a, i) => big.every((b, j) => i >= j
+      || Math.max(0, Math.min(start(a) + size(a), start(b) + size(b)) - Math.max(start(a), start(b))) <= 0.35 * Math.min(size(a), size(b))));
+    if (!apart) continue;
+    // Every other thing sits within one of the views.
+    const lane = (box: Box) => { const middle = start(box) + size(box) / 2; return big.some((view) => middle >= start(view) - 0.05 && middle <= start(view) + size(view) + 0.05); };
+    if (boxes.every((box) => big.includes(box) || lane(box))) return true;
+  }
+  return false;
+}
+
 /* ── Together ─────────────────────────────────────────────────────────── */
 
 /** One thing in a photo, with every place it appears and, when it was named, its name. */

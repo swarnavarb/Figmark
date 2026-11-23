@@ -1035,6 +1035,13 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     }
     // With its items marked, the count is the photo's; an older client's number is only a floor.
     bundleCount = { declared, detected: counted.found, charged: setItems ? counted.charged : Math.max(declared, counted.charged) };
+  } else if (!pieces && photos.length > 0 && !body.privateFor && seen.length >= 2) {
+    // Called one item: the photo is counted all the same, so a photo of
+    // several different things is not one fee because the seller said so.
+    // Views of one thing, the same thing twice, or any doubt, count one.
+    const counted = await countThings(leadBlob, [], seen).catch(() => null);
+    const charged = counted ? Math.max(1, counted.found) : 1;
+    if (counted && charged > 1) bundleCount = { declared: 1, detected: counted.found, charged };
   }
 
   // How long it takes to reach the buyer is the first thing every buyer asks,
@@ -1113,7 +1120,7 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     ...(pieces ? { quantityMode: 'fixed' as const, pieces } : {}),
     ...(bundleCount ? { bundleCount } : {}),
     ...(setItems ? { setItems } : {}),
-    ...((pieces || setItems) && seen.length ? { foundBoxes: seen } : {}),
+    ...((pieces || setItems || bundleCount) && seen.length ? { foundBoxes: seen } : {}),
     // Pre-order and shipment lot are independent: a listing opts into demand
     // pooling here, and gets tagged into a lot separately, from the seller's
     // lot console.

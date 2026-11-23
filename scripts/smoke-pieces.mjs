@@ -190,7 +190,8 @@ await check('a set lists every item, shares its price among them, and is charged
   assert.equal(listing.setItems.length, found.length);
   assert.equal(listing.setItems[1].title, 'Item 2', 'an unnamed item gets a name');
   assert.equal(listing.setItems.reduce((sum, item) => sum + item.priceMinor, 0), 25_00_000, 'the shares add back up');
-  assert.ok(listing.bundleCount.charged >= found.length - 2, `different figures are counted apart (${listing.bundleCount.charged} of ${found.length})`);
+  // Figures alike enough that they may be one are counted once - a fee in doubt is not charged - so a few fewer than found.
+  assert.ok(listing.bundleCount.charged >= Math.ceil(found.length * 0.8), `different figures are counted apart (${listing.bundleCount.charged} of ${found.length})`);
   assert.equal(listing.pieces, undefined, 'buyers buy the set as one');
 });
 
@@ -198,8 +199,9 @@ await check('calling twenty-five different figures one item does not make the fe
   // One row holding every figure's place, and the phone's finds sent as they were.
   const made = await createListing(req({ headers: shop, body: setBody({ setItems: [{ title: 'Everything', boxes: found.slice(0, 4) }, { title: 'And this', boxes: [found[4]] }], seen: found }) }), ctx);
   assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
-  const charged = made.jsonBody.listing.bundleCount.charged;
-  assert.ok(charged >= Math.ceil(found.length * 0.85) - 2, `charged on ${charged}, found ${found.length}`);
+  const { charged, detected } = made.jsonBody.listing.bundleCount;
+  assert.ok(detected >= Math.ceil(found.length * 0.8), `the photo's figures are found (${detected} of ${found.length})`);
+  assert.ok(charged >= Math.ceil(detected * 0.85), `charged on ${charged}, found ${detected}`);
 });
 
 await check('the same thing shown twice is one item; two different things in one row are two', async () => {
@@ -245,6 +247,28 @@ await check('taking found items off an individual listing does not lower the fee
   assert.deepEqual(P.spreadUnits([2, 1], 2), [2, 1], 'already over the floor: unchanged');
   const units = P.spreadUnits(Array(42).fill(1), 46);
   assert.equal(units.reduce((a, b) => a + b, 0), 46, '42 listed of 54 found is charged for 46');
+});
+
+await check('called one item, a photo of many different figures is still charged for them', async () => {
+  const made = await createListing(req({ headers: shop, body: {
+    title: 'Marvel Legends shelf', priceMinor: 25_00_000, deliveryEta: { minDays: 3, maxDays: 5 }, bundle: false, photos: [shelfPhoto], seen: found,
+  } }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  const counted = made.jsonBody.listing.bundleCount;
+  assert.ok(counted && counted.charged >= Math.ceil(found.length * 0.7), `charged on ${counted?.charged}, found ${found.length}`);
+  assert.equal(counted.declared, 1);
+});
+
+await check('views of one item side by side - a product collage - are one item, and one fee', async () => {
+  const views = [[0.04, 0.29, 0.21, 0.7], [0.32, 0.19, 0.15, 0.63], [0.52, 0.28, 0.2, 0.69], [0.77, 0.23, 0.22, 0.58], [0.66, 0.64, 0.34, 0.36]];
+  const T = await import(new URL('shared/photo-things.js', dist));
+  assert.equal(T.viewsLineup(views), true);
+  assert.equal(T.viewsLineup(found), false, 'a shelf of figures is not views of one');
+  const made = await createListing(req({ headers: shop, body: {
+    title: 'Terminator 1/6', priceMinor: 25_00_000, deliveryEta: { minDays: 3, maxDays: 5 }, bundle: false, photos: [shelfPhoto], seen: views,
+  } }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  assert.equal(made.jsonBody.listing.bundleCount, undefined, 'charged as the one item it is');
 });
 
 console.log(`\n${passed} checks passed`);
