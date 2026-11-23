@@ -11351,6 +11351,7 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 /* After the scan: what is in the photo, and the ways to sell it. */
 .pcs-pick { display: grid; gap: 10px; margin-top: 4px; padding: 14px; border: 1px solid var(--accent-line); border-radius: 14px; background: var(--surface); }
 .pcs-pick__q { margin: 0; font-size: var(--t-md); color: var(--text); }
+.pcs-pick__sub { margin: -4px 0 0; color: var(--text-dim); font-size: var(--t-sm); }
 .pcs-pick__ways { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .pcs-pick .pcs-tile { gap: 2px; padding: 12px; }
 .pcs-pick .pcs-tile span { color: var(--text-dim); font-size: var(--t-sm); }
