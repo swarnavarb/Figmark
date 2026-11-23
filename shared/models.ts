@@ -6,6 +6,7 @@ import type { CostStep, ItemCostSheet, ProfitTemplate, SavedCalc } from './profi
 import type { DealState } from './deals.js';
 import type { DeliveryEta } from './delivery-eta.js';
 import type { ViewLog } from './seller-data.js';
+import type { CoachLog } from './coach-log.js';
 import type { NotificationCategory } from './notifications.js';
 import type { LotRoute } from './routes.js';
 import type { ShopTag } from './shop-tags.js';
@@ -420,6 +421,11 @@ export interface User extends BaseDocument {
   badges?: Badge[];
   /** Answers of theirs that the asker marked as the answer, all told: for the helpful badges. */
   helpfulAnswers?: number;
+  /**
+   * The shop coach's record of the tips this shop was shown and what followed
+   * (shared/coach-log.ts). The shop's own: never read for anybody else.
+   */
+  coachLog?: CoachLog;
   /** This person's invite code, for `/i/<code>`: made the first time they invite anybody. */
   inviteCode?: string;
   /** Who brought this account to Figmark, if anybody did. Set once, at sign-up. */

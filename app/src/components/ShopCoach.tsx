@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  AREA_NAMES, PRO_TOOLS, TOOL_LABELS, answerOffline, coachBrief,
+  AREA_NAMES, PRO_TOOLS, PRIVATE_ANSWER, TOOL_LABELS, answerOffline, coachBrief, isPrivateQuestion,
   type CoachAnswer, type CoachItem, type CoachPlan, type CoachSignals, type CoachTip, type CoachTool,
 } from '@shared/coach';
 import type { StoreAccess } from '@shared/stores';
+import type { OwnResults } from '@shared/coach-log';
 import { api } from '../api';
 import { askCoachAi, warmCoachAi, type ChatTurn } from '../coachAi';
 import { formatMoney } from '../format';
@@ -164,7 +165,7 @@ function TipRow({ tip, pro, onRun }: { tip: CoachTip; pro: boolean; onRun: () =>
  * one line once the seller says so.
  */
 export function ShopCoach({ store }: { store: StoreAccess }) {
-  const [data, setData] = useState<{ signals: CoachSignals; plan: CoachPlan } | null>(null);
+  const [data, setData] = useState<{ signals: CoachSignals; plan: CoachPlan; results: OwnResults | null } | null>(null);
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState<View | null>(null);
   const [folded, setFolded] = useState(() => readFlag(HIDE_KEY, store.ownerId));
@@ -177,6 +178,17 @@ export function ShopCoach({ store }: { store: StoreAccess }) {
   useEffect(load, [load]);
 
   const { run, sheet } = useCoachTools(store, data?.signals ?? null, () => setOpen(null));
+
+  /* What was on screen, so a tip's week can be measured. Never in the way:
+     a record that fails to send costs nothing on screen. */
+  const record = useCallback((body: { seen?: string[]; pressed?: string }) => {
+    void api.coachEvents(store.ownerId, body).catch(() => undefined);
+  }, [store.ownerId]);
+  const topId = data?.plan.tips[0]?.id;
+  useEffect(() => {
+    if (topId && !folded) record({ seen: [topId] });
+  }, [topId, folded, record]);
+  const press = (tip: CoachTip) => { record({ pressed: tip.id }); run(tip.tool, tip.item); };
   // A coach that cannot read the shop says nothing rather than something wrong.
   if (failed || !data) return null;
   const { plan, signals } = data;
@@ -209,7 +221,7 @@ export function ShopCoach({ store }: { store: StoreAccess }) {
                 <b>{top.title}</b>
                 <p>{top.why}</p>
               </div>
-              <ToolButton tool={top.tool} label={top.label} pro={signals.shop.pro} onRun={() => run(top.tool, top.item)} />
+              <ToolButton tool={top.tool} label={top.label} pro={signals.shop.pro} onRun={() => press(top)} />
             </div>
           )}
           <div className="shopcoach__acts">
@@ -227,7 +239,8 @@ export function ShopCoach({ store }: { store: StoreAccess }) {
       )}
       {open && (
         <Modal title="Shop coach" layout="panel" onClose={() => { setOpen(null); load(); }}>
-          <CoachPanel store={store} signals={signals} plan={plan} view={open} onView={setOpen} run={run} />
+          <CoachPanel store={store} signals={signals} plan={plan} results={data.results} view={open} onView={setOpen} run={run}
+            press={press} record={record} />
         </Modal>
       )}
       {sheet}
@@ -235,15 +248,22 @@ export function ShopCoach({ store }: { store: StoreAccess }) {
   );
 }
 
-function CoachPanel({ store, signals, plan, view, onView, run }: {
+function CoachPanel({ store, signals, plan, results, view, onView, run, press, record }: {
   store: StoreAccess;
   signals: CoachSignals;
   plan: CoachPlan;
+  results: OwnResults | null;
   view: View;
   onView: (view: View) => void;
   run: (tool: CoachTool, item?: CoachItem) => void;
+  press: (tip: CoachTip) => void;
+  record: (body: { seen?: string[] }) => void;
 }) {
   const pro = signals.shop.pro;
+  const tipIds = plan.tips.map((tip) => tip.id).join(',');
+  useEffect(() => {
+    if (view === 'today' && tipIds) record({ seen: tipIds.split(',') });
+  }, [view, tipIds, record]);
   return (
     <div className="shopcoach__panel">
       <div className="seg shopcoach__seg" role="tablist" aria-label="Coach">
@@ -265,9 +285,10 @@ function CoachPanel({ store, signals, plan, view, onView, run }: {
           <p className="shopcoach__lead">{plan.headline}</p>
           {plan.tips.length > 0 ? (
             <ul className="shopcoach__tips">
-              {plan.tips.map((tip) => <TipRow key={tip.id} tip={tip} pro={pro} onRun={() => run(tip.tool, tip.item)} />)}
+              {plan.tips.map((tip) => <TipRow key={tip.id} tip={tip} pro={pro} onRun={() => press(tip)} />)}
             </ul>
           ) : <p className="shopcoach__empty">Nothing needs fixing. Keep to the weekly plan.</p>}
+          {results && <Results results={results} />}
         </>
       )}
 
@@ -301,6 +322,46 @@ function CoachPanel({ store, signals, plan, view, onView, run }: {
 
       {view === 'ask' && <CoachChat store={store} signals={signals} plan={plan} run={run} />}
     </div>
+  );
+}
+
+/**
+ * What the tips did for this shop: its own record, nothing from any other
+ * shop. Each tip is given a week; until then it is "watching".
+ */
+function Results({ results }: { results: OwnResults }) {
+  if (results.settled === 0) {
+    return (
+      <section className="shopcoach__results" aria-label="Your results">
+        <h3>Your results</h3>
+        <p className="shopcoach__lead">
+          {results.watching > 0
+            ? `Tracking ${results.watching} tip${results.watching === 1 ? '' : 's'}. A week after you first see a tip, its result shows here.`
+            : 'A week after you first see a tip, what followed shows here.'}
+        </p>
+      </section>
+    );
+  }
+  const { acted, actedSalesBefore: before, actedSalesAfter: after } = results;
+  return (
+    <section className="shopcoach__results" aria-label="Your results">
+      <h3>Your results <span>last 90 days</span></h3>
+      <p className="shopcoach__lead">
+        You acted on <b>{acted}</b> of {results.settled} tips.
+        {acted > 0 && <> In the week after those, your shop took <b>{after}</b> order{after === 1 ? '' : 's'}, against {before} the week before.</>}
+      </p>
+      <ul className="shopcoach__outcomes">
+        {results.recent.map((entry) => (
+          <li key={`${entry.firstSeen}:${entry.title}`}>
+            <span className={`shopcoach__badge${entry.pressed ? ' is-acted' : ''}`}>{entry.pressed ? 'Acted' : 'Skipped'}</span>
+            <div className="shopcoach__tiptext">
+              <b>{entry.title}</b>
+              <p>{entry.summary}{entry.cleared ? ' Sorted.' : ''}</p>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -344,8 +405,9 @@ function CoachChat({ store, signals, plan, run }: {
     const history = [...said, { role: 'user' as const, text }];
     setSaid(history);
     setDraft('');
-    if (!ai) {
-      const answer = answerOffline(text, plan);
+    // Declined the same way with the AI on or off, and never sent to it.
+    if (!ai || isPrivateQuestion(text)) {
+      const answer = isPrivateQuestion(text) ? PRIVATE_ANSWER : answerOffline(text, plan);
       setSaid([...history, { role: 'assistant', ...answer }]);
       return;
     }

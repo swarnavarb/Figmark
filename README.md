@@ -136,6 +136,16 @@ seller's own free Puter account (as "Scan with AI" does): no key here and no
 bill for the site, and only the shop's counts are sent - never a buyer's name,
 message or address.
 
+The coach also keeps score (`shared/coach-log.ts`). Each tip a shop sees is
+given a week: whether somebody pressed it, whether it stopped showing, and the
+shop's orders - and, for an item, its views and sales - in the week before and
+the week after, read from rows already stored with their times. The shop sees
+its own results under the tips. Staff see totals per kind of tip in the
+console (Shop coach results): sums only, no shop or item in them, and a kind of
+tip stays hidden until five different shops are in it. The coach - built-in or
+AI - declines questions about other sellers or buyers and about how Figmark
+works inside.
+
 ## Status
 
 Not yet verified against live Azure: the session that produced this scaffold had
