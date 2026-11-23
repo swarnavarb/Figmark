@@ -397,6 +397,12 @@ export interface PhotoAnalysis {
   largest: number;
   /** Views of one thing side by side: a product's collage. */
   lineup: boolean;
+  /**
+   * The photo clearly shows several things: three or more separate subjects,
+   * in focus, spread across it (shared/photo-things.ts clearlySeveral).
+   * Anything less is one item, as the seller says. Absent from older readings.
+   */
+  several?: boolean;
 }
 
 export type PhotoVerdict =
@@ -410,7 +416,8 @@ export type PhotoVerdict =
  * tell - two things that may or may not be alike, a count the title names.
  */
 export function photoVerdict(photo: PhotoAnalysis, hint: TitleHint): PhotoVerdict {
-  if (photo.found <= 1 || photo.lineup) return { kind: 'one' };
+  // Trust the seller unless the photo clearly shows several things: in doubt, one item.
+  if (photo.found <= 1 || photo.lineup || photo.several === false) return { kind: 'one' };
   if (photo.kinds === 1) return hint.same === false && hint.count === null ? { kind: 'different', count: photo.found } : { kind: 'copies', count: photo.found };
   // Mostly one thing, a few others: copies where the title says copies of that many.
   if (hint.same === true && hint.count !== null && (hint.count === photo.found || hint.count === photo.largest)) return { kind: 'copies', count: hint.count };
