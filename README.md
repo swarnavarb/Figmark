@@ -121,6 +121,21 @@ is worked out once per photo per catalogue copy, however many people see it.
 The search sheet filters on the device when more letters can only narrow what
 it already has, and asks for people and shops only when there can be some.
 
+Shop coach: a card at the top of every shop console names the one thing to do
+next, with a button straight into the tool for it - the sell form, the share
+sheet, the channel, Offers, Shipments, Storefront. Behind it, the full list of
+tips (orders waiting, items viewed but not bought, items nobody has opened,
+items ending or running out, thin listings, a sales slump, a quiet week of
+marketing), the best time to post worked out from the hours the shop's own
+buyers order in (the usual Indian evening until there are enough orders), a
+week's marketing plan built around the busiest day, and a chat. The tips, the
+timing, the plan and the chat's how-to answers are rules in `shared/coach.ts`,
+served by `GET /api/me/coach`, and cost nothing to run. Switching on "AI chat"
+in the panel answers in the seller's own words through Puter.js, on the
+seller's own free Puter account (as "Scan with AI" does): no key here and no
+bill for the site, and only the shop's counts are sent - never a buyer's name,
+message or address.
+
 ## Status
 
 Not yet verified against live Azure: the session that produced this scaffold had
