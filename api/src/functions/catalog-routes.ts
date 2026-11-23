@@ -2,7 +2,7 @@ import {
   MAX_BUNDLE_COUNT, cleanBox, cleanPieces, cleanSetItems, fromPriceMinor, hasPieces, isPieceSold, mergePieces, piecesLeft, piecesName, publicPieces, spreadUnits,
   type BundleCount, type ListingPiece, type OrderPiece,
 } from '../../../shared/pieces.js';
-import { FIND_SLACK, countThings, readStoredPieces } from '../pieces.js';
+import { FIND_SLACK, analyseThings, countThings, readStoredPieces } from '../pieces.js';
 import { thingsInPhoto } from '../photo-things.js';
 import { MAX_THINGS } from '../../../shared/photo-things.js';
 import { listedInShop, shopRefusal, shopStatusOf } from '../../../shared/shop-status.js';
@@ -1040,7 +1040,9 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     // several different things is not one fee because the seller said so.
     // Views of one thing, the same thing twice, or any doubt, count one.
     const counted = await countThings(leadBlob, [], seen).catch(() => null);
-    const charged = counted ? Math.max(1, counted.found) : 1;
+    // Copies stocked: each sale is one of them, so the photo's count is shared over the stock.
+    const stock = body.quantityMode === 'multiple' ? 1 : Math.max(1, Math.round(Number(body.quantityAvailable ?? 1)) || 1);
+    const charged = counted ? Math.max(1, Math.ceil(counted.found / stock)) : 1;
     if (counted && charged > 1) bundleCount = { declared: 1, detected: counted.found, charged };
   }
 
@@ -2204,7 +2206,7 @@ async function detectPieces(request: HttpRequest, _context: InvocationContext) {
   const user = await auth.requireCapability(request, ['sell']);
   const slow = await tooFast(user.id, 'photopicture');
   if (slow) return slow;
-  const body = await request.json().catch(() => ({})) as { url?: unknown; blobName?: unknown };
+  const body = await request.json().catch(() => ({})) as { url?: unknown; blobName?: unknown; boxes?: unknown };
   const url = typeof body.url === 'string' ? body.url : '';
   const name = (url ? await ownPhotoName(url) : null) ?? (typeof body.blobName === 'string' ? body.blobName : null);
   if (!name || !/^[A-Za-z0-9._-]{8,120}$/.test(name)) return error(400, 'invalid_photo', 'That photo did not come through.');
@@ -2218,6 +2220,11 @@ async function detectPieces(request: HttpRequest, _context: InvocationContext) {
       const uploader = await getRepository().then((r) => r.getUserById(info.uploadedBy!));
       if (!uploader || !can(uploader, user.id, 'listings')) return error(403, 'forbidden', 'That is not your photo.');
     }
+  }
+  // With the places found sent back, what they make up: one item, copies of one, or different things.
+  if (Array.isArray(body.boxes)) {
+    const boxes = body.boxes.slice(0, 120).map(cleanBox).filter((box): box is RegionBox => box !== null);
+    return json(200, { analysis: await analyseThings(name, boxes) });
   }
   const reading = await readStoredPieces(name);
   return json(200, { pieces: reading.pieces, method: reading.method, vision: visionAvailable() });

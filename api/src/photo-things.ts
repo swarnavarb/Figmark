@@ -95,14 +95,21 @@ export function distinctCount(raw: Raw | null, boxes: readonly RegionBox[]): num
     for (const box of boxes) if (!kept.some((other) => sameness(other, box) >= 0.5)) kept.push(box);
     return kept.length;
   }
-  // Each thing is compared with the first of each group, so likeness does not
-  // chain from one figure to the next across a shelf; one that may be the
-  // same as it is counted with it.
+  return groupThings(raw, boxes).length;
+}
+
+/**
+ * The places in a photo grouped by what they show: places that may be the
+ * same thing - the same figure twice, or copies of it - share a group. Each
+ * is compared with the first of each group, so likeness does not chain from
+ * one figure to the next across a shelf.
+ */
+export function groupThings(raw: Raw, boxes: readonly RegionBox[]): RegionBox[][] {
   const prints = new Map<RegionBox, string | null>();
   const groups: RegionBox[][] = [];
   for (const box of boxes) {
     const home = groups.find((group) => maybeSameThing(raw, group[0]!, box, prints));
     if (home) home.push(box); else groups.push([box]);
   }
-  return groups.length;
+  return groups;
 }

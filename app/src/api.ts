@@ -1,3 +1,4 @@
+import type { PhotoAnalysis } from '@shared/pieces';
 import type { PayoutSummary } from '@shared/payouts';
 import type { DnaLinkKind, DnaSummary, DnaView } from '@shared/dna';
 import type { DayRange, DaySource, ShopDays } from '@shared/step-days';
@@ -3216,6 +3217,9 @@ export const api = {
   detectPieces: (url: string) =>
     post<{ pieces: { label: string | null; boxes: PhotoBox[] }[]; method: 'vision' | 'shape' | 'both' | 'none'; vision: boolean }>(
       '/pieces/detect', { url }),
+  /** What the things found in a sale photo make up: one item, copies of one, or different things. */
+  analysePieces: (url: string, boxes: PhotoBox[]) =>
+    post<{ analysis: PhotoAnalysis }>('/pieces/detect', { url, boxes }),
 
   /**
    * Join a pre-order, or leave it.
