@@ -3528,7 +3528,10 @@ export const api = {
   routeWords: () => request<RouteWords>('/route-words'),
   /** The shop coach: what to do next and when, with the counts it read. */
   coach: (storeId?: string) =>
-    request<{ signals: CoachSignals; plan: CoachPlan; results: OwnResults | null }>(`/me/coach${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
+    request<{ signals: CoachSignals; plan: CoachPlan; results: OwnResults | null; learned: { guides: Record<string, number> } }>(`/me/coach${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
+  /** A rating of one of the coach's answers, or a question Figgy had no answer for: how its answers improve. */
+  coachAnswer: (storeId: string, body: { source: string; helpful: boolean } | { missed: string }) =>
+    post<{ ok: true; recorded: number }>(`/me/coach/answer?store=${encodeURIComponent(storeId)}`, body),
   /** Which coach tips were on screen, or pressed: how the coach learns which ones help. */
   coachEvents: (storeId: string, body: { seen?: string[]; pressed?: string }) =>
     post<{ ok: true; recorded: number }>(`/me/coach/events?store=${encodeURIComponent(storeId)}`, body),

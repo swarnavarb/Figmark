@@ -135,19 +135,6 @@
 
 /* The chat. */
 .shopcoach__chat { display: grid; gap: var(--s3); }
-.shopcoach__aiswitch {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--s2);
-  padding: var(--s3);
-  border-radius: var(--r-md);
-  background: var(--surface-2);
-  color: var(--text-dim);
-  font-size: var(--t-sm);
-  cursor: pointer;
-}
-.shopcoach__aiswitch input { margin-top: 3px; accent-color: var(--violet); }
-.shopcoach__aiswitch b { color: var(--text); }
 
 .shopcoach__log { display: grid; gap: var(--s2); max-height: min(48vh, 420px); overflow-y: auto; overscroll-behavior: contain; }
 .shopcoach__msg {
@@ -163,7 +150,21 @@
 .shopcoach__msg--user { justify-self: end; background: var(--violet); color: var(--violet-ink); }
 .shopcoach__msg--assistant { justify-self: start; background: var(--surface-2); color: var(--text); }
 .shopcoach__msgacts { display: flex; flex-wrap: wrap; gap: var(--s1); }
-.shopcoach__by { color: var(--text-faint); font-size: var(--t-2xs); }
+.shopcoach__by { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); color: var(--text-faint); font-size: var(--t-2xs); }
+.shopcoach__votes { display: inline-flex; gap: 2px; }
+.shopcoach__votes button {
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: var(--r-pill);
+  background: none;
+  font-size: var(--t-sm);
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.7;
+}
+.shopcoach__votes button:hover { opacity: 1; border-color: var(--border); }
+.shopcoach__thanks { color: var(--text-dim); }
+.shopcoach__retry { justify-self: start; }
 
 .shopcoach__typing { display: flex; gap: 4px; padding: var(--s3); }
 .shopcoach__typing i {
@@ -218,3 +219,49 @@
   text-align: center;
 }
 .shopcoach__badge.is-acted { background: var(--ok-soft); color: var(--ok); }
+
+/* Who answers: a picker under the box, as in Claude. */
+.shopcoach__picker { position: relative; display: flex; margin-top: calc(var(--s1) * -1); }
+.shopcoach__pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px var(--s2);
+  border: 0;
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: var(--t-xs);
+  cursor: pointer;
+}
+.shopcoach__pick:hover, .shopcoach__pick[aria-expanded="true"] { background: var(--surface-2); color: var(--text); }
+.shopcoach__menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 2;
+  display: grid;
+  gap: 2px;
+  width: min(320px, 100%);
+  padding: var(--s1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.shopcoach__option {
+  display: grid;
+  gap: 2px;
+  padding: var(--s2) var(--s3);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.shopcoach__option b { display: flex; align-items: center; justify-content: space-between; font-size: var(--t-sm); }
+.shopcoach__option span { color: var(--text-dim); font-size: var(--t-xs); line-height: 1.4; }
+.shopcoach__option:hover, .shopcoach__option.is-on { background: var(--surface-2); }

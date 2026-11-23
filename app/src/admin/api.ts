@@ -1,4 +1,5 @@
 import type { StatsView as CoachStatsView } from '@shared/coach-log';
+import type { AnswerView } from '@shared/coach-learn';
 import type { CancelFlag, CancelSettings, CancelStats, FeeStatement, Pricing, ProState, ProVoucher } from '@shared/billing';
 import type { HealthResponse } from '@shared/contracts';
 import type { Dispute, DisputeDecision, DisputeSanction, ManagerRights, FeePayment, ReleaseDuty, ReviewRequest, SellerTrustSignals, TradeOverride, TradeRight, TrustSignals } from '@shared/models';
@@ -258,7 +259,7 @@ export const admin = {
 
   devices: () => request<DeviceFigures>('/ops/devices'),
   /** How each kind of shop-coach tip is doing across shops: totals only, withheld below a minimum of shops. */
-  coach: () => request<CoachStatsView>('/ops/coach'),
+  coach: () => request<CoachStatsView & { answers: AnswerView }>('/ops/coach'),
   /** Marketplace-wide rules and every fee: protection, disputes, escalations, commission. */
   /** The sample routes every shop is offered, and the short forms buttons are drawn with. */
   routeLibrary: () => request<{

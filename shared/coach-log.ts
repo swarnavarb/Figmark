@@ -1,3 +1,5 @@
+import type { AnswerLog } from './coach-learn.js';
+
 /**
  * Whether the coach's tips work.
  *
@@ -61,6 +63,8 @@ export interface CoachLog {
   episodes: CoachEpisode[];
   /** Kinds of tip this shop is already counted in among the staff totals' shops. */
   counted: string[];
+  /** What this shop has rated of Figgy's answers, for counting shops once (coach-learn.ts). */
+  answers?: AnswerLog;
 }
 
 export const emptyCoachLog = (): CoachLog => ({ episodes: [], counted: [] });
@@ -155,7 +159,7 @@ export function settle(log: CoachLog, now: Date, measure: Measure): { log: Coach
 export function tidyCoachLog(log: CoachLog, now: Date): CoachLog {
   const cutoff = now.getTime() - LOG_KEEP_DAYS * DAY_MS;
   const kept = log.episodes.filter((entry) => !entry.outcome || Date.parse(entry.firstSeen) >= cutoff);
-  return { episodes: kept.slice(-LOG_MAX), counted: [...new Set(log.counted)] };
+  return { ...log, episodes: kept.slice(-LOG_MAX), counted: [...new Set(log.counted)] };
 }
 
 /* ── The shop's own results ─────────────────────────────────────────────── */
