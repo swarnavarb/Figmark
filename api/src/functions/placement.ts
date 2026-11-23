@@ -229,8 +229,9 @@ export async function placeOrder(
   // rate, or of the shop's Pro, never moves what this sale owes.
   const seller = await repository.getUserById(order.sellerId);
   order.feeTerms = await termsFor(repository, 'shop', seller);
-  // A lot sold all together pays the fee per item in it, as counted now.
-  order.feeUnits = listing.bundle && listing.bundleCount && listing.bundleCount.charged > 1 ? listing.bundleCount.charged : null;
+  // A lot sold all together pays the fee per item in it, as counted now; so
+  // does a listing called one item whose photo shows several different things.
+  order.feeUnits = listing.bundleCount && listing.bundleCount.charged > 1 ? listing.bundleCount.charged : null;
   // Shown on the checkout only; an order is at the price it was placed at.
   order.priceChange = null;
   // The timeline opens when the order did, not when Buy was first pressed.

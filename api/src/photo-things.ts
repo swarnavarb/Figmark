@@ -1,5 +1,5 @@
 import type { RegionBox } from '../../shared/models.js';
-import { MAX_THINGS, backdropBlobs, combineThings, sameness, shrinkPixels, type Thing } from '../../shared/photo-things.js';
+import { MAX_THINGS, backdropBlobs, combineThings, sameness, shrinkPixels, viewsLineup, type Thing } from '../../shared/photo-things.js';
 import { detectItems, isolatedFingerprints, likeness, regionFingerprint } from './image-hash.js';
 import type { Raw } from './storage/compress.js';
 import { describeItems, visionAvailable, type PhotoDescription } from './vision.js';
@@ -54,6 +54,24 @@ function printOf(raw: Raw, box: RegionBox): string | null {
   return isolatedFingerprints(raw, box, false)[0] ?? regionFingerprint(raw, box);
 }
 
+/**
+ * For the fee: two places that may show the same thing are counted as one.
+ * Looser than `sameThing` - the same figure turned, or under other light,
+ * looks less alike than the same crop twice - because a fee charged in doubt
+ * is charged wrongly; two different figures scoring this alike are rare.
+ */
+const MAYBE_SCORE = 0.8;
+const MAYBE_LOOK = 0.7;
+
+export function maybeSameThing(raw: Raw, a: RegionBox, b: RegionBox, prints = new Map<RegionBox, string | null>()): boolean {
+  if (sameness(a, b) >= 0.5) return true;
+  const pa = prints.get(a) ?? printOf(raw, a); prints.set(a, pa);
+  const pb = prints.get(b) ?? printOf(raw, b); prints.set(b, pb);
+  if (!pa || !pb) return false;
+  const alike = likeness(pa, pb);
+  return Boolean(alike && alike.score >= MAYBE_SCORE && (alike.look ?? 0) >= MAYBE_LOOK);
+}
+
 export function sameThing(raw: Raw, a: RegionBox, b: RegionBox, prints = new Map<RegionBox, string | null>()): boolean {
   if (sameness(a, b) >= 0.5) return true;
   const pa = prints.get(a) ?? printOf(raw, a); prints.set(a, pa);
@@ -69,16 +87,21 @@ export function sameThing(raw: Raw, a: RegionBox, b: RegionBox, prints = new Map
  * picture, never from what the seller grouped.
  */
 export function distinctCount(raw: Raw | null, boxes: readonly RegionBox[]): number {
+  // Views of one thing side by side - a product's collage - are one thing: in doubt, one fee.
+  if (viewsLineup(boxes)) return Math.min(1, boxes.length);
   if (!raw) {
     // Without the picture, only places that are plainly the same place merge.
     const kept: RegionBox[] = [];
     for (const box of boxes) if (!kept.some((other) => sameness(other, box) >= 0.5)) kept.push(box);
     return kept.length;
   }
+  // Each thing is compared with the first of each group, so likeness does not
+  // chain from one figure to the next across a shelf; one that may be the
+  // same as it is counted with it.
   const prints = new Map<RegionBox, string | null>();
   const groups: RegionBox[][] = [];
   for (const box of boxes) {
-    const home = groups.find((group) => group.some((other) => sameThing(raw, other, box, prints)));
+    const home = groups.find((group) => maybeSameThing(raw, group[0]!, box, prints));
     if (home) home.push(box); else groups.push([box]);
   }
   return groups.length;
