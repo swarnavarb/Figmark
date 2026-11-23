@@ -1,0 +1,202 @@
+/* The shop coach: a card on the console and the panel behind it. */
+
+.shopcoach {
+  display: grid;
+  gap: var(--s3);
+  margin: 0 0 var(--s4);
+  padding: var(--s4);
+  border: 1px solid var(--violet-line);
+  border-radius: var(--r-lg);
+  background: linear-gradient(135deg, var(--violet-soft), var(--surface) 70%);
+}
+.shopcoach--folded {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  width: 100%;
+  padding: var(--s2) var(--s3);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: var(--t-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.shopcoach--folded > span:nth-child(2) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shopcoach--folded:hover { color: var(--text); border-color: var(--violet); }
+
+.shopcoach__head { display: flex; align-items: flex-start; gap: var(--s3); }
+.shopcoach__mark {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-pill);
+  background: var(--violet);
+  color: var(--violet-ink);
+}
+.shopcoach--folded .shopcoach__mark { width: 22px; height: 22px; }
+.shopcoach__headtext { display: grid; gap: 2px; flex: 1; min-width: 0; }
+.shopcoach__headtext span { color: var(--text-dim); font-size: var(--t-sm); }
+.shopcoach__fold { flex: none; }
+
+.shopcoach__next {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s3);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.shopcoach__next > div { flex: 1; min-width: 0; }
+.shopcoach__next p, .shopcoach__tiptext p { margin: 2px 0 0; color: var(--text-dim); font-size: var(--t-sm); line-height: 1.45; }
+.shopcoach__next .btn, .shopcoach__tip .btn, .shopcoach__week .btn { flex: none; }
+.shopcoach__acts { display: flex; flex-wrap: wrap; gap: var(--s2); }
+
+/* The panel. */
+.shopcoach__panel { display: grid; gap: var(--s4); }
+.shopcoach__seg button { flex: 1; }
+
+.shopcoach__health { display: flex; align-items: center; gap: var(--s3); font-size: var(--t-sm); color: var(--text-dim); }
+.shopcoach__health b { color: var(--text); }
+.shopcoach__meter { flex: 1; height: 8px; border-radius: var(--r-pill); background: var(--surface-2); overflow: hidden; }
+.shopcoach__meter span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--coral), var(--gold), var(--ok));
+  transform-origin: left;
+  transition: transform var(--dur-2) var(--ease-out);
+}
+.shopcoach__lead, .shopcoach__empty, .shopcoach__hello { margin: 0; color: var(--text-dim); font-size: var(--t-sm); }
+
+.shopcoach__tips, .shopcoach__week { display: grid; gap: var(--s2); margin: 0; padding: 0; list-style: none; }
+.shopcoach__tip, .shopcoach__week li {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s3);
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+.shopcoach__tip--urgent { border-left-color: var(--coral); }
+.shopcoach__tip--sales { border-left-color: var(--ok); }
+.shopcoach__tip--marketing { border-left-color: var(--violet); }
+.shopcoach__tip--listing { border-left-color: var(--blue); }
+.shopcoach__tip--shop { border-left-color: var(--gold); }
+.shopcoach__tiptext { display: grid; gap: 2px; flex: 1; min-width: 0; }
+.shopcoach__area { color: var(--text-faint); font-size: var(--t-2xs); text-transform: uppercase; letter-spacing: 0.06em; }
+
+.shopcoach__when {
+  display: flex;
+  gap: var(--s3);
+  padding: var(--s3);
+  border-radius: var(--r-md);
+  background: var(--gold-ink);
+  border: 1px solid var(--q-gold-line);
+  color: var(--text);
+}
+.shopcoach__when > svg { flex: none; margin-top: 2px; color: var(--gold); }
+.shopcoach__when p { margin: 4px 0 0; color: var(--text-dim); font-size: var(--t-sm); line-height: 1.45; }
+
+.shopcoach__hours {
+  display: grid;
+  grid-template-columns: repeat(24, 1fr);
+  align-items: end;
+  gap: 2px;
+  height: 64px;
+  padding-bottom: 18px;
+  position: relative;
+}
+.shopcoach__hours > span { display: flex; align-items: flex-end; height: 100%; }
+.shopcoach__hours i {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 2px 2px 0 0;
+  background: var(--surface-2);
+  transform-origin: bottom;
+}
+.shopcoach__hours .is-peak i { background: var(--gold); }
+.shopcoach__hourlabels {
+  position: absolute;
+  inset: auto 0 0;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  color: var(--text-faint);
+  font-size: var(--t-2xs);
+}
+
+.shopcoach__week li.is-today { border-left-color: var(--violet); background: var(--violet-soft); }
+.shopcoach__day { display: grid; flex: none; width: 64px; font-size: var(--t-sm); }
+.shopcoach__day span { color: var(--text-faint); font-size: var(--t-xs); }
+
+/* The chat. */
+.shopcoach__chat { display: grid; gap: var(--s3); }
+.shopcoach__aiswitch {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s2);
+  padding: var(--s3);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  color: var(--text-dim);
+  font-size: var(--t-sm);
+  cursor: pointer;
+}
+.shopcoach__aiswitch input { margin-top: 3px; accent-color: var(--violet); }
+.shopcoach__aiswitch b { color: var(--text); }
+
+.shopcoach__log { display: grid; gap: var(--s2); max-height: min(48vh, 420px); overflow-y: auto; overscroll-behavior: contain; }
+.shopcoach__msg {
+  display: grid;
+  gap: var(--s2);
+  max-width: 88%;
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r-md);
+  font-size: var(--t-sm);
+  line-height: 1.5;
+}
+.shopcoach__msg p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.shopcoach__msg--user { justify-self: end; background: var(--violet); color: var(--violet-ink); }
+.shopcoach__msg--assistant { justify-self: start; background: var(--surface-2); color: var(--text); }
+.shopcoach__msgacts { display: flex; flex-wrap: wrap; gap: var(--s1); }
+.shopcoach__by { color: var(--text-faint); font-size: var(--t-2xs); }
+
+.shopcoach__typing { display: flex; gap: 4px; padding: var(--s3); }
+.shopcoach__typing i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  animation: coach-dot 1s var(--ease) infinite;
+}
+.shopcoach__typing i:nth-child(2) { animation-delay: 0.15s; }
+.shopcoach__typing i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes coach-dot { 0%, 60%, 100% { opacity: 0.3; } 30% { opacity: 1; } }
+
+.shopcoach__chips { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.shopcoach__form { display: flex; gap: var(--s2); }
+.shopcoach__form input {
+  flex: 1;
+  min-width: 0;
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: max(16px, var(--t-sm));
+}
+.shopcoach__form input:focus { outline: none; border-color: var(--violet); }
+
+@media (max-width: 520px) {
+  .shopcoach__next, .shopcoach__tip, .shopcoach__week li { flex-wrap: wrap; }
+  .shopcoach__next .btn, .shopcoach__tip .btn, .shopcoach__week .btn { margin-left: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shopcoach__meter span, .shopcoach__typing i { transition: none; animation: none; }
+}
