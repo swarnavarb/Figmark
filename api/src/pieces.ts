@@ -1,6 +1,6 @@
 import type { RegionBox } from '../../shared/models.js';
 import { MAX_PIECES, type PhotoAnalysis } from '../../shared/pieces.js';
-import { sameness, viewsLineup } from '../../shared/photo-things.js';
+import { focusOf, inFocus, oneSubject, sameness, viewsLineup } from '../../shared/photo-things.js';
 import { distinctCount, groupThings, thingsInPhoto } from './photo-things.js';
 import { decodeJpeg, type Raw } from './storage/compress.js';
 import { getPhotoStore } from './storage/index.js';
@@ -107,9 +107,12 @@ export async function countThings(blobName: string | null, marked: readonly Regi
  */
 export async function analyseThings(blobName: string, boxes: readonly RegionBox[]): Promise<PhotoAnalysis> {
   const { raw } = await stored(blobName);
-  const places: RegionBox[] = [];
-  for (const box of boxes) if (!places.some((other) => sameness(other, box) >= 0.5)) places.push(box);
-  if (viewsLineup(places)) return { found: places.length, kinds: Math.min(1, places.length), largest: places.length, lineup: true };
+  const unique: RegionBox[] = [];
+  for (const box of boxes) if (!unique.some((other) => sameness(other, box) >= 0.5)) unique.push(box);
+  // The blurred background - a room, a shelf behind - is not what is for sale.
+  const places = raw ? inFocus(unique, focusOf(raw.data, raw.width, raw.height, unique)) : unique;
+  // Views of one thing side by side, or one subject the detector saw in pieces: one item.
+  if (viewsLineup(places) || oneSubject(places)) return { found: places.length, kinds: Math.min(1, places.length), largest: places.length, lineup: true };
   if (!raw) return { found: places.length, kinds: places.length, largest: Math.min(1, places.length), lineup: false };
   const groups = groupThings(raw, places);
   return { found: places.length, kinds: groups.length, largest: Math.max(0, ...groups.map((group) => group.length)), lineup: false };

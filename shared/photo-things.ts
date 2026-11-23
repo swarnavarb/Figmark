@@ -316,21 +316,93 @@ const MAX_VIEWS = 6;
 export function viewsLineup(boxes: readonly Box[]): boolean {
   for (const across of [true, false]) {
     const span = (box: Box) => (across ? box[3] : box[2]);
-    const big = boxes.filter((box) => span(box) >= VIEW_SPAN);
-    if (big.length < 2 || big.length > MAX_VIEWS) continue;
-    const spans = big.map(span);
-    if (Math.min(...spans) < 0.6 * Math.max(...spans)) continue;
-    // Side by side: no two big ones share much of their place along the row.
     const start = (box: Box) => (across ? box[0] : box[1]);
     const size = (box: Box) => (across ? box[2] : box[3]);
-    const apart = big.every((a, i) => big.every((b, j) => i >= j
-      || Math.max(0, Math.min(start(a) + size(a), start(b) + size(b)) - Math.max(start(a), start(b))) <= 0.35 * Math.min(size(a), size(b))));
-    if (!apart) continue;
+    const shared = (a: Box, b: Box) => Math.max(0, Math.min(start(a) + size(a), start(b) + size(b)) - Math.max(start(a), start(b)));
+    // The views: big subjects side by side, the narrowest first, so one box
+    // the detector drew across two panels does not stand for either.
+    const views: Box[] = [];
+    for (const box of boxes.filter((one) => span(one) >= VIEW_SPAN).sort((p, q) => size(p) - size(q))) {
+      if (views.every((view) => shared(view, box) <= 0.35 * Math.min(size(view), size(box)))) views.push(box);
+    }
+    if (views.length < 2 || views.length > MAX_VIEWS) continue;
+    const spans = views.map(span);
+    if (Math.min(...spans) < 0.6 * Math.max(...spans)) continue;
     // Every other thing sits within one of the views.
-    const lane = (box: Box) => { const middle = start(box) + size(box) / 2; return big.some((view) => middle >= start(view) - 0.05 && middle <= start(view) + size(view) + 0.05); };
-    if (boxes.every((box) => big.includes(box) || lane(box))) return true;
+    const lane = (box: Box) => { const middle = start(box) + size(box) / 2; return views.some((view) => middle >= start(view) - 0.05 && middle <= start(view) + size(view) + 0.05); };
+    if (boxes.every((box) => views.includes(box) || lane(box))) return true;
   }
   return false;
+}
+
+/**
+ * Whether the things found are one subject: every box touches the next, in
+ * one cluster no bigger than most of the photo - one figure the detector saw
+ * as a head, a jacket and a pair of legs. A shelf of figures spreads over the
+ * whole photo, or falls into several clusters.
+ */
+export function oneSubject(found: readonly Box[]): boolean {
+  // Specks beside a subject - a glove, a glint, a hand - are not things of their own.
+  const largest = Math.max(0, ...found.map(areaOf));
+  const boxes = found.filter((box) => areaOf(box) >= SPECK * largest);
+  if (boxes.length < 2) return boxes.length === 1;
+  const parent = boxes.map((_, index) => index);
+  const root = (index: number): number => (parent[index] === index ? index : (parent[index] = root(parent[index]!)));
+  // Pieces of one figure - a head, a glove - often stop just short of each other.
+  const near = (a: Box, b: Box) => a[0] - TOUCH <= b[0] + b[2] && b[0] - TOUCH <= a[0] + a[2] && a[1] - TOUCH <= b[1] + b[3] && b[1] - TOUCH <= a[1] + a[3];
+  boxes.forEach((a, i) => boxes.forEach((b, j) => { if (j > i && near(a, b)) parent[root(i)] = root(j); }));
+  if (new Set(boxes.map((_, index) => root(index))).size !== 1) return false;
+  const x0 = Math.min(...boxes.map((box) => box[0])); const y0 = Math.min(...boxes.map((box) => box[1]));
+  const x1 = Math.max(...boxes.map((box) => box[0] + box[2])); const y1 = Math.max(...boxes.map((box) => box[1] + box[3]));
+  if ((x1 - x0) * (y1 - y0) > ONE_SUBJECT_AREA) return false;
+  // Two whole figures side by side are two things, not the pieces of one.
+  const whole = boxes.filter((box) => box[3] >= 0.75 * (y1 - y0) || box[2] >= 0.75 * (x1 - x0));
+  return !whole.some((a, i) => whole.some((b, j) => j > i && insideOf(a, b) < 0.5 && insideOf(b, a) < 0.5));
+}
+
+/** A box under this share of the largest one's area is a speck beside it, for telling one subject. */
+const SPECK = 0.15;
+/** Boxes this close count as touching: the pieces of one thing seen apart. */
+const TOUCH = 0.05;
+
+/** One subject covers no more than this much of the photo: more is a shelf of things touching. */
+const ONE_SUBJECT_AREA = 0.5;
+/** A thing this much less sharp than the sharpest is the blurred background, not for sale. */
+const BLUR_RATIO = 0.22;
+
+/**
+ * How sharp each box is: the strong end of the edges inside it. What is for
+ * sale is what the camera focused on; a shelf, bags or a room behind it,
+ * thrown out of focus, is soft.
+ */
+export function focusOf(rgba: ArrayLike<number>, width: number, height: number, boxes: readonly Box[]): number[] {
+  const small = shrinkPixels(rgba, width, height, 640);
+  const W = small.width; const H = small.height;
+  const gray = new Float32Array(W * H);
+  for (let i = 0; i < gray.length; i += 1) gray[i] = 0.299 * small.data[i * 4]! + 0.587 * small.data[i * 4 + 1]! + 0.114 * small.data[i * 4 + 2]!;
+  return boxes.map(([bx, by, bw, bh]) => {
+    const x0 = Math.max(1, Math.floor(bx * W)); const x1 = Math.min(W - 1, Math.ceil((bx + bw) * W));
+    const y0 = Math.max(1, Math.floor(by * H)); const y1 = Math.min(H - 1, Math.ceil((by + bh) * H));
+    const counts = new Uint32Array(256); let total = 0;
+    for (let y = y0; y < y1; y += 1) {
+      for (let x = x0; x < x1; x += 1) {
+        const i = y * W + x;
+        const lap = Math.abs(4 * gray[i]! - gray[i - 1]! - gray[i + 1]! - gray[i - W]! - gray[i + W]!);
+        counts[Math.min(255, Math.round(lap))]! += 1; total += 1;
+      }
+    }
+    // The 90th percentile: the box's sharpest tenth, so a sharp thing on a plain backdrop still counts sharp.
+    let seen = 0;
+    for (let level = 0; level < 256; level += 1) { seen += counts[level]!; if (seen >= total * 0.9) return level; }
+    return 0;
+  });
+}
+
+/** The boxes in focus: those not far softer than the sharpest. */
+export function inFocus<T extends Box>(boxes: readonly T[], focus: readonly number[]): T[] {
+  const sharpest = Math.max(0, ...focus);
+  if (sharpest <= 0) return [...boxes];
+  return boxes.filter((_, index) => (focus[index] ?? 0) >= BLUR_RATIO * sharpest);
 }
 
 /* ── Together ─────────────────────────────────────────────────────────── */
