@@ -1,4 +1,4 @@
-import type { PhotoAnalysis } from '@shared/pieces';
+import type { PhotoAnalysis } from '@shared/photo-scan';
 import type { PayoutSummary } from '@shared/payouts';
 import type { DnaLinkKind, DnaSummary, DnaView } from '@shared/dna';
 import type { DayRange, DaySource, ShopDays } from '@shared/step-days';

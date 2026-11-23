@@ -11355,6 +11355,10 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .pcs-pick .pcs-tile { gap: 2px; padding: 12px; }
 .pcs-pick .pcs-tile span { color: var(--text-dim); font-size: var(--t-sm); }
 .pcs-pick__go { width: 100%; }
+.pcs-pick__ways--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.pcs-pick .pcs-tile.is-first { border-color: var(--lime-line); background: var(--lime-soft); }
+.pcs-edit__back { justify-self: start; font-size: var(--t-sm); }
+@media (max-width: 420px) { .pcs-pick__ways--3 { grid-template-columns: minmax(0, 1fr); } }
 .pcs-pick .pcs-link { justify-self: center; font-size: var(--t-sm); }
 .sellpreview[hidden] { display: none; }
 .pcs-read {
