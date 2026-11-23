@@ -209,6 +209,56 @@ await check('the AI brief carries the shop\'s counts and the tool tags; tags bec
   assert.deepEqual(parsed.tools, ['offers', 'post']);
 });
 
+console.log('ready answers, simple to complex');
+
+await check('every ready answer answers its own question - no guide steals another\'s', () => {
+  const ids = new Set();
+  for (const guide of coach.GUIDES) {
+    assert.ok(!ids.has(guide.id), `duplicate ${guide.id}`);
+    ids.add(guide.id);
+    assert.ok(coach.GUIDE_LEVELS.includes(guide.level), guide.id);
+    assert.ok(guide.tools.every((tool) => coach.isCoachTool(tool)), `${guide.id} names a tool that does not exist`);
+    assert.equal(coach.answerOffline(guide.ask, plan).source, guide.id, guide.ask);
+  }
+  assert.ok(coach.GUIDES.length >= 50);
+});
+
+await check('the same questions asked other ways still find the right answer', () => {
+  const cases = [
+    ['how to start selling here', 'start'], ['change the price of my figure', 'edit'], ['how do I mark something sold out', 'stock'],
+    ['what delivery charge to set', 'shipcost'], ['buyer says parcel is late', 'eta'], ['can buyers pay with gpay', 'pay'],
+    ['is escrow safe for me', 'protection'], ['how fast should I reply to a customer question', 'messages'],
+    ['is it okay to sell a bootleg if I say so', 'category'], ['can I duplicate a listing', 'templates'],
+    ['buyer wants to reserve an item', 'booking'], ['can buyer pay the rest later', 'advance'],
+    ['buyer ghosted after ordering', 'unpaid'], ['what box size for a statue', 'packing'],
+    ['figure arrived broken', 'damaged'], ['give me post ideas', 'content'], ['what is trending to import', 'trending'],
+    ['no one buys my stuff', 'slow'], ['how to get the blue tick', 'verified'], ['diwali sale plan', 'season'],
+    ['how does the whole import process work', 'importplan'], ['my parcel is stuck at customs', 'customs'],
+    ['which cargo service is cheapest per kg', 'forwarder'], ['my money is stuck in stock', 'cashflow'],
+    ['buyer opened a chargeback', 'disputes'], ['should I offer a warranty', 'shoprules'], ['do I need an invoice', 'tax'],
+    ['is this fake screenshot a scam', 'fraud'], ['i want to go full time', 'growbiz'],
+    ['how do I list a figure', 'list'], ['how to price an import', 'price'], ['how do I track my shipment', 'ship'],
+    ['how do i give a refund', 'refunds'], ['how to sell on instagram', 'outside'], ['set up a coupon', 'offers'],
+    ['how to get more reviews from buyers', 'reviews'], ['add my upi id', 'storefront'], ['add a staff member', 'team'],
+    ['what can you help with', 'topics'], ['what is my order status', 'orders'],
+  ];
+  for (const [question, want] of cases) assert.equal(coach.answerOffline(question, plan).source, want, question);
+});
+
+await check('"what can you help with" lists every topic, simple to advanced', () => {
+  const answer = coach.answerOffline('What can you help with?', plan);
+  assert.equal(answer.source, 'topics');
+  const at = coach.GUIDE_LEVELS.map((level) => answer.text.indexOf(coach.LEVEL_NAMES[level]));
+  assert.ok(at.every((index) => index >= 0) && at.every((index, n) => n === 0 || index > at[n - 1]), 'levels in order');
+  assert.equal(answer.follow.length, coach.GUIDE_LEVELS.length);
+});
+
+await check('an answer points on to the next, harder question', () => {
+  const answer = coach.answerOffline('How do I list an item?', plan);
+  const levels = answer.follow.map((ask) => coach.GUIDES.find((guide) => guide.ask === ask)?.level).filter(Boolean);
+  assert.ok(levels.some((level) => level !== 'basics'), JSON.stringify(answer.follow));
+});
+
 console.log('privacy');
 
 await check('questions about other sellers or how Figmark works inside are declined, never answered', () => {
@@ -417,6 +467,23 @@ console.log('GET /api/me/coach');
 
 const session = await login(req({ body: { identifier: fixtures.DEMO_EMAIL, password: fixtures.DEMO_PASSWORD } }), ctx);
 const shop = { id: session.jsonBody.user.id, headers: { authorization: `Bearer ${session.jsonBody.token}` } };
+
+await check('the coach is a Pro tool: a shop without Pro is refused by the server, not only hidden', async () => {
+  const repository = await getRepository();
+  const owner = await repository.getUserById(shop.id);
+  owner.pro = { until: null, history: [] };
+  await repository.updateUser(owner);
+  for (const [route, body] of [[coachRoute, undefined], [coachEventsRoute, { seen: ['post'] }], [coachAnswerRoute, { source: 'market', helpful: true }]]) {
+    const out = await route(req({ headers: shop.headers, body }), ctx);
+    assert.equal(out.status, 402, JSON.stringify(out.jsonBody));
+    assert.equal(out.jsonBody.error, 'pro_required');
+  }
+  // From here on the demo shop is Pro.
+  const pro = await repository.getUserById(shop.id);
+  pro.pro = { until: new Date(Date.now() + 30 * 86_400_000).toISOString(), history: [] };
+  await repository.updateUser(pro);
+  assert.equal((await coachRoute(req({ headers: shop.headers }), ctx)).status, 200);
+});
 
 await check('the shop reads its own coach: signals and a plan built from them', async () => {
   const out = await coachRoute(req({ headers: shop.headers }), ctx);

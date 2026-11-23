@@ -24,6 +24,24 @@ interface PuterText {
 
 /** How many earlier turns go with each question: enough for "and that one?", short enough to stay quick. */
 const HISTORY = 8;
+/*
+ * Every wait on Puter has an end. Its script, its sign-in window and its
+ * answer each arrive from someone else's servers, and a promise that never
+ * settles left the chat "writing" for good - Send did nothing, and the chat
+ * looked frozen. Past these, the seller gets Figgy's answer instead.
+ */
+const LOAD_MS = 20_000;
+const SIGN_IN_MS = 120_000;
+const ANSWER_MS = 45_000;
+
+/** The promise, or a rejection with this message once `ms` have passed. */
+function within<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer = 0;
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => { timer = window.setTimeout(() => reject(new Error(message)), ms); }),
+  ]).finally(() => window.clearTimeout(timer));
+}
 
 export { warmPuter as warmCoachAi };
 
@@ -40,24 +58,24 @@ function textOf(response: unknown): string {
  * buttons. Rejects with a sentence to show when it cannot answer.
  */
 export async function askCoachAi(brief: string, turns: readonly ChatTurn[]): Promise<CoachAnswer> {
-  const puter = (await loadPuter()) as unknown as PuterText;
+  const puter = (await within(loadPuter(), LOAD_MS, 'Puter AI did not load. Check your connection - Figgy has answered instead.')) as unknown as PuterText;
   if (!puter.auth.isSignedIn()) {
     try {
-      await puter.auth.signIn({ attempt_temp_user_creation: true });
+      await within(puter.auth.signIn({ attempt_temp_user_creation: true }), SIGN_IN_MS, 'timeout');
     } catch {
-      throw new Error('Puter sign-in was closed. Sign in to chat with the AI coach, or ask the built-in coach instead.');
+      throw new Error('Puter sign-in was closed or did not finish. Sign in to use Puter AI - Figgy has answered instead.');
     }
   }
   let response: unknown;
   try {
-    response = await puter.ai.chat(
+    response = await within(puter.ai.chat(
       [{ role: 'system', content: brief }, ...turns.slice(-HISTORY)],
       { temperature: 0.4, max_tokens: 600 },
-    );
+    ), ANSWER_MS, 'timeout');
   } catch {
-    throw new Error('The AI coach could not answer just now. The built-in coach still can.');
+    throw new Error('Puter AI took too long or could not answer - Figgy has answered instead.');
   }
   const answer = parseToolTags(textOf(response));
-  if (!answer.text) throw new Error('The AI coach gave an empty answer. Try asking another way.');
+  if (!answer.text) throw new Error('Puter AI gave an empty answer - Figgy has answered instead.');
   return answer;
 }
