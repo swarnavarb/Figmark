@@ -200,7 +200,8 @@ await check('calling twenty-five different figures one item does not make the fe
   const made = await createListing(req({ headers: shop, body: setBody({ setItems: [{ title: 'Everything', boxes: found.slice(0, 4) }, { title: 'And this', boxes: [found[4]] }], seen: found }) }), ctx);
   assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
   const { charged, detected } = made.jsonBody.listing.bundleCount;
-  assert.ok(detected >= Math.ceil(found.length * 0.8), `the photo's figures are found (${detected} of ${found.length})`);
+  // Figures overlapping on the shelf, or alike enough to be one, count once: in doubt, no charge.
+  assert.ok(detected >= Math.ceil(found.length * 0.6), `the photo's figures are found (${detected} of ${found.length})`);
   assert.ok(charged >= Math.ceil(detected * 0.85), `charged on ${charged}, found ${detected}`);
 });
 
@@ -294,8 +295,9 @@ await check('the sell form is told what the found things make up', async () => {
   const made = await detectPiecesRoute(req({ headers: shop, body: { blobName: shelf.blobName, boxes: found } }), ctx);
   assert.equal(made.status, 200, JSON.stringify(made.jsonBody));
   const { analysis } = made.jsonBody;
-  assert.equal(analysis.found, found.length);
-  assert.ok(analysis.kinds >= Math.ceil(found.length * 0.8) && analysis.lineup === false, JSON.stringify(analysis));
+  // Separate subjects: figures overlapping one another on the shelf count as one.
+  assert.equal(analysis.several, true);
+  assert.ok(analysis.found >= Math.ceil(found.length * 0.6) && analysis.kinds >= Math.ceil(analysis.found * 0.7) && analysis.lineup === false, JSON.stringify(analysis));
 });
 
 await check('one figure the detector saw in pieces is one item; two figures side by side are two', async () => {
@@ -308,6 +310,19 @@ await check('one figure the detector saw in pieces is one item; two figures side
   assert.equal(T.oneSubject(found), false, 'a shelf');
   // What the camera did not focus on is the background.
   assert.deepEqual(T.inFocus([[0, 0, 0.1, 0.1], [0.5, 0.5, 0.1, 0.1]], [40, 5]), [[0, 0, 0.1, 0.1]]);
+});
+
+await check('trusted as one item unless the photo clearly shows several separate things', async () => {
+  const T = await import(new URL('shared/photo-things.js', dist));
+  assert.equal(T.clearlySeveral([[0.1, 0.2, 0.35, 0.6], [0.5, 0.2, 0.35, 0.6]]), false, 'two figures: the seller is trusted');
+  assert.equal(T.clearlySeveral([[0.40, 0.40, 0.08, 0.1], [0.5, 0.42, 0.08, 0.1], [0.45, 0.55, 0.08, 0.1]]), false, 'three bunched in the middle');
+  assert.equal(T.clearlySeveral([[0.05, 0.3, 0.15, 0.4], [0.4, 0.3, 0.15, 0.4], [0.75, 0.3, 0.15, 0.4]]), true, 'three spread across');
+  const two = await createListing(req({ headers: shop, body: {
+    title: 'Two figures', priceMinor: 3_00_000, deliveryEta: { minDays: 3, maxDays: 5 }, bundle: false, photos: [shelfPhoto],
+    seen: [[0.1, 0.2, 0.35, 0.6], [0.5, 0.2, 0.35, 0.6]],
+  } }), ctx);
+  assert.equal(two.status, 201, JSON.stringify(two.jsonBody));
+  assert.equal(two.jsonBody.listing.bundleCount, undefined, 'one fee');
 });
 
 console.log(`\n${passed} checks passed`);

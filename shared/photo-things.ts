@@ -365,6 +365,51 @@ const SPECK = 0.15;
 /** Boxes this close count as touching: the pieces of one thing seen apart. */
 const TOUCH = 0.05;
 
+/**
+ * The separate subjects in a photo: boxes mostly inside one another - a
+ * figure's head, its jacket, the figure - are one subject; boxes that only
+ * touch, as packed boxes or figures on a shelf do, are each their own.
+ * Specks too small to be a thing for sale are left out.
+ */
+export function subjectsOf(boxes: readonly Box[]): Box[] {
+  const parent = boxes.map((_, index) => index);
+  const root = (index: number): number => (parent[index] === index ? index : (parent[index] = root(parent[index]!)));
+  boxes.forEach((a, i) => boxes.forEach((b, j) => {
+    if (j > i && Math.max(insideOf(a, b), insideOf(b, a)) >= SAME_SUBJECT) parent[root(i)] = root(j);
+  }));
+  const groups = new Map<number, Box[]>();
+  boxes.forEach((box, index) => groups.set(root(index), [...(groups.get(root(index)) ?? []), box]));
+  return [...groups.values()].map((group) => {
+    const x0 = Math.min(...group.map((box) => box[0])); const y0 = Math.min(...group.map((box) => box[1]));
+    const x1 = Math.max(...group.map((box) => box[0] + box[2])); const y1 = Math.max(...group.map((box) => box[1] + box[3]));
+    return [x0, y0, x1 - x0, y1 - y0] as Box;
+  }).filter((subject) => areaOf(subject) >= MIN_SUBJECT);
+}
+
+/**
+ * Whether a photo clearly shows several things: three or more separate
+ * subjects, spread across the photo, and not views of one thing side by
+ * side. Anything less is one item, as the seller says - in doubt, one fee.
+ * `boxes` are those in focus.
+ */
+export function clearlySeveral(boxes: readonly Box[], all: readonly Box[] = boxes): boolean {
+  // A collage is read from everything in it: a softer panel is still one of its views.
+  if (viewsLineup(all) || viewsLineup(boxes)) return false;
+  const subjects = subjectsOf(boxes);
+  if (subjects.length < SEVERAL) return false;
+  const xs = subjects.map((box) => box[0] + box[2] / 2); const ys = subjects.map((box) => box[1] + box[3] / 2);
+  return Math.max(...xs) - Math.min(...xs) >= SPREAD || Math.max(...ys) - Math.min(...ys) >= SPREAD;
+}
+
+/** Subjects a photo must show, at least, to be charged as several things. */
+export const SEVERAL = 3;
+/** How far apart their middles must spread, across or down, as a share of the photo. */
+const SPREAD = 0.4;
+/** A box this much inside another is part of the same subject. */
+const SAME_SUBJECT = 0.3;
+/** A subject smaller than this share of the photo is a speck, not a thing for sale. */
+const MIN_SUBJECT = 0.005;
+
 /** One subject covers no more than this much of the photo: more is a shelf of things touching. */
 const ONE_SUBJECT_AREA = 0.5;
 /** A thing this much less sharp than the sharpest is the blurred background, not for sale. */
@@ -399,11 +444,18 @@ export function focusOf(rgba: ArrayLike<number>, width: number, height: number, 
 }
 
 /** The boxes in focus: those not far softer than the sharpest. */
-export function inFocus<T extends Box>(boxes: readonly T[], focus: readonly number[]): T[] {
+export function inFocus<T extends Box>(boxes: readonly T[], focus: readonly number[], ratio = BLUR_RATIO): T[] {
   const sharpest = Math.max(0, ...focus);
   if (sharpest <= 0) return [...boxes];
-  return boxes.filter((_, index) => (focus[index] ?? 0) >= BLUR_RATIO * sharpest);
+  return boxes.filter((_, index) => (focus[index] ?? 0) >= ratio * sharpest);
 }
+
+/**
+ * Sharp enough to be charged for: near as sharp as what the camera focused
+ * on. Stricter than `inFocus` - a half-blurred bag behind a figure held up to
+ * the camera is not clearly a thing for sale.
+ */
+export const SHARP_RATIO = 0.4;
 
 /* ── Together ─────────────────────────────────────────────────────────── */
 

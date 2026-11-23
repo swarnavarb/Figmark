@@ -83,8 +83,13 @@ export const rupeesToMinor = (value: string | undefined) => Math.round(Number(va
 const FIND_SLACK = 0.15;
 
 /** The count the fee comes to, as the editor can tell: the rows, or most of what was found, whichever is more. */
-export function feeCount(group: Pick<PhotoGroup, 'pieces' | 'found'>): number {
-  return Math.max(1, group.pieces.length, Math.ceil(group.found * (1 - FIND_SLACK)));
+export function feeCount(group: Pick<PhotoGroup, 'pieces' | 'found' | 'analysis'>): number {
+  return Math.max(1, group.pieces.length, Math.ceil(photoFloor(group) * (1 - FIND_SLACK)));
+}
+
+/** What the photo holds for the fee: only a photo that clearly shows several things sets a floor (api/src/pieces.ts). */
+function photoFloor(group: Pick<PhotoGroup, 'found' | 'analysis'>): number {
+  return group.analysis?.several ? group.analysis.found : 0;
 }
 
 /** Each row's share of a set's price: spread evenly, the odd paise on the first. */
@@ -222,7 +227,7 @@ export function PhotoGroupBox({ photoUrl, group, onChange, title = '', onStock, 
       if (!live) return;
       // Then what they make up - one item, copies of one, different things - before any choice is offered.
       const places = mergeThings(named, boxes, MAX_PIECES).flatMap((thing) => thing.boxes);
-      const fallback: PhotoAnalysis = { found: places.length, kinds: places.length, largest: Math.min(1, places.length), lineup: viewsLineup(places) };
+      const fallback: PhotoAnalysis = { found: Math.min(1, places.length), kinds: Math.min(1, places.length), largest: Math.min(1, places.length), lineup: viewsLineup(places), several: false };
       onChange((now) => (now.photoUrl === photoUrl ? { ...now, analysis: null, reading: true } : now));
       void (places.length >= 2 ? api.analysePieces(photoUrl, places).then((result) => result.analysis) : Promise.resolve(fallback))
         .catch(() => fallback)
@@ -244,12 +249,12 @@ export function PhotoGroupBox({ photoUrl, group, onChange, title = '', onStock, 
   // What the photo holds, with the title's hint where the photo leaves it open.
   const hint = titleHint(title);
   const analysis: PhotoAnalysis = group.analysis
-    ?? { found: group.found, kinds: group.found, largest: Math.min(1, group.found), lineup: false };
+    ?? { found: Math.min(1, group.found), kinds: Math.min(1, group.found), largest: Math.min(1, group.found), lineup: false, several: false };
   const verdict: PhotoVerdict = group.different
     ? { kind: 'different', count: Math.max(2, analysis.kinds) }
     : photoVerdict(analysis, hint);
   const shown = verdict.kind === 'one' ? 1 : verdict.count;
-  const titleNote = !group.reading && hint.count !== null && hint.count !== shown && analysis.found > 0
+  const titleNote = !group.reading && analysis.several && hint.count !== null && hint.count !== shown && analysis.found > 0
     ? <p className="pcs-note">Title says {hint.count}, photo shows {shown}.</p>
     : null;
   const go = (next: PhotoGroup) => { haptic('tap'); onChange(next); onContinue?.(); };
@@ -304,7 +309,7 @@ export function PhotoGroupBox({ photoUrl, group, onChange, title = '', onStock, 
   if (choosing) {
     return (
       <div className="pcs-pick">
-        <p className="pcs-pick__q"><b>{shown}</b> different items</p>
+        <p className="pcs-pick__q">{analysis.several ? <><b>{shown}</b> different items</> : 'Several items'}</p>
         {titleNote}
         <div className="pcs-pick__ways">
           <button type="button" className="pcs-tile" onClick={() => go(switchMode({ ...group, mode: 'single' }, 'pieces'))}>
@@ -372,9 +377,9 @@ export function PhotoGroupBox({ photoUrl, group, onChange, title = '', onStock, 
         onPieces={(update) => onChange((now) => ({ ...now, pieces: update(now.pieces), confirmed: false }))} />
 
       <div className="pcs-confirm">
-        {group.found > group.pieces.length && !group.reading && (
+        {photoFloor(group) > group.pieces.length && !group.reading && (
           <p className="pcs-note pcs-note--warn">
-            {group.pieces.length} of {group.found} listed. Fee counts at least {Math.ceil(group.found * (1 - FIND_SLACK))}.
+            {group.pieces.length} of {photoFloor(group)} listed. Fee counts at least {Math.ceil(photoFloor(group) * (1 - FIND_SLACK))}.
           </p>
         )}
         <label className="pcs-check">

@@ -1,6 +1,6 @@
 import type { RegionBox } from '../../shared/models.js';
 import { MAX_PIECES, type PhotoAnalysis } from '../../shared/pieces.js';
-import { focusOf, inFocus, oneSubject, sameness, viewsLineup } from '../../shared/photo-things.js';
+import { SHARP_RATIO, clearlySeveral, focusOf, inFocus, sameness, subjectsOf, viewsLineup } from '../../shared/photo-things.js';
 import { distinctCount, groupThings, thingsInPhoto } from './photo-things.js';
 import { decodeJpeg, type Raw } from './storage/compress.js';
 import { getPhotoStore } from './storage/index.js';
@@ -94,7 +94,11 @@ export async function countThings(blobName: string | null, marked: readonly Regi
     if (!everything.some((other) => sameness(other, box) >= 0.5)) everything.push(box);
   }
   const keptCount = distinctCount(raw, [...kept, ...named.filter((box) => !kept.some((other) => sameness(other, box) >= 0.5))]);
-  const found = distinctCount(raw, everything);
+  // The floor under the seller's count is the photo's only when it clearly
+  // shows several things; anything less, the seller is trusted.
+  const focus = raw ? focusOf(raw.data, raw.width, raw.height, everything) : null;
+  const focused = focus ? inFocus(everything, focus, SHARP_RATIO) : everything;
+  const found = clearlySeveral(focused, focus ? inFocus(everything, focus) : everything) ? distinctCount(raw, subjectsOf(focused)) : 0;
   const charged = Math.max(1, keptCount, Math.ceil(found * (1 - FIND_SLACK)));
   return { charged, found, perRow: marked.map((boxes) => Math.max(1, distinctCount(raw, boxes))) };
 }
@@ -110,10 +114,16 @@ export async function analyseThings(blobName: string, boxes: readonly RegionBox[
   const unique: RegionBox[] = [];
   for (const box of boxes) if (!unique.some((other) => sameness(other, box) >= 0.5)) unique.push(box);
   // The blurred background - a room, a shelf behind - is not what is for sale.
-  const places = raw ? inFocus(unique, focusOf(raw.data, raw.width, raw.height, unique)) : unique;
-  // Views of one thing side by side, or one subject the detector saw in pieces: one item.
-  if (viewsLineup(places) || oneSubject(places)) return { found: places.length, kinds: Math.min(1, places.length), largest: places.length, lineup: true };
-  if (!raw) return { found: places.length, kinds: places.length, largest: Math.min(1, places.length), lineup: false };
-  const groups = groupThings(raw, places);
-  return { found: places.length, kinds: groups.length, largest: Math.max(0, ...groups.map((group) => group.length)), lineup: false };
+  const focus = raw ? focusOf(raw.data, raw.width, raw.height, unique) : null;
+  const places = focus ? inFocus(unique, focus) : unique;
+  // Only what is near as sharp as the subject counts towards several things.
+  const sharp = focus ? inFocus(unique, focus, SHARP_RATIO) : unique;
+  // Unless the photo clearly shows several things, it is one item, as the seller says.
+  if (!clearlySeveral(sharp, places)) {
+    return { found: Math.min(1, places.length), kinds: Math.min(1, places.length), largest: Math.min(1, places.length), lineup: viewsLineup(places), several: false };
+  }
+  const subjects = subjectsOf(sharp);
+  if (!raw) return { found: subjects.length, kinds: subjects.length, largest: 1, lineup: false, several: true };
+  const groups = groupThings(raw, subjects);
+  return { found: subjects.length, kinds: groups.length, largest: Math.max(0, ...groups.map((group) => group.length)), lineup: false, several: true };
 }
