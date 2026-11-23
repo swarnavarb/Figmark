@@ -313,14 +313,14 @@ async function opsCoach(request: HttpRequest, _context: InvocationContext) {
 /** Each kind of answer with the name staff know it by. */
 const SOURCE_NAMES: Record<string, string> = {
   ...Object.fromEntries(GUIDES.map((guide) => [guide.id, guide.title])),
-  today: 'What to do today', when: 'When to post', private: 'Declined (private)', menu: 'No answer found', puter: 'Puter AI',
+  today: 'What to do today', when: 'When to post', private: 'Declined (private)', menu: 'No answer found', topics: 'Topic list', puter: 'Puter AI',
 };
 const named = (view: ReturnType<typeof answerView>) => ({
   ...view, rows: view.rows.map((row) => ({ ...row, label: SOURCE_NAMES[row.source] ?? row.source })),
 });
 
 /** Kinds of answer a rating may be about. */
-const ANSWER_SOURCES = new Set([...GUIDES.map((guide) => guide.id), 'today', 'when', 'private', 'menu', 'puter']);
+const ANSWER_SOURCES = new Set([...GUIDES.map((guide) => guide.id), 'today', 'when', 'private', 'menu', 'topics', 'puter']);
 
 /**
  * POST /api/me/coach/answer - `{ source, helpful }` rates one of the coach's

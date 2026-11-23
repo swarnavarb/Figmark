@@ -128,6 +128,8 @@ function useCoachTools(store: StoreAccess, signals: CoachSignals | null, onLeave
       case 'quests': return go('/quests');
       case 'pro': return go('/pro');
       case 'learn': return go('/learn');
+      case 'verify': return go('/verify');
+      case 'forwarders': return go('/services/forwarder');
     }
   };
 
@@ -396,7 +398,7 @@ interface Said {
   vote?: 'up' | 'down';
 }
 
-const STARTERS = ['What should I do today?', 'How do I get more buyers?', 'How do I sell on WhatsApp and Instagram?', 'When should I post?'];
+const STARTERS = ['What should I do today?', 'How do I get more buyers?', 'How do I sell on WhatsApp and Instagram?', 'What can you help with?'];
 
 const ASSISTANTS: Record<Assistant, { name: string; blurb: string }> = {
   figgy: { name: FIGGY, blurb: 'Built into Figmark. Instant, free, knows your shop - and gets better as sellers rate its answers.' },
