@@ -1,6 +1,6 @@
 import type { PhotoBox } from './api';
 
-import { MAX_THINGS, readingOrder, sameness } from '@shared/photo-things';
+import { MAX_THINGS, insideOf, readingOrder, sameness } from '@shared/photo-things';
 
 export { MAX_THINGS };
 
@@ -23,4 +23,16 @@ export function mergeThings(server: FoundThing[], phone: PhotoBox[], max = MAX_T
     if (!found.some((thing) => thing.boxes.some((known) => sameness(known, box) >= 0.45))) found.push({ label: null, boxes: [box] });
   }
   return found.sort(readingOrder).slice(0, max);
+}
+
+/**
+ * The things an AI scan found laid over the reading already made: the scan's
+ * first, then any earlier find that is neither one of them nor a part of one -
+ * a figure seen through a package's window, half a box - so what the AI
+ * missed is kept and what it saw better is replaced.
+ */
+export function overlayScan<T extends { boxes: PhotoBox[] }>(scanned: T[], earlier: T[]): T[] {
+  const covered = (boxes: PhotoBox[]) => boxes.some((box) => scanned.some((thing) => thing.boxes.some((known) =>
+    sameness(known, box) >= 0.45 || insideOf(box, known) >= 0.6)));
+  return [...scanned, ...earlier.filter((thing) => !covered(thing.boxes))];
 }

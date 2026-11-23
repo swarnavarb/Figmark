@@ -45,7 +45,9 @@ import {
 } from '../components/ShopFinder';
 import { clearPhotoQuery, holdsPhotoQuery, usePhotoQuery } from '../photoQuery';
 import { detectThings } from '../photoDetect';
-import { mergeThings } from '../photoThings';
+import { MAX_THINGS, mergeThings, overlayScan, type FoundThing } from '../photoThings';
+import { readingOrder } from '@shared/photo-things';
+import { AiScan } from '../components/AiScan';
 import '../styles/FeedPage.css';
 import { Select } from '../components/Select';
 
@@ -61,6 +63,7 @@ import { Select } from '../components/Select';
 /** Listings per catalogue page, as the API counts them. */
 const CATALOG_PAGE = 100;
 const NO_ITEMS: PhotoItem[] = [];
+const NO_THINGS: FoundThing[] = [];
 /** The API's own ceiling (400 listings). */
 const CATALOG_MAX_PAGES = 4;
 
@@ -106,10 +109,17 @@ export function useCatalog() {
   const seenItems = photo && seen.photoId === photo.id ? seen.items : NO_ITEMS;
   const toldItems = photo && told.photoId === photo.id ? told.items : NO_ITEMS;
   // Put together exactly as the sell form does, so a photo shows the same things in both.
-  const photoItems = useMemo(() => mergeThings(
+  // What the AI found, when asked to look closer, first of all.
+  const [scanned, setScanned] = useState<{ photoId: string; things: FoundThing[] }>({ photoId: '', things: [] });
+  const takeScan = useCallback((things: FoundThing[]) => {
+    if (photo) setScanned({ photoId: photo.id, things });
+  }, [photo]);
+  const scannedThings = photo && scanned.photoId === photo.id ? scanned.things : NO_THINGS;
+  const photoItems = useMemo(() => overlayScan(scannedThings, mergeThings(
     toldItems.map((item) => ({ label: item.label, boxes: [item.box] })),
     seenItems.map((item) => item.box),
-  ).map((thing): PhotoItem => ({ box: thing.boxes[0]!, label: thing.label })), [seenItems, toldItems]);
+  )).sort(readingOrder).slice(0, MAX_THINGS)
+    .map((thing): PhotoItem => ({ box: thing.boxes[0]!, label: thing.label })), [seenItems, toldItems, scannedThings]);
   const pickRegion = useCallback((box: PhotoBox | null) => {
     if (photo) setFocus({ photoId: photo.id, box });
   }, [photo]);
@@ -311,7 +321,7 @@ export function useCatalog() {
     // More to come: the server said this is not every match, and there is room to ask for more.
     canShowMore: !photoId && data?.complete === false && pages < CATALOG_MAX_PAGES, showMore,
     search, group, category, condition, type, size, authenticity, kind, sort, maxPrice, minPrice, minTrust, maxDays,
-    photo, clearPhoto, photoItems, photoRegion, pickRegion, photoSuggested,
+    photo, clearPhoto, photoItems, photoRegion, pickRegion, photoSuggested, takeScan,
     toggle, chooseGroup, chooseKind, set, activeFilters,
   };
 }
@@ -339,7 +349,7 @@ export function FeedPage() {
   const {
     params, setParams, data, error, loading,
     search, group, category, condition, type, size, authenticity, kind, sort, maxPrice, minPrice, minTrust, maxDays,
-    photo, clearPhoto, photoItems, photoRegion, pickRegion, photoSuggested,
+    photo, clearPhoto, photoItems, photoRegion, pickRegion, photoSuggested, takeScan,
     chooseGroup, chooseKind, set, activeFilters,
     canShowMore, showMore,
   } = useCatalog();
@@ -587,7 +597,11 @@ export function FeedPage() {
       {showGrid && error && <ErrorNotice message={error} />}
 
       {photo && (
+        <>
         <PhotoFocus photo={photo} items={photoItems} region={photoRegion} onPick={pickRegion} onClear={clearPhoto} busy={loading} />
+        <AiScan photoUrl={photo.original ?? photo.dataUrl} hint="Missed something? Find every item with AI, free with a Puter account."
+          onFound={takeScan} />
+        </>
       )}
       {photo && !loading && <PhotoSuggestions listings={photoSuggested} />}
       <div className="qrow__head">

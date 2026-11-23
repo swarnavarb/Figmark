@@ -11436,6 +11436,9 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .pcs-ebox.is-sold { border-color: var(--danger); background: rgba(244, 63, 94, 0.18); }
 .pcs-status { display: flex; align-items: center; gap: 8px; color: var(--text-dim); font-size: var(--t-sm); }
 .pcs-status b { color: var(--text); }
+.aiscan { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 8px 0; }
+.aiscan__go { display: inline-flex; align-items: center; gap: 6px; }
+.aiscan__hint { min-width: 0; color: var(--text-dim); font-size: var(--t-sm); }
 .pcs-switch { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px; border-radius: 12px; background: var(--bg); border: 1px solid var(--border); }
 .pcs-switch button {
   flex: 1 1 auto; padding: 8px 12px; border: 0; border-radius: 9px; background: transparent; color: var(--text-dim);
