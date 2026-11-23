@@ -32,7 +32,24 @@ export function mergeThings(server: FoundThing[], phone: PhotoBox[], max = MAX_T
  * missed is kept and what it saw better is replaced.
  */
 export function overlayScan<T extends { boxes: PhotoBox[] }>(scanned: T[], earlier: T[]): T[] {
-  const covered = (boxes: PhotoBox[]) => boxes.some((box) => scanned.some((thing) => thing.boxes.some((known) =>
+  // A model places a box roughly; where the phone or server drew nearly the
+  // same one from the pixels, that one is the truer edge, and the name stays.
+  const tightened = scanned.map((thing) => {
+    const box = thing.boxes[0];
+    if (!box) return thing;
+    let best: PhotoBox | null = null; let bestFit = SNAP;
+    for (const other of earlier) {
+      for (const candidate of other.boxes) {
+        const fit = sameness(box, candidate);
+        if (fit >= bestFit) { best = candidate; bestFit = fit; }
+      }
+    }
+    return best ? { ...thing, boxes: [best, ...thing.boxes.slice(1)] } : thing;
+  });
+  const covered = (boxes: PhotoBox[]) => boxes.some((box) => tightened.some((thing) => thing.boxes.some((known) =>
     sameness(known, box) >= 0.45 || insideOf(box, known) >= 0.6)));
-  return [...scanned, ...earlier.filter((thing) => !covered(thing.boxes))];
+  return [...tightened, ...earlier.filter((thing) => !covered(thing.boxes))];
 }
+
+/** How closely an earlier box has to match an AI box to stand in for it. */
+const SNAP = 0.6;
