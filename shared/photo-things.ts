@@ -141,20 +141,32 @@ export function fuseDetections(detections: readonly Detection[]): Fused[] {
   const isPackage = (cluster: (typeof clusters)[number]) => cluster.packed * 2 >= cluster.vote;
   // A box round the middles of two or more smaller things is the group they
   // stand in. A package holds a figure and its parts, so it is a group only
-  // when it holds other packages.
+  // when it holds other packages, whole: a box seen half in one tile and
+  // whole in another is one box.
   const things = voted.filter((cluster) => voted.filter((other) => other !== cluster
     && (!isPackage(cluster) || isPackage(other))
     && areaOf(other.box) < 0.7 * areaOf(cluster.box)
     && holds(cluster.box, centre(other.box))
-    && insideOf(other.box, cluster.box) > 0.6).length < 2);
+    && insideOf(other.box, cluster.box) > (isPackage(cluster) ? 0.7 : 0.6)).length < 2);
   // Packages first, so what is printed on one or seen through its window goes with it.
   const order = (a: (typeof clusters)[number], b: (typeof clusters)[number]) =>
     Number(isPackage(b)) - Number(isPackage(a)) || b.vote - a.vote;
   // A torso inside its own figure is the figure seen twice; a figure inside a package is the package.
-  const kept: (Fused & { packaged: boolean })[] = [];
+  let kept: (Fused & { packaged: boolean })[] = [];
   for (const cluster of things.sort(order)) {
     if (kept.some((k) => (k.packaged && !isPackage(cluster) && insideOf(cluster.box, k.box) >= 0.65)
       || (insideOf(cluster.box, k.box) >= 0.75 && (areaOf(cluster.box) < 0.45 * areaOf(k.box) || insideOf(k.box, cluster.box) >= 0.6)))) continue;
+    // A package round most of one already kept, and over nothing else kept,
+    // is that one seen whole: the part goes. One that also reaches over a
+    // neighbour is the row they stand in, and is not a thing.
+    if (isPackage(cluster)) {
+      const parts = kept.filter((k) => k.packaged && areaOf(k.box) < areaOf(cluster.box) && insideOf(k.box, cluster.box) >= 0.6);
+      const others = kept.filter((k) => !parts.includes(k));
+      if (parts.length > 0) {
+        if (others.some((k) => insideOf(k.box, cluster.box) > 0.1)) continue;
+        kept = others;
+      }
+    }
     kept.push({ box: rounded(cluster.box), vote: cluster.vote, packaged: isPackage(cluster) });
   }
   return kept.map(({ box, vote }) => ({ box, vote }));

@@ -45,7 +45,7 @@ import {
 } from '../components/ShopFinder';
 import { clearPhotoQuery, holdsPhotoQuery, usePhotoQuery } from '../photoQuery';
 import { detectThings } from '../photoDetect';
-import { mergeItems } from '../photoThings';
+import { mergeThings } from '../photoThings';
 import '../styles/FeedPage.css';
 import { Select } from '../components/Select';
 
@@ -105,7 +105,11 @@ export function useCatalog() {
   const photoRegion = photo && focus.photoId === photo.id ? focus.box : null;
   const seenItems = photo && seen.photoId === photo.id ? seen.items : NO_ITEMS;
   const toldItems = photo && told.photoId === photo.id ? told.items : NO_ITEMS;
-  const photoItems = useMemo(() => mergeItems(seenItems, toldItems), [seenItems, toldItems]);
+  // Put together exactly as the sell form does, so a photo shows the same things in both.
+  const photoItems = useMemo(() => mergeThings(
+    toldItems.map((item) => ({ label: item.label, boxes: [item.box] })),
+    seenItems.map((item) => item.box),
+  ).map((thing): PhotoItem => ({ box: thing.boxes[0]!, label: thing.label })), [seenItems, toldItems]);
   const pickRegion = useCallback((box: PhotoBox | null) => {
     if (photo) setFocus({ photoId: photo.id, box });
   }, [photo]);

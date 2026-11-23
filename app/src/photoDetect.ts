@@ -38,8 +38,6 @@ interface RawDetection {
 const MIN_SCORE = 0.05;
 /** The photo is looked at no larger than this: more is time, not things. */
 const LOOK_EDGE = 2000;
-/** Things a search photo is told apart into: a shelf shot is searched figure by figure. */
-const SEARCH_THINGS = 30;
 /** How long the first look may take, model download included, before the search goes on without it. */
 const PATIENCE_MS = 25_000;
 
@@ -189,7 +187,7 @@ export function detectThings(photo: PhotoQuery, better?: (boxes: PhotoBox[]) => 
     // One reading: the quick answer is what it has after the first two tilings.
     let early: (boxes: PhotoBox[]) => void = () => undefined;
     const quick = new Promise<PhotoBox[]>((resolve) => { early = resolve; });
-    const close = findThings(source, { max: SEARCH_THINGS, better: early }).then((boxes) => { early(boxes); return boxes; });
+    const close = findThings(source, { better: early }).then((boxes) => { early(boxes); return boxes; });
     close.catch(() => early([]));
     const patient = new Promise<PhotoBox[]>((resolve) => { setTimeout(() => resolve([]), PATIENCE_MS); });
     found = {

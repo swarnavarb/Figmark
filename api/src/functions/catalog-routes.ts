@@ -4,6 +4,7 @@ import {
 } from '../../../shared/pieces.js';
 import { FIND_SLACK, countThings, readStoredPieces } from '../pieces.js';
 import { thingsInPhoto } from '../photo-things.js';
+import { MAX_THINGS } from '../../../shared/photo-things.js';
 import { listedInShop, shopRefusal, shopStatusOf } from '../../../shared/shop-status.js';
 import { isProActive } from '../../../shared/billing.js';
 import { lockTimedOffers, repriceBasket, snapshotFromListing } from '../offers.js';
@@ -493,7 +494,7 @@ async function photoSearch(request: HttpRequest, _context: InvocationContext) {
   const region = body.region === undefined || body.region === null ? null : readBox(body.region);
   if (body.region != null && !region) return error(400, 'invalid_region', 'Pick an item inside the photo.');
   // The things the phone found in the photo, if it looked: a box that is not one is passed over.
-  const boxes = (Array.isArray(body.boxes) ? body.boxes : []).slice(0, SEARCH_ITEMS)
+  const boxes = (Array.isArray(body.boxes) ? body.boxes : []).slice(0, MAX_THINGS)
     .map(readBox).filter((box): box is RegionBox => box !== null);
 
   let raw: Raw | null = null;
@@ -567,7 +568,7 @@ interface Searched {
   items: FoundItem[];
 }
 
-/** Things a search photo is told apart into, at most: a shelf shot is searched figure by figure. */
+/** Things matched against the catalogue in a whole-photo search, at most: the rest wait to be picked. */
 const SEARCH_ITEMS = 30;
 
 /** Items smaller than this share of the photo are not worth offering on their own when they are the only one. */
@@ -582,14 +583,15 @@ async function searchWholePhoto(bytes: Uint8Array, contentType: string, raw: Raw
   // The same reading the sell form makes of a sale photo (api/src/photo-things.ts):
   // what Claude names, what the phone found, and what stands off the backdrop.
   const { things, descriptions: read } = await thingsInPhoto(bytes, contentType, raw, found);
-  const boxes = things.slice(0, SEARCH_ITEMS).map((thing) => ({ box: thing.boxes[0]!, description: thing.description }));
+  // Every thing is offered, as the sell form lists every thing in a sale photo.
+  const boxes = things.map((thing) => ({ box: thing.boxes[0]!, description: thing.description }));
   // One item filling most of the photo is the photo: nothing to choose between.
   const offered = boxes.length >= 2 || (boxes.length === 1 && boxes[0]!.box[2] * boxes[0]!.box[3] < LONE_ITEM_MAX)
-    ? boxes.slice(0, SEARCH_ITEMS)
+    ? boxes
     : [];
-  // Numbered as the shopper reads the photo: left to right, then top to bottom.
-  offered.sort((a, b) => a.box[0] + a.box[2] / 2 - (b.box[0] + b.box[2] / 2) || a.box[1] - b.box[1]);
-  const prints = raw ? printsOfPixels(raw, offered.map((item) => item.box)) : null;
+  // The whole photo is matched through its largest things; any other is searched when picked.
+  const printed = [...offered].sort((a, b) => b.box[2] * b.box[3] - a.box[2] * a.box[3]).slice(0, SEARCH_ITEMS);
+  const prints = raw ? printsOfPixels(raw, printed.map((item) => item.box)) : null;
   const items = offered.map((item) => ({
     ...item, hash: prints?.regions.find((region) => region.box === item.box)?.imageHash ?? null,
   }));

@@ -1,23 +1,26 @@
-import type { PhotoBox, PhotoItem } from './api';
+import type { PhotoBox } from './api';
 
-import { MAX_THINGS as SHARED_MAX, sameness, insideOf } from '@shared/photo-things';
+import { MAX_THINGS, readingOrder, sameness } from '@shared/photo-things';
 
-/** At most this many things are offered for a search photo. */
-export const MAX_THINGS = Math.min(30, SHARED_MAX);
-const inside = insideOf;
+export { MAX_THINGS };
+
+/** A thing found in a photo: every place it appears, and its name when the server read one. */
+export interface FoundThing {
+  label: string | null;
+  boxes: PhotoBox[];
+}
 
 /**
- * The things the phone found, then those the server found that the phone did
- * not - it sees what stands off a plain backdrop, which is how a shoe, a watch
- * or a ring is photographed, and the detector has no name for those. A thing
- * both found keeps the phone's box and takes the server's name for it.
+ * The one way the server's reading of a photo and the phone's are put
+ * together, for photo search and the sell form alike, so the same photo shows
+ * the same things in both. The server's come first - it knows names and
+ * which boxes are one thing - then whatever the phone found where the server
+ * found nothing; read top row first, left to right.
  */
-export function mergeItems(phone: PhotoItem[], server: PhotoItem[]): PhotoItem[] {
-  if (server.length === 0) return phone;
-  const same = (a: PhotoBox, b: PhotoBox) => sameness(a, b) >= 0.5 || inside(a, b) >= 0.8 || inside(b, a) >= 0.8;
-  const named = phone.map((item) => ({
-    ...item, label: item.label ?? server.find((other) => sameness(item.box, other.box) >= 0.8)?.label ?? null,
-  }));
-  const more = server.filter((item) => !phone.some((seen) => same(seen.box, item.box)));
-  return [...named, ...more].slice(0, MAX_THINGS);
+export function mergeThings(server: FoundThing[], phone: PhotoBox[], max = MAX_THINGS): FoundThing[] {
+  const found: FoundThing[] = server.filter((thing) => thing.boxes.length > 0).map((thing) => ({ label: thing.label, boxes: thing.boxes }));
+  for (const box of phone) {
+    if (!found.some((thing) => thing.boxes.some((known) => sameness(known, box) >= 0.45))) found.push({ label: null, boxes: [box] });
+  }
+  return found.sort(readingOrder).slice(0, max);
 }
