@@ -468,6 +468,23 @@ console.log('GET /api/me/coach');
 const session = await login(req({ body: { identifier: fixtures.DEMO_EMAIL, password: fixtures.DEMO_PASSWORD } }), ctx);
 const shop = { id: session.jsonBody.user.id, headers: { authorization: `Bearer ${session.jsonBody.token}` } };
 
+await check('the coach is a Pro tool: a shop without Pro is refused by the server, not only hidden', async () => {
+  const repository = await getRepository();
+  const owner = await repository.getUserById(shop.id);
+  owner.pro = { until: null, history: [] };
+  await repository.updateUser(owner);
+  for (const [route, body] of [[coachRoute, undefined], [coachEventsRoute, { seen: ['post'] }], [coachAnswerRoute, { source: 'market', helpful: true }]]) {
+    const out = await route(req({ headers: shop.headers, body }), ctx);
+    assert.equal(out.status, 402, JSON.stringify(out.jsonBody));
+    assert.equal(out.jsonBody.error, 'pro_required');
+  }
+  // From here on the demo shop is Pro.
+  const pro = await repository.getUserById(shop.id);
+  pro.pro = { until: new Date(Date.now() + 30 * 86_400_000).toISOString(), history: [] };
+  await repository.updateUser(pro);
+  assert.equal((await coachRoute(req({ headers: shop.headers }), ctx)).status, 200);
+});
+
 await check('the shop reads its own coach: signals and a plan built from them', async () => {
   const out = await coachRoute(req({ headers: shop.headers }), ctx);
   assert.equal(out.status, 200, JSON.stringify(out.jsonBody));

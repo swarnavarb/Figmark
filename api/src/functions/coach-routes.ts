@@ -1,4 +1,5 @@
-import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
+import { app, type HttpRequest, type HttpResponseInit, type InvocationContext } from '@azure/functions';
+import { proRefusal } from '../billing.js';
 import type { StorePermission } from '../../../shared/enums.js';
 import type { Listing } from '../../../shared/models.js';
 import { awaitingLot } from '../../../shared/fulfilment.js';
@@ -53,6 +54,9 @@ async function shopAccess(request: HttpRequest) {
   if (!may('listings') && !seesOrders && !seesMoney) {
     return { refusal: error(403, 'forbidden', 'You cannot see that store’s work.') } as const;
   }
+  // The coach is a Pro tool: shut on the server too, not only hidden in the app.
+  const locked = await proRefusal(repository, storeId, 'coach');
+  if (locked) return { refusal: locked as HttpResponseInit } as const;
   return { repository, owner, profile: owner.sellerProfile, storeId, seesOrders, seesMoney } as const;
 }
 

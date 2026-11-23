@@ -121,6 +121,11 @@ export const PRO_FEATURES = [
     benefit: 'Know which items are heating up, which customers are drifting away and what your next lot should hold - so you buy what sells and stop guessing.',
   },
   {
+    id: 'coach', icon: '🧭', title: 'Shop coach & Figgy', punch: 'Know what to do next, every day',
+    line: 'Your next best step, the best time to post, a weekly marketing plan, and Figgy answering your selling questions.',
+    benefit: 'The coach reads your listings, orders and timing, and tells you what to do today and when to post - outside Figmark first. Figgy answers fifty everyday selling questions, and it all gets sharper as sellers use it.',
+  },
+  {
     id: 'calculator', icon: '🧮', title: 'Profit calculator', punch: 'Price it right in seconds',
     line: 'Price abroad in, profit out - with your own rates, saved calculators and the floating calculator.',
     benefit: 'Type the price abroad and see your landed cost, margin and a selling price at once - with your own freight and exchange rates, everywhere in the app.',
@@ -276,7 +281,7 @@ export const DEFAULT_PRICING: Pricing = {
       { months: 12, priceMinor: 1_59_900, bumpPoints: 30, enabled: true },
     ],
     trialDays: 0,
-    features: { insights: true, calculator: true, costs: true, customers: true, powerSale: true, loyalty: true },
+    features: { insights: true, coach: true, calculator: true, costs: true, customers: true, powerSale: true, loyalty: true },
   },
   cancels: { enabled: true, windowDays: 30, maxPct: 20, minOrders: 5, pauseDirect: true },
   loyalty: DEFAULT_LOYALTY,

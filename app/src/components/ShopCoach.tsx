@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  AREA_NAMES, FIGGY, PRO_TOOLS, PRIVATE_ANSWER, TOOL_LABELS, answerOffline, coachBrief, isPrivateQuestion,
+  AREA_NAMES, FIGGY, PRO_TOOLS, hourName, PRIVATE_ANSWER, TOOL_LABELS, answerOffline, coachBrief, isPrivateQuestion,
   type CoachAnswer, type CoachItem, type CoachPlan, type CoachSignals, type CoachTip, type CoachTool,
 } from '@shared/coach';
 import type { StoreAccess } from '@shared/stores';
@@ -9,7 +9,8 @@ import type { OwnResults } from '@shared/coach-log';
 import { api } from '../api';
 import { askCoachAi, warmCoachAi, type ChatTurn } from '../coachAi';
 import { formatMoney } from '../format';
-import { Icon } from './Icon';
+import { Icon, type IconName } from './Icon';
+import { ProBadge, useProLocked } from './Billing';
 import { shopBadge, useShareSheet, type ShareSpec } from './ShareKit';
 import { Modal } from './ui';
 import '../styles/ShopCoach.css';
@@ -142,18 +143,32 @@ function ToolButton({ tool, label, pro, onRun, quiet }: {
 }) {
   const locked = !pro && PRO_TOOLS.includes(tool);
   return (
-    <button type="button" className={`btn btn--sm${quiet ? ' btn--quiet' : ''}`} onClick={onRun}>
+    <button type="button" className={`btn btn--sm shopcoach__go${quiet ? ' btn--quiet' : ''}`} onClick={onRun}>
       {label ?? TOOL_LABELS[tool]}
       {locked && <span className="probadge">PRO</span>}
     </button>
   );
 }
 
+/** Each kind of tip wears its own drawn icon, in its own tint. */
+const AREA_ICONS: Record<CoachTip['area'], IconName> = {
+  urgent: 'bell', listing: 'tag', marketing: 'megaphone', sales: 'rising', shop: 'home',
+};
+
+function AreaMark({ area }: { area: CoachTip['area'] }) {
+  return (
+    <span className={`shopcoach__areamark shopcoach__areamark--${area}`} title={AREA_NAMES[area]}>
+      <Icon name={AREA_ICONS[area]} size={16} />
+      <span className="sr-only">{AREA_NAMES[area]}: </span>
+    </span>
+  );
+}
+
 function TipRow({ tip, pro, onRun }: { tip: CoachTip; pro: boolean; onRun: () => void }) {
   return (
-    <li className={`shopcoach__tip shopcoach__tip--${tip.area}`}>
+    <li className="shopcoach__tip">
+      <AreaMark area={tip.area} />
       <div className="shopcoach__tiptext">
-        <span className="shopcoach__area">{AREA_NAMES[tip.area]}</span>
         <b>{tip.title}</b>
         <p>{tip.why}</p>
       </div>
@@ -164,13 +179,59 @@ function TipRow({ tip, pro, onRun }: { tip: CoachTip; pro: boolean; onRun: () =>
 
 /**
  * The card on the console: the headline and the first thing to do, folded to
- * one line once the seller says so.
+ * one line once the seller says so. A Pro tool: a shop without Pro sees what
+ * it does and how to unlock it, and the server refuses the coach's data too.
  */
 export function ShopCoach({ store }: { store: StoreAccess }) {
+  const locked = useProLocked('coach', store.ownerId);
+  if (locked === null) return null;
+  return locked ? <CoachLocked store={store} /> : <CoachCard store={store} />;
+}
+
+function CoachLocked({ store }: { store: StoreAccess }) {
+  const navigate = useNavigate();
+  const [folded, setFolded] = useState(() => readFlag(HIDE_KEY, store.ownerId));
+  const fold = (next: boolean) => { setFolded(next); writeFlag(HIDE_KEY, store.ownerId, next); };
+  if (folded) {
+    return (
+      <button type="button" className="shopcoach shopcoach--folded" onClick={() => fold(false)}>
+        <span className="shopcoach__mark" aria-hidden="true"><Icon name="spark" size={14} /></span>
+        <span>Shop coach and {FIGGY} - part of Pro</span>
+        <Icon name="down" size={14} />
+      </button>
+    );
+  }
+  return (
+    <section className="shopcoach shopcoach--locked" aria-label="Shop coach, part of Pro">
+      <div className="shopcoach__head">
+        <span className="shopcoach__mark" aria-hidden="true"><Icon name="spark" size={16} /></span>
+        <div className="shopcoach__headtext">
+          <h2 className="shopcoach__title">Shop coach <ProBadge title="Part of Pro" /></h2>
+          <p>Your next best step every day, the best time to post, a weekly marketing plan - and {FIGGY} to answer your selling questions.</p>
+        </div>
+        <button type="button" className="iconbtn shopcoach__fold" aria-label="Fold the coach" title="Fold" onClick={() => fold(true)}>
+          <Icon name="up" size={14} />
+        </button>
+      </div>
+      <ul className="shopcoach__perks">
+        <li><Icon name="check" size={14} /> Tips from your own listings and orders</li>
+        <li><Icon name="check" size={14} /> When your buyers are online</li>
+        <li><Icon name="check" size={14} /> WhatsApp and Instagram first, then Figmark</li>
+      </ul>
+      <button type="button" className="btn shopcoach__unlock" onClick={() => navigate('/pro')}>
+        <Icon name="lock" size={14} /> Unlock with Pro
+      </button>
+    </section>
+  );
+}
+
+function CoachCard({ store }: { store: StoreAccess }) {
   const [data, setData] = useState<Awaited<ReturnType<typeof api.coach>> | null>(null);
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState<View | null>(null);
   const [folded, setFolded] = useState(() => readFlag(HIDE_KEY, store.ownerId));
+  // Where the page was when the panel opened, so closing it puts the seller back there.
+  const scrollAt = useRef(0);
 
   const load = useCallback(() => {
     void api.coach(store.ownerId)
@@ -178,6 +239,17 @@ export function ShopCoach({ store }: { store: StoreAccess }) {
       .catch(() => setFailed(true));
   }, [store.ownerId]);
   useEffect(load, [load]);
+
+  const show = (view: View | null) => {
+    if (view && !open) scrollAt.current = window.scrollY;
+    setOpen(view);
+  };
+  const close = () => {
+    setOpen(null);
+    const at = scrollAt.current;
+    requestAnimationFrame(() => window.scrollTo({ top: at, behavior: 'instant' as ScrollBehavior }));
+    load();
+  };
 
   const { run, sheet } = useCoachTools(store, data?.signals ?? null, () => setOpen(null));
 
@@ -202,7 +274,7 @@ export function ShopCoach({ store }: { store: StoreAccess }) {
       {folded ? (
         <button type="button" className="shopcoach shopcoach--folded" onClick={() => { fold(false); }}>
           <span className="shopcoach__mark" aria-hidden="true"><Icon name="spark" size={14} /></span>
-          <span>Coach{top ? `: ${top.title}` : ''}</span>
+          <span>{top ? top.title : 'Shop coach'}</span>
           <Icon name="down" size={14} />
         </button>
       ) : (
@@ -210,8 +282,8 @@ export function ShopCoach({ store }: { store: StoreAccess }) {
           <div className="shopcoach__head">
             <span className="shopcoach__mark" aria-hidden="true"><Icon name="spark" size={16} /></span>
             <div className="shopcoach__headtext">
-              <b>Shop coach</b>
-              <span>{plan.headline}</span>
+              <h2 className="shopcoach__title">Shop coach</h2>
+              <p>{plan.headline}</p>
             </div>
             <button type="button" className="iconbtn shopcoach__fold" aria-label="Fold the coach" title="Fold" onClick={() => fold(true)}>
               <Icon name="up" size={14} />
@@ -219,7 +291,8 @@ export function ShopCoach({ store }: { store: StoreAccess }) {
           </div>
           {top && (
             <div className="shopcoach__next">
-              <div>
+              <AreaMark area={top.area} />
+              <div className="shopcoach__tiptext">
                 <b>{top.title}</b>
                 <p>{top.why}</p>
               </div>
@@ -227,22 +300,22 @@ export function ShopCoach({ store }: { store: StoreAccess }) {
             </div>
           )}
           <div className="shopcoach__acts">
-            <button type="button" className="btn btn--sm btn--quiet" onClick={() => setOpen('today')}>
-              {plan.tips.length > 1 ? `All ${plan.tips.length} tips` : 'Full plan'}
+            <button type="button" className="shopcoach__act" onClick={() => show('today')}>
+              <Icon name="check" size={14} /> {plan.tips.length > 1 ? `All ${plan.tips.length} tips` : 'Full plan'}
             </button>
-            <button type="button" className="btn btn--sm btn--quiet" onClick={() => setOpen('week')}>
-              Post at {plan.bestTime.window}
+            <button type="button" className="shopcoach__act" onClick={() => show('week')}>
+              <Icon name="bell" size={14} /> Post by {hourName(plan.bestTime.postHour)}
             </button>
-            <button type="button" className="btn btn--sm btn--quiet" onClick={() => setOpen('ask')}>
+            <button type="button" className="shopcoach__act" onClick={() => show('ask')}>
               <Icon name="message" size={14} /> Ask {FIGGY}
             </button>
           </div>
         </section>
       )}
       {open && (
-        <Modal title="Shop coach" layout="panel" onClose={() => { setOpen(null); load(); }}>
-          <CoachPanel store={store} signals={signals} plan={plan} results={data.results} guides={data.learned?.guides ?? {}} view={open} onView={setOpen} run={run}
-            press={press} record={record} />
+        <Modal title="Shop coach" layout="panel" onClose={close}>
+          <CoachPanel store={store} signals={signals} plan={plan} results={data.results} guides={data.learned?.guides ?? {}}
+            view={open} onView={show} run={run} press={press} record={record} />
         </Modal>
       )}
       {sheet}
@@ -267,10 +340,11 @@ function CoachPanel({ store, signals, plan, results, guides, view, onView, run, 
   useEffect(() => {
     if (view === 'today' && tipIds) record({ seen: tipIds.split(',') });
   }, [view, tipIds, record]);
+  const tone = plan.health >= 75 ? 'good' : plan.health >= 45 ? 'fair' : 'low';
   return (
-    <div className="shopcoach__panel">
+    <div className={`shopcoach__panel shopcoach__panel--${view}`}>
       <div className="seg shopcoach__seg" role="tablist" aria-label="Coach">
-        {([['today', 'Today'], ['week', 'This week'], ['ask', 'Ask']] as const).map(([id, label]) => (
+        {([['today', 'Today'], ['week', 'This week'], ['ask', `Ask ${FIGGY}`]] as const).map(([id, label]) => (
           <button key={id} type="button" role="tab" aria-selected={view === id} className={view === id ? 'is-on' : ''}
             onClick={() => onView(id)}>{label}</button>
         ))}
@@ -279,13 +353,18 @@ function CoachPanel({ store, signals, plan, results, guides, view, onView, run, 
       {view === 'today' && (
         <>
           <div className="shopcoach__health">
-            <div className="shopcoach__meter" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={plan.health}
-              aria-label="Shop health">
-              <span style={{ transform: `scaleX(${plan.health / 100})` }} />
+            <div className="shopcoach__score">
+              <b className={`shopcoach__num shopcoach__num--${tone}`}>{plan.health}</b>
+              <span>shop health</span>
             </div>
-            <span><b>{plan.health}</b>/100 shop health</span>
+            <div className="shopcoach__healthtext">
+              <div className="shopcoach__meter" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={plan.health}
+                aria-label="Shop health">
+                <span className={`shopcoach__fill shopcoach__fill--${tone}`} style={{ transform: `scaleX(${plan.health / 100})` }} />
+              </div>
+              <p>{plan.headline}</p>
+            </div>
           </div>
-          <p className="shopcoach__lead">{plan.headline}</p>
           {plan.tips.length > 0 ? (
             <ul className="shopcoach__tips">
               {plan.tips.map((tip) => <TipRow key={tip.id} tip={tip} pro={pro} onRun={() => press(tip)} />)}
@@ -298,7 +377,7 @@ function CoachPanel({ store, signals, plan, results, guides, view, onView, run, 
       {view === 'week' && (
         <>
           <div className="shopcoach__when">
-            <Icon name="bell" size={16} />
+            <span className="shopcoach__whenmark" aria-hidden="true"><Icon name="bell" size={18} /></span>
             <div>
               <b>{plan.bestTime.fromShop ? 'Your buyers\' rush' : 'The usual rush'}: {plan.bestTime.window}, {plan.bestTime.dayName}s</b>
               <p>{plan.bestTime.advice}</p>
@@ -337,9 +416,9 @@ function Results({ results }: { results: OwnResults }) {
     return (
       <section className="shopcoach__results" aria-label="Your results">
         <h3>Your results</h3>
-        <p className="shopcoach__lead">
+        <p className="shopcoach__muted">
           {results.watching > 0
-            ? `Tracking ${results.watching} tip${results.watching === 1 ? '' : 's'}. A week after you first see a tip, its result shows here.`
+            ? `Tracking ${results.watching} tip${results.watching === 1 ? '' : 's'}. A week after you first see a tip, what followed shows here.`
             : 'A week after you first see a tip, what followed shows here.'}
         </p>
       </section>
@@ -349,7 +428,7 @@ function Results({ results }: { results: OwnResults }) {
   return (
     <section className="shopcoach__results" aria-label="Your results">
       <h3>Your results <span>last 90 days</span></h3>
-      <p className="shopcoach__lead">
+      <p className="shopcoach__muted">
         You acted on <b>{acted}</b> of {results.settled} tips.
         {acted > 0 && <> In the week after those, your shop took <b>{after}</b> order{after === 1 ? '' : 's'}, against {before} the week before.</>}
       </p>
@@ -372,15 +451,29 @@ function Results({ results }: { results: OwnResults }) {
 function HourBars({ hours, peak }: { hours: number[]; peak: number }) {
   const top = Math.max(1, ...hours);
   return (
-    <div className="shopcoach__hours" aria-label="Orders by hour of day">
-      {hours.map((value, hour) => (
-        <span key={hour} className={hour === peak || hour === (peak + 1) % 24 ? 'is-peak' : ''}
-          title={`${hour}:00 - ${value} order${value === 1 ? '' : 's'}`}>
-          <i style={{ transform: `scaleY(${Math.max(0.04, value / top)})` }} />
-        </span>
-      ))}
+    <div className="shopcoach__hours" role="img" aria-label="Orders by hour of day, busiest hours highlighted">
+      <div className="shopcoach__bars">
+        {hours.map((value, hour) => (
+          <span key={hour} className={hour === peak || hour === (peak + 1) % 24 ? 'is-peak' : ''}
+            title={`${hour}:00 - ${value} order${value === 1 ? '' : 's'}`}>
+            <i style={{ transform: `scaleY(${Math.max(0.04, value / top)})` }} />
+          </span>
+        ))}
+      </div>
       <div className="shopcoach__hourlabels" aria-hidden="true"><span>12 am</span><span>6 am</span><span>12 pm</span><span>6 pm</span></div>
     </div>
+  );
+}
+
+/** A drawn thumb, up or down, in the app's icon stroke. */
+function Thumb({ down = false }: { down?: boolean }) {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"
+      strokeLinejoin="round" aria-hidden="true" style={down ? { transform: 'rotate(180deg)' } : undefined}>
+      <path d="M7 10v11" />
+      <path d="M15 5.9 14 10h5.8a2 2 0 0 1 1.9 2.6l-2.3 7A2 2 0 0 1 17.5 21H7V10l4.3-7.2A1.7 1.7 0 0 1 14.4 3a1.9 1.9 0 0 1 .6 2.9Z" />
+      <path d="M7 10H4a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h3" />
+    </svg>
   );
 }
 
@@ -401,7 +494,7 @@ interface Said {
 const STARTERS = ['What should I do today?', 'How do I get more buyers?', 'How do I sell on WhatsApp and Instagram?', 'What can you help with?'];
 
 const ASSISTANTS: Record<Assistant, { name: string; blurb: string }> = {
-  figgy: { name: FIGGY, blurb: 'Built into Figmark. Instant, free, knows your shop - and gets better as sellers rate its answers.' },
+  figgy: { name: FIGGY, blurb: 'Built into Figmark. Instant, knows your shop - and gets better as sellers rate its answers.' },
   puter: { name: 'Puter AI', blurb: 'Writes in its own words. Free with a Puter account; your questions and your shop\'s figures go to Puter.' },
 };
 
@@ -416,11 +509,18 @@ function CoachChat({ store, signals, plan, guides, run }: {
   // The picker shows under the box once it is clicked, as in Claude.
   const [engaged, setEngaged] = useState(false);
   const [picking, setPicking] = useState(false);
-  const end = useRef<HTMLDivElement>(null);
+  const log = useRef<HTMLDivElement>(null);
   const picker = useRef<HTMLDivElement>(null);
+  // Which question is current: a Stop, or a newer question, makes a late answer stale.
+  const turn = useRef(0);
 
   useEffect(() => { if (who === 'puter') warmCoachAi(); }, [who]);
-  useEffect(() => { end.current?.scrollIntoView({ block: 'end' }); }, [said, busy]);
+  // Scroll the conversation only. scrollIntoView also scrolled the page behind
+  // the panel, which is why the page sat at the bottom after it closed.
+  useEffect(() => {
+    const el = log.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+  }, [said, busy]);
   useEffect(() => {
     if (!picking) return;
     const away = (event: Event) => { if (!picker.current?.contains(event.target as Node)) setPicking(false); };
@@ -439,6 +539,7 @@ function CoachChat({ store, signals, plan, guides, run }: {
   async function ask(question: string, using: Assistant = who) {
     const text = question.trim();
     if (!text || busy) return;
+    const mine = ++turn.current;
     const history = [...said, { role: 'user' as const, text }];
     setSaid(history);
     setDraft('');
@@ -454,15 +555,24 @@ function CoachChat({ store, signals, plan, guides, run }: {
     try {
       const turns: ChatTurn[] = history.map((entry) => ({ role: entry.role, content: entry.text }));
       const answer: CoachAnswer = await askCoachAi(coachBrief(signals, plan), turns);
+      if (mine !== turn.current) return;
       setSaid([...history, { role: 'assistant', ...answer, by: 'puter', source: 'puter', question: text }]);
     } catch (err) {
+      if (mine !== turn.current) return;
       // Figgy answers instead, and says why.
       const fallback = answerOffline(text, plan, guides);
-      const reason = err instanceof Error ? err.message : 'Puter AI could not answer.';
+      const reason = err instanceof Error ? err.message : 'Puter AI could not answer - Figgy has answered instead.';
       setSaid([...history, { role: 'assistant', ...fallback, text: `${reason}\n\n${fallback.text}`, by: 'figgy', question: text }]);
     } finally {
-      setBusy(false);
+      if (mine === turn.current) setBusy(false);
     }
+  }
+
+  /** Gives up on Puter's answer: the chat is free again at once. */
+  function stop() {
+    turn.current += 1;
+    setBusy(false);
+    setSaid((now) => [...now, { role: 'assistant', text: 'Stopped. Ask again, or switch to Figgy for an instant answer.', by: 'figgy' }]);
   }
 
   function vote(index: number, helpful: boolean) {
@@ -472,17 +582,20 @@ function CoachChat({ store, signals, plan, guides, run }: {
     setSaid(said.map((item, at) => (at === index ? { ...item, vote: helpful ? 'up' : 'down' } : item)));
   }
 
-  const submit = (event: FormEvent) => { event.preventDefault(); void ask(draft); };
+  const submit = (event: FormEvent) => { event.preventDefault(); if (busy) stop(); else void ask(draft); };
   const last = said[said.length - 1];
-  const chips = last?.role === 'assistant' && last.follow?.length ? last.follow : said.length === 0 ? STARTERS : [];
+  const chips = busy ? [] : last?.role === 'assistant' && last.follow?.length ? last.follow : said.length === 0 ? STARTERS : [];
 
   return (
     <div className="shopcoach__chat">
-      <div className="shopcoach__log" aria-live="polite">
+      <div className="shopcoach__log" ref={log} aria-live="polite">
         {said.length === 0 && (
-          <p className="shopcoach__hello">
-            Hi, I'm {FIGGY}! I know {signals.shop.name}'s listings, orders and timing. Ask how to list, price, ship, run a pre-order or bring in buyers - on WhatsApp and Instagram first, then here - or what to do today.
-          </p>
+          <div className="shopcoach__hello">
+            <span className="shopcoach__mark" aria-hidden="true"><Icon name="spark" size={18} /></span>
+            <p>
+              <b>Hi, I'm {FIGGY}.</b> I know {signals.shop.name}'s listings, orders and timing. Ask how to list, price, ship or run a pre-order - or how to bring in buyers, on WhatsApp and Instagram first.
+            </p>
+          </div>
         )}
         {said.map((entry, index) => {
           const other: Assistant = entry.by === 'puter' ? 'figgy' : 'puter';
@@ -501,8 +614,8 @@ function CoachChat({ store, signals, plan, guides, run }: {
                     <span className="shopcoach__thanks">{entry.vote === 'up' ? 'Thanks!' : 'Thanks - this helps answers get better.'}</span>
                   ) : (
                     <span className="shopcoach__votes">
-                      <button type="button" aria-label="Helpful" title="Helpful" onClick={() => vote(index, true)}>👍</button>
-                      <button type="button" aria-label="Not helpful" title="Not helpful" onClick={() => vote(index, false)}>👎</button>
+                      <button type="button" aria-label="Helpful" title="Helpful" onClick={() => vote(index, true)}><Thumb /></button>
+                      <button type="button" aria-label="Not helpful" title="Not helpful" onClick={() => vote(index, false)}><Thumb down /></button>
                     </span>
                   ))}
                 </div>
@@ -516,43 +629,50 @@ function CoachChat({ store, signals, plan, guides, run }: {
           );
         })}
         {busy && <div className="shopcoach__msg shopcoach__msg--assistant shopcoach__typing" aria-label="Puter AI is writing"><i /><i /><i /></div>}
-        <div ref={end} />
       </div>
 
-      {chips.length > 0 && (
-        <div className="shopcoach__chips">
-          {chips.map((chip) => <button key={chip} type="button" className="chip" onClick={() => void ask(chip)}>{chip}</button>)}
-        </div>
-      )}
+      <div className="shopcoach__compose">
+        {chips.length > 0 && (
+          <div className="shopcoach__chips">
+            {chips.map((chip) => <button key={chip} type="button" className="chip" onClick={() => void ask(chip)}>{chip}</button>)}
+          </div>
+        )}
 
-      <form className="shopcoach__form" onSubmit={submit}>
-        <input value={draft} onChange={(event) => setDraft(event.target.value)} maxLength={500}
-          onFocus={() => setEngaged(true)} onPointerDown={() => setEngaged(true)}
-          placeholder={`Ask ${ASSISTANTS[who].name} anything…`} aria-label={`Ask ${ASSISTANTS[who].name}`} />
-        <button type="submit" className="btn btn--sm" disabled={busy} aria-label="Send">
-          <Icon name="send" size={16} />
-        </button>
-      </form>
-
-      {(engaged || who === 'puter' || said.length > 0) && (
-        <div className="shopcoach__picker" ref={picker}>
-          <button type="button" className="shopcoach__pick" aria-haspopup="listbox" aria-expanded={picking}
-            onClick={() => setPicking(!picking)}>
-            {ASSISTANTS[who].name} <Icon name="down" size={12} />
-          </button>
-          {picking && (
-            <div className="shopcoach__menu" role="listbox" aria-label="Who answers">
-              {(['figgy', 'puter'] as const).map((id) => (
-                <button key={id} type="button" role="option" aria-selected={who === id}
-                  className={`shopcoach__option${who === id ? ' is-on' : ''}`} onClick={() => choose(id)}>
-                  <b>{ASSISTANTS[id].name}{who === id && <Icon name="check" size={14} />}</b>
-                  <span>{ASSISTANTS[id].blurb}</span>
-                </button>
-              ))}
-            </div>
+        <form className="shopcoach__form" onSubmit={submit}>
+          <input value={draft} onChange={(event) => setDraft(event.target.value)} maxLength={500}
+            onFocus={() => setEngaged(true)} onPointerDown={() => setEngaged(true)}
+            placeholder={`Ask ${ASSISTANTS[who].name} anything…`} aria-label={`Ask ${ASSISTANTS[who].name}`} />
+          {busy ? (
+            <button type="submit" className="btn btn--sm btn--quiet shopcoach__send" aria-label="Stop">
+              <span className="shopcoach__stop" aria-hidden="true" />
+            </button>
+          ) : (
+            <button type="submit" className="btn btn--sm shopcoach__send" aria-label="Send" aria-disabled={!draft.trim()}>
+              <Icon name="send" size={16} />
+            </button>
           )}
-        </div>
-      )}
+        </form>
+
+        {(engaged || who === 'puter' || said.length > 0) && (
+          <div className="shopcoach__picker" ref={picker}>
+            <button type="button" className="shopcoach__pick" aria-haspopup="listbox" aria-expanded={picking}
+              onClick={() => setPicking(!picking)}>
+              {ASSISTANTS[who].name} <Icon name="down" size={12} />
+            </button>
+            {picking && (
+              <div className="shopcoach__menu" role="listbox" aria-label="Who answers">
+                {(['figgy', 'puter'] as const).map((id) => (
+                  <button key={id} type="button" role="option" aria-selected={who === id}
+                    className={`shopcoach__option${who === id ? ' is-on' : ''}`} onClick={() => choose(id)}>
+                    <b>{ASSISTANTS[id].name}{who === id && <Icon name="check" size={14} />}</b>
+                    <span>{ASSISTANTS[id].blurb}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
