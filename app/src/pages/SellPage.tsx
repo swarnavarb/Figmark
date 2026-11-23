@@ -108,6 +108,8 @@ type SellDraft = {
   serverDraftId?: string | null;
   /** A photo of several things: sold separately, as a lot, or as one item. */
   group?: PhotoGroup;
+  /** Past the first step - the photo, the title, and how it is sold. */
+  started?: boolean;
 };
 
 /** How many visits' drafts are kept. Each visit has its own key, and nothing else ever removed them. */
@@ -365,6 +367,9 @@ function SellForm({ serverDraft, draftMissing }: {
     const kept = restored?.group;
     return kept ? { ...kept, reading: false } : emptyGroup();
   });
+  /** Past the first step: a photo and a title, read, and a way of selling chosen. */
+  const [started, setStarted] = useState(() => Boolean(restored && (restored.started || restored.price
+    || restored.group?.mode === 'pieces' || restored.group?.mode === 'lot')));
   const [preLot, setPreLot] = useState<RouteStep[] | null>(restored?.preLot ?? null);
   const [shape, setShape] = useState<Shape>(restored?.shape ?? 'single');
   const [lots, setLots] = useState<LotSummary[]>([]);
@@ -399,7 +404,7 @@ function SellForm({ serverDraft, draftMissing }: {
   latest.current = {
     title, description, category, attributes, price, costSheet, terms, shareToChannel, shareToFeed,
     preOrderMode, fillThreshold, preOrderDays, whenShort, whenFull, tags, calc, templateId, photos, preLot, shape, lotId,
-    createdListingId, serverDraftId, group,
+    createdListingId, serverDraftId, group, started,
   };
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -650,7 +655,7 @@ function SellForm({ serverDraft, draftMissing }: {
       setTriedPublish(true);
       haptic('error');
       if (groupNeeded.length > 0 && title.trim().length > 2) {
-        document.querySelector<HTMLElement>('.pcs-edit, .pcs-ask')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        document.querySelector<HTMLElement>('.pcs-edit, .pcs-pick')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
       }
       document.querySelector<HTMLElement>(title.trim().length <= 2 ? '#sell-title' : etaIssue && priceMinor >= MIN_PRICE_MINOR && priceMinor <= MAX_PRICE_MINOR ? '#sell-eta input' : '#sell-price')
@@ -814,16 +819,19 @@ function SellForm({ serverDraft, draftMissing }: {
     </div>
   );
 
+  // A new listing starts with only its photo and title; the rest follows once
+  // the photo is read and a way of selling it is chosen. A deal, a pre-order
+  // or a listing made from another starts with everything.
+  const showRest = !(verified && !deal && !preOrderMode && !prefill) || started;
+
   return (
     <main className="page">
       <BackBar onBack={goBack} title={deal ? `Private deal for ${deal.displayName}` : 'List an item'} />
       <div className="page__head">
         <div>
-          <p className="muted">
-            {deal
-              ? `Only ${deal.displayName} can see and buy this. It never appears in your shop, channel or the feed - once bought it is a normal order.`
-              : 'About a minute. You can edit it any time.'}
-          </p>
+          {deal && (
+            <p className="muted">Only {deal.displayName} can see and buy this. It never appears in your shop, channel or the feed - once bought it is a normal order.</p>
+          )}
           {copyOf && (
             <p className="dealfrom">
               A copy of <b>{copyOf.title}</b>, photos and all. Change what differs - size, colour, price, how
@@ -873,7 +881,7 @@ function SellForm({ serverDraft, draftMissing }: {
               and already on the last template used. A row of names to tap
               rather than a switch and a dropdown: one tap, and "None" to let
               it go. */}
-          {verified && (
+          {verified && showRest && (
             <LBox icon="⚡" title="Quick fill" hint="Start from a quick fill - everything stays editable.">
               <QuickFillPicker templates={templates} value={quickFill ? templateId : ''}
                 onPick={(template) => { setTemplateId(template.id); applyTemplate(template); }}
@@ -894,7 +902,7 @@ function SellForm({ serverDraft, draftMissing }: {
           {/* The start: a photo and a title. From them Figmark reads what is for
               sale - one item, copies of one, or different items - and offers
               the ways to sell that fit, before anything else is asked. */}
-          <LBox icon="📸" title="Photo and title" hint={verified ? 'Start here: we read the photo, and the title, to set up the rest.' : undefined}>
+          <LBox icon="📸" title="Photo and title">
             {verified
               ? <PhotoManager photos={photos} onChange={setPhotos} label={null} />
               : <span className="lbox__hint">Add photos once you are verified - the rest of the draft is kept.</span>}
@@ -906,10 +914,12 @@ function SellForm({ serverDraft, draftMissing }: {
             {verified && !deal && !preOrderMode && (
               <PhotoGroupBox photoUrl={(photos.find((photo) => photo.isPrimary) ?? photos[0])?.url ?? null}
                 group={group} onChange={setGroup} title={title}
-                onStock={(count) => setTerms((current) => ({ ...current, quantityMode: 'fixed', quantity: String(count) }))} />
+                onStock={(count) => setTerms((current) => ({ ...current, quantityMode: 'fixed', quantity: String(count) }))}
+                onContinue={() => setStarted(true)} />
             )}
           </LBox>
 
+          {showRest && (<>
           <LBox icon="🏷️" title="The item">
             {/* Price and stock side by side: the two numbers every listing has.
                 Stock used to sit under "More options", three taps from here. */}
@@ -1050,11 +1060,14 @@ function SellForm({ serverDraft, draftMissing }: {
             </>
           )}
 
+          </>)}
+
           {error && <ErrorNotice message={error} />}
 
           {savedNote && !error && <p className="notice notice--ok" role="status">{savedNote}</p>}
 
           {/* Pinned to the bottom of a phone screen, so it is never a scroll away. */}
+          {showRest && (<>
           <div className="sellform__bar">
             {verified && (basicsNeeded.length > 0 || missing.length > 0) && (
               <p className={`sellform__needs${triedPublish ? ' is-shown' : ''}`} role="status">
@@ -1086,13 +1099,14 @@ function SellForm({ serverDraft, draftMissing }: {
               Publish and list another
             </button>
           )}
+          </>)}
         </form>
 
         {/* The same card the Buy tab draws, so what the seller sees here is
             what a buyer will scroll past. Beside the form on a wide screen;
             behind the Preview button on a phone, where it used to sit under
             the whole form. */}
-        <aside className="sellpreview">
+        <aside className="sellpreview" hidden={!showRest}>
           <span className="lbox__hint">Preview</span>
           {previewCard}
         </aside>

@@ -151,7 +151,7 @@ export function PhotoManager({ photos, onChange, label = 'Item photos' }: {
 
       <input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={(event) => void add(event)} />
       <span className="field__hint">
-        Up to six. The first is what buyers see — drag it, or use the arrows.
+        Up to six. The first leads.
       </span>
       {error && <span className="field__hint" style={{ color: 'var(--danger)' }}>{error}</span>}
     </div>

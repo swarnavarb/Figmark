@@ -203,11 +203,7 @@ export function PhotoMarker({ photoUrl, things, selected, onSelect, onBox, onAdd
           <button type="button" onClick={() => zoomTo(zoom * 1.5)} disabled={zoom >= MAX_ZOOM} aria-label="Zoom in">+</button>
         </span>
       </div>
-      <p className="pcm__hint">
-        {adding
-          ? <><b>Drag round the item</b> on the photo, or tap it.</>
-          : <>Tap a box to name it · drag to move · pull a corner to resize · pinch to zoom</>}
-      </p>
+      {adding && <p className="pcm__hint"><b>Drag round the item</b>, or tap it.</p>}
       <div ref={view} className={`pcm__view${zoom > 1 ? ' is-zoomed' : ''}`}>
         <div ref={canvas} className={`pcm__canvas${adding ? ' is-adding' : ''}`} style={{ width: `${zoom * 100}%` }}
           onPointerDown={beginDraw} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={() => setDrag(null)}

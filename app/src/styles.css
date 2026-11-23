@@ -11343,22 +11343,20 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .pcs-pick__go { display: flex; gap: 8px; }
 
 /* The seller's side. */
-.pcs-way {
-  display: block; width: 100%; margin-top: 10px; padding: 10px 12px; border: 1px dashed var(--border-strong); border-radius: 12px;
-  background: transparent; color: var(--text-dim); text-align: left; font: inherit; font-size: var(--t-sm); cursor: pointer;
-}
-.pcs-way u { color: var(--accent-text); text-decoration: none; font-weight: 600; }
 .pcs-ask, .pcs-lot, .pcs-edit { min-width: 0; grid-template-columns: minmax(0, 1fr); margin-top: 12px; padding: 14px; border: 1px solid var(--accent-line); border-radius: 16px; background: var(--accent-soft); display: grid; gap: 10px; }
-.pcs-ask--reading { display: flex; align-items: center; gap: 10px; color: var(--text-dim); }
 .pcs-spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--accent-line); border-top-color: var(--accent-text); animation: pcs-spin 0.8s linear infinite; }
 @keyframes pcs-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .pcs-spin { animation-duration: 2.4s; } }
-.pcs-ask__title { margin: 0; font-size: var(--t-md); }
 .pcs-ask__lede { margin: -6px 0 0; color: var(--text-dim); }
-.pcs-ask__peek { max-width: 420px; }
-.pcs-ask__peek .pcs-mark { cursor: default; }
-.pcs-ask__ways { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
-.pcs-ask__more { display: flex; flex-wrap: wrap; gap: 6px; }
+/* After the scan: what is in the photo, and the ways to sell it. */
+.pcs-pick { display: grid; gap: 10px; margin-top: 4px; padding: 14px; border: 1px solid var(--accent-line); border-radius: 14px; background: var(--surface); }
+.pcs-pick__q { margin: 0; font-size: var(--t-md); color: var(--text); }
+.pcs-pick__ways { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.pcs-pick .pcs-tile { gap: 2px; padding: 12px; }
+.pcs-pick .pcs-tile span { color: var(--text-dim); font-size: var(--t-sm); }
+.pcs-pick__go { width: 100%; }
+.pcs-pick .pcs-link { justify-self: center; font-size: var(--t-sm); }
+.sellpreview[hidden] { display: none; }
 .pcs-read {
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-top: 10px; padding: 10px 12px; border: 1px dashed var(--accent-line);
   border-radius: 12px; background: var(--accent-soft); color: var(--text-dim); font-size: var(--t-sm);
@@ -11373,10 +11371,6 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 }
 .pcs-tile:hover { border-color: var(--accent-text); }
 .pcs-tile:active { transform: scale(0.98); }
-.pcs-tile__icon { font-size: var(--t-xl); }
-.pcs-tile span:not(.pcs-tile__icon):not(.pcs-tile__fee) { color: var(--text-dim); font-size: var(--t-sm); }
-.pcs-tile__fee { margin-top: 4px; color: var(--accent-text); font-size: var(--t-xs); font-weight: 600; }
-.pcs-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .pcs-note { margin: 0; color: var(--text-dim); font-size: var(--t-sm); }
 .pcs-note--warn { padding: 8px 10px; border-radius: 10px; background: var(--warn-soft); color: var(--warn); }
 .pcs-note--ok { padding: 8px 10px; border-radius: 10px; background: var(--ok-soft); color: var(--ok); }
@@ -11507,7 +11501,6 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
   font: inherit; font-weight: 600; cursor: pointer;
 }
 .pcs-switch button.is-on { background: var(--accent); color: var(--accent-ink); }
-.pcs-switch .pcs-switch__off { flex: 0 0 auto; font-weight: 500; font-size: var(--t-sm); }
 .pcs-setprice { display: grid; gap: 6px; }
 .pcs-setprice > span:first-child { font-weight: 600; }
 .pcs-setprice__box {

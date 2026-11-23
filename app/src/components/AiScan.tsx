@@ -46,7 +46,7 @@ export function AiScan({ photoUrl, onFound, hint }: {
         {now.note
           ?? (now.done != null
             ? `The AI${now.model ? ` (${now.model})` : ''} found ${now.done} ${now.done === 1 ? 'item' : 'items'}.`
-            : hint ?? 'Missed some? A closer look by AI, free with a Puter account.')}
+            : hint ?? 'Missed some?')}
       </span>
     </div>
   );
