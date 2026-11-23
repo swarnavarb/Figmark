@@ -271,4 +271,31 @@ await check('views of one item side by side - a product collage - are one item, 
   assert.equal(made.jsonBody.listing.bundleCount, undefined, 'charged as the one item it is');
 });
 
+await check('the title hints how many things, and whether alike; scales are not counts', () => {
+  assert.deepEqual(P.titleHint('Funko Pop Groot x3'), { count: 3, several: true, same: true });
+  assert.deepEqual(P.titleHint('Hot Toys Terminator 1/6 scale'), { count: null, several: false, same: null });
+  assert.equal(P.titleHint('Marvel Legends lot of 12').count, 12);
+  assert.equal(P.titleHint('Marvel Legends lot of 12').same, false);
+  assert.equal(P.titleHint('Batman and Joker').several, true);
+  assert.equal(P.titleHint('5 pcs Hot Wheels Twin Mill').same, true);
+});
+
+await check('one item, copies of one, or different items: the photo decides, the title tips it', () => {
+  const none = P.titleHint('');
+  assert.deepEqual(P.photoVerdict({ found: 1, kinds: 1, largest: 1, lineup: false }, none), { kind: 'one' });
+  assert.deepEqual(P.photoVerdict({ found: 5, kinds: 1, largest: 5, lineup: true }, none), { kind: 'one' }, 'a collage of views');
+  assert.deepEqual(P.photoVerdict({ found: 4, kinds: 1, largest: 4, lineup: false }, none), { kind: 'copies', count: 4 });
+  assert.deepEqual(P.photoVerdict({ found: 12, kinds: 10, largest: 2, lineup: false }, none), { kind: 'different', count: 10 });
+  assert.deepEqual(P.photoVerdict({ found: 3, kinds: 2, largest: 2, lineup: false }, P.titleHint('Groot x3')), { kind: 'copies', count: 3 }, 'where the photo is unsure, the title says copies');
+});
+
+await check('the sell form is told what the found things make up', async () => {
+  const { detectPiecesRoute } = await import(new URL('catalog-routes.js', fns));
+  const made = await detectPiecesRoute(req({ headers: shop, body: { blobName: shelf.blobName, boxes: found } }), ctx);
+  assert.equal(made.status, 200, JSON.stringify(made.jsonBody));
+  const { analysis } = made.jsonBody;
+  assert.equal(analysis.found, found.length);
+  assert.ok(analysis.kinds >= Math.ceil(found.length * 0.8) && analysis.lineup === false, JSON.stringify(analysis));
+});
+
 console.log(`\n${passed} checks passed`);

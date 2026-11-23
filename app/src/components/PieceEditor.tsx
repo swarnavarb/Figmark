@@ -1,6 +1,6 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
 import { saleFee, type FeeTerms } from '@shared/billing';
-import { MAX_PIECES, parsePriceList, spreadUnits } from '@shared/pieces';
+import { MAX_PIECES, parsePriceList, photoVerdict, spreadUnits, titleHint, type PhotoAnalysis, type PhotoVerdict } from '@shared/pieces';
 import { readingOrder, sameness, viewsLineup } from '@shared/photo-things';
 import { mergeThings, overlayScan, type FoundThing } from '../photoThings';
 import { api, type PhotoBox } from '../api';
@@ -63,6 +63,12 @@ export interface PhotoGroup {
   lotCount?: string;
   /** The seller has confirmed the items. */
   confirmed: boolean;
+  /** What the things found make up, as the server read them: one item, copies of one, different things. */
+  analysis?: PhotoAnalysis | null;
+  /** The seller said they are different things, whatever the photo looked like. */
+  different?: boolean;
+  /** Copies of one item, sold from stock: how many. */
+  copies?: number | null;
 }
 
 export const emptyGroup = (): PhotoGroup => ({
@@ -159,10 +165,14 @@ function switchMode(group: PhotoGroup, mode: 'pieces' | 'lot'): PhotoGroup {
  * Reads the lead photo when it changes, asks how its things are sold, and
  * lists them either way.
  */
-export function PhotoGroupBox({ photoUrl, group, onChange }: {
+export function PhotoGroupBox({ photoUrl, group, onChange, title = '', onStock }: {
   photoUrl: string | null;
   group: PhotoGroup;
   onChange: Dispatch<SetStateAction<PhotoGroup>>;
+  /** The listing's title, read for a hint of how many things it sells. */
+  title?: string;
+  /** Copies of one item: list them as this many in stock. */
+  onStock?: (count: number) => void;
 }) {
   const terms = useFeeTerms();
 
@@ -205,19 +215,76 @@ export function PhotoGroupBox({ photoUrl, group, onChange }: {
     const phone = import('../photoDetect').then((module) =>
       module.detectAllThings(photoUrl, (early) => { void server.then((named) => settle(named, early, false)); }))
       .catch(() => [] as PhotoBox[]);
-    void Promise.all([server, phone]).then(([named, boxes]) => settle(named, boxes, true));
+    void Promise.all([server, phone]).then(([named, boxes]) => {
+      settle(named, boxes, true);
+      if (!live) return;
+      // Then what they make up - one item, copies of one, different things - before any choice is offered.
+      const places = mergeThings(named, boxes, MAX_PIECES).flatMap((thing) => thing.boxes);
+      const fallback: PhotoAnalysis = { found: places.length, kinds: places.length, largest: Math.min(1, places.length), lineup: viewsLineup(places) };
+      onChange((now) => (now.photoUrl === photoUrl ? { ...now, analysis: null, reading: true } : now));
+      void (places.length >= 2 ? api.analysePieces(photoUrl, places).then((result) => result.analysis) : Promise.resolve(fallback))
+        .catch(() => fallback)
+        .then((analysis) => {
+          if (!live) return;
+          onChange((now) => {
+            if (now.photoUrl !== photoUrl) return now;
+            const asked = now.mode === 'pieces' || now.mode === 'lot';
+            const verdict = photoVerdict(analysis, titleHint(''));
+            return { ...now, reading: false, analysis, mode: !asked && verdict.kind === 'one' ? 'single' : now.mode };
+          });
+        });
+    });
     return () => { live = false; };
   }, [photoUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!photoUrl) return null;
 
+  // What the photo holds, with the title's hint where the photo leaves it open.
+  const hint = titleHint(title);
+  const analysis: PhotoAnalysis = group.analysis
+    ?? { found: group.found, kinds: group.found, largest: Math.min(1, group.found), lineup: false };
+  const verdict: PhotoVerdict = group.different
+    ? { kind: 'different', count: Math.max(2, analysis.kinds) }
+    : photoVerdict(analysis, hint);
+  const titleNote = !group.reading && hint.count !== null && hint.count !== (verdict.kind === 'one' ? 1 : verdict.count) && analysis.found > 0
+    ? <p className="pcs-note">Your title says {hint.count}; the photo shows {verdict.kind === 'one' ? 'one item' : `${verdict.count}`}. Mark what is missing on the photo, or fix the title.</p>
+    : null;
+  const sayDifferent = () => { haptic('tap'); onChange({ ...group, different: true, copies: null, mode: 'ask' }); };
+  const sayOne = () => { haptic('tap'); onChange({ ...group, different: false, copies: null, mode: 'single' }); };
+
+  if (group.reading && (group.mode === 'ask' || group.mode === 'single')) {
+    return (
+      <div className="pcs-read">
+        <span className="pcs-spin" aria-hidden="true" />
+        <span>Reading your photo{group.pieces.length ? ` - ${group.pieces.length} found so far` : ''}… Is it one item, copies of one, or different items?</span>
+      </div>
+    );
+  }
+
   if (group.mode === 'single') {
+    if (group.copies) {
+      return (
+        <div className="pcs-read is-done">
+          <span>✓ <b>{group.copies} of the same item</b>, sold from stock: buyers choose how many. Fee on each one sold.</span>
+          <button type="button" className="pcs-link" onClick={() => onChange({ ...group, copies: null, mode: 'ask' })}>Change</button>
+        </div>
+      );
+    }
+    if (verdict.kind === 'one') {
+      return (
+        <div className="pcs-read is-done">
+          <span>✓ {analysis.lineup ? <>Views of <b>one item</b>.</> : <><b>One item</b> in this photo.</>}</span>
+          <button type="button" className="pcs-link" onClick={sayDifferent}>Several items?</button>
+          {titleNote}
+        </div>
+      );
+    }
     return (
       <button type="button" className="pcs-way" onClick={() => onChange({ ...group, mode: 'ask' })}>
-        {group.found >= 2
-          ? <>📦 This photo shows about <b>{group.found}</b> different items, and the fee counts each of them even as one listing.
-            {' '}<u>Sell them individually or as a set?</u> Views of one item, or the same item twice, count once.</>
-          : <>📦 Selling several things in this photo? <u>Mark them and price each one</u></>}
+        {verdict.kind === 'copies'
+          ? <>📦 This photo shows <b>{verdict.count}</b> of the same item. <u>Sell them from stock, or all together?</u></>
+          : <>📦 This photo shows about <b>{verdict.count}</b> different items, and the fee counts each of them even as one listing.
+            {' '}<u>Sell them individually or as a set?</u> Views of one item count once.</>}
       </button>
     );
   }
@@ -226,11 +293,41 @@ export function PhotoGroupBox({ photoUrl, group, onChange }: {
     ? <span className="pcs-status"><span className="pcs-spin" aria-hidden="true" /> Finding the items in your photo{group.pieces.length ? ` - ${group.pieces.length} so far` : ''}…</span>
     : group.found > 0 ? <span className="pcs-status">Found <b>{group.found}</b> {group.found === 1 ? 'item' : 'items'} in your photo</span> : null;
 
+  if (group.mode === 'ask' && verdict.kind === 'copies') {
+    const n = verdict.count;
+    return (
+      <div className="pcs-ask">
+        <h3 className="pcs-ask__title">{n} of the same item?</h3>
+        <span className="pcs-status">They look alike{hint.same && hint.count ? ', and your title says so' : ''}. How are you selling them?</span>
+        {titleNote}
+        <div className="pcs-ask__ways">
+          <button type="button" className="pcs-tile" onClick={() => { haptic('tap'); onStock?.(n); onChange({ ...group, copies: n, mode: 'single' }); }}>
+            <span className="pcs-tile__icon" aria-hidden="true">🔢</span>
+            <b>{n} in stock</b>
+            <span>One listing at one price. Buyers choose how many they want.</span>
+            <span className="pcs-tile__fee">Fee on each one as it sells</span>
+          </button>
+          <button type="button" className="pcs-tile" onClick={() => { haptic('tap'); onChange(switchMode({ ...group, copies: null, mode: 'single' }, 'lot')); }}>
+            <span className="pcs-tile__icon" aria-hidden="true">📦</span>
+            <b>All {n} together</b>
+            <span>One price for all of them. A buyer takes the lot.</span>
+            <span className="pcs-tile__fee">Fee per item in the lot</span>
+          </button>
+        </div>
+        <span className="pcs-ask__more">
+          <button type="button" className="btn btn--quiet btn--sm" onClick={sayDifferent}>They are different items</button>
+          <button type="button" className="btn btn--quiet btn--sm" onClick={sayOne}>It is one item</button>
+        </span>
+      </div>
+    );
+  }
+
   if (group.mode === 'ask') {
     return (
       <div className="pcs-ask">
-        <h3 className="pcs-ask__title">How are you selling what is in this photo?</h3>
+        <h3 className="pcs-ask__title">{verdict.kind === 'different' ? `${verdict.count} different items?` : 'Several items in this photo?'}</h3>
         {status}
+        {titleNote}
         <div className="pcs-ask__ways">
           <button type="button" className="pcs-tile" onClick={() => { haptic('tap'); onChange(switchMode({ ...group, mode: 'single' }, 'pieces')); }}>
             <span className="pcs-tile__icon" aria-hidden="true">🏷️</span>
@@ -245,7 +342,7 @@ export function PhotoGroupBox({ photoUrl, group, onChange }: {
             <span className="pcs-tile__fee">Fee per item in the set</span>
           </button>
         </div>
-        <button type="button" className="btn btn--quiet btn--sm" onClick={() => onChange({ ...group, mode: 'single' })}>
+        <button type="button" className="btn btn--quiet btn--sm" onClick={sayOne}>
           It is one item
         </button>
       </div>

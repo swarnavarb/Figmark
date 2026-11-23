@@ -1,7 +1,7 @@
 import type { RegionBox } from '../../shared/models.js';
-import { MAX_PIECES } from '../../shared/pieces.js';
-import { sameness } from '../../shared/photo-things.js';
-import { distinctCount, thingsInPhoto } from './photo-things.js';
+import { MAX_PIECES, type PhotoAnalysis } from '../../shared/pieces.js';
+import { sameness, viewsLineup } from '../../shared/photo-things.js';
+import { distinctCount, groupThings, thingsInPhoto } from './photo-things.js';
 import { decodeJpeg, type Raw } from './storage/compress.js';
 import { getPhotoStore } from './storage/index.js';
 import { visionAvailable } from './vision.js';
@@ -97,4 +97,20 @@ export async function countThings(blobName: string | null, marked: readonly Regi
   const found = distinctCount(raw, everything);
   const charged = Math.max(1, keptCount, Math.ceil(found * (1 - FIND_SLACK)));
   return { charged, found, perRow: marked.map((boxes) => Math.max(1, distinctCount(raw, boxes))) };
+}
+
+/**
+ * What a sale photo holds, for the sell form to offer the right choices
+ * first: how many things, how many different ones, and whether it is views
+ * of one thing side by side. `boxes` are the places found on the phone and
+ * here, put together.
+ */
+export async function analyseThings(blobName: string, boxes: readonly RegionBox[]): Promise<PhotoAnalysis> {
+  const { raw } = await stored(blobName);
+  const places: RegionBox[] = [];
+  for (const box of boxes) if (!places.some((other) => sameness(other, box) >= 0.5)) places.push(box);
+  if (viewsLineup(places)) return { found: places.length, kinds: Math.min(1, places.length), largest: places.length, lineup: true };
+  if (!raw) return { found: places.length, kinds: places.length, largest: Math.min(1, places.length), lineup: false };
+  const groups = groupThings(raw, places);
+  return { found: places.length, kinds: groups.length, largest: Math.max(0, ...groups.map((group) => group.length)), lineup: false };
 }

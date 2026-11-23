@@ -891,22 +891,26 @@ function SellForm({ serverDraft, draftMissing }: {
             </LBox>
           )}
 
-          <LBox icon="📸" title="Photos" hint={verified ? 'The first one leads the listing.' : undefined}>
+          {/* The start: a photo and a title. From them Figmark reads what is for
+              sale - one item, copies of one, or different items - and offers
+              the ways to sell that fit, before anything else is asked. */}
+          <LBox icon="📸" title="Photo and title" hint={verified ? 'Start here: we read the photo, and the title, to set up the rest.' : undefined}>
             {verified
               ? <PhotoManager photos={photos} onChange={setPhotos} label={null} />
               : <span className="lbox__hint">Add photos once you are verified - the rest of the draft is kept.</span>}
+            <label className="field">
+              <span>Title</span>
+              <input id="sell-title" value={title} onChange={(e) => setTitle(e.target.value)}
+                placeholder={separately ? 'Marvel Legends lot - pick what you want' : asLot ? 'Marvel Legends lot of 12' : 'e.g. Hot Toys Terminator 1/6, or Funko Pop Groot x3'} aria-invalid={triedPublish && title.trim().length <= 2 ? true : undefined} />
+            </label>
             {verified && !deal && !preOrderMode && (
               <PhotoGroupBox photoUrl={(photos.find((photo) => photo.isPrimary) ?? photos[0])?.url ?? null}
-                group={group} onChange={setGroup} />
+                group={group} onChange={setGroup} title={title}
+                onStock={(count) => setTerms((current) => ({ ...current, quantityMode: 'fixed', quantity: String(count) }))} />
             )}
           </LBox>
 
           <LBox icon="🏷️" title="The item">
-            <label className="field">
-              <span>Title</span>
-              <input id="sell-title" value={title} onChange={(e) => setTitle(e.target.value)}
-                placeholder={separately ? 'Marvel Legends lot - pick what you want' : asLot ? 'Marvel Legends lot of 12' : '1/7 scale figure, sealed'} aria-invalid={triedPublish && title.trim().length <= 2 ? true : undefined} />
-            </label>
             {/* Price and stock side by side: the two numbers every listing has.
                 Stock used to sit under "More options", three taps from here. */}
             {separately || asLot ? (

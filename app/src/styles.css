@@ -11358,6 +11358,14 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .pcs-ask__peek { max-width: 420px; }
 .pcs-ask__peek .pcs-mark { cursor: default; }
 .pcs-ask__ways { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.pcs-ask__more { display: flex; flex-wrap: wrap; gap: 6px; }
+.pcs-read {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-top: 10px; padding: 10px 12px; border: 1px dashed var(--accent-line);
+  border-radius: 12px; background: var(--accent-soft); color: var(--text-dim); font-size: var(--t-sm);
+}
+.pcs-read.is-done { border-style: solid; border-color: var(--border); background: var(--surface); }
+.pcs-read b { color: var(--text); }
+.pcs-read .pcs-note { flex-basis: 100%; }
 .pcs-tile {
   display: grid; gap: 4px; align-content: start; padding: 14px; border: 1px solid var(--border-strong); border-radius: 14px;
   background: var(--surface); color: var(--text); text-align: left; font: inherit; cursor: pointer;
