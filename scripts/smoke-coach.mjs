@@ -245,6 +245,39 @@ await check('the same questions asked other ways still find the right answer', (
   for (const [question, want] of cases) assert.equal(coach.answerOffline(question, plan).source, want, question);
 });
 
+await check('slang, Hinglish, typos and other wordings still find the right answer', () => {
+  const hard = [
+    ["What's your name?", 'about'], ['who are you', 'about'], ['are you a bot?', 'about'], ['who made you', 'about'],
+    ['how can i get more clients', 'market'], ['i want to sell more', 'market'], ['how to promote on insta', 'outside'],
+    ['how to use whats app for selling', 'outside'], ['shiping cost kitna rakhu', 'shipcost'], ['my parcel is delayed', 'eta'],
+    ['how do i take good pics of figures', 'photos'], ['what selling price should i keep', 'price'], ['how to do group order', 'preorder'],
+    ['buyer wants money back', 'refunds'], ['when do i get my money', 'money'], ['tracking id kaise dalu', 'packing'],
+    ['make a route for air shipments', 'routes'], ['what is a lot', 'routes'], ['how do i calculate landed cost', 'calc'],
+    ['downlod my sales as excel', 'profitbook'], ['upload many items at once', 'bulk'], ['who saved my item', 'signals'],
+    ['notify people when back in stock', 'restock'], ['how do i share my shop', 'sharecards'], ['what do my followers see', 'channel'],
+    ['how to run ads for my shop', 'market'], ['diwaali sale tips', 'season'], ['custom duty on figures', 'customs'],
+    ['cheapest cargo from china', 'forwarder'], ['fake payment screenshot', 'fraud'], ['need gst?', 'tax'],
+    ['buyer complaint about broken figure', 'damaged'], ['no one is buying anything', 'slow'], ['how to verfy my account', 'verified'],
+    ['refnd process', 'refunds'], ['how to pak orders safely', 'packing'], ['how do i acept orders', 'orders'],
+    ['delete my listing', 'edit'], ['what should i import next', 'trending'], ['give me content ideas for reels', 'content'],
+  ];
+  for (const [question, want] of hard) assert.equal(coach.answerOffline(question, plan).source, want, question);
+});
+
+await check('Figgy knows its own name, and so is the AI told', () => {
+  assert.match(coach.answerOffline("What's your name?", plan).text, /I'm Figgy, the Figmark Coach/);
+  assert.match(coach.coachBrief(healthy(), plan), /You are Figgy, the Figmark Coach/);
+});
+
+await check('every "Did you know?" tip is a plain fact with a real button', () => {
+  assert.ok(coach.DID_YOU_KNOW.length >= 15);
+  for (const tip of coach.DID_YOU_KNOW) {
+    assert.ok(tip.tool === null || coach.isCoachTool(tip.tool), tip.text);
+    assert.ok(tip.text.length > 30 && tip.text.length < 260, tip.text);
+  }
+  assert.match(coach.DID_YOU_KNOW[0].text, /lots and routes/);
+});
+
 await check('"what can you help with" lists every topic, simple to advanced', () => {
   const answer = coach.answerOffline('What can you help with?', plan);
   assert.equal(answer.source, 'topics');

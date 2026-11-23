@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  AREA_NAMES, FIGGY, PRO_TOOLS, hourName, PRIVATE_ANSWER, TOOL_LABELS, answerOffline, coachBrief, isPrivateQuestion,
+  AREA_NAMES, DID_YOU_KNOW, FIGGY, PRO_TOOLS, hourName, PRIVATE_ANSWER, TOOL_LABELS, answerOffline, coachBrief, isPrivateQuestion,
   type CoachAnswer, type CoachItem, type CoachPlan, type CoachSignals, type CoachTip, type CoachTool,
 } from '@shared/coach';
 import type { StoreAccess } from '@shared/stores';
@@ -207,16 +207,16 @@ function CoachLocked({ store }: { store: StoreAccess }) {
         <span className="shopcoach__mark" aria-hidden="true"><Icon name="spark" size={16} /></span>
         <div className="shopcoach__headtext">
           <h2 className="shopcoach__title">Shop coach <ProBadge title="Part of Pro" /></h2>
-          <p>Your next best step every day, the best time to post, a weekly marketing plan - and {FIGGY} to answer your selling questions.</p>
+          <p>AI-powered shop assistance. Helps you market and grow your shop with simple plans and the actions to take.</p>
         </div>
         <button type="button" className="iconbtn shopcoach__fold" aria-label="Fold the coach" title="Fold" onClick={() => fold(true)}>
           <Icon name="up" size={14} />
         </button>
       </div>
       <ul className="shopcoach__perks">
-        <li><Icon name="check" size={14} /> Tips from your own listings and orders</li>
-        <li><Icon name="check" size={14} /> When your buyers are online</li>
-        <li><Icon name="check" size={14} /> WhatsApp and Instagram first, then Figmark</li>
+        <li><Icon name="check" size={14} /> Marketing ideas and a weekly plan</li>
+        <li><Icon name="check" size={14} /> An AI chatbot, {FIGGY}, to answer your questions</li>
+        <li><Icon name="check" size={14} /> Your next best step every day, from your own shop's data</li>
       </ul>
       <button type="button" className="btn shopcoach__unlock" onClick={() => navigate('/pro')}>
         <Icon name="lock" size={14} /> Unlock with Pro
@@ -299,6 +299,7 @@ function CoachCard({ store }: { store: StoreAccess }) {
               <ToolButton tool={top.tool} label={top.label} pro={signals.shop.pro} onRun={() => press(top)} />
             </div>
           )}
+          <DidYouKnowStrip pro={signals.shop.pro} run={run} />
           <div className="shopcoach__acts">
             <button type="button" className="shopcoach__act" onClick={() => show('today')}>
               <Icon name="check" size={14} /> {plan.tips.length > 1 ? `All ${plan.tips.length} tips` : 'Full plan'}
@@ -320,6 +321,36 @@ function CoachCard({ store }: { store: StoreAccess }) {
       )}
       {sheet}
     </>
+  );
+}
+
+/**
+ * One small fact about Figmark's own tools, with arrows to the rest. Starts on
+ * a different one each day, so the card has something new without anyone
+ * pressing anything.
+ */
+function DidYouKnowStrip({ pro, run }: { pro: boolean; run: (tool: CoachTool) => void }) {
+  const total = DID_YOU_KNOW.length;
+  const [at, setAt] = useState(() => Math.floor(Date.now() / 86_400_000) % total);
+  const tip = DID_YOU_KNOW[at]!;
+  const step = (by: number) => setAt((now) => (now + by + total) % total);
+  return (
+    <section className="shopcoach__dyk" aria-label="Did you know?" aria-roledescription="carousel">
+      <div className="shopcoach__dyktext" aria-live="polite">
+        <p><b>Did you know?</b> {tip.text}</p>
+        {tip.tool && (
+          <button type="button" className="shopcoach__dyklink" onClick={() => run(tip.tool!)}>
+            {TOOL_LABELS[tip.tool]}{!pro && PRO_TOOLS.includes(tip.tool) && <span className="probadge">PRO</span>}
+            <Icon name="right" size={12} />
+          </button>
+        )}
+      </div>
+      <div className="shopcoach__dyknav">
+        <button type="button" aria-label="Previous tip" onClick={() => step(-1)}><Icon name="left" size={14} /></button>
+        <span aria-label={`Tip ${at + 1} of ${total}`}>{at + 1}/{total}</span>
+        <button type="button" aria-label="Next tip" onClick={() => step(1)}><Icon name="right" size={14} /></button>
+      </div>
+    </section>
   );
 }
 
@@ -414,20 +445,19 @@ function CoachPanel({ store, signals, plan, results, guides, view, onView, run, 
 function Results({ results }: { results: OwnResults }) {
   if (results.settled === 0) {
     return (
-      <section className="shopcoach__results" aria-label="Your results">
-        <h3>Your results</h3>
+      <section className="shopcoach__results" aria-label="Did the tips help?">
+        <h3>Did the tips help?</h3>
         <p className="shopcoach__muted">
-          {results.watching > 0
-            ? `Tracking ${results.watching} tip${results.watching === 1 ? '' : 's'}. A week after you first see a tip, what followed shows here.`
-            : 'A week after you first see a tip, what followed shows here.'}
+          Act on a tip, then check back in a week: you will see what changed in your views, orders and sales.
+          {results.watching > 0 && ` ${results.watching} tip${results.watching === 1 ? ' is' : 's are'} being measured now.`}
         </p>
       </section>
     );
   }
   const { acted, actedSalesBefore: before, actedSalesAfter: after } = results;
   return (
-    <section className="shopcoach__results" aria-label="Your results">
-      <h3>Your results <span>last 90 days</span></h3>
+    <section className="shopcoach__results" aria-label="Did the tips help?">
+      <h3>Did the tips help? <span>last 90 days</span></h3>
       <p className="shopcoach__muted">
         You acted on <b>{acted}</b> of {results.settled} tips.
         {acted > 0 && <> In the week after those, your shop took <b>{after}</b> order{after === 1 ? '' : 's'}, against {before} the week before.</>}
@@ -493,9 +523,9 @@ interface Said {
 
 const STARTERS = ['What should I do today?', 'How do I get more buyers?', 'How do I sell on WhatsApp and Instagram?', 'What can you help with?'];
 
-const ASSISTANTS: Record<Assistant, { name: string; blurb: string }> = {
-  figgy: { name: FIGGY, blurb: 'Built into Figmark. Instant, knows your shop - and gets better as sellers rate its answers.' },
-  puter: { name: 'Puter AI', blurb: 'Writes in its own words. Free with a Puter account; your questions and your shop\'s figures go to Puter.' },
+const ASSISTANTS: Record<Assistant, { name: string; blurb: string; icon: IconName }> = {
+  figgy: { name: FIGGY, blurb: 'Instant · knows your shop', icon: 'spark' },
+  puter: { name: 'Puter AI', blurb: 'Free · needs a Puter sign-in', icon: 'message' },
 };
 
 function CoachChat({ store, signals, plan, guides, run }: {
@@ -593,7 +623,7 @@ function CoachChat({ store, signals, plan, guides, run }: {
           <div className="shopcoach__hello">
             <span className="shopcoach__mark" aria-hidden="true"><Icon name="spark" size={18} /></span>
             <p>
-              <b>Hi, I'm {FIGGY}.</b> I know {signals.shop.name}'s listings, orders and timing. Ask how to list, price, ship or run a pre-order - or how to bring in buyers, on WhatsApp and Instagram first.
+              <b>Hi, I'm {FIGGY}, the Figmark Coach.</b> I know {signals.shop.name}'s listings, orders and timing. Ask how to list, price, ship or run a pre-order - or how to bring in buyers, grow your business or market your products.
             </p>
           </div>
         )}
@@ -657,6 +687,7 @@ function CoachChat({ store, signals, plan, guides, run }: {
           <div className="shopcoach__picker" ref={picker}>
             <button type="button" className="shopcoach__pick" aria-haspopup="listbox" aria-expanded={picking}
               onClick={() => setPicking(!picking)}>
+              <span className={`shopcoach__who shopcoach__who--${who}`} aria-hidden="true"><Icon name={ASSISTANTS[who].icon} size={11} /></span>
               {ASSISTANTS[who].name} <Icon name="down" size={12} />
             </button>
             {picking && (
@@ -664,8 +695,12 @@ function CoachChat({ store, signals, plan, guides, run }: {
                 {(['figgy', 'puter'] as const).map((id) => (
                   <button key={id} type="button" role="option" aria-selected={who === id}
                     className={`shopcoach__option${who === id ? ' is-on' : ''}`} onClick={() => choose(id)}>
-                    <b>{ASSISTANTS[id].name}{who === id && <Icon name="check" size={14} />}</b>
-                    <span>{ASSISTANTS[id].blurb}</span>
+                    <span className={`shopcoach__who shopcoach__who--${id}`} aria-hidden="true"><Icon name={ASSISTANTS[id].icon} size={14} /></span>
+                    <span className="shopcoach__optiontext">
+                      <b>{ASSISTANTS[id].name}</b>
+                      <span>{ASSISTANTS[id].blurb}</span>
+                    </span>
+                    {who === id && <Icon name="check" size={16} />}
                   </button>
                 ))}
               </div>
