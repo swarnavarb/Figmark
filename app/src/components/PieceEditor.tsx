@@ -286,7 +286,7 @@ export function PhotoGroupBox({ photoUrl, group, onChange, title = '', onStock, 
     const n = verdict.count;
     return (
       <div className="pcs-pick">
-        <p className="pcs-pick__q">We found <b>{n}</b> of the same item in this photo</p>
+        <p className="pcs-pick__q">We found approx. <b>{n}</b> of the same item in this photo</p>
         <p className="pcs-pick__sub">How many items in this photo are you listing?</p>
         {titleNote}
         <div className="pcs-pick__ways">
@@ -305,7 +305,7 @@ export function PhotoGroupBox({ photoUrl, group, onChange, title = '', onStock, 
   if (choosing && verdict.kind === 'different') {
     return (
       <div className="pcs-pick">
-        <p className="pcs-pick__q">We found <b>{shown}</b> different items in this photo</p>
+        <p className="pcs-pick__q">We found approx. <b>{shown}</b> different items in this photo</p>
         <p className="pcs-pick__sub">How many items in this photo are you listing?</p>
         {titleNote}
         <div className="pcs-pick__ways">
