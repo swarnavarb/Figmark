@@ -287,6 +287,7 @@ export function PhotoGroupBox({ photoUrl, group, onChange, title = '', onStock, 
     return (
       <div className="pcs-pick">
         <p className="pcs-pick__q">We found <b>{n}</b> of the same item in this photo</p>
+        <p className="pcs-pick__sub">How many items in this photo are you listing?</p>
         {titleNote}
         <div className="pcs-pick__ways">
           <button type="button" className="pcs-tile" onClick={() => { onStock?.(n); go({ ...group, copies: n, mode: 'single' }); }}>
@@ -305,6 +306,7 @@ export function PhotoGroupBox({ photoUrl, group, onChange, title = '', onStock, 
     return (
       <div className="pcs-pick">
         <p className="pcs-pick__q">We found <b>{shown}</b> different items in this photo</p>
+        <p className="pcs-pick__sub">How many items in this photo are you listing?</p>
         {titleNote}
         <div className="pcs-pick__ways">
           <button type="button" className="pcs-tile" onClick={pickSet}><b>Multiple items as a set</b><span>One price for all</span></button>
@@ -318,7 +320,7 @@ export function PhotoGroupBox({ photoUrl, group, onChange, title = '', onStock, 
   if (choosing) {
     return (
       <div className="pcs-pick">
-        <p className="pcs-pick__q">How many items are in this photo?</p>
+        <p className="pcs-pick__q">How many items in this photo are you listing?</p>
         <div className="pcs-pick__ways pcs-pick__ways--3">
           <button type="button" className="pcs-tile is-first" onClick={pickOne}><b>1 item to sell</b></button>
           <button type="button" className="pcs-tile" onClick={pickSet}><b>Multiple items as a set</b><span>One price for all</span></button>
