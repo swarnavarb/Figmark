@@ -469,6 +469,7 @@ export function PieceList({ photoUrl, mode, pieces, onPieces, setPriceMinor = 0 
   const moreMenu = (piece: DraftPiece, index: number) => (
     <select className="pcs-more" value="" aria-label={`More for item ${index + 1}`} onChange={(event) => more(piece, event.target.value)}>
       <option value="">⋯</option>
+      <option value="remove">Remove this item</option>
       {piece.boxes.length > 0 && piece.boxes.length < 4 && <option value="view">Mark another view of it</option>}
       {piece.boxes.length > 1 && <option value="split">Split its views into items</option>}
       {pieces.length > 1 && (
@@ -478,7 +479,6 @@ export function PieceList({ photoUrl, mode, pieces, onPieces, setPriceMinor = 0 
           ))}
         </optgroup>
       )}
-      <option value="remove">Remove this item</option>
     </select>
   );
 
