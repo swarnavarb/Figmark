@@ -1,0 +1,180 @@
+/* ── Trust: the welcome, the protection note, the footer ── */
+
+.protnote {
+  display: flex; gap: 10px; align-items: flex-start;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  background: var(--ok-soft);
+  border: 1px solid rgba(52, 211, 153, 0.3);
+  color: var(--text);
+  font-size: var(--t-sm);
+  line-height: 1.45;
+}
+.protnote__mark { color: var(--ok); flex: none; display: flex; padding-top: 1px; }
+.protnote a { color: var(--ok-pale); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; white-space: nowrap; }
+
+/* For a signed-out visitor, above everything else on the first screen:
+   what this is, what it offers as four tiles, and the one way in. */
+.fmintro {
+  display: grid; gap: 18px;
+  grid-template-areas: 'copy' 'feats' 'cta';
+  margin: 0 0 22px;
+  padding: 20px;
+  border-radius: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.fmintro__copy { grid-area: copy; min-width: 0; }
+.fmintro__title {
+  margin: 0;
+  font-size: clamp(24px, 5.6vw, 36px);
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  font-weight: 800;
+  color: var(--text);
+  text-wrap: balance;
+}
+.fmintro__cta { grid-area: cta; justify-content: center; width: 100%; }
+.fmintro__feats {
+  grid-area: feats;
+  list-style: none; margin: 0; padding: 0;
+  /* A phone stacks them as slim rows; wider screens put them side by side. */
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px;
+}
+@media (min-width: 600px) { .fmintro__feats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* Slim: the icon beside two short lines. */
+.fmfeat {
+  display: flex; align-items: center; gap: 10px; min-width: 0;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  /* In one after another, a beat apart. */
+  animation: fmfeat-in 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--i, 0) * 90ms + 120ms);
+}
+.fmfeat__icon {
+  flex: none; width: 34px; height: 34px; border-radius: 10px;
+  display: grid; place-items: center;
+  color: var(--fm-hue);
+  background: color-mix(in srgb, var(--fm-hue) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fm-hue) 35%, transparent);
+}
+.fmfeat__icon svg { width: 19px; height: 19px; }
+.fmfeat--check   { --fm-hue: var(--ok); }
+.fmfeat--ride    { --fm-hue: var(--blue-text); }
+.fmfeat--twinkle { --fm-hue: var(--warn); }
+.fmfeat--lock    { --fm-hue: var(--violet-pale); }
+.fmfeat__words { display: grid; gap: 1px; min-width: 0; }
+.fmfeat__title { color: var(--text); font-size: var(--t-sm); line-height: 1.25; letter-spacing: -0.01em; }
+.fmfeat__text { color: var(--text-dim); font-size: var(--t-xs); line-height: 1.3; }
+.fmfeat__soon {
+  display: inline-block; margin-right: 5px; padding: 0 5px; border-radius: 4px; vertical-align: 1px;
+  font-style: normal; font-size: var(--t-2xs); font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--fm-hue); background: color-mix(in srgb, var(--fm-hue) 16%, transparent);
+}
+
+@keyframes fmfeat-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+/* Each icon's own small loop: slow, and mostly at rest. */
+.fmfeat__draw { stroke-dasharray: 12; animation: fm-draw 3.2s ease-in-out infinite; }
+@keyframes fm-draw { 0%, 15% { stroke-dashoffset: 12; } 35%, 100% { stroke-dashoffset: 0; } }
+.fmfeat__mover { animation: fm-ride 2.8s ease-in-out infinite; }
+@keyframes fm-ride { 0%, 100% { transform: translateX(-1.5px); } 50% { transform: translateX(1.5px); } }
+.fmfeat__star { transform-origin: 12px 12px; animation: fm-twinkle 3s ease-in-out infinite; }
+@keyframes fm-twinkle { 0%, 70%, 100% { transform: scale(1) rotate(0); } 80% { transform: scale(1.18) rotate(-10deg); } 90% { transform: scale(0.96) rotate(4deg); } }
+.fmfeat__shackle { animation: fm-lock 3.4s ease-in-out infinite; }
+@keyframes fm-lock { 0%, 20% { transform: translateY(-2px); } 35%, 85% { transform: none; } 100% { transform: translateY(-2px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .fmfeat, .fmfeat__draw, .fmfeat__mover, .fmfeat__star, .fmfeat__shackle { animation: none; }
+}
+@media (min-width: 900px) {
+  .fmintro {
+    padding: 28px 32px; gap: 22px 32px;
+    grid-template-columns: 1fr auto;
+    grid-template-areas: 'copy cta' 'feats feats';
+    align-items: center;
+  }
+  .fmintro__cta { width: auto; min-width: 160px; }
+  .fmintro__feats { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  .fmfeat { padding: 12px 14px; }
+}
+
+/* ── The footer ──
+   Deep ink under a hairline of the brand ramp, a soft glow behind the mark,
+   the safeguards as seals, and the links set small and quiet. */
+.sitefoot {
+  position: relative; isolation: isolate; overflow: hidden;
+  margin-top: auto;
+  background: linear-gradient(180deg, #0B0E17 0%, #05070C 100%);
+  color: var(--text-dim);
+  font-size: var(--t-sm);
+  /* Clear of the floating tab bar on a phone. */
+  padding: 48px max(var(--page-pad), 20px) calc(var(--tabbar-h) + 24px);
+}
+.sitefoot::before {
+  content: ''; position: absolute; inset: 0 0 auto; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(124, 58, 237, 0.7) 25%, rgba(236, 72, 153, 0.8) 50%, rgba(255, 90, 95, 0.7) 75%, transparent);
+}
+.sitefoot__glow {
+  position: absolute; z-index: -1; top: -180px; left: -120px; width: 520px; height: 360px;
+  background: radial-gradient(closest-side, rgba(124, 58, 237, 0.22), transparent);
+  pointer-events: none;
+}
+.sitefoot__inner {
+  max-width: var(--page-max, 1180px); margin: 0 auto;
+  display: grid; gap: 40px;
+}
+.sitefoot__brand { display: grid; gap: 16px; align-content: start; }
+.sitefoot__brand .brand { color: var(--text); text-decoration: none; }
+/* The header drops the wordmark on a phone to make room; the footer has room. */
+.sitefoot__brand .brand__name { display: inline; font-size: var(--t-lg); }
+.sitefoot__brand .brand__mark { width: 36px; height: 36px; border-radius: 10px; }
+.sitefoot__tag { margin: 0; max-width: 34ch; color: var(--text); font-size: var(--t-md); line-height: 1.45; letter-spacing: -0.01em; }
+.sitefoot__seals { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.sitefoot__seals li {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 11px; border-radius: 999px;
+  font-size: var(--t-xs); font-weight: 600; color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+}
+.sitefoot__seals svg { color: var(--ok); }
+.sitefoot__seals em { font-style: normal; color: var(--text-faint); font-weight: 500; }
+.sitefoot__mail {
+  display: inline-grid; gap: 2px; width: fit-content;
+  padding: 12px 16px; border-radius: 14px;
+  text-decoration: none;
+  background: linear-gradient(#10131D, #10131D) padding-box,
+    linear-gradient(120deg, rgba(124, 58, 237, 0.6), rgba(236, 72, 153, 0.5)) border-box;
+  border: 1px solid transparent;
+  transition: transform var(--dur-2) var(--ease);
+}
+.sitefoot__mail:hover { transform: translateY(-1px); }
+.sitefoot__mail span { font-size: var(--t-2xs); text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-faint); }
+.sitefoot__mail b { color: var(--text); font-size: var(--t-base); font-weight: 600; overflow-wrap: anywhere; }
+.sitefoot__cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px 16px; }
+.sitefoot__cols div { display: grid; gap: 10px; align-content: start; }
+.sitefoot__cols h2 {
+  margin: 0 0 4px;
+  font-size: var(--t-2xs); text-transform: uppercase; letter-spacing: 0.12em;
+  color: var(--text); font-weight: 700;
+}
+.sitefoot__cols a { width: fit-content; color: var(--text-dim); text-decoration: none; transition: color var(--dur-2) var(--ease); }
+.sitefoot__cols a:hover { color: var(--text); }
+.sitefoot__base {
+  max-width: var(--page-max, 1180px);
+  margin: 40px auto 0; padding-top: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  display: flex; align-items: center; gap: 10px;
+  color: var(--text-faint); font-size: var(--t-xs); letter-spacing: 0.02em;
+}
+.sitefoot__dot { width: 3px; height: 3px; border-radius: 50%; background: currentColor; }
+@media (prefers-reduced-motion: reduce) { .sitefoot__mail { transition: none; } }
+@media (min-width: 900px) {
+  .sitefoot { padding-top: 64px; }
+  .sitefoot__inner { grid-template-columns: 1.1fr 2fr; gap: 64px; }
+  .sitefoot__cols { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}

@@ -35,7 +35,8 @@ import { SkeletonGrid } from '../components/Feedback';
 import { ActiveOrders } from '../components/ActiveOrders';
 import { FeedSkeletonParts } from '../components/PageSkeletons';
 import { CollectorChip, Glyph, RarityRibbon, StoreChip, XpBar, useQuest } from '../components/Quest';
-import { EmptyState, ErrorNotice, Icon, LevelChip, Thumb, leadPhoto } from '../components/ui';
+import { EmptyState, ErrorNotice, Icon, Thumb, leadPhoto } from '../components/ui';
+import { SellerLevel, SellerTick, WelcomePanel } from '../components/Trust';
 import { useSave } from '../components/useSave';
 import { formatMoney, timeAgo } from '../format';
 import { useRecentlyViewed } from '../recentViews';
@@ -44,7 +45,9 @@ import {
 } from '../components/ShopFinder';
 import { clearPhotoQuery, holdsPhotoQuery, usePhotoQuery } from '../photoQuery';
 import { detectThings } from '../photoDetect';
-import { mergeItems } from '../photoThings';
+import { MAX_THINGS, mergeThings, overlayScan, type FoundThing } from '../photoThings';
+import { readingOrder } from '@shared/photo-things';
+import { AiScan } from '../components/AiScan';
 import '../styles/FeedPage.css';
 import { Select } from '../components/Select';
 
@@ -60,6 +63,7 @@ import { Select } from '../components/Select';
 /** Listings per catalogue page, as the API counts them. */
 const CATALOG_PAGE = 100;
 const NO_ITEMS: PhotoItem[] = [];
+const NO_THINGS: FoundThing[] = [];
 /** The API's own ceiling (400 listings). */
 const CATALOG_MAX_PAGES = 4;
 
@@ -104,7 +108,18 @@ export function useCatalog() {
   const photoRegion = photo && focus.photoId === photo.id ? focus.box : null;
   const seenItems = photo && seen.photoId === photo.id ? seen.items : NO_ITEMS;
   const toldItems = photo && told.photoId === photo.id ? told.items : NO_ITEMS;
-  const photoItems = useMemo(() => mergeItems(seenItems, toldItems), [seenItems, toldItems]);
+  // Put together exactly as the sell form does, so a photo shows the same things in both.
+  // What the AI found, when asked to look closer, first of all.
+  const [scanned, setScanned] = useState<{ photoId: string; things: FoundThing[] }>({ photoId: '', things: [] });
+  const takeScan = useCallback((things: FoundThing[]) => {
+    if (photo) setScanned({ photoId: photo.id, things });
+  }, [photo]);
+  const scannedThings = photo && scanned.photoId === photo.id ? scanned.things : NO_THINGS;
+  const photoItems = useMemo(() => overlayScan(scannedThings, mergeThings(
+    toldItems.map((item) => ({ label: item.label, boxes: [item.box] })),
+    seenItems.map((item) => item.box),
+  )).sort(readingOrder).slice(0, MAX_THINGS)
+    .map((thing): PhotoItem => ({ box: thing.boxes[0]!, label: thing.label })), [seenItems, toldItems, scannedThings]);
   const pickRegion = useCallback((box: PhotoBox | null) => {
     if (photo) setFocus({ photoId: photo.id, box });
   }, [photo]);
@@ -306,7 +321,7 @@ export function useCatalog() {
     // More to come: the server said this is not every match, and there is room to ask for more.
     canShowMore: !photoId && data?.complete === false && pages < CATALOG_MAX_PAGES, showMore,
     search, group, category, condition, type, size, authenticity, kind, sort, maxPrice, minPrice, minTrust, maxDays,
-    photo, clearPhoto, photoItems, photoRegion, pickRegion, photoSuggested,
+    photo, clearPhoto, photoItems, photoRegion, pickRegion, photoSuggested, takeScan,
     toggle, chooseGroup, chooseKind, set, activeFilters,
   };
 }
@@ -334,7 +349,7 @@ export function FeedPage() {
   const {
     params, setParams, data, error, loading,
     search, group, category, condition, type, size, authenticity, kind, sort, maxPrice, minPrice, minTrust, maxDays,
-    photo, clearPhoto, photoItems, photoRegion, pickRegion, photoSuggested,
+    photo, clearPhoto, photoItems, photoRegion, pickRegion, photoSuggested, takeScan,
     chooseGroup, chooseKind, set, activeFilters,
     canShowMore, showMore,
   } = useCatalog();
@@ -504,6 +519,8 @@ export function FeedPage() {
       <h1 className="sr-only">Shop</h1>
       {/* The top of the page sits on a block of colour, edge to edge; the drops come after it. */}
       <div className="qfeed__band" ref={bandRef}>
+      {/* A first visit starts with what this place is and why it is safe to pay here. */}
+      {browsing && <WelcomePanel />}
       <QuestBar />
       {/* Orders still on their way, first: after paying, "where is it?" is the question. */}
       {browsing && <ActiveOrders />}
@@ -580,7 +597,11 @@ export function FeedPage() {
       {showGrid && error && <ErrorNotice message={error} />}
 
       {photo && (
+        <>
         <PhotoFocus photo={photo} items={photoItems} region={photoRegion} onPick={pickRegion} onClear={clearPhoto} busy={loading} />
+        <AiScan photoUrl={photo.original ?? photo.dataUrl}
+          onFound={takeScan} />
+        </>
       )}
       {photo && !loading && <PhotoSuggestions listings={photoSuggested} />}
       <div className="qrow__head">
@@ -996,8 +1017,8 @@ export const LootCard = memo(function LootCard({ listing, priority = false }: { 
               <Glyph name="crest" size={13} />
               {listing.seller.photoUrl && <StorePic url={listing.seller.photoUrl} />}
             </span>
-            <span className="qseller__name">{listing.seller.storefrontName}{listing.seller.pro && <ProBadge />}</span>
-            <span className="qseller__lv"><LevelChip tag={listing.seller.level} /></span>
+            <span className="qseller__name">{listing.seller.storefrontName}<SellerTick tier={listing.seller.tier} size={14} />{listing.seller.pro && <ProBadge />}</span>
+            <span className="qseller__lv"><SellerLevel seller={listing.seller} /></span>
           </span>
         )}
       </div>

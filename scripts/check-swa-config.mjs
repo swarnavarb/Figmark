@@ -123,12 +123,13 @@ check('every page is sent with the security headers', () => {
     return [directive, values];
   }));
   // The point of the policy: a script that got into the page by way of
-  // somebody's listing or message does not run. One other origin is allowed:
-  // Cloudflare Turnstile, the sign-up CAPTCHA, and nothing inline.
+  // somebody's listing or message does not run. Two other origins are allowed:
+  // Cloudflare Turnstile, the sign-up CAPTCHA, and Puter.js, loaded only when
+  // someone taps "Scan with AI" on a photo; nothing inline.
   // 'wasm-unsafe-eval' lets WebAssembly from this site compile (the ZXing QR
   // reader); it does not allow eval() or inline script.
-  assert.deepEqual(csp['script-src'], ["'self'", "'wasm-unsafe-eval'", 'https://challenges.cloudflare.com'], 'scripts come from this site and Turnstile only, none inline');
-  assert.deepEqual(csp['frame-src'], ['https://challenges.cloudflare.com'], 'only the Turnstile frame');
+  assert.deepEqual(csp['script-src'], ["'self'", "'wasm-unsafe-eval'", 'https://challenges.cloudflare.com', 'https://js.puter.com'], 'scripts come from this site, Turnstile and Puter.js only, none inline');
+  assert.deepEqual(csp['frame-src'], ['https://challenges.cloudflare.com', 'https://puter.com'], 'only the Turnstile and Puter frames');
   assert.deepEqual(csp['object-src'], ["'none'"]);
   assert.deepEqual(csp['frame-ancestors'], ["'none'"]);
   assert.match(headers['Strict-Transport-Security'], /max-age=\d{7,}/);

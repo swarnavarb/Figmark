@@ -215,13 +215,6 @@
 }
 .phead .vfychip { font-size: var(--t-xs); padding: 2px var(--s2); }
 .phead .qprofile__face { background: var(--bg); }
-.vtick {
-  display: inline-flex; vertical-align: -0.1em; margin-left: 6px; filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.45));
-  padding: 0; border: 0; background: none; color: inherit; font: inherit; line-height: 0; cursor: pointer;
-  -webkit-tap-highlight-color: transparent; transition: transform var(--dur-2) var(--ease);
-}
-.vtick:active { transform: scale(0.88); }
-.vtick:focus-visible { outline: 2px solid #1D9BF0; outline-offset: 2px; border-radius: 50%; }
 .ppanel .pbio { margin: 0; padding: 0 0 0 var(--s3); border: 0; border-radius: 0; background: none; }
 .ppanel .pbio::before { top: 2px; bottom: 2px; }
 

@@ -1,3 +1,4 @@
+import { takePieces } from '../../../shared/pieces.js';
 import { StaleWriteError } from './concurrency.js';
 import { isPersonFollow, personFollowId } from '../../../shared/storefront.js';
 import type { CustomQuote, ServiceRequest, ServiceWorkDoc } from '../../../shared/service-work.js';
@@ -465,6 +466,16 @@ export class MemoryRepository implements Repository {
   async takeStock(order: Order): Promise<boolean> {
     const listing = this.listings.get(order.listingId);
     if (!listing) return false;
+    // Pieces from one photo: every one ticked, or none of them.
+    if (order.pieces?.length) {
+      const next = takePieces(listing, order, new Date().toISOString());
+      if (!next) return false;
+      Object.assign(listing, next, {
+        soldCount: (listing.soldCount ?? 0) + (order.bookingOnly ? 0 : order.pieces.length),
+        updatedAt: new Date().toISOString(),
+      });
+      return true;
+    }
     if (listing.quantityMode !== 'multiple' && listing.quantityAvailable < order.quantity) return false;
     // A "multiple" item has no count to run down, so it never sells out.
     if (listing.quantityMode !== 'multiple') {

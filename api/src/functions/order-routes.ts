@@ -1,3 +1,4 @@
+import { releasePieces } from '../../../shared/pieces.js';
 import { shopRefusal } from '../../../shared/shop-status.js';
 import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
@@ -1927,6 +1928,14 @@ async function saleMilestones(repository: Repo, sellerId: string): Promise<void>
 async function restock(repository: Repo, order: Order, now: string, units = true): Promise<void> {
   const listing = await repository.getListing(order.listingId);
   if (!listing) return;
+  // Pieces go back on sale one by one: their crosses come off the photo.
+  if (order.pieces?.length) {
+    if (!units) return;
+    const back = await repository.changeListing(listing.id, listing.sellerId, (current) =>
+      ({ ...releasePieces(current, order.id), updatedAt: now }));
+    if (back) await tellRestocked(repository, listing, back);
+    return;
+  }
   const back = await repository.updateListing({
     ...listing,
     quantityAvailable: listing.quantityAvailable + (units ? order.quantity : 0),

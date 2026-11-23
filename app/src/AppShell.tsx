@@ -22,6 +22,7 @@ import { inviteCodeFor } from './components/inviteCode';
 import { setPhotoQuery } from './photoQuery';
 import { PageLoading } from './components/Feedback';
 import { reducedMotion, setMotion, useReducedMotion } from './motion';
+import { SiteFooter } from './components/Trust';
 
 /** The sign-in sheet, fetched the first time somebody needs it. */
 const AuthModal = lazy(() => import('./pages/AuthPage').then((module) => ({ default: module.AuthModal })));
@@ -221,6 +222,10 @@ export function AppShell() {
           <Outlet />
         </Suspense>
       </RouteFade>
+
+      {/* Who runs this and how to reach them, under every marketplace page.
+          The social screens and chat rooms scroll forever, so not there. */}
+      {!social && !room && <SiteFooter />}
 
       {user && <FloatingCalc />}
 

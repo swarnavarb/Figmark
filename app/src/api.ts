@@ -1,3 +1,4 @@
+import type { PhotoAnalysis } from '@shared/photo-scan';
 import type { PayoutSummary } from '@shared/payouts';
 import type { DnaLinkKind, DnaSummary, DnaView } from '@shared/dna';
 import type { DayRange, DaySource, ShopDays } from '@shared/step-days';
@@ -416,6 +417,8 @@ export interface SellerCard {
   dispatchRegion: string | null;
   followerCount: number;
   trustScore: number;
+  /** False while no order with this shop has completed: the score is only the starting point then. */
+  rated?: boolean;
   onTimeDispatchRate: number | null;
   /** Orders behind the on-time rate. */
   onTimeMeasured?: number;
@@ -1362,6 +1365,12 @@ export interface ReviewsAbout {
 }
 
 export interface NewListing {
+  /** Sold piece by piece from the lead photo: each with its title, price and place in the photo. */
+  pieces?: { id?: string; title: string; priceMinor: number; boxes: PhotoBox[] }[] | null;
+  /** A set sold all together: each thing in the lead photo; the price is shared out among them. */
+  setItems?: { title: string; boxes: PhotoBox[] }[] | null;
+  /** Every place the photo readers found a thing in the lead photo. */
+  seen?: PhotoBox[] | null;
   /** What one unit cost (Pro), step by step. */
   costSheet?: { templateId: string | null; templateName: string | null; steps: CostStep[] } | null;
   /** A private deal for this one buyer: never in the catalog, channels or feed. */
@@ -3198,10 +3207,19 @@ export const api = {
     ),
   follow: (sellerId: string) =>
     post<{ following: boolean; followerCount?: number }>(`/sellers/${encodeURIComponent(sellerId)}/follow`),
-  order: (listingId: string, quantity = 1, via?: string | null, ref?: string | null, fromPost?: { channelId: string; postId: string } | null) =>
+  order: (listingId: string, quantity = 1, via?: string | null, ref?: string | null, fromPost?: { channelId: string; postId: string } | null,
+    pieceIds?: string[] | null) =>
     post<{ order: Order }>('/orders', {
       listingId, quantity, via: via ?? undefined, ref: ref ?? undefined, ...(fromPost ? { fromPost } : {}),
+      ...(pieceIds?.length ? { pieceIds } : {}),
     }),
+  /** The things for sale in one of the seller's photos: a guess for them to correct. */
+  detectPieces: (url: string) =>
+    post<{ pieces: { label: string | null; boxes: PhotoBox[] }[]; method: 'vision' | 'shape' | 'both' | 'none'; vision: boolean }>(
+      '/pieces/detect', { url }),
+  /** What the things found in a sale photo make up: one item, copies of one, or different things. */
+  analysePieces: (url: string, boxes: PhotoBox[]) =>
+    post<{ analysis: PhotoAnalysis }>('/pieces/detect', { url, boxes }),
 
   /**
    * Join a pre-order, or leave it.

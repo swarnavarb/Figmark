@@ -15,6 +15,8 @@ import { haptic } from '../haptics';
 import { BackLink } from '../components/ScrollManager';
 import { useSave } from '../components/useSave';
 import { Canopy, DetailBlocks, Gallery, Svg, Urgency } from '../components/ListingBlocks';
+import { PieceBoard, PiecePicker, piecesCount } from '../components/Pieces';
+import { ProtectedNote, SellerTick } from '../components/Trust';
 import { ListingPosts } from '../components/ListingPosts';
 import { ListingDna } from '../components/DnaKit';
 import { Glyph, RarityRibbon } from '../components/Quest';
@@ -75,6 +77,8 @@ export function ListingPage() {
   const [quantity, setQuantity] = useState(1);
   /** The offer whose details and terms are open, from the row or the wholesale callout. */
   const [busy, setBusy] = useState(false);
+  /** Buy on a listing sold piece by piece: the picker, opened with whatever was already ticked on the photo. */
+  const [picking, setPicking] = useState<{ initial: string[] } | null>(null);
   const [editing, setEditing] = useState(false);
   // Just published from the Sell screen: the moment it goes live gets marked.
   const location = useLocation();
@@ -118,7 +122,10 @@ export function ListingPage() {
   useEffect(() => {
     const box = boxRef.current;
     if (!box) return;
-    const watch = new IntersectionObserver(([entry]) => setBoxGone(entry ? !entry.isIntersecting : false));
+    // Only once the box has gone up past the top: while it is still further
+    // down the page, the bar would sit over the title and photos above it.
+    const watch = new IntersectionObserver(([entry]) =>
+      setBoxGone(entry ? !entry.isIntersecting && entry.boundingClientRect.top < 0 : false));
     watch.observe(box);
     return () => watch.disconnect();
   }, [data !== null]); // eslint-disable-line react-hooks/exhaustive-deps -- once the box exists
@@ -168,17 +175,32 @@ export function ListingPage() {
   // who ends up holding the money. Landing the buyer on their purchases list
   // instead skipped that question entirely and left an unpaid order behind
   // looking like a completed one.
-  const buy = () =>
-    run('', async () => {
+  const pieces = listing.pieces ?? [];
+  const byPiece = pieces.length > 0;
+  const buy = (initial: string[] = []) =>
+    byPiece ? setPicking({ initial }) : run('', async () => {
       haptic();
       const placed = await api.order(listing.id, quantity, via, ref, fromPost);
       navigate(`/order/${placed.order.id}`);
+    });
+  // Pieces ticked in the picker: one checkout for all of them, or the cart.
+  const buyPieces = (ids: string[], to: 'checkout' | 'cart') =>
+    run('', async () => {
+      haptic();
+      const placed = await api.order(listing.id, 1, via, ref, fromPost, ids);
+      setPicking(null);
+      if (to === 'checkout') {
+        navigate(`/order/${placed.order.id}`);
+        return;
+      }
+      window.dispatchEvent(new Event('figmark:cart'));
+      toast(`${placed.order.itemName} ${ids.length === 1 ? 'is' : 'are'} in your cart.`, 'ok');
     });
 
   // Into the cart and stay here: the order is made unpaid, exactly as Buy now
   // makes it, and waits in the cart until it is paid or booked.
   const addToCart = () =>
-    run('', async () => {
+    byPiece ? setPicking({ initial: [] }) : run('', async () => {
       haptic();
       await api.order(listing.id, quantity, via, ref, fromPost);
       window.dispatchEvent(new Event('figmark:cart'));
@@ -217,8 +239,10 @@ export function ListingPage() {
             {formatMoney(Math.max(100, listing.priceMinor - linkOff), listing.currency)}{' '}
             <s className="buybox__was">{formatMoney(listing.priceMinor, listing.currency)}</s>
           </span>
-        ) : <span className="buybox__price">{formatMoney(listing.priceMinor, listing.currency)}</span>}
-        {isMultiple(listing) || listing.quantityAvailable > 0
+        ) : <span className="buybox__price">{byPiece && <small className="buybox__from">from </small>}{formatMoney(listing.priceMinor, listing.currency)}</span>}
+        {byPiece && listing.quantityAvailable > 0
+          ? <span className="badge badge--accent">{piecesCount(pieces)}</span>
+          : isMultiple(listing) || listing.quantityAvailable > 0
           ? <StockChip listing={listing} />
           : <span className="badge badge--danger">Sold out</span>}
       </div>
@@ -281,7 +305,7 @@ export function ListingPage() {
       ) : (
         <div className="buybox__acts">
           {/* More than one to be had: how many, before the checkout opens. */}
-          {maxQuantity > 1 && (
+          {maxQuantity > 1 && !byPiece && (
             <span className="qtystep" role="group" aria-label="Quantity">
               <button type="button" onClick={() => setQuantity((n) => Math.max(1, n - 1))}
                 disabled={busy || quantity <= 1} aria-label="One fewer">−</button>
@@ -298,7 +322,7 @@ export function ListingPage() {
           ) : (
             <button className={`btn btn--lg buybox__buy${lock}`} onClick={gate(() => buy(), 'Sign in to buy this item.')}
               disabled={busy || !inStock}>
-              {busy ? <span className="buybox__opening">Working on it</span> : <>{lockMark}{listing.preOrder ? 'Buy a place now' : 'Buy now'}</>}
+              {busy ? <span className="buybox__opening">Working on it</span> : <>{lockMark}{listing.preOrder ? 'Buy a place now' : byPiece ? 'Pick & buy' : 'Buy now'}</>}
             </button>
           )}
           {!shut && (
@@ -356,6 +380,7 @@ export function ListingPage() {
           {' '}Save it and you are told if the price drops.
         </p>
       )}
+      {!data.isOwn && buyable && !shut && <ProtectedNote />}
       {data.affiliate?.referredBy && !data.isOwn && <ReferredBy party={data.affiliate.referredBy}
         offLabel={linkOff > 0 ? formatMoney(linkOff, listing.currency) : null} />}
     </div>
@@ -380,8 +405,21 @@ export function ListingPage() {
                 </span>
               )}
               {isTakingBookings(listing.preOrder) && <span className="badge badge--accent">Pre-order</span>}
+              {byPiece && <span className="badge badge--accent">{piecesCount(pieces)} · priced separately</span>}
+              {listing.bundle && listing.bundleCount && <span className="badge badge--accent">Lot of {listing.bundleCount.declared}</span>}
             </span>
           </Gallery>
+          {/* Several things in one photo, each with its price: pick from the photo itself. */}
+          {byPiece && photos[0] && (
+            <PieceBoard src={photos[0]} pieces={pieces} title={listing.title}
+              disabled={data.isOwn || !buyable || busy || Boolean(shut)}
+              onBuy={(ids) => gate(() => buy(ids), 'Sign in to buy these.')()} />
+          )}
+          {picking && photos[0] && (
+            <PiecePicker src={photos[0]} pieces={pieces} initial={picking.initial} busy={busy}
+              advancePercent={listing.advancePercent} shippingMinor={listing.shippingMinor}
+              onClose={() => setPicking(null)} onCheckout={(ids, to) => void buyPieces(ids, to)} cartLabel="Add to cart" />
+          )}
 
           <div className="detail__section rise" style={{ marginTop: 18, ['--i' as string]: 1 }}>
             <h1 className="lp__title">{listing.title}</h1>
@@ -521,14 +559,17 @@ export function ListingPage() {
                   <span className="dtile__label">Posted by</span>
                   {/* The shop's name is its address: tapping it opens its page. */}
                   <span className="sellercard__nameline">
-                    <PersonLink party={{ name: seller.storefrontName, handle: seller.username, level: seller.level }} className="sellercard__name" />
+                    <PersonLink party={{ name: seller.storefrontName, handle: seller.username, level: seller.level }} className="sellercard__name" levelFrom={3} after={<SellerTick tier={seller.tier} size={18} />} />
                     {seller.pro && <ProBadge size="md" />}
                   </span>
                   <span className="sellercard__where"><Svg name="pin" size={13} /> {seller.dispatchRegion ?? 'Location not set'}</span>
                 </div>
-                <span className="sellercard__tier" title={TIER_NOTES[seller.tier] ?? 'Verification level'}>
-                  <Svg name="shield" size={13} /> {seller.tier}
-                </span>
+                {/* A checked shop wears the blue tick beside its name; one that is not says so here. */}
+                {seller.tier === 'unverified' && (
+                  <span className="sellercard__tier" title={TIER_NOTES.unverified}>
+                    <Svg name="shield" size={13} /> Not verified
+                  </span>
+                )}
               </div>
               </div>
 
@@ -550,33 +591,55 @@ export function ListingPage() {
                 </div>
               )}
               <dl className="sellercard__stats">
-                <div className={`sellercard__stat sellercard__stat--${seller.trustScore >= 80 ? 'ok' : seller.trustScore >= 50 ? 'warn' : 'low'}`}>
-                  <dt><Svg name="star" size={13} /> Trust</dt>
-                  <dd>{seller.trustScore}<small>/100</small></dd>
-                  <dd className="sellercard__note">From buyer reviews</dd>
-                </div>
+                {/* A score with no completed order behind it is the formula's
+                    starting point, not anything buyers said: say so instead. */}
+                {seller.rated === false ? (
+                  <div className="sellercard__stat">
+                    <dt><Svg name="star" size={13} /> Trust</dt>
+                    <dd>Not rated yet</dd>
+                    <dd className="sellercard__note">Rated once buyers complete orders</dd>
+                  </div>
+                ) : (
+                  <div className={`sellercard__stat sellercard__stat--${seller.trustScore >= 80 ? 'ok' : seller.trustScore >= 50 ? 'warn' : 'low'}`}>
+                    <dt><Svg name="star" size={13} /> Trust</dt>
+                    <dd>{seller.trustScore}<small>/100</small></dd>
+                    <dd className="sellercard__note">From buyer reviews</dd>
+                  </div>
+                )}
                 <div className="sellercard__stat">
                   <dt><Svg name="users" size={13} /> Followers</dt>
                   <dd>{seller.followerCount}</dd>
                   <dd className="sellercard__note">Get their new drops</dd>
                 </div>
-                {/* How many a shop has sold is never shown: how fast it answers is. */}
-                <div className={`sellercard__stat${seller.confirmHours == null ? '' : seller.confirmHours <= 12 ? ' sellercard__stat--ok' : seller.confirmHours <= 48 ? ' sellercard__stat--warn' : ' sellercard__stat--low'}`}>
-                  <dt><Svg name="bolt" size={13} /> Confirms in</dt>
-                  <dd>{seller.confirmHours == null ? 'New' : confirmLabel(seller.confirmHours)}</dd>
-                  <dd className="sellercard__note">Typical time to accept an order or payment</dd>
-                </div>
-                <div className={`sellercard__stat${seller.onTimeDispatchRate == null ? '' : seller.onTimeDispatchRate >= 0.9 ? ' sellercard__stat--ok' : seller.onTimeDispatchRate >= 0.7 ? ' sellercard__stat--warn' : ' sellercard__stat--low'}`}>
-                  <dt><Svg name="clock" size={13} /> On time</dt>
-                  <dd>{seller.onTimeDispatchRate == null ? 'New' : <>{Math.round(seller.onTimeDispatchRate * 100)}<small>%</small></>}</dd>
-                  <dd className="sellercard__note">
-                    {seller.onTimeDispatchRate == null ? 'Shown once enough orders arrive' : 'Arrived within the promised days'}
-                  </dd>
-                </div>
-                <div className="sellercard__stat">
-                  <dt><Svg name="reply" size={13} /> Repeat buyers</dt>
-                  <dd>{seller.repeatCustomerRate == null ? '—' : <>{Math.round(seller.repeatCustomerRate * 100)}<small>%</small></>}</dd>
-                  <dd className="sellercard__note">Bought here again</dd>
+                {/* How many a shop has sold is never shown: how fast it answers is.
+                    A stat with nothing behind it yet is left out rather than shown
+                    as "New" or a dash: a row of blanks reads as a shop with nothing to show. */}
+                {seller.confirmHours != null && (
+                  <div className={`sellercard__stat${seller.confirmHours <= 12 ? ' sellercard__stat--ok' : seller.confirmHours <= 48 ? ' sellercard__stat--warn' : ' sellercard__stat--low'}`}>
+                    <dt><Svg name="bolt" size={13} /> Confirms in</dt>
+                    <dd>{confirmLabel(seller.confirmHours)}</dd>
+                    <dd className="sellercard__note">Typical time to accept an order or payment</dd>
+                  </div>
+                )}
+                {seller.onTimeDispatchRate != null && (
+                  <div className={`sellercard__stat${seller.onTimeDispatchRate >= 0.9 ? ' sellercard__stat--ok' : seller.onTimeDispatchRate >= 0.7 ? ' sellercard__stat--warn' : ' sellercard__stat--low'}`}>
+                    <dt><Svg name="clock" size={13} /> On time</dt>
+                    <dd>{Math.round(seller.onTimeDispatchRate * 100)}<small>%</small></dd>
+                    <dd className="sellercard__note">Arrived within the promised days</dd>
+                  </div>
+                )}
+                {seller.repeatCustomerRate != null && (
+                  <div className="sellercard__stat">
+                    <dt><Svg name="reply" size={13} /> Repeat buyers</dt>
+                    <dd>{Math.round(seller.repeatCustomerRate * 100)}<small>%</small></dd>
+                    <dd className="sellercard__note">Bought here again</dd>
+                  </div>
+                )}
+                {/* Always there, so the card never runs short: what has been checked about this shop. */}
+                <div className={`sellercard__stat${seller.tier === 'unverified' ? '' : ' sellercard__stat--ok'}`}>
+                  <dt><Svg name="shield" size={13} /> Verification</dt>
+                  <dd>{seller.tier === 'pro' ? 'Business' : seller.tier === 'verified' ? 'Verified' : 'Not yet'}</dd>
+                  <dd className="sellercard__note">{TIER_NOTES[seller.tier] ?? 'Verification level'}</dd>
                 </div>
                 <div className="sellercard__stat">
                   <dt><Svg name="calendar" size={13} /> Here since</dt>
@@ -584,6 +647,9 @@ export function ListingPage() {
                   <dd className="sellercard__note">On Figmark</dd>
                 </div>
               </dl>
+              {(seller.confirmHours == null || seller.onTimeDispatchRate == null) && (
+                <p className="sellercard__pending">Reply speed and on-time delivery show here once the shop has enough orders.</p>
+              )}
 
             </div>
           )}

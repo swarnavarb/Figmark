@@ -1,3 +1,4 @@
+import { takePieces } from '../../../shared/pieces.js';
 import { isPersonFollow, personFollowId } from '../../../shared/storefront.js';
 import type { CustomQuote, ServiceRequest, ServiceWorkDoc } from '../../../shared/service-work.js';
 import { AWAITING_LOT_ID } from '../../../shared/fulfilment.js';
@@ -2360,6 +2361,15 @@ export class CosmosRepository implements Repository {
     const listing = await this.getListing(order.listingId);
     if (!listing) return false;
     const taken = await this.mutateListing(listing.id, listing.sellerId, (current) => {
+      // Pieces from one photo: every one ticked, or none of them.
+      if (order.pieces?.length) {
+        const next = takePieces(current, order, new Date().toISOString());
+        return next && {
+          ...next,
+          soldCount: (current.soldCount ?? 0) + (order.bookingOnly ? 0 : order.pieces.length),
+          updatedAt: new Date().toISOString(),
+        };
+      }
       // A "multiple" item has no count to run down, so it never sells out.
       const counted = current.quantityMode !== 'multiple';
       if (counted && current.quantityAvailable < order.quantity) return null;

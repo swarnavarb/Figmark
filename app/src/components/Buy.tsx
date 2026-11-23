@@ -23,6 +23,8 @@ import { useToast } from './Feedback';
 import '../styles/Buy.css';
 import type { DayRange } from '@shared/step-days';
 import type { Sourcing } from '@shared/enums';
+import { isPieceSold } from '@shared/pieces';
+import { PieceList, groupProblems, type DraftPiece } from './PieceEditor';
 
 /**
  * The small, loud pieces the Buy, Sell and Purchases screens share: stock and
@@ -577,6 +579,13 @@ export function EditListingDialog({ listing, onClose, onSaved }: {
   const [error, setError] = useState<string | null>(null);
   const toast = useToast();
   const expired = isExpired(listing);
+  /* Several things from one photo: each piece sold individually, or what a
+     set holds. Edited here like in the sell form; sold pieces stay as they sold. */
+  const pieceMode: 'each' | 'set' | null = listing.pieces?.length ? 'each' : listing.setItems?.length ? 'set' : null;
+  const [items, setItems] = useState<DraftPiece[]>(() => (listing.pieces?.length ? listing.pieces : listing.setItems ?? []).map((piece) => ({
+    key: piece.id, id: piece.id, title: piece.title, price: String(piece.priceMinor / 100), boxes: piece.boxes, sold: isPieceSold(piece),
+  })));
+  const leadUrl = (listing.photos.find((photo) => photo.isPrimary) ?? listing.photos[0])?.url ?? null;
   const privateDeal = Boolean(listing.privateFor);
   /** A private deal's new clock; null keeps the one it has, unless that ran out. */
   const [dealHours, setDealHours] = useState<number | null>(privateDeal && expired ? DEAL_DEFAULT_HOURS : null);
@@ -598,8 +607,14 @@ export function EditListingDialog({ listing, onClose, onSaved }: {
     event.preventDefault();
     const problem = termsProblem(terms);
     if (problem) { setError(problem); return; }
+    if (pieceMode) {
+      const issue = groupProblems({ mode: pieceMode === 'each' ? 'pieces' : 'lot', pieces: items, setPrice: price, confirmed: true, photoUrl: null, reading: false, found: 0 });
+      if (issue.length) { setError(`Still needs ${issue.join(', ')}.`); return; }
+    }
     void run(async () => (await api.editListing(listing.id, {
-      title: title.trim(), priceMinor: Math.round(Number(price) * 100), photos, ...termsBody(terms),
+      title: title.trim(), ...(pieceMode === 'each' ? {} : { priceMinor: Math.round(Number(price) * 100) }), photos, ...termsBody(terms),
+      ...(pieceMode === 'each' ? { pieces: items.map((piece) => ({ ...(piece.id ? { id: piece.id } : {}), title: piece.title.trim(), priceMinor: Math.round(Number(piece.price) * 100), boxes: piece.boxes })) } : {}),
+      ...(pieceMode === 'set' ? { setItems: items.map((piece) => ({ title: piece.title.trim(), boxes: piece.boxes })) } : {}),
       // Sales made while this was open have already taken their units; only the change here is applied.
       quantityWas: listing.quantityAvailable,
       // A deal keeps its clock unless a new one was picked.
@@ -625,12 +640,21 @@ export function EditListingDialog({ listing, onClose, onSaved }: {
             <span>Title</span>
             <input value={title} onChange={(e) => setTitle(e.target.value)} required />
           </label>
-          <label className="field">
-            <span>Price (₹)</span>
-            <input type="number" inputMode="decimal" min="1" value={price} onChange={(e) => setPrice(e.target.value)} required />
-          </label>
+          {pieceMode !== 'each' && (
+            <label className="field">
+              <span>{pieceMode === 'set' ? 'Price for the whole set (₹)' : 'Price (₹)'}</span>
+              <input type="number" inputMode="decimal" min="1" value={price} onChange={(e) => setPrice(e.target.value)} required />
+            </label>
+          )}
           <PhotoManager photos={photos} onChange={setPhotos} />
         </LBox>
+        {pieceMode && leadUrl && (
+          <LBox icon={pieceMode === 'each' ? '🏷️' : '📦'} title={pieceMode === 'each' ? 'Items in this photo' : 'What the set holds'}
+            hint={pieceMode === 'each' ? 'Rename, reprice, add or take off items. Sold items stay as they sold.' : 'The set price is shared out over these items.'}>
+            <PieceList photoUrl={leadUrl} mode={pieceMode} pieces={items} onPieces={(update) => setItems(update)}
+              setPriceMinor={Math.round(Number(price) * 100)} />
+          </LBox>
+        )}
         <TermsFields value={terms} onChange={setTerms} preOrder={Boolean(listing.preOrder)} privateDeal={privateDeal}
           priceMinor={Math.round(Number(price) * 100)} />
         {privateDeal && <DealClock hours={dealHours} onChange={setDealHours} endsAt={listing.expiresAt} />}

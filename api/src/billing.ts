@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { storeCreditLeft } from '../../shared/play.js';
 import {
-  DEFAULT_PRICING, PRO_FEATURES, buildStatement, reconcileFeeBook, cleanPricing, feeTermsFor, gstFor, gstSplit, platformFee, proLocked,
+  DEFAULT_PRICING, PRO_FEATURES, buildStatement, reconcileFeeBook, cleanPricing, feeTermsFor, gstFor, gstSplit, platformFee, proLocked, saleFee,
   type FeeBookEntry, type FeeKind, type ProFeatureId, type FeeLine, type FeeSettlement, type FeeStatement, type FeeTerms, type Pricing,
 } from '../../shared/billing.js';
 import type { Order, User } from '../../shared/models.js';
@@ -135,13 +135,23 @@ export function orderFeeLine(order: Order): FeeLine | null {
   const money = orderMoney(order);
   if (money.paidMinor <= 0) return null;
   const basis = order.quantity * order.unitPriceMinor;
-  const fee = platformFee(order.feeTerms, { amountMinor: basis });
+  // Several things sold at once pay as if each were sold alone: the pieces
+  // ticked from one photo, or every item in a lot sold together.
+  const fee = saleFee(order.feeTerms, {
+    amountMinor: basis,
+    pieces: order.pieces ?? null,
+    units: order.feeUnits ? order.feeUnits * order.quantity : null,
+  });
   if (fee.totalMinor <= 0) return null;
   const firstPaid = (order.payments ?? []).filter((payment) => payment.kind !== 'refund').map((payment) => payment.at).sort()[0];
   return {
     id: `o:${order.id}`,
     kind: 'shop',
-    label: order.quantity > 1 ? `${order.itemName} ×${order.quantity}` : order.itemName,
+    label: order.pieces?.length
+      ? `${order.itemName} · ${order.pieces.length} pieces`
+      : order.feeUnits && order.feeUnits > 1
+        ? `${order.itemName} · lot of ${order.feeUnits}${order.quantity > 1 ? ` ×${order.quantity}` : ''}`
+        : order.quantity > 1 ? `${order.itemName} ×${order.quantity}` : order.itemName,
     link: `/order/${order.id}`,
     at: firstPaid ?? order.placedAt ?? order.createdAt,
     basisMinor: basis,
