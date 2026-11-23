@@ -15,10 +15,10 @@ import type { FoundThing } from './photoThings';
  */
 
 const PUTER_SCRIPT = 'https://js.puter.com/v2/';
-/** The models tried first, best at placing boxes first; otherwise Puter's own default. */
-const PREFERRED_MODELS = ['gemini-3.5-flash', 'gemini-3-flash', 'gemini-2.5-flash', 'gpt-5.4', 'gpt-5.4-mini', 'claude-sonnet-4-6'];
 /** The photo is sent no larger than this across: enough to see a figure, small enough to send quickly. */
 const SEND_EDGE = 1600;
+/** Asked for by name when Puter's list could not be read: models that answer with boxes. */
+const FALLBACK_MODELS = ['gemini-2.5-flash', 'google/gemini-2.5-flash'];
 const MAX_ITEMS = 60;
 
 interface PuterChatResponse { message?: { content?: unknown } }
@@ -58,17 +58,41 @@ export function warmPuter(): void {
 
 let chosenModel: Promise<string | undefined> | null = null;
 
-/** The best model Puter offers for this, or none to take Puter's default. */
+/**
+ * How good a model is likely to be at placing boxes, by its name; 0 for one
+ * that cannot be asked. Gemini is trained to answer with boxes (box_2d, the
+ * form asked for here), Qwen-VL too; the small default models guess.
+ */
+export function boxSkill(name: string): number {
+  const id = name.toLowerCase();
+  if (/image|tts|audio|speech|transcribe|embed|video|live|omni|ocr|veo|imagen|banana|realtime|search/.test(id)) return 0;
+  const version = Number(/(\d+(?:\.\d+)?)/.exec(id)?.[1] ?? 0);
+  const size = /pro/.test(id) ? 6 : /flash/.test(id) && !/lite/.test(id) ? 5 : /lite|nano|mini|small|haiku/.test(id) ? 1 : 3;
+  if (id.includes('gemini')) return 300 + version * 10 + size;
+  if (id.includes('qwen') && /vl|omni/.test(id)) return 200 + version * 10 + size;
+  if (id.includes('claude')) return 120 + version * 5 + size;
+  if (/gpt-5|gpt-4\.1|gpt-4o|o3|o4/.test(id)) return 100 + version * 5 + size;
+  return 0;
+}
+
+/** The model best at placing boxes that Puter offers, or none to take Puter's default. */
 function modelFor(puter: Puter): Promise<string | undefined> {
   chosenModel ??= (async () => {
     try {
       const models = await puter.ai.listModels?.() ?? [];
-      const names = new Set(models.flatMap((model) => [model['id'], model['name'], model['model']]).filter((name): name is string => typeof name === 'string'));
-      return PREFERRED_MODELS.find((name) => names.has(name));
+      const names = models.flatMap((model) => [model['id'], model['name'], model['model'], ...(Array.isArray(model['aliases']) ? model['aliases'] : [])])
+        .filter((name): name is string => typeof name === 'string' && name.length > 0);
+      let best: string | undefined; let bestSkill = 0;
+      for (const name of names) {
+        const skill = boxSkill(name);
+        if (skill > bestSkill) { best = name; bestSkill = skill; }
+      }
+      return best;
     } catch {
       return undefined;
     }
   })();
+  chosenModel.then((model) => { if (!model) chosenModel = null; }).catch(() => { chosenModel = null; });
   return chosenModel;
 }
 
@@ -133,7 +157,7 @@ export function parseItems(text: string): FoundThing[] {
  * own Puter account. Call it straight from a tap: the first time, it opens
  * Puter's sign-in window. Rejects with a message to show when it cannot.
  */
-export async function scanWithAI(photoUrl: string): Promise<FoundThing[]> {
+export async function scanWithAI(photoUrl: string): Promise<{ things: FoundThing[]; model: string | null }> {
   const puter = await loadPuter();
   if (!puter.auth.isSignedIn()) {
     try {
@@ -143,14 +167,28 @@ export async function scanWithAI(photoUrl: string): Promise<FoundThing[]> {
     }
   }
   const [image, model] = await Promise.all([photoToSend(photoUrl), modelFor(puter)]);
-  let response: PuterChatResponse;
-  try {
-    response = await puter.ai.chat(PROMPT, image, { ...(model ? { model } : {}), normalize: true, temperature: 0, max_tokens: 6000 });
-  } catch (error) {
-    const message = (error as { message?: string; error?: { message?: string } })?.error?.message ?? (error as { message?: string })?.message;
+  // The best model Puter listed; failing that, a Gemini model asked for by name, then Puter's own default.
+  const tries = [...new Set([model, ...FALLBACK_MODELS, undefined])];
+  let response: PuterChatResponse | null = null;
+  let used: string | null = null;
+  let failure: unknown = null;
+  for (const name of tries) {
+    try {
+      response = await puter.ai.chat(PROMPT, image, { ...(name ? { model: name } : {}), normalize: true, temperature: 0, max_tokens: 6000 });
+      used = name ?? null;
+      break;
+    } catch (error) {
+      failure = error;
+      // Signed out on Puter's side, or out of credit: another model will not help.
+      const code = (error as { code?: string; error?: { code?: string } })?.error?.code ?? (error as { code?: string })?.code ?? '';
+      if (/auth|token|credit|funds|limit|quota/i.test(code)) break;
+    }
+  }
+  if (!response) {
+    const message = (failure as { message?: string; error?: { message?: string } })?.error?.message ?? (failure as { message?: string })?.message;
     throw new Error(message ? `AI scan failed: ${message}` : 'AI scan failed. Try again in a moment.');
   }
   const items = parseItems(textOf(response));
   if (items.length === 0) throw new Error('The AI found nothing it could box in this photo.');
-  return items;
+  return { things: items, model: used };
 }

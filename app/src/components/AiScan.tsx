@@ -15,7 +15,7 @@ export function AiScan({ photoUrl, onFound, hint }: {
   /** What to say beside the button, or the default. */
   hint?: string;
 }) {
-  const [state, setState] = useState<{ photoUrl: string; busy: boolean; note: string | null; done: number | null }>({ photoUrl, busy: false, note: null, done: null });
+  const [state, setState] = useState<{ photoUrl: string; busy: boolean; note: string | null; done: number | null; model?: string | null }>({ photoUrl, busy: false, note: null, done: null });
   const now = state.photoUrl === photoUrl ? state : { photoUrl, busy: false, note: null, done: null };
 
   // Puter's script is fetched before the tap, so the tap opens its sign-in window straight away.
@@ -30,9 +30,9 @@ export function AiScan({ photoUrl, onFound, hint }: {
     setState({ photoUrl, busy: true, note: null, done: null });
     void import('../puterVision')
       .then((module) => module.scanWithAI(photoUrl))
-      .then((things) => {
+      .then(({ things, model }) => {
         onFound(things);
-        setState({ photoUrl, busy: false, note: null, done: things.length });
+        setState({ photoUrl, busy: false, note: null, done: things.length, model });
       })
       .catch((error: Error) => setState({ photoUrl, busy: false, note: error.message, done: null }));
   };
@@ -45,7 +45,7 @@ export function AiScan({ photoUrl, onFound, hint }: {
       <span className="aiscan__hint">
         {now.note
           ?? (now.done != null
-            ? `The AI found ${now.done} ${now.done === 1 ? 'item' : 'items'}.`
+            ? `The AI${now.model ? ` (${now.model})` : ''} found ${now.done} ${now.done === 1 ? 'item' : 'items'}.`
             : hint ?? 'Missed some? A closer look by AI, free with a Puter account.')}
       </span>
     </div>
