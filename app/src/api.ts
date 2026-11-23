@@ -1,4 +1,5 @@
 import type { CoachPlan, CoachSignals } from '@shared/coach';
+import type { OwnResults } from '@shared/coach-log';
 import type { PhotoAnalysis } from '@shared/photo-scan';
 import type { PayoutSummary } from '@shared/payouts';
 import type { DnaLinkKind, DnaSummary, DnaView } from '@shared/dna';
@@ -3527,7 +3528,10 @@ export const api = {
   routeWords: () => request<RouteWords>('/route-words'),
   /** The shop coach: what to do next and when, with the counts it read. */
   coach: (storeId?: string) =>
-    request<{ signals: CoachSignals; plan: CoachPlan }>(`/me/coach${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
+    request<{ signals: CoachSignals; plan: CoachPlan; results: OwnResults | null }>(`/me/coach${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
+  /** Which coach tips were on screen, or pressed: how the coach learns which ones help. */
+  coachEvents: (storeId: string, body: { seen?: string[]; pressed?: string }) =>
+    post<{ ok: true; recorded: number }>(`/me/coach/events?store=${encodeURIComponent(storeId)}`, body),
   /** The Sell tab's cards and what is waiting on the shop, in one read. */
   sellDashboard: (storeId?: string) =>
     request<SellDashboard>(`/me/sell/dashboard${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),

@@ -28,6 +28,7 @@ export const USER_PARTS = {
   profit: ['profitTemplates', 'savedCalcs'],
   feed: ['feedPrefs'],
   rewards: ['storeCredits', 'badges', 'helpfulAnswers'],
+  coach: ['coachLog'],
 } as const satisfies Record<string, readonly (keyof User)[]>;
 
 export type UserPartName = keyof typeof USER_PARTS;

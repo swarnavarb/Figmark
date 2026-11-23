@@ -200,3 +200,21 @@
 @media (prefers-reduced-motion: reduce) {
   .shopcoach__meter span, .shopcoach__typing i { transition: none; animation: none; }
 }
+
+/* The shop's own results: what followed each tip. */
+.shopcoach__results { display: grid; gap: var(--s2); padding-top: var(--s3); border-top: 1px solid var(--border); }
+.shopcoach__results h3 { margin: 0; font-size: var(--t-base); }
+.shopcoach__results h3 span { color: var(--text-faint); font-size: var(--t-xs); font-weight: var(--w-normal); }
+.shopcoach__outcomes { display: grid; gap: var(--s2); margin: 0; padding: 0; list-style: none; }
+.shopcoach__outcomes li { display: flex; align-items: flex-start; gap: var(--s3); }
+.shopcoach__badge {
+  flex: none;
+  min-width: 58px;
+  padding: 2px var(--s2);
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  color: var(--text-faint);
+  font-size: var(--t-2xs);
+  text-align: center;
+}
+.shopcoach__badge.is-acted { background: var(--ok-soft); color: var(--ok); }

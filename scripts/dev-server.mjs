@@ -104,7 +104,7 @@ const {
 } = await import(new URL('power-sale-routes.js', apiRoot));
 const { fillingLotsRoute, dropsRoute, dropRoute, remindRoute } = await import(new URL('showcase-routes.js', apiRoot));
 const { insightsRoute, interestRoute, marketRoute } = await import(new URL('insight-routes.js', apiRoot));
-const { coachRoute } = await import(new URL('coach-routes.js', apiRoot));
+const { coachRoute, coachEventsRoute, opsCoachRoute } = await import(new URL('coach-routes.js', apiRoot));
 const {
   searchShopsRoute, shopsByTagRoute, similarShopsRoute, shopsForYouRoute, shopTagsRoute, tagInsightsRoute,
 } = await import(new URL('shop-tag-routes.js', apiRoot));
@@ -494,6 +494,8 @@ const routes = [
   ['POST', '/api/wants/:id/me', wantAlsoMeRoute],
   ['GET', '/api/me/insights', insightsRoute],
   ['GET', '/api/me/coach', coachRoute],
+  ['POST', '/api/me/coach/events', coachEventsRoute],
+  ['GET', '/api/ops/coach', opsCoachRoute],
   ['GET', '/api/me/interest', interestRoute],
   ['GET', '/api/me/market', marketRoute],
   ['GET', '/api/shops/search', searchShopsRoute],

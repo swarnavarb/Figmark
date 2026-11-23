@@ -8,6 +8,10 @@ import { can } from '../../../shared/stores.js';
 import { isProActive } from '../../../shared/billing.js';
 import { dayKey, viewsBetween } from '../../../shared/seller-data.js';
 import { coachPlan, orderTiming, type CoachItem, type CoachSignals } from '../../../shared/coach.js';
+import {
+  COACH_STATS_ID, addToStats, emptyCoachLog, notePressed, noteSeen, ownResults, settle, statsView, tidyCoachLog,
+  type CoachLog, type CoachStats, type Measure,
+} from '../../../shared/coach-log.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import { error, handler, json } from './http.js';
@@ -30,19 +34,20 @@ const UNSEEN_AGE_DAYS = 7;
 const THIN_DESCRIPTION = 60;
 const THIN_PHOTOS = 3;
 
-async function coach(request: HttpRequest, _context: InvocationContext) {
+/** The shop's signals and plan, and what the log needs to measure outcomes - or the refusal. */
+async function buildCoach(request: HttpRequest) {
   const auth = await getAuthService();
   const user = await auth.requireAuth(request);
   const repository = await getRepository();
   const storeId = request.query.get('store') ?? user.id;
 
   const owner = await repository.getUserById(storeId);
-  if (!owner?.sellerProfile) return error(404, 'not_found', 'No such store.');
+  if (!owner?.sellerProfile) return { refusal: error(404, 'not_found', 'No such store.') } as const;
   const may = (permission: StorePermission) => storeId === user.id || can(owner, user.id, permission);
   const seesOrders = may('admin');
   const seesMoney = may('analytics');
   if (!may('listings') && !seesOrders && !seesMoney) {
-    return error(403, 'forbidden', 'You cannot see that store’s work.');
+    return { refusal: error(403, 'forbidden', 'You cannot see that store’s work.') } as const;
   }
 
   const [all, figures, drafts, posts] = await Promise.all([
@@ -168,7 +173,108 @@ async function coach(request: HttpRequest, _context: InvocationContext) {
     timing: orderTiming(sold.map((order) => order.placedAt ?? order.createdAt).filter((at) => at >= quarterAgo)),
   };
 
-  return json(200, { signals, plan: coachPlan(signals) });
+  /* What an episode's week did, from the shop's own timestamped rows. */
+  const soldAt = sold.map((order) => ({ at: Date.parse(order.placedAt ?? order.createdAt), listingId: order.listingId, quantity: order.quantity }));
+  const byId = new Map(all.map((listing) => [listing.id, listing]));
+  const measure: Measure = (episode, from, to) => {
+    const inWindow = soldAt.filter((order) => order.at >= from && order.at < to);
+    const listing = episode.itemId ? byId.get(episode.itemId) : undefined;
+    return {
+      sales: inWindow.length,
+      itemViews: listing ? viewsBetween(listing.viewLog, dayKey(from), dayKey(to - 1)) : null,
+      itemSold: listing ? inWindow.filter((order) => order.listingId === listing.id).reduce((sum, order) => sum + order.quantity, 0) : null,
+    };
+  };
+
+  return { ok: true, repository, owner, signals, plan: coachPlan(signals), measure, seesOrders, nowDate } as const;
+}
+
+type Built = Extract<Awaited<ReturnType<typeof buildCoach>>, { ok: true }>;
+
+/**
+ * Settles every episode whose week is over, adds them to the staff totals
+ * (sums only), and saves the shop's log when anything changed. A failure
+ * here never costs the seller their coach: the log is a record, not the
+ * screen.
+ */
+async function saveLog(built: Built, log: CoachLog, changed: boolean): Promise<CoachLog> {
+  const { repository, owner, measure, nowDate } = built;
+  const { log: settledLog, settled } = settle(log, nowDate, measure);
+  let next = settledLog;
+  if (settled.length > 0) {
+    let counted = next;
+    await repository.mutateSiteContent(COACH_STATS_ID, (current) => {
+      const added = addToStats((current?.data as CoachStats | undefined) ?? null, settled, next, nowDate);
+      counted = added.log;
+      const at = nowDate.toISOString();
+      return { id: COACH_STATS_ID, data: added.stats, updatedBy: null, createdAt: current?.createdAt ?? at, updatedAt: at };
+    });
+    next = counted;
+  }
+  if (!changed && settled.length === 0) return next;
+  owner.coachLog = tidyCoachLog(next, nowDate);
+  await repository.updateUser(owner);
+  return owner.coachLog;
+}
+
+/** The shop's own results, for those who may see its order book. */
+function resultsFor(built: Built, log: CoachLog) {
+  return built.seesOrders ? ownResults(log, built.nowDate) : null;
+}
+
+async function coach(request: HttpRequest, _context: InvocationContext) {
+  const built = await buildCoach(request);
+  if (built.refusal) return built.refusal;
+  const log = await saveLog(built, built.owner.coachLog ?? emptyCoachLog(), false)
+    .catch(() => built.owner.coachLog ?? emptyCoachLog());
+  return json(200, { signals: built.signals, plan: built.plan, results: resultsFor(built, log) });
+}
+
+/**
+ * POST /api/me/coach/events - `{ seen: [tipId...] }` when tips were on the
+ * screen, `{ pressed: tipId }` when somebody pressed one.
+ *
+ * Only tips the coach would show this shop right now are taken, so the log
+ * (and the staff totals behind it) cannot be filled with made-up ones.
+ */
+async function events(request: HttpRequest, _context: InvocationContext) {
+  let body: { seen?: unknown; pressed?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  const built = await buildCoach(request);
+  if (built.refusal) return built.refusal;
+  const current = new Map(built.plan.tips.map((tip) => [tip.id, tip]));
+  const seen = (Array.isArray(body.seen) ? body.seen : []).filter((id): id is string => typeof id === 'string')
+    .slice(0, 40).map((id) => current.get(id)).filter((tip) => tip !== undefined);
+  const pressed = typeof body.pressed === 'string' ? current.get(body.pressed) : undefined;
+  if (seen.length === 0 && !pressed) return json(200, { ok: true, recorded: 0 });
+
+  let log = built.owner.coachLog ?? emptyCoachLog();
+  let changed = false;
+  if (seen.length > 0) ({ log, changed } = noteSeen(log, seen, built.nowDate));
+  if (pressed) {
+    const result = notePressed(log, pressed, built.nowDate);
+    log = result.log;
+    changed = changed || result.changed;
+  }
+  await saveLog(built, log, changed);
+  return json(200, { ok: true, recorded: seen.length + (pressed ? 1 : 0) });
+}
+
+/**
+ * GET /api/ops/coach - how each kind of tip is doing across every shop, for
+ * staff. Totals only, rounded, and a kind of tip is withheld until enough
+ * shops stand behind it that no one shop can be read out of it.
+ */
+async function opsCoach(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  await auth.requireCapability(request, ['admin']);
+  const repository = await getRepository();
+  const saved = await repository.getSiteContent(COACH_STATS_ID);
+  return json(200, statsView((saved?.data as CoachStats | undefined) ?? null));
 }
 
 /** Delivered, or called off for good: nothing left for the seller to do on it. */
@@ -178,10 +284,26 @@ function isDone(order: { status: string; checkpoints?: { delivered?: string | nu
 }
 
 export const coachRoute = handler(coach);
+export const coachEventsRoute = handler(events);
+export const opsCoachRoute = handler(opsCoach);
 
 app.http('me-coach', {
   authLevel: 'anonymous',
   methods: ['GET'],
   route: 'me/coach',
   handler: coachRoute,
+});
+
+app.http('me-coach-events', {
+  authLevel: 'anonymous',
+  methods: ['POST'],
+  route: 'me/coach/events',
+  handler: coachEventsRoute,
+});
+
+app.http('ops-coach', {
+  authLevel: 'anonymous',
+  methods: ['GET'],
+  route: 'ops/coach',
+  handler: opsCoachRoute,
 });

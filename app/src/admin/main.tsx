@@ -9,6 +9,7 @@ import { ApprovalsView } from './ApprovalsView';
 import { PaymentsView } from './PaymentsView';
 import { AuditView } from './AuditView';
 import { LearnView } from './LearnView';
+import { CoachView } from './CoachView';
 import { ReportsView } from './ReportsView';
 import { SettingsView } from './SettingsView';
 import { PricingView } from './PricingView';
@@ -197,6 +198,7 @@ function Console() {
           : tab === 'payments' ? <PaymentsView />
           : tab === 'reports' ? <ReportsView />
           : tab === 'devices' ? <DevicesView />
+          : tab === 'coach' ? <CoachView />
           : tab === 'photos' ? <PhotosView />
           : tab === 'routes' ? <RoutesView />
           : tab === 'challenge' ? <ChallengeView />
