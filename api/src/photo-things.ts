@@ -1,5 +1,5 @@
 import type { RegionBox } from '../../shared/models.js';
-import { MAX_THINGS, backdropBlobs, combineThings, sameness, shrinkPixels, viewsLineup, type Thing } from '../../shared/photo-things.js';
+import { MAX_THINGS, backdropBlobs, combineThings, focusOf, inFocus, oneSubject, sameness, shrinkPixels, viewsLineup, type Thing } from '../../shared/photo-things.js';
 import { detectItems, isolatedFingerprints, likeness, regionFingerprint } from './image-hash.js';
 import type { Raw } from './storage/compress.js';
 import { describeItems, visionAvailable, type PhotoDescription } from './vision.js';
@@ -86,9 +86,11 @@ export function sameThing(raw: Raw, a: RegionBox, b: RegionBox, prints = new Map
  * thing are counted once. Used for the platform fee, so it decides from the
  * picture, never from what the seller grouped.
  */
-export function distinctCount(raw: Raw | null, boxes: readonly RegionBox[]): number {
-  // Views of one thing side by side - a product's collage - are one thing: in doubt, one fee.
-  if (viewsLineup(boxes)) return Math.min(1, boxes.length);
+export function distinctCount(raw: Raw | null, found: readonly RegionBox[]): number {
+  // The blurred background - the room, the shelf behind - is not for sale.
+  const boxes = raw ? inFocus(found, focusOf(raw.data, raw.width, raw.height, found)) : found;
+  // Views of one thing side by side - a product's collage - or one subject seen in pieces, are one thing: in doubt, one fee.
+  if (viewsLineup(boxes) || oneSubject(boxes)) return Math.min(1, boxes.length);
   if (!raw) {
     // Without the picture, only places that are plainly the same place merge.
     const kept: RegionBox[] = [];

@@ -298,4 +298,16 @@ await check('the sell form is told what the found things make up', async () => {
   assert.ok(analysis.kinds >= Math.ceil(found.length * 0.8) && analysis.lineup === false, JSON.stringify(analysis));
 });
 
+await check('one figure the detector saw in pieces is one item; two figures side by side are two', async () => {
+  const T = await import(new URL('shared/photo-things.js', dist));
+  // A figure held up to the camera: head, jacket, legs, a glove - pieces of one thing.
+  const pieces = [[0.45, 0.29, 0.1, 0.03], [0.29, 0.34, 0.14, 0.08], [0.54, 0.35, 0.1, 0.07], [0.45, 0.39, 0.13, 0.12],
+    [0.31, 0.39, 0.14, 0.24], [0.45, 0.45, 0.15, 0.19], [0.54, 0.38, 0.06, 0.22], [0.68, 0.53, 0.07, 0.04]];
+  assert.equal(T.oneSubject(pieces), true);
+  assert.equal(T.oneSubject([[0.1, 0.2, 0.35, 0.6], [0.5, 0.2, 0.35, 0.6]]), false, 'two whole figures');
+  assert.equal(T.oneSubject(found), false, 'a shelf');
+  // What the camera did not focus on is the background.
+  assert.deepEqual(T.inFocus([[0, 0, 0.1, 0.1], [0.5, 0.5, 0.1, 0.1]], [40, 5]), [[0, 0, 0.1, 0.1]]);
+});
+
 console.log(`\n${passed} checks passed`);
