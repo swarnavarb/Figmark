@@ -1,7 +1,8 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
 import { saleFee, type FeeTerms } from '@shared/billing';
-import { MAX_PIECES, parsePriceList, photoVerdict, spreadUnits, titleHint, type PhotoAnalysis, type PhotoVerdict } from '@shared/pieces';
-import { readingOrder, sameness, viewsLineup } from '@shared/photo-things';
+import { MAX_PIECES, parsePriceList, spreadUnits } from '@shared/pieces';
+import { photoVerdict, titleHint, viewsLineup, type PhotoAnalysis, type PhotoVerdict } from '@shared/photo-scan';
+import { readingOrder, sameness } from '@shared/photo-things';
 import { mergeThings, overlayScan, type FoundThing } from '../photoThings';
 import { api, type PhotoBox } from '../api';
 import { formatMoney } from '../format';
@@ -69,6 +70,8 @@ export interface PhotoGroup {
   different?: boolean;
   /** Copies of one item, sold from stock: how many. */
   copies?: number | null;
+  /** The seller chose how this photo is sold. */
+  chosen?: boolean;
 }
 
 export const emptyGroup = (): PhotoGroup => ({
@@ -236,8 +239,7 @@ export function PhotoGroupBox({ photoUrl, group, onChange, title = '', onStock, 
           onChange((now) => {
             if (now.photoUrl !== photoUrl) return now;
             const asked = now.mode === 'pieces' || now.mode === 'lot';
-            const verdict = photoVerdict(analysis, titleHint(''));
-            return { ...now, reading: false, analysis, mode: !asked && verdict.kind === 'one' ? 'single' : now.mode };
+            return { ...now, reading: false, analysis, mode: asked ? now.mode : 'ask' };
           });
         });
     });
@@ -250,15 +252,14 @@ export function PhotoGroupBox({ photoUrl, group, onChange, title = '', onStock, 
   const hint = titleHint(title);
   const analysis: PhotoAnalysis = group.analysis
     ?? { found: Math.min(1, group.found), kinds: Math.min(1, group.found), largest: Math.min(1, group.found), lineup: false, several: false };
-  const verdict: PhotoVerdict = group.different
-    ? { kind: 'different', count: Math.max(2, analysis.kinds) }
-    : photoVerdict(analysis, hint);
+  const verdict: PhotoVerdict = photoVerdict(analysis, hint);
   const shown = verdict.kind === 'one' ? 1 : verdict.count;
   const titleNote = !group.reading && analysis.several && hint.count !== null && hint.count !== shown && analysis.found > 0
     ? <p className="pcs-note">Title says {hint.count}, photo shows {shown}.</p>
     : null;
-  const go = (next: PhotoGroup) => { haptic('tap'); onChange(next); onContinue?.(); };
-  const choosing = group.mode === 'ask' || group.mode === 'single';
+  const go = (next: PhotoGroup) => { haptic('tap'); onChange({ ...next, chosen: true }); onContinue?.(); };
+  const choosing = (group.mode === 'ask' || group.mode === 'single') && !group.chosen;
+  const change = () => onChange({ ...group, chosen: false, copies: null, mode: 'ask' });
 
   if (choosing && group.reading) {
     return <div className="pcs-read"><span className="pcs-spin" aria-hidden="true" /> Scanning your photo…</div>;
@@ -267,26 +268,20 @@ export function PhotoGroupBox({ photoUrl, group, onChange, title = '', onStock, 
     return <div className="pcs-read">Add a title to continue.</div>;
   }
 
-  if (group.mode === 'single' && group.copies) {
+  if (group.mode === 'single' && !choosing) {
     return (
       <div className="pcs-read is-done">
-        <span>✓ <b>{group.copies}</b> in stock</span>
-        <button type="button" className="pcs-link" onClick={() => onChange({ ...group, copies: null, mode: 'ask' })}>Change</button>
+        <span>✓ {group.copies ? <><b>{group.copies}</b> in stock</> : <b>One item</b>}</span>
+        <button type="button" className="pcs-link" onClick={change}>Change</button>
       </div>
     );
   }
 
-  if (choosing && verdict.kind === 'one') {
-    return (
-      <div className="pcs-pick">
-        <p className="pcs-pick__q">✓ <b>One item</b></p>
-        {titleNote}
-        <button type="button" className="btn pcs-pick__go" onClick={() => go({ ...group, different: false, copies: null, mode: 'single' })}>Continue</button>
-        <button type="button" className="pcs-link" onClick={() => onChange({ ...group, different: true, mode: 'ask' })}>It is several items</button>
-      </div>
-    );
-  }
+  const pickOne = () => go({ ...group, copies: null, mode: 'single' });
+  const pickEach = () => go(switchMode({ ...group, copies: null, mode: 'single' }, 'pieces'));
+  const pickSet = () => go(switchMode({ ...group, copies: null, mode: 'single' }, 'lot'));
 
+  // Sure of several copies of one item: from stock, or all together.
   if (choosing && verdict.kind === 'copies') {
     const n = verdict.count;
     return (
@@ -297,31 +292,38 @@ export function PhotoGroupBox({ photoUrl, group, onChange, title = '', onStock, 
           <button type="button" className="pcs-tile" onClick={() => { onStock?.(n); go({ ...group, copies: n, mode: 'single' }); }}>
             <b>{n} in stock</b><span>Buyers choose how many</span>
           </button>
-          <button type="button" className="pcs-tile" onClick={() => go(switchMode({ ...group, copies: null, mode: 'single' }, 'lot'))}>
+          <button type="button" className="pcs-tile" onClick={pickSet}>
             <b>All {n} together</b><span>One price for the lot</span>
           </button>
         </div>
-        <button type="button" className="pcs-link" onClick={() => onChange({ ...group, different: true, copies: null, mode: 'ask' })}>They are different items</button>
       </div>
     );
   }
 
+  // Sure of several different items: each on its own, or as a set.
+  if (choosing && verdict.kind === 'different') {
+    return (
+      <div className="pcs-pick">
+        <p className="pcs-pick__q"><b>{shown}</b> different items</p>
+        {titleNote}
+        <div className="pcs-pick__ways">
+          <button type="button" className="pcs-tile" onClick={pickEach}><b>Individually</b><span>A price for each</span></button>
+          <button type="button" className="pcs-tile" onClick={pickSet}><b>As a set</b><span>One price for all</span></button>
+        </div>
+      </div>
+    );
+  }
+
+  // Not sure: the seller says. One item first - what most photos are.
   if (choosing) {
     return (
       <div className="pcs-pick">
-        <p className="pcs-pick__q">{analysis.several ? <><b>{shown}</b> different items</> : 'Several items'}</p>
-        {titleNote}
-        <div className="pcs-pick__ways">
-          <button type="button" className="pcs-tile" onClick={() => go(switchMode({ ...group, mode: 'single' }, 'pieces'))}>
-            <b>Individually</b><span>A price for each</span>
-          </button>
-          <button type="button" className="pcs-tile" onClick={() => go(switchMode({ ...group, mode: 'single' }, 'lot'))}>
-            <b>As a set</b><span>One price for all</span>
-          </button>
+        <p className="pcs-pick__q">What are you selling?</p>
+        <div className="pcs-pick__ways pcs-pick__ways--3">
+          <button type="button" className="pcs-tile is-first" onClick={pickOne}><b>One item</b><span>One price</span></button>
+          <button type="button" className="pcs-tile" onClick={pickEach}><b>Several, individually</b><span>A price for each</span></button>
+          <button type="button" className="pcs-tile" onClick={pickSet}><b>Several, as a set</b><span>One price for all</span></button>
         </div>
-        {group.different && (
-          <button type="button" className="pcs-link" onClick={() => onChange({ ...group, different: false, mode: 'ask' })}>Back</button>
-        )}
       </div>
     );
   }
@@ -357,6 +359,7 @@ export function PhotoGroupBox({ photoUrl, group, onChange, title = '', onStock, 
         <button type="button" role="radio" aria-checked={setMode} className={setMode ? 'is-on' : ''}
           onClick={() => onChange((now) => switchMode(now, 'lot'))}>As a set</button>
       </div>
+      {!analysis.several && <button type="button" className="pcs-link pcs-edit__back" onClick={change}>Back</button>}
       {setMode && (
         <label className="pcs-setprice">
           <span>Set price</span>

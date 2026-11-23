@@ -1,5 +1,6 @@
 import type { RegionBox } from '../../shared/models.js';
-import { MAX_THINGS, backdropBlobs, combineThings, focusOf, inFocus, oneSubject, sameness, shrinkPixels, viewsLineup, type Thing } from '../../shared/photo-things.js';
+import { MAX_THINGS, backdropBlobs, combineThings, sameness, shrinkPixels, type Thing } from '../../shared/photo-things.js';
+import { focusOf, inFocus, oneSubject, viewsLineup } from '../../shared/photo-scan.js';
 import { detectItems, isolatedFingerprints, likeness, regionFingerprint } from './image-hash.js';
 import type { Raw } from './storage/compress.js';
 import { describeItems, visionAvailable, type PhotoDescription } from './vision.js';
