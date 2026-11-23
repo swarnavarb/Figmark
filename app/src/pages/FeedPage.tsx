@@ -599,7 +599,7 @@ export function FeedPage() {
       {photo && (
         <>
         <PhotoFocus photo={photo} items={photoItems} region={photoRegion} onPick={pickRegion} onClear={clearPhoto} busy={loading} />
-        <AiScan photoUrl={photo.original ?? photo.dataUrl} hint="Missed something? Find every item with AI, free with a Puter account."
+        <AiScan photoUrl={photo.original ?? photo.dataUrl}
           onFound={takeScan} />
         </>
       )}

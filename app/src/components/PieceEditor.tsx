@@ -165,7 +165,7 @@ function switchMode(group: PhotoGroup, mode: 'pieces' | 'lot'): PhotoGroup {
  * Reads the lead photo when it changes, asks how its things are sold, and
  * lists them either way.
  */
-export function PhotoGroupBox({ photoUrl, group, onChange, title = '', onStock }: {
+export function PhotoGroupBox({ photoUrl, group, onChange, title = '', onStock, onContinue }: {
   photoUrl: string | null;
   group: PhotoGroup;
   onChange: Dispatch<SetStateAction<PhotoGroup>>;
@@ -173,6 +173,8 @@ export function PhotoGroupBox({ photoUrl, group, onChange, title = '', onStock }
   title?: string;
   /** Copies of one item: list them as this many in stock. */
   onStock?: (count: number) => void;
+  /** A way of selling was chosen: the rest of the form can follow. */
+  onContinue?: () => void;
 }) {
   const terms = useFeeTerms();
 
@@ -246,108 +248,82 @@ export function PhotoGroupBox({ photoUrl, group, onChange, title = '', onStock }
   const verdict: PhotoVerdict = group.different
     ? { kind: 'different', count: Math.max(2, analysis.kinds) }
     : photoVerdict(analysis, hint);
-  const titleNote = !group.reading && hint.count !== null && hint.count !== (verdict.kind === 'one' ? 1 : verdict.count) && analysis.found > 0
-    ? <p className="pcs-note">Your title says {hint.count}; the photo shows {verdict.kind === 'one' ? 'one item' : `${verdict.count}`}. Mark what is missing on the photo, or fix the title.</p>
+  const shown = verdict.kind === 'one' ? 1 : verdict.count;
+  const titleNote = !group.reading && hint.count !== null && hint.count !== shown && analysis.found > 0
+    ? <p className="pcs-note">Title says {hint.count}, photo shows {shown}.</p>
     : null;
-  const sayDifferent = () => { haptic('tap'); onChange({ ...group, different: true, copies: null, mode: 'ask' }); };
-  const sayOne = () => { haptic('tap'); onChange({ ...group, different: false, copies: null, mode: 'single' }); };
+  const go = (next: PhotoGroup) => { haptic('tap'); onChange(next); onContinue?.(); };
+  const choosing = group.mode === 'ask' || group.mode === 'single';
 
-  if (group.reading && (group.mode === 'ask' || group.mode === 'single')) {
+  if (choosing && group.reading) {
+    return <div className="pcs-read"><span className="pcs-spin" aria-hidden="true" /> Scanning your photo…</div>;
+  }
+  if (choosing && title.trim().length < 3) {
+    return <div className="pcs-read">Add a title to continue.</div>;
+  }
+
+  if (group.mode === 'single' && group.copies) {
     return (
-      <div className="pcs-read">
-        <span className="pcs-spin" aria-hidden="true" />
-        <span>Reading your photo{group.pieces.length ? ` - ${group.pieces.length} found so far` : ''}… Is it one item, copies of one, or different items?</span>
+      <div className="pcs-read is-done">
+        <span>✓ <b>{group.copies}</b> in stock</span>
+        <button type="button" className="pcs-link" onClick={() => onChange({ ...group, copies: null, mode: 'ask' })}>Change</button>
       </div>
     );
   }
 
-  if (group.mode === 'single') {
-    if (group.copies) {
-      return (
-        <div className="pcs-read is-done">
-          <span>✓ <b>{group.copies} of the same item</b>, sold from stock: buyers choose how many. Fee on each one sold.</span>
-          <button type="button" className="pcs-link" onClick={() => onChange({ ...group, copies: null, mode: 'ask' })}>Change</button>
-        </div>
-      );
-    }
-    if (verdict.kind === 'one') {
-      return (
-        <div className="pcs-read is-done">
-          <span>✓ {analysis.lineup ? <>Views of <b>one item</b>.</> : <><b>One item</b> in this photo.</>}</span>
-          <button type="button" className="pcs-link" onClick={sayDifferent}>Several items?</button>
-          {titleNote}
-        </div>
-      );
-    }
+  if (choosing && verdict.kind === 'one') {
     return (
-      <button type="button" className="pcs-way" onClick={() => onChange({ ...group, mode: 'ask' })}>
-        {verdict.kind === 'copies'
-          ? <>📦 This photo shows <b>{verdict.count}</b> of the same item. <u>Sell them from stock, or all together?</u></>
-          : <>📦 This photo shows about <b>{verdict.count}</b> different items, and the fee counts each of them even as one listing.
-            {' '}<u>Sell them individually or as a set?</u> Views of one item count once.</>}
-      </button>
+      <div className="pcs-pick">
+        <p className="pcs-pick__q">✓ <b>One item</b></p>
+        {titleNote}
+        <button type="button" className="btn pcs-pick__go" onClick={() => go({ ...group, different: false, copies: null, mode: 'single' })}>Continue</button>
+        <button type="button" className="pcs-link" onClick={() => onChange({ ...group, different: true, mode: 'ask' })}>It is several items</button>
+      </div>
+    );
+  }
+
+  if (choosing && verdict.kind === 'copies') {
+    const n = verdict.count;
+    return (
+      <div className="pcs-pick">
+        <p className="pcs-pick__q"><b>{n}</b> of the same item</p>
+        {titleNote}
+        <div className="pcs-pick__ways">
+          <button type="button" className="pcs-tile" onClick={() => { onStock?.(n); go({ ...group, copies: n, mode: 'single' }); }}>
+            <b>{n} in stock</b><span>Buyers choose how many</span>
+          </button>
+          <button type="button" className="pcs-tile" onClick={() => go(switchMode({ ...group, copies: null, mode: 'single' }, 'lot'))}>
+            <b>All {n} together</b><span>One price for the lot</span>
+          </button>
+        </div>
+        <button type="button" className="pcs-link" onClick={() => onChange({ ...group, different: true, copies: null, mode: 'ask' })}>They are different items</button>
+      </div>
+    );
+  }
+
+  if (choosing) {
+    return (
+      <div className="pcs-pick">
+        <p className="pcs-pick__q"><b>{shown}</b> different items</p>
+        {titleNote}
+        <div className="pcs-pick__ways">
+          <button type="button" className="pcs-tile" onClick={() => go(switchMode({ ...group, mode: 'single' }, 'pieces'))}>
+            <b>Individually</b><span>A price for each</span>
+          </button>
+          <button type="button" className="pcs-tile" onClick={() => go(switchMode({ ...group, mode: 'single' }, 'lot'))}>
+            <b>As a set</b><span>One price for all</span>
+          </button>
+        </div>
+        {group.different && (
+          <button type="button" className="pcs-link" onClick={() => onChange({ ...group, different: false, mode: 'ask' })}>Back</button>
+        )}
+      </div>
     );
   }
 
   const status = group.reading
-    ? <span className="pcs-status"><span className="pcs-spin" aria-hidden="true" /> Finding the items in your photo{group.pieces.length ? ` - ${group.pieces.length} so far` : ''}…</span>
-    : group.found > 0 ? <span className="pcs-status">Found <b>{group.found}</b> {group.found === 1 ? 'item' : 'items'} in your photo</span> : null;
-
-  if (group.mode === 'ask' && verdict.kind === 'copies') {
-    const n = verdict.count;
-    return (
-      <div className="pcs-ask">
-        <h3 className="pcs-ask__title">{n} of the same item?</h3>
-        <span className="pcs-status">They look alike{hint.same && hint.count ? ', and your title says so' : ''}. How are you selling them?</span>
-        {titleNote}
-        <div className="pcs-ask__ways">
-          <button type="button" className="pcs-tile" onClick={() => { haptic('tap'); onStock?.(n); onChange({ ...group, copies: n, mode: 'single' }); }}>
-            <span className="pcs-tile__icon" aria-hidden="true">🔢</span>
-            <b>{n} in stock</b>
-            <span>One listing at one price. Buyers choose how many they want.</span>
-            <span className="pcs-tile__fee">Fee on each one as it sells</span>
-          </button>
-          <button type="button" className="pcs-tile" onClick={() => { haptic('tap'); onChange(switchMode({ ...group, copies: null, mode: 'single' }, 'lot')); }}>
-            <span className="pcs-tile__icon" aria-hidden="true">📦</span>
-            <b>All {n} together</b>
-            <span>One price for all of them. A buyer takes the lot.</span>
-            <span className="pcs-tile__fee">Fee per item in the lot</span>
-          </button>
-        </div>
-        <span className="pcs-ask__more">
-          <button type="button" className="btn btn--quiet btn--sm" onClick={sayDifferent}>They are different items</button>
-          <button type="button" className="btn btn--quiet btn--sm" onClick={sayOne}>It is one item</button>
-        </span>
-      </div>
-    );
-  }
-
-  if (group.mode === 'ask') {
-    return (
-      <div className="pcs-ask">
-        <h3 className="pcs-ask__title">{verdict.kind === 'different' ? `${verdict.count} different items?` : 'Several items in this photo?'}</h3>
-        {status}
-        {titleNote}
-        <div className="pcs-ask__ways">
-          <button type="button" className="pcs-tile" onClick={() => { haptic('tap'); onChange(switchMode({ ...group, mode: 'single' }, 'pieces')); }}>
-            <span className="pcs-tile__icon" aria-hidden="true">🏷️</span>
-            <b>Individually</b>
-            <span>Each item has its own price. Buyers pick one or several and check out once; sold ones are crossed out.</span>
-            <span className="pcs-tile__fee">Fee on each item as it sells</span>
-          </button>
-          <button type="button" className="pcs-tile" onClick={() => { haptic('tap'); onChange(switchMode({ ...group, mode: 'single' }, 'lot')); }}>
-            <span className="pcs-tile__icon" aria-hidden="true">📦</span>
-            <b>As a set</b>
-            <span>One price for everything in the photo. A buyer takes the whole set.</span>
-            <span className="pcs-tile__fee">Fee per item in the set</span>
-          </button>
-        </div>
-        <button type="button" className="btn btn--quiet btn--sm" onClick={sayOne}>
-          It is one item
-        </button>
-      </div>
-    );
-  }
+    ? <span className="pcs-status"><span className="pcs-spin" aria-hidden="true" /> Scanning{group.pieces.length ? ` - ${group.pieces.length} so far` : ''}…</span>
+    : null;
 
   // What the AI found goes first; rows the seller touched stay, and so does any other find it missed.
   const takeScan = (things: FoundThing[]) => onChange((now) => {
@@ -372,21 +348,20 @@ export function PhotoGroupBox({ photoUrl, group, onChange, title = '', onStock }
     <div className="pcs-edit">
       <div className="pcs-switch" role="radiogroup" aria-label="How these are sold">
         <button type="button" role="radio" aria-checked={!setMode} className={!setMode ? 'is-on' : ''}
-          onClick={() => onChange((now) => switchMode(now, 'pieces'))}>🏷️ Individually</button>
+          onClick={() => onChange((now) => switchMode(now, 'pieces'))}>Individually</button>
         <button type="button" role="radio" aria-checked={setMode} className={setMode ? 'is-on' : ''}
-          onClick={() => onChange((now) => switchMode(now, 'lot'))}>📦 As a set</button>
-        <button type="button" className="pcs-switch__off" onClick={() => onChange({ ...group, mode: 'single' })}>One item</button>
+          onClick={() => onChange((now) => switchMode(now, 'lot'))}>As a set</button>
       </div>
       {setMode && (
         <label className="pcs-setprice">
-          <span>Price for the whole set</span>
+          <span>Set price</span>
           <span className="pcs-setprice__box">
             <span aria-hidden="true">₹</span>
             <input id="sell-set-price" type="number" inputMode="numeric" min="1" step="1" value={group.setPrice ?? ''} placeholder="25000"
               onChange={(event) => onChange({ ...group, setPrice: event.target.value })} />
           </span>
           {priceMinor >= 100 && group.pieces.length > 0 && (
-            <span className="pcs-setprice__split">About {formatMoney(Math.floor(priceMinor / group.pieces.length))} an item across {group.pieces.length}</span>
+            <span className="pcs-setprice__split">≈ {formatMoney(Math.floor(priceMinor / group.pieces.length))} each</span>
           )}
         </label>
       )}
@@ -399,14 +374,13 @@ export function PhotoGroupBox({ photoUrl, group, onChange, title = '', onStock }
       <div className="pcs-confirm">
         {group.found > group.pieces.length && !group.reading && (
           <p className="pcs-note pcs-note--warn">
-            We found {group.found} items in the photo and {group.pieces.length} are listed. Taking off a wrong find is fine,
-            but the fee is never counted on fewer than {Math.ceil(group.found * (1 - FIND_SLACK))}.
+            {group.pieces.length} of {group.found} listed. Fee counts at least {Math.ceil(group.found * (1 - FIND_SLACK))}.
           </p>
         )}
         <label className="pcs-check">
           <input type="checkbox" checked={group.confirmed} disabled={group.pieces.length < 2}
             onChange={(event) => onChange({ ...group, confirmed: event.target.checked })} />
-          <span>{setMode ? 'Yes, this set is' : 'Yes, I am selling'} these <b>{group.pieces.length}</b> {group.pieces.length === 1 ? 'item' : 'items'}</span>
+          <span>Selling these <b>{group.pieces.length}</b> {group.pieces.length === 1 ? 'item' : 'items'}</span>
         </label>
         <FeeSummary terms={terms} setMode={setMode} pieces={group.pieces} count={count} setPriceMinor={priceMinor} setFee={setFee} />
       </div>
@@ -424,10 +398,7 @@ function FeeSummary({ terms, setMode, pieces, count, setPriceMinor, setFee }: {
         <span className="pcs-fee__label">Figmark fee</span>
         <b className="pcs-fee__sum">{setFee ? formatMoney(setFee.totalMinor) : '₹—'}</b>
         <span className="pcs-fee__how">
-          {setFee
-            ? <>{count} different {count === 1 ? 'item' : 'items'} × {formatMoney(Math.round(setFee.totalMinor / count))}, as if each sold alone at {formatMoney(Math.floor(setPriceMinor / count))}.</>
-            : <>Per different item in the set, as if each sold alone. Enter the set price to see it.</>}
-          {' '}The same item shown twice counts once.
+          {setFee ? <>{count} {count === 1 ? 'item' : 'items'} × {formatMoney(Math.round(setFee.totalMinor / count))}</> : <>Per item in the set</>}
         </span>
       </div>
     );
@@ -437,17 +408,13 @@ function FeeSummary({ terms, setMode, pieces, count, setPriceMinor, setFee }: {
   const priced = pieces.map((piece, index) => ({ priceMinor: rupeesToMinor(piece.price), units: units[index] ?? 1 }))
     .filter((piece) => piece.priceMinor >= 100);
   const fee = terms && priced.length ? saleFee(terms, { amountMinor: 0, pieces: priced }) : null;
-  const sum = priced.reduce((total, piece) => total + piece.priceMinor, 0);
   const floored = count > pieces.length;
   return (
     <div className="pcs-fee">
       <span className="pcs-fee__label">Figmark fee</span>
       <b className="pcs-fee__sum">{fee ? formatMoney(fee.totalMinor) : '₹—'}</b>
       <span className="pcs-fee__how">
-        Charged on each item as it sells{fee ? <>, if all {priced.length} sell for {formatMoney(sum)}</> : null}.
-        {floored
-          ? <> Counted on {count} items, not the {pieces.length} listed: most of what is in the photo counts.</>
-          : <> A row holding two different items is charged for both.</>}
+        If all sell{floored ? <> · counted on {count} items</> : null}
       </span>
     </div>
   );
@@ -592,7 +559,7 @@ export function PieceList({ photoUrl, mode, pieces, onPieces, setPriceMinor = 0 
         onBox={(key, view, box) => onPieces((now) => now.map((piece) => (piece.key === key
           ? { ...piece, boxes: piece.boxes.map((place, index) => (index === view ? box : place)) }
           : piece)))}>
-        {placing && <p className="pcs-note pcs-note--ok">Marking where item {pieces.findIndex((piece) => piece.key === placing) + 1} is: drag round it on the photo.</p>}
+        {placing && <p className="pcs-note pcs-note--ok">Drag round item {pieces.findIndex((piece) => piece.key === placing) + 1}.</p>}
         {chosen && (
           <div className="pcs-tag" role="group" aria-label={`Item ${chosenAt + 1}`}>
             <span className="pcs-tag__n">#{chosenAt + 1}</span>
@@ -613,7 +580,7 @@ export function PieceList({ photoUrl, mode, pieces, onPieces, setPriceMinor = 0 
       </PhotoMarker>
 
       <div className="pcs-tools">
-        <button type="button" className="btn btn--ghost btn--sm" onClick={() => setPasting(!pasting)}>📋 Paste {each ? 'price list' : 'item names'}</button>
+        <button type="button" className="btn btn--ghost btn--sm" onClick={() => setPasting(!pasting)}>Paste {each ? 'price list' : 'names'}</button>
         {each && (
           <span className="pcs-tools__all">
             <span className="pcs-pricebox pcs-pricebox--sm">
@@ -630,7 +597,7 @@ export function PieceList({ photoUrl, mode, pieces, onPieces, setPriceMinor = 0 
           <textarea rows={6} value={pasted} onChange={(event) => setPasted(event.target.value)}
             placeholder={'Paste your sale post, e.g.\nMarvel Legends Wasp\n1850\nThing first appearance - 3000'} />
           <div className="pcs-paste__go">
-            <span className="faint">Fills the rows in photo order: 1, 2, 3…</span>
+            <span className="faint">Fills 1, 2, 3… in order</span>
             <button type="button" className="btn btn--sm" onClick={applyList} disabled={!pasted.trim()}>Fill items</button>
           </div>
         </div>
@@ -670,7 +637,7 @@ export function PieceList({ photoUrl, mode, pieces, onPieces, setPriceMinor = 0 
           </li>
         ))}
       </ol>
-      {pieces.length === 0 && <p className="pcs-note">Nothing marked yet. Press "＋ Add item" and drag round each item on the photo.</p>}
+      {pieces.length === 0 && <p className="pcs-note">Press ＋ Add item and drag round each one.</p>}
     </div>
   );
 }
