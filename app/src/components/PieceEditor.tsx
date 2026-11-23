@@ -2,12 +2,13 @@ import { useEffect, useRef, useState, type Dispatch, type PointerEvent as ReactP
 import { saleFee, type FeeTerms } from '@shared/billing';
 import { MAX_PIECES, parsePriceList } from '@shared/pieces';
 import { readingOrder, sameness } from '@shared/photo-things';
-import { mergeThings } from '../photoThings';
+import { mergeThings, overlayScan, type FoundThing } from '../photoThings';
 import { api, type PhotoBox } from '../api';
 import { formatMoney } from '../format';
 import { haptic } from '../haptics';
 import { usePricing } from './Billing';
 import { PiecePhoto, PieceThumb, boxStyle } from './Pieces';
+import { AiScan } from './AiScan';
 
 /*
  * The sell form's answer to a photo of several things.
@@ -246,6 +247,20 @@ export function PhotoGroupBox({ photoUrl, group, onChange }: {
     );
   }
 
+  // What the AI found goes first; rows the seller touched stay, and so does any other find it missed.
+  const takeScan = (things: FoundThing[]) => onChange((now) => {
+    if (now.photoUrl !== photoUrl) return now;
+    const same = (a: PhotoBox[], b: PhotoBox[]) => a.some((box) => b.some((other) => sameness(box, other) >= 0.45));
+    const touched = now.pieces.filter((piece) => piece.title !== (piece.label ?? '') || piece.price);
+    const scanned: DraftPiece[] = things
+      .filter((thing) => !touched.some((kept) => same(kept.boxes, thing.boxes)))
+      .map((thing) => ({ key: newKey(), title: thing.label ?? '', price: '', boxes: thing.boxes, label: thing.label }));
+    const rest = now.pieces.filter((piece) => !touched.includes(piece));
+    const pieces = [...touched, ...overlayScan(scanned, rest)].sort(readingOrder).slice(0, MAX_PIECES);
+    return { ...now, pieces, found: pieces.length, seen: pieces.flatMap((piece) => piece.boxes), confirmed: false };
+  });
+  const scanButton = !group.reading && <AiScan photoUrl={photoUrl} onFound={takeScan} />;
+
   const setMode = group.mode === 'lot';
   const priceMinor = rupeesToMinor(group.setPrice);
   const count = feeCount(group);
@@ -274,6 +289,7 @@ export function PhotoGroupBox({ photoUrl, group, onChange }: {
         </label>
       )}
       {status}
+      {scanButton}
       <PieceList photoUrl={photoUrl} mode={setMode ? 'set' : 'each'} pieces={group.pieces}
         setPriceMinor={priceMinor}
         onPieces={(update) => onChange((now) => ({ ...now, pieces: update(now.pieces), confirmed: false }))} />
