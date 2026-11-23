@@ -1,5 +1,5 @@
 import {
-  MAX_BUNDLE_COUNT, cleanBox, cleanPieces, cleanSetItems, fromPriceMinor, hasPieces, isPieceSold, mergePieces, piecesLeft, piecesName, publicPieces,
+  MAX_BUNDLE_COUNT, cleanBox, cleanPieces, cleanSetItems, fromPriceMinor, hasPieces, isPieceSold, mergePieces, piecesLeft, piecesName, publicPieces, spreadUnits,
   type BundleCount, type ListingPiece, type OrderPiece,
 } from '../../../shared/pieces.js';
 import { FIND_SLACK, countThings, readStoredPieces } from '../pieces.js';
@@ -1007,8 +1007,10 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     const cleaned = cleanPieces(body.pieces);
     if ('error' in cleaned) return error(400, 'invalid_pieces', cleaned.error);
     // Each row is charged for every different thing in it, as Figmark sees them.
+    // Taking found items off the list does not lower it: the rest of the floor is spread over the rows.
     const counted = await countThings(leadBlob, cleaned.pieces.map((piece) => piece.boxes), seen).catch(() => null);
-    pieces = cleaned.pieces.map((piece, index) => ({ ...piece, units: counted?.perRow[index] ?? 1 }));
+    const units = spreadUnits(cleaned.pieces.map((_, index) => counted?.perRow[index] ?? 1), counted?.charged ?? 0);
+    pieces = cleaned.pieces.map((piece, index) => ({ ...piece, units: units[index] ?? 1 }));
     body.priceMinor = fromPriceMinor(pieces);
   }
   const priceMinor = listablePrice(body.priceMinor);
@@ -2009,8 +2011,9 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
     const cleaned = cleanPieces(sent);
     if ('error' in cleaned) return error(400, 'invalid_pieces', cleaned.error);
     const counted = await countThings(leadBlob, cleaned.pieces.map((piece) => piece.boxes), listing.foundBoxes ?? []).catch(() => null);
+    const units = spreadUnits(cleaned.pieces.map((_, index) => counted?.perRow[index] ?? 1), counted?.charged ?? 0);
     editedPieces = {
-      pieces: cleaned.pieces.map((piece, index) => ({ ...piece, units: counted?.perRow[index] ?? 1 })),
+      pieces: cleaned.pieces.map((piece, index) => ({ ...piece, units: units[index] ?? 1 })),
       ids: sent.map((entry) => (typeof entry?.id === 'string' ? entry.id : null)),
     };
   }

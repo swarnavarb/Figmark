@@ -330,3 +330,17 @@ export function releasePieces<T extends PieceStock>(listing: T, orderId: string)
 export function publicPieces(pieces: readonly ListingPiece[]): ListingPiece[] {
   return pieces.map(({ soldOrderId, ...piece }) => ({ ...piece, soldAt: piece.soldAt ?? (soldOrderId ? 'sold' : null) }));
 }
+
+/**
+ * The fee units each row carries when what is listed is fewer than the count
+ * the fee may not go under - most of what was found in the photo. Each row
+ * keeps the things it holds; the rest are spread one at a time over the
+ * rows, so taking items off the list does not lower the fee.
+ */
+export function spreadUnits(perRow: readonly number[], charged: number): number[] {
+  const units = perRow.map((count) => Math.max(1, Math.floor(count)));
+  if (units.length === 0) return units;
+  let extra = Math.max(0, Math.floor(charged) - units.reduce((sum, count) => sum + count, 0));
+  for (let index = 0; extra > 0; index = (index + 1) % units.length, extra -= 1) units[index] = units[index]! + 1;
+  return units;
+}

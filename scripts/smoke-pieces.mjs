@@ -240,4 +240,11 @@ await check('a published piece listing is edited: sold pieces stay, others chang
   assert.equal(after.quantityAvailable, 1);
 });
 
+await check('taking found items off an individual listing does not lower the fee count', () => {
+  assert.deepEqual(P.spreadUnits([1, 1, 1], 5), [2, 2, 1], 'the floor is spread over the rows');
+  assert.deepEqual(P.spreadUnits([2, 1], 2), [2, 1], 'already over the floor: unchanged');
+  const units = P.spreadUnits(Array(42).fill(1), 46);
+  assert.equal(units.reduce((a, b) => a + b, 0), 46, '42 listed of 54 found is charged for 46');
+});
+
 console.log(`\n${passed} checks passed`);

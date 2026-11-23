@@ -1,14 +1,15 @@
-import { useEffect, useRef, useState, type Dispatch, type PointerEvent as ReactPointerEvent, type SetStateAction } from 'react';
+import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
 import { saleFee, type FeeTerms } from '@shared/billing';
-import { MAX_PIECES, parsePriceList } from '@shared/pieces';
+import { MAX_PIECES, parsePriceList, spreadUnits } from '@shared/pieces';
 import { readingOrder, sameness } from '@shared/photo-things';
 import { mergeThings, overlayScan, type FoundThing } from '../photoThings';
 import { api, type PhotoBox } from '../api';
 import { formatMoney } from '../format';
 import { haptic } from '../haptics';
 import { usePricing } from './Billing';
-import { PiecePhoto, PieceThumb, boxStyle } from './Pieces';
+import { PieceThumb } from './Pieces';
 import { AiScan } from './AiScan';
+import { PhotoMarker } from './PhotoMarker';
 
 /*
  * The sell form's answer to a photo of several things.
@@ -330,16 +331,22 @@ function FeeSummary({ terms, setMode, pieces, count, setPriceMinor, setFee }: {
       </div>
     );
   }
-  const priced = pieces.map((piece) => ({ priceMinor: rupeesToMinor(piece.price) })).filter((piece) => piece.priceMinor >= 100);
+  // As the server counts it: never on fewer than most of what was found, the rest spread over the rows.
+  const units = spreadUnits(pieces.map(() => 1), count);
+  const priced = pieces.map((piece, index) => ({ priceMinor: rupeesToMinor(piece.price), units: units[index] ?? 1 }))
+    .filter((piece) => piece.priceMinor >= 100);
   const fee = terms && priced.length ? saleFee(terms, { amountMinor: 0, pieces: priced }) : null;
   const sum = priced.reduce((total, piece) => total + piece.priceMinor, 0);
+  const floored = count > pieces.length;
   return (
     <div className="pcs-fee">
       <span className="pcs-fee__label">Figmark fee</span>
       <b className="pcs-fee__sum">{fee ? formatMoney(fee.totalMinor) : '₹—'}</b>
       <span className="pcs-fee__how">
         Charged on each item as it sells{fee ? <>, if all {priced.length} sell for {formatMoney(sum)}</> : null}.
-        A row holding two different items is charged for both.
+        {floored
+          ? <> Counted on {count} items, not the {pieces.length} listed: most of what is in the photo counts.</>
+          : <> A row holding two different items is charged for both.</>}
       </span>
     </div>
   );
@@ -356,8 +363,8 @@ export function PieceList({ photoUrl, mode, pieces, onPieces, setPriceMinor = 0 
   onPieces: (update: (now: DraftPiece[]) => DraftPiece[]) => void;
   setPriceMinor?: number;
 }) {
-  const stage = useRef<HTMLDivElement>(null);
-  const [drawing, setDrawing] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  /** Drawing a new box: for a new row, or for the row being marked (`placing`). */
+  const [adding, setAdding] = useState(false);
   /** A row waiting for its place on the photo: the next box drawn is its. */
   const [placing, setPlacing] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -370,54 +377,31 @@ export function PieceList({ photoUrl, mode, pieces, onPieces, setPriceMinor = 0 
 
   const update = (key: string, patch: Partial<DraftPiece>) =>
     onPieces((now) => now.map((piece) => (piece.key === key ? { ...piece, ...patch } : piece)));
-
-  const at = (event: ReactPointerEvent) => {
-    const rect = stage.current!.getBoundingClientRect();
-    return {
-      x: Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
-      y: Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
-    };
+  const remove = (key: string) => {
+    onPieces((now) => now.filter((entry) => entry.key !== key));
+    if (selected === key) setSelected(null);
   };
-  function down(event: ReactPointerEvent) {
-    if (event.button !== 0) return;
-    const { x, y } = at(event);
-    stage.current?.setPointerCapture(event.pointerId);
-    setDrawing({ x0: x, y0: y, x1: x, y1: y });
-  }
-  function move(event: ReactPointerEvent) {
-    if (!drawing) return;
-    const { x, y } = at(event);
-    setDrawing({ ...drawing, x1: x, y1: y });
-  }
-  function up() {
-    if (!drawing) return;
-    const { x0, y0, x1, y1 } = drawing;
-    setDrawing(null);
-    let box: PhotoBox;
-    if (Math.abs(x1 - x0) < 0.03 && Math.abs(y1 - y0) < 0.03) {
-      // A tap: a box of a figure's usual size round where it landed.
-      const w = 0.12; const h = 0.2;
-      box = [Math.min(1 - w, Math.max(0, x0 - w / 2)), Math.min(1 - h, Math.max(0, y0 - h / 2)), w, h];
-    } else {
-      box = [Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0)];
-    }
-    box = box.map((part) => Math.round(part * 1000) / 1000) as PhotoBox;
-    haptic('tap');
+
+  /** Pick a row: its box lights up on the photo, and its name can be typed under it. */
+  const pick = (key: string | null) => {
+    setSelected(key);
+    if (key) document.querySelector(`#pcs-row-${key}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  };
+
+  function addBox(box: PhotoBox) {
+    setAdding(false);
     if (placing) {
       const key = placing;
       onPieces((now) => now.map((piece) => (piece.key === key ? { ...piece, boxes: [...piece.boxes, box].slice(0, 4) } : piece)));
-      setSelected(key);
       setPlacing(null);
+      setSelected(key);
       return;
     }
     if (pieces.length >= MAX_PIECES) return;
     const key = newKey();
     onPieces((now) => [...now, { key, title: '', price: allPrice, boxes: [box], label: null }]);
     setSelected(key);
-    requestAnimationFrame(() => {
-      document.querySelector(`#pcs-row-${key}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      document.querySelector<HTMLInputElement>(`#pcs-title-${key}`)?.focus({ preventScroll: true });
-    });
+    requestAnimationFrame(() => document.querySelector<HTMLInputElement>('#pcs-tag-title')?.focus({ preventScroll: true }));
   }
 
   /** Two rows that are one thing shown twice: one row, one fee. */
@@ -441,6 +425,11 @@ export function PieceList({ photoUrl, mode, pieces, onPieces, setPriceMinor = 0 
         ...rest.map((box) => ({ key: newKey(), title: '', price: piece.price, boxes: [box], label: null })),
       ];
     });
+  }
+  function more(piece: DraftPiece, pick: string) {
+    if (pick === 'view') { setPlacing(piece.key); setAdding(true); } else if (pick === 'split') split(piece.key);
+    else if (pick === 'remove') remove(piece.key);
+    else if (pick) join(piece.key, pick);
   }
   function applyList() {
     const lines = parsePriceList(pasted);
@@ -472,32 +461,55 @@ export function PieceList({ photoUrl, mode, pieces, onPieces, setPriceMinor = 0 
     onPieces((now) => now.map((piece) => (piece.price || piece.sold ? piece : { ...piece, price: allPrice })));
   }
 
-  const box = drawing && [Math.min(drawing.x0, drawing.x1), Math.min(drawing.y0, drawing.y1), Math.abs(drawing.x1 - drawing.x0), Math.abs(drawing.y1 - drawing.y0)] as PhotoBox;
+  const isDone = (piece: DraftPiece) => (each ? piece.title.trim().length >= 2 && rupeesToMinor(piece.price) >= 100 : true);
+  const chosen = pieces.find((piece) => piece.key === selected) ?? null;
+  const chosenAt = chosen ? pieces.indexOf(chosen) : -1;
+
+  /** What else can be done with a row: another view of it, its views apart, it is the same as another, take it off. */
+  const moreMenu = (piece: DraftPiece, index: number) => (
+    <select className="pcs-more" value="" aria-label={`More for item ${index + 1}`} onChange={(event) => more(piece, event.target.value)}>
+      <option value="">⋯</option>
+      {piece.boxes.length > 0 && piece.boxes.length < 4 && <option value="view">Mark another view of it</option>}
+      {piece.boxes.length > 1 && <option value="split">Split its views into items</option>}
+      {pieces.length > 1 && (
+        <optgroup label="It is the same item as">
+          {pieces.filter((other) => other.key !== piece.key && !other.sold).map((other) => (
+            <option key={other.key} value={other.key}>#{pieces.indexOf(other) + 1} {other.title || ''}</option>
+          ))}
+        </optgroup>
+      )}
+      <option value="remove">Remove this item</option>
+    </select>
+  );
 
   return (
     <div className="pcs-items">
-      <p className="pcs-note">
-        {placing
-          ? <><b>Now drag a box round it on the photo</b>, or tap on it. <button type="button" className="pcs-link" onClick={() => setPlacing(null)}>Cancel</button></>
-          : <>Missed one? <b>Drag a box round it</b> on the photo, or tap on it. Tap a number to find its row.</>}
-      </p>
-      <div ref={stage} className={`pcs-stage${placing ? ' is-placing' : ''}`}
-        onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={() => setDrawing(null)}>
-        <img src={photoUrl} alt="Your photo: drag round an item to mark it" draggable={false} />
-        {pieces.map((piece, index) => piece.boxes.map((place, view) => (
-          <span key={`${piece.key}-${view}`}
-            className={`pcs-ebox${selected === piece.key ? ' is-on' : ''}${piece.sold ? ' is-sold' : (each ? piece.title.trim().length >= 2 && rupeesToMinor(piece.price) >= 100 : true) ? ' is-done' : ''}`}
-            style={boxStyle(place)}
-            onPointerDown={(event) => {
-              event.stopPropagation();
-              setSelected(piece.key);
-              document.querySelector(`#pcs-row-${piece.key}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            }}>
-            <span className="pcs-ebox__n">{index + 1}</span>
-          </span>
-        )))}
-        {box && <span className="pcs-ebox is-new" style={boxStyle(box)} />}
-      </div>
+      <PhotoMarker photoUrl={photoUrl} selected={selected} onSelect={pick}
+        things={pieces.map((piece) => ({ key: piece.key, boxes: piece.boxes, done: isDone(piece), sold: piece.sold }))}
+        adding={adding} onAdding={(on) => { setAdding(on); if (!on) setPlacing(null); }}
+        onAdd={addBox}
+        onBox={(key, view, box) => onPieces((now) => now.map((piece) => (piece.key === key
+          ? { ...piece, boxes: piece.boxes.map((place, index) => (index === view ? box : place)) }
+          : piece)))}>
+        {placing && <p className="pcs-note pcs-note--ok">Marking where item {pieces.findIndex((piece) => piece.key === placing) + 1} is: drag round it on the photo.</p>}
+        {chosen && (
+          <div className="pcs-tag" role="group" aria-label={`Item ${chosenAt + 1}`}>
+            <span className="pcs-tag__n">#{chosenAt + 1}</span>
+            <input id="pcs-tag-title" className="pcs-tag__title" value={chosen.title} disabled={chosen.sold}
+              placeholder={chosen.label ?? (each ? 'Name this item' : 'Name (optional)')}
+              aria-label={`Title of item ${chosenAt + 1}`} onChange={(event) => update(chosen.key, { title: event.target.value })} />
+            {each && !chosen.sold && (
+              <span className="pcs-pricebox pcs-pricebox--tag">
+                <span aria-hidden="true">₹</span>
+                <input type="number" inputMode="numeric" min="1" step="1" value={chosen.price} placeholder="Price"
+                  aria-label={`Price of item ${chosenAt + 1}`} onChange={(event) => update(chosen.key, { price: event.target.value })} />
+              </span>
+            )}
+            {!chosen.sold && moreMenu(chosen, chosenAt)}
+            <button type="button" className="pcs-tag__done" onClick={() => setSelected(null)} aria-label="Done with this item">✓</button>
+          </div>
+        )}
+      </PhotoMarker>
 
       <div className="pcs-tools">
         <button type="button" className="btn btn--ghost btn--sm" onClick={() => setPasting(!pasting)}>📋 Paste {each ? 'price list' : 'item names'}</button>
@@ -524,65 +536,40 @@ export function PieceList({ photoUrl, mode, pieces, onPieces, setPriceMinor = 0 
       )}
       {pasteNote && <p className="pcs-note pcs-note--ok" role="status">{pasteNote}</p>}
 
-      <ol className="pcs-erows">
+      <ol className={`pcs-erows${each ? '' : ' pcs-erows--set'}`}>
         {pieces.map((piece, index) => (
-          <li key={piece.key} id={`pcs-row-${piece.key}`} className={`pcs-erow${selected === piece.key ? ' is-on' : ''}${piece.sold ? ' is-sold' : ''}`}
+          <li key={piece.key} id={`pcs-row-${piece.key}`}
+            className={`pcs-erow${selected === piece.key ? ' is-on' : ''}${piece.sold ? ' is-sold' : ''}${isDone(piece) ? ' is-done' : ''}`}
             onFocus={() => setSelected(piece.key)}>
-            <span className="pcs-erow__pic">
+            <button type="button" className="pcs-erow__pic" aria-label={`Show item ${index + 1} on the photo`}
+              onClick={() => (piece.boxes.length ? setSelected(piece.key) : (setPlacing(piece.key), setAdding(true)))}>
               {piece.boxes.length > 0
-                ? <PieceThumb src={photoUrl} box={piece.boxes[0]!} size={64} sold={piece.sold} />
-                : <button type="button" className="pcs-erow__mark" onClick={() => setPlacing(piece.key)}>Mark on photo</button>}
+                ? <PieceThumb src={photoUrl} box={piece.boxes[0]!} size={44} sold={piece.sold} />
+                : <span className="pcs-erow__mark">Mark</span>}
               <span className="pcs-erow__n">{index + 1}</span>
               {piece.boxes.length > 1 && (
-                <span className="pcs-erow__views" title="The same item shown more than once is one item and one fee">{piece.boxes.length} views</span>
+                <span className="pcs-erow__views" title="The same item shown more than once is one item and one fee">×{piece.boxes.length}</span>
               )}
-            </span>
+            </button>
             <input id={`pcs-title-${piece.key}`} className="pcs-erow__title" value={piece.title} disabled={piece.sold}
-              placeholder={piece.label ?? (each ? 'Name this item' : `Item ${index + 1} (optional name)`)}
+              placeholder={piece.label ?? (each ? 'Name this item' : `Item ${index + 1}`)}
               aria-label={`Title of item ${index + 1}`} onChange={(event) => update(piece.key, { title: event.target.value })} />
-            {!piece.sold && (
-              <button type="button" className="pcs-erow__x" aria-label={`Remove item ${index + 1}`}
-                onClick={() => { onPieces((now) => now.filter((entry) => entry.key !== piece.key)); if (selected === piece.key) setSelected(null); }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
-              </button>
+            {piece.sold ? (
+              <span className="pcs-erow__sold">Sold</span>
+            ) : each ? (
+              <span className="pcs-pricebox pcs-pricebox--row">
+                <span aria-hidden="true">₹</span>
+                <input type="number" inputMode="numeric" min="1" step="1" value={piece.price} placeholder="Price"
+                  aria-label={`Price of item ${index + 1}`} onChange={(event) => update(piece.key, { price: event.target.value })} />
+              </span>
+            ) : (
+              <span className="pcs-erow__share">{shares[index] ? formatMoney(shares[index]!) : '—'}</span>
             )}
-            <div className="pcs-erow__line">
-              {piece.sold ? (
-                <span className="pcs-erow__sold">Sold · {formatMoney(rupeesToMinor(piece.price))}</span>
-              ) : each ? (
-                <span className="pcs-pricebox">
-                  <span aria-hidden="true">₹</span>
-                  <input type="number" inputMode="numeric" min="1" step="1" value={piece.price} placeholder="Price"
-                    aria-label={`Price of item ${index + 1}`} onChange={(event) => update(piece.key, { price: event.target.value })} />
-                </span>
-              ) : (
-                <span className="pcs-erow__share">{shares[index] ? `≈ ${formatMoney(shares[index]!)} share` : 'Share of the set price'}</span>
-              )}
-              {!piece.sold && (
-                <select className="pcs-erow__more" value="" aria-label={`More for item ${index + 1}`}
-                  onChange={(event) => {
-                    const pick = event.target.value;
-                    if (pick === 'view') setPlacing(piece.key);
-                    else if (pick === 'split') split(piece.key);
-                    else if (pick) join(piece.key, pick);
-                  }}>
-                  <option value="">More…</option>
-                  {piece.boxes.length > 0 && piece.boxes.length < 4 && <option value="view">Mark another view of it</option>}
-                  {piece.boxes.length > 1 && <option value="split">Split its views into items</option>}
-                  {pieces.length > 1 && (
-                    <optgroup label="It is the same item as">
-                      {pieces.filter((other) => other.key !== piece.key && !other.sold).map((other) => (
-                        <option key={other.key} value={other.key}>#{pieces.indexOf(other) + 1} {other.title || ''}</option>
-                      ))}
-                    </optgroup>
-                  )}
-                </select>
-              )}
-            </div>
+            {piece.sold ? <span /> : moreMenu(piece, index)}
           </li>
         ))}
       </ol>
-      {pieces.length === 0 && <p className="pcs-note">Nothing marked yet. Drag a box round each item on the photo.</p>}
+      {pieces.length === 0 && <p className="pcs-note">Nothing marked yet. Press "＋ Add item" and drag round each item on the photo.</p>}
     </div>
   );
 }
