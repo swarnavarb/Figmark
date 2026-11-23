@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { StatsView } from '@shared/coach-log';
+import type { AnswerView } from '@shared/coach-learn';
 import { ApiRequestError, admin } from './api';
 import { SkelFigures } from '../components/PageSkeletons';
 
@@ -11,9 +12,14 @@ import { SkelFigures } from '../components/PageSkeletons';
  * shop's figures can be read out of the total. "Orders a week" is the average
  * change in a shop's orders between the week before a tip was first seen and
  * the week after - for the tips shops acted on, and for those they did not.
+ *
+ * The coach uses these same totals itself: tip order and which of Figgy's
+ * answers wins move with them, on their own. Below the tips, how sellers rated
+ * the answers, and the words of questions Figgy had no answer for - each word
+ * only once enough shops used it - so the next guide to write is plain to see.
  */
 export function CoachView() {
-  const [view, setView] = useState<StatsView | null>(null);
+  const [view, setView] = useState<(StatsView & { answers: AnswerView }) | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -69,6 +75,50 @@ export function CoachView() {
           </table>
         </div>
       )}
+      <AnswersPanel answers={view.answers} minShops={view.minShops} />
     </div>
+  );
+}
+
+function AnswersPanel({ answers, minShops }: { answers: AnswerView; minShops: number }) {
+  return (
+    <>
+      <div className="card card--pad stack">
+        <strong>Answers, as sellers rated them</strong>
+        {answers.rows.length === 0 ? (
+          <p className="muted" style={{ margin: 0 }}>
+            No kind of answer has ratings from {minShops} shops yet.
+            {answers.withheld > 0 && ` ${answers.withheld} ${answers.withheld === 1 ? 'is' : 'are'} on the way.`}
+          </p>
+        ) : (
+          <table className="devstats__table">
+            <thead>
+              <tr><th>Answer</th><th>Shops</th><th>Ratings</th><th>Helpful</th><th>Weight now</th></tr>
+            </thead>
+            <tbody>
+              {answers.rows.map((row) => (
+                <tr key={row.source}>
+                  <td>{row.label ?? row.source}</td>
+                  <td>{row.shops}</td>
+                  <td>{row.ratings}</td>
+                  <td>{row.helpful}%</td>
+                  <td>{row.weight === null ? '–' : `×${row.weight}`}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+      <div className="card card--pad stack">
+        <strong>Asked, but Figgy had no answer</strong>
+        {answers.misses.length === 0 ? (
+          <p className="muted" style={{ margin: 0 }}>No word has come up from {minShops} shops yet.</p>
+        ) : (
+          <p style={{ margin: 0 }}>
+            {answers.misses.map((miss) => `${miss.word} (${miss.shops} shops)`).join(' · ')}
+          </p>
+        )}
+      </div>
+    </>
   );
 }

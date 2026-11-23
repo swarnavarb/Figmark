@@ -146,6 +146,18 @@ tip stays hidden until five different shops are in it. The coach - built-in or
 AI - declines questions about other sellers or buyers and about how Figmark
 works inside.
 
+And it improves on its own (`shared/coach-learn.ts`). Tip order moves with
+those totals: a kind of tip that is followed by more orders, or by the problem
+getting sorted, climbs; one that is not, sinks - only once five shops stand
+behind it, by at most 15 places of priority, growing with the evidence, and
+never above money waiting on the shop. A tip one shop keeps skipping drops
+down for that shop until it is acted on again. The chat's built-in assistant,
+Figgy, takes a 👍/👎 on every answer; guides sellers find helpful win close
+calls, and the words of questions Figgy could not answer are counted (never
+the question) for staff to see what to write next. Marketing advice leads with
+outside channels - WhatsApp, Instagram, collector groups - then Figmark's own
+tools. Under the chat box, a picker chooses between Figgy and Puter AI.
+
 ## Status
 
 Not yet verified against live Azure: the session that produced this scaffold had

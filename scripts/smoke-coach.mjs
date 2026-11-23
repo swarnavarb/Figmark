@@ -19,6 +19,8 @@ const signup = verifiedSignup(rawSignup);
 const { coachRoute, coachEventsRoute, opsCoachRoute } = await import(new URL('coach-routes.js', fns));
 const coach = await import(new URL('shared/coach.js', dist));
 const clog = await import(new URL('shared/coach-log.js', dist));
+const learn = await import(new URL('shared/coach-learn.js', dist));
+const { coachAnswerRoute } = await import(new URL('coach-routes.js', fns));
 const { getRepository } = await import(new URL('api/src/data/index.js', dist));
 
 const ctx = { error: () => {}, log: () => {}, warn: () => {}, info: () => {} };
@@ -310,6 +312,107 @@ await check('the log stays bounded', () => {
   assert.equal(clog.tidyCoachLog(log, t0).episodes.length, clog.LOG_MAX);
 });
 
+console.log('getting better on its own');
+
+const totals = (over = {}) => ({
+  shops: clog.MIN_SHOPS, episodes: 200, pressed: 100, cleared: 80, pressedCleared: 60,
+  pressedSalesBefore: 100, pressedSalesAfter: 400, ignoredSalesBefore: 100, ignoredSalesAfter: 110, ...over,
+});
+
+await check('a kind of tip that works climbs, one that does not sinks - only on enough evidence', () => {
+  const nudges = learn.ruleNudges({ since: '', rules: {
+    share: totals(),
+    post: totals({ pressedSalesAfter: 50, pressedCleared: 10, cleared: 50 }),
+    thin: totals({ shops: clog.MIN_SHOPS - 1 }),
+    affiliate: totals({ episodes: 20, pressed: 10 }),
+    answer: totals(),
+  } });
+  assert.ok(nudges.share > 0 && nudges.share <= learn.MAX_NUDGE, `share ${nudges.share}`);
+  assert.ok(nudges.post < 0, `post ${nudges.post}`);
+  assert.equal(nudges.thin, undefined, 'too few shops: not moved');
+  assert.ok(Math.abs(nudges.affiliate ?? 0) <= 2, 'little evidence: barely moved');
+  assert.equal(nudges.answer, undefined, 'money waiting is never moved');
+});
+
+await check('learning never lifts a tip over money waiting on the shop', () => {
+  const tips = [{ id: 'answer', priority: 100 }, { id: 'share', priority: 69 }, { id: 'post', priority: 64 }];
+  const ranked = learn.applyLearning(tips, { share: 40, post: -15 }, {});
+  assert.deepEqual(ranked.map((tip) => tip.id), ['answer', 'share', 'post']);
+  assert.equal(ranked[1].priority, learn.LEARNED_CEILING);
+  const plan = coach.coachPlan(healthy({ activity: { posts7: 0, shares7: 0, lastPostAt: null }, orders: { ...healthy().orders, toAnswer: 1 } }),
+    { nudges: { post: 15 }, fatigue: { share: 24 } });
+  assert.equal(plan.tips[0].id, 'answer');
+  const order = plan.tips.map((tip) => tip.id);
+  assert.ok(order.indexOf('post') < order.indexOf('share'), 'what was learned reorders the rest');
+});
+
+await check('a tip one shop keeps skipping drops down for that shop, and comes back once acted on', () => {
+  const skip = (rule, days, pressed = false) => ({ rule, itemId: null, title: rule, firstSeen: later(days).toISOString(), lastSeen: later(days + 7).toISOString(),
+    pressedAt: pressed ? later(days).toISOString() : null,
+    outcome: { at: '', pressed, cleared: false, salesBefore: 0, salesAfter: 0, itemViewsBefore: null, itemViewsAfter: null, itemSoldAfter: null } });
+  const log = { episodes: [skip('post', 0), skip('post', 8), skip('post', 16), skip('share', 0)], counted: [] };
+  const fatigue = learn.shopFatigue(log, later(30));
+  assert.equal(fatigue.post, learn.FATIGUE_STEP * 2);
+  assert.equal(fatigue.share, undefined, 'one skip is free');
+  assert.deepEqual(learn.shopFatigue({ ...log, episodes: [...log.episodes, skip('post', 24, true)] }, later(40)), {});
+});
+
+await check('helpful guides win a close call; ratings are capped per shop per day and count each shop once', () => {
+  let stats = null;
+  let logs = [];
+  for (let shop = 0; shop < clog.MIN_SHOPS; shop += 1) {
+    let log = learn.emptyAnswerLog();
+    for (let n = 0; n < 3; n += 1) ({ stats, log } = learn.addRating(stats, log, 'offers', n !== 0, t0));
+    logs.push(log);
+  }
+  assert.equal(stats.sources.offers.shops, clog.MIN_SHOPS);
+  assert.ok(learn.guideWeights(stats).offers > 1, 'mostly helpful: weighted up');
+  let capped = learn.emptyAnswerLog();
+  let tally = null;
+  for (let n = 0; n < learn.DAILY_RATINGS; n += 1) ({ stats: tally, log: capped } = learn.addRating(tally, capped, 'price', false, t0));
+  assert.equal(learn.addRating(tally, capped, 'price', false, t0), null, 'over the daily cap');
+  assert.ok(learn.addRating(tally, capped, 'price', false, later(1)), 'a new day');
+  // "discount" matches Offers; "price" matches Pricing - a tie the weights settle.
+  assert.equal(coach.matchGuides('discount price')[0].id, 'price');
+  assert.equal(coach.matchGuides('discount price', { offers: 1.3 })[0].id, 'offers');
+});
+
+await check('an unanswered question keeps only plain words - never numbers, never the question', () => {
+  const words = learn.missWords('Can my buyer pay with crypto? Call me on 9876543210 about the Gundam!!');
+  assert.ok(words.includes('crypto') && words.includes('gundam'));
+  assert.ok(!words.some((word) => /\d/.test(word)) && !words.includes('the') && !words.includes('can'));
+  const { stats } = learn.addMiss(null, learn.emptyAnswerLog(), words, t0);
+  assert.deepEqual(learn.answerView(stats).misses, [], 'one shop: nothing shown');
+});
+
+console.log('marketing: outside first');
+
+await check('marketing answers lead with WhatsApp and Instagram, then Figmark\'s own tools', () => {
+  const answer = coach.answerOffline('How do I get more buyers?', plan);
+  assert.equal(answer.source, 'market');
+  assert.ok(answer.text.indexOf('WhatsApp') < answer.text.indexOf('commission'), 'outside before inside');
+  assert.ok(answer.tools[0].startsWith('share'));
+  const social = coach.answerOffline('How do I sell on WhatsApp and Instagram?', plan);
+  assert.equal(social.source, 'outside');
+  assert.equal(coach.answerOffline('what is my order status', plan).source, 'orders', '"status" alone is not about WhatsApp');
+  assert.equal(coach.answerOffline('how do group buys work', plan).source, 'preorder');
+});
+
+await check('sharing outside comes before the channel, in tips, the week and the AI\'s instructions', () => {
+  const tips = ids(healthy({ activity: { posts7: 0, shares7: 0, lastPostAt: null } }));
+  assert.ok(tips.indexOf('share') < tips.indexOf('post'));
+  const week = coach.weekPlan(healthy(), coach.bestTime({ hours: new Array(24).fill(0), days: new Array(7).fill(0), sample: 0 }));
+  const outside = week.filter((day) => /WhatsApp|Instagram|group/i.test(day.detail)).length;
+  assert.ok(outside >= 4, `outside jobs: ${outside}`);
+  assert.match(coach.coachBrief(healthy(), plan), /lead with marketing outside Figmark/);
+});
+
+await check('every answer says what kind it is, so it can be rated', () => {
+  for (const question of ['What should I do today?', 'When should I post?', 'How do I list an item?', 'blorp', 'What do other sellers charge?']) {
+    assert.ok(coach.answerOffline(question, plan).source, question);
+  }
+});
+
 console.log('GET /api/me/coach');
 
 const session = await login(req({ body: { identifier: fixtures.DEMO_EMAIL, password: fixtures.DEMO_PASSWORD } }), ctx);
@@ -376,6 +479,21 @@ await check('the staff totals open for the operator, as rounded totals with no s
   assert.ok(!JSON.stringify(view).includes(shop.id));
 });
 
+await check('the shop rates answers and reports misses; only totals are kept, never the question', async () => {
+  const bad = await coachAnswerRoute(req({ headers: shop.headers, body: { source: 'made-up', helpful: true } }), ctx);
+  assert.equal(bad.status, 400);
+  const rated = await coachAnswerRoute(req({ headers: shop.headers, body: { source: 'market', helpful: true } }), ctx);
+  assert.equal(rated.jsonBody.recorded, 1);
+  const missed = await coachAnswerRoute(req({ headers: shop.headers, body: { missed: 'Can buyers pay me in crypto, ring 9876543210' } }), ctx);
+  assert.equal(missed.jsonBody.recorded, 1);
+  const repository = await getRepository();
+  const stored = JSON.stringify((await repository.getSiteContent(learn.ANSWER_STATS_ID)).data);
+  assert.ok(stored.includes('crypto') && !stored.includes('9876543210') && !stored.includes('Can buyers'));
+  assert.ok(!stored.includes(shop.id));
+  const out = (await coachRoute(req({ headers: shop.headers }), ctx)).jsonBody;
+  assert.equal(typeof out.learned.guides, 'object');
+});
+
 await check('somebody who does not help run the shop is refused; signed out is refused', async () => {
   const made = await signup(req({
     body: { acceptTerms: true, displayName: 'Coach Stranger', email: 'coach.stranger@figmark.example', phone: '+919000075555', password: 'longenough1' },
@@ -386,6 +504,8 @@ await check('somebody who does not help run the shop is refused; signed out is r
   assert.equal(peek.status, 403);
   const poke = await coachEventsRoute(req({ headers: stranger, query: { store: shop.id }, body: { seen: ['post'] } }), ctx);
   assert.equal(poke.status, 403, 'nor write to its record');
+  const rate = await coachAnswerRoute(req({ headers: stranger, query: { store: shop.id }, body: { source: 'market', helpful: false } }), ctx);
+  assert.equal(rate.status, 403, 'nor rate its answers');
   const ops = await opsCoachRoute(req({ headers: stranger }), ctx);
   assert.equal(ops.status, 403, 'and an ordinary account never sees the staff totals');
   const own = await coachRoute(req({ headers: stranger }), ctx);

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  AREA_NAMES, PRO_TOOLS, PRIVATE_ANSWER, TOOL_LABELS, answerOffline, coachBrief, isPrivateQuestion,
+  AREA_NAMES, FIGGY, PRO_TOOLS, PRIVATE_ANSWER, TOOL_LABELS, answerOffline, coachBrief, isPrivateQuestion,
   type CoachAnswer, type CoachItem, type CoachPlan, type CoachSignals, type CoachTip, type CoachTool,
 } from '@shared/coach';
 import type { StoreAccess } from '@shared/stores';
@@ -165,7 +165,7 @@ function TipRow({ tip, pro, onRun }: { tip: CoachTip; pro: boolean; onRun: () =>
  * one line once the seller says so.
  */
 export function ShopCoach({ store }: { store: StoreAccess }) {
-  const [data, setData] = useState<{ signals: CoachSignals; plan: CoachPlan; results: OwnResults | null } | null>(null);
+  const [data, setData] = useState<Awaited<ReturnType<typeof api.coach>> | null>(null);
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState<View | null>(null);
   const [folded, setFolded] = useState(() => readFlag(HIDE_KEY, store.ownerId));
@@ -232,14 +232,14 @@ export function ShopCoach({ store }: { store: StoreAccess }) {
               Post at {plan.bestTime.window}
             </button>
             <button type="button" className="btn btn--sm btn--quiet" onClick={() => setOpen('ask')}>
-              <Icon name="message" size={14} /> Ask the coach
+              <Icon name="message" size={14} /> Ask {FIGGY}
             </button>
           </div>
         </section>
       )}
       {open && (
         <Modal title="Shop coach" layout="panel" onClose={() => { setOpen(null); load(); }}>
-          <CoachPanel store={store} signals={signals} plan={plan} results={data.results} view={open} onView={setOpen} run={run}
+          <CoachPanel store={store} signals={signals} plan={plan} results={data.results} guides={data.learned?.guides ?? {}} view={open} onView={setOpen} run={run}
             press={press} record={record} />
         </Modal>
       )}
@@ -248,11 +248,12 @@ export function ShopCoach({ store }: { store: StoreAccess }) {
   );
 }
 
-function CoachPanel({ store, signals, plan, results, view, onView, run, press, record }: {
+function CoachPanel({ store, signals, plan, results, guides, view, onView, run, press, record }: {
   store: StoreAccess;
   signals: CoachSignals;
   plan: CoachPlan;
   results: OwnResults | null;
+  guides: Record<string, number>;
   view: View;
   onView: (view: View) => void;
   run: (tool: CoachTool, item?: CoachItem) => void;
@@ -320,7 +321,7 @@ function CoachPanel({ store, signals, plan, results, view, onView, run, press, r
         </>
       )}
 
-      {view === 'ask' && <CoachChat store={store} signals={signals} plan={plan} run={run} />}
+      {view === 'ask' && <CoachChat store={store} signals={signals} plan={plan} guides={guides} run={run} />}
     </div>
   );
 }
@@ -381,49 +382,92 @@ function HourBars({ hours, peak }: { hours: number[]; peak: number }) {
   );
 }
 
-interface Said { role: 'user' | 'assistant'; text: string; tools?: CoachTool[]; follow?: string[]; ai?: boolean }
+type Assistant = 'figgy' | 'puter';
 
-const STARTERS = ['What should I do today?', 'When should I post?', 'How do I get more buyers?', 'How do I list an item?'];
+interface Said {
+  role: 'user' | 'assistant';
+  text: string;
+  tools?: CoachTool[];
+  follow?: string[];
+  /** Who answered, what kind of answer it was, and the question it answered. */
+  by?: Assistant;
+  source?: string;
+  question?: string;
+  vote?: 'up' | 'down';
+}
 
-function CoachChat({ store, signals, plan, run }: {
-  store: StoreAccess; signals: CoachSignals; plan: CoachPlan; run: (tool: CoachTool, item?: CoachItem) => void;
+const STARTERS = ['What should I do today?', 'How do I get more buyers?', 'How do I sell on WhatsApp and Instagram?', 'When should I post?'];
+
+const ASSISTANTS: Record<Assistant, { name: string; blurb: string }> = {
+  figgy: { name: FIGGY, blurb: 'Built into Figmark. Instant, free, knows your shop - and gets better as sellers rate its answers.' },
+  puter: { name: 'Puter AI', blurb: 'Writes in its own words. Free with a Puter account; your questions and your shop\'s figures go to Puter.' },
+};
+
+function CoachChat({ store, signals, plan, guides, run }: {
+  store: StoreAccess; signals: CoachSignals; plan: CoachPlan; guides: Record<string, number>;
+  run: (tool: CoachTool, item?: CoachItem) => void;
 }) {
   const [said, setSaid] = useState<Said[]>([]);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
-  const [ai, setAi] = useState(() => readFlag(AI_KEY, store.ownerId));
+  const [who, setWho] = useState<Assistant>(() => (readFlag(AI_KEY, store.ownerId) ? 'puter' : 'figgy'));
+  // The picker shows under the box once it is clicked, as in Claude.
+  const [engaged, setEngaged] = useState(false);
+  const [picking, setPicking] = useState(false);
   const end = useRef<HTMLDivElement>(null);
+  const picker = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { if (ai) warmCoachAi(); }, [ai]);
+  useEffect(() => { if (who === 'puter') warmCoachAi(); }, [who]);
   useEffect(() => { end.current?.scrollIntoView({ block: 'end' }); }, [said, busy]);
+  useEffect(() => {
+    if (!picking) return;
+    const away = (event: Event) => { if (!picker.current?.contains(event.target as Node)) setPicking(false); };
+    // Escape closes the picker only, not the coach panel around it (that listens on window).
+    const key = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.stopPropagation(); setPicking(false); } };
+    document.addEventListener('pointerdown', away);
+    document.addEventListener('keydown', key);
+    return () => { document.removeEventListener('pointerdown', away); document.removeEventListener('keydown', key); };
+  }, [picking]);
 
-  const toggleAi = (on: boolean) => { setAi(on); writeFlag(AI_KEY, store.ownerId, on); };
+  const choose = (next: Assistant) => { setWho(next); writeFlag(AI_KEY, store.ownerId, next === 'puter'); setPicking(false); };
+  const report = (body: { source: string; helpful: boolean } | { missed: string }) => {
+    void api.coachAnswer(store.ownerId, body).catch(() => undefined);
+  };
 
-  async function ask(question: string) {
+  async function ask(question: string, using: Assistant = who) {
     const text = question.trim();
     if (!text || busy) return;
     const history = [...said, { role: 'user' as const, text }];
     setSaid(history);
     setDraft('');
-    // Declined the same way with the AI on or off, and never sent to it.
-    if (!ai || isPrivateQuestion(text)) {
-      const answer = isPrivateQuestion(text) ? PRIVATE_ANSWER : answerOffline(text, plan);
-      setSaid([...history, { role: 'assistant', ...answer }]);
+    // Declined the same way by either assistant, and never sent to Puter.
+    if (using === 'figgy' || isPrivateQuestion(text)) {
+      const answer = isPrivateQuestion(text) ? PRIVATE_ANSWER : answerOffline(text, plan, guides);
+      setSaid([...history, { role: 'assistant', ...answer, by: 'figgy', question: text }]);
+      // Nothing matched: its words are counted, so staff can see what guide to write next.
+      if (answer.source === 'menu') report({ missed: text });
       return;
     }
     setBusy(true);
     try {
       const turns: ChatTurn[] = history.map((entry) => ({ role: entry.role, content: entry.text }));
       const answer: CoachAnswer = await askCoachAi(coachBrief(signals, plan), turns);
-      setSaid([...history, { role: 'assistant', ...answer, ai: true }]);
+      setSaid([...history, { role: 'assistant', ...answer, by: 'puter', source: 'puter', question: text }]);
     } catch (err) {
-      // The built-in coach answers instead, and says why.
-      const fallback = answerOffline(text, plan);
-      const reason = err instanceof Error ? err.message : 'The AI coach could not answer.';
-      setSaid([...history, { role: 'assistant', ...fallback, text: `${reason}\n\n${fallback.text}` }]);
+      // Figgy answers instead, and says why.
+      const fallback = answerOffline(text, plan, guides);
+      const reason = err instanceof Error ? err.message : 'Puter AI could not answer.';
+      setSaid([...history, { role: 'assistant', ...fallback, text: `${reason}\n\n${fallback.text}`, by: 'figgy', question: text }]);
     } finally {
       setBusy(false);
     }
+  }
+
+  function vote(index: number, helpful: boolean) {
+    const entry = said[index];
+    if (!entry || entry.vote || !entry.source) return;
+    report({ source: entry.source, helpful });
+    setSaid(said.map((item, at) => (at === index ? { ...item, vote: helpful ? 'up' : 'down' } : item)));
   }
 
   const submit = (event: FormEvent) => { event.preventDefault(); void ask(draft); };
@@ -432,32 +476,44 @@ function CoachChat({ store, signals, plan, run }: {
 
   return (
     <div className="shopcoach__chat">
-      <label className="shopcoach__aiswitch">
-        <input type="checkbox" checked={ai} onChange={(event) => toggleAi(event.target.checked)} />
-        <span>
-          <b>AI chat</b> - free, through your own Puter account.
-          {ai ? ' Only your shop\'s counts are sent, never a buyer\'s details.' : ' Off: the built-in coach answers instantly, offline.'}
-        </span>
-      </label>
-
       <div className="shopcoach__log" aria-live="polite">
         {said.length === 0 && (
           <p className="shopcoach__hello">
-            Hi! I know {signals.shop.name}'s listings, orders and timing. Ask how to list, price, ship, run a pre-order or market the shop - or what to do today.
+            Hi, I'm {FIGGY}! I know {signals.shop.name}'s listings, orders and timing. Ask how to list, price, ship, run a pre-order or bring in buyers - on WhatsApp and Instagram first, then here - or what to do today.
           </p>
         )}
-        {said.map((entry, index) => (
-          <div key={index} className={`shopcoach__msg shopcoach__msg--${entry.role}`}>
-            <p>{entry.text}</p>
-            {entry.tools && entry.tools.length > 0 && (
-              <div className="shopcoach__msgacts">
-                {entry.tools.map((tool) => <ToolButton key={tool} tool={tool} pro={signals.shop.pro} quiet onRun={() => run(tool)} />)}
-              </div>
-            )}
-            {entry.ai && <span className="shopcoach__by">AI · check before you act</span>}
-          </div>
-        ))}
-        {busy && <div className="shopcoach__msg shopcoach__msg--assistant shopcoach__typing" aria-label="The coach is writing"><i /><i /><i /></div>}
+        {said.map((entry, index) => {
+          const other: Assistant = entry.by === 'puter' ? 'figgy' : 'puter';
+          return (
+            <div key={index} className={`shopcoach__msg shopcoach__msg--${entry.role}`}>
+              <p>{entry.text}</p>
+              {entry.tools && entry.tools.length > 0 && (
+                <div className="shopcoach__msgacts">
+                  {entry.tools.map((tool) => <ToolButton key={tool} tool={tool} pro={signals.shop.pro} quiet onRun={() => run(tool)} />)}
+                </div>
+              )}
+              {entry.role === 'assistant' && entry.by && (
+                <div className="shopcoach__by">
+                  <span>{ASSISTANTS[entry.by].name}{entry.by === 'puter' ? ' · check before you act' : ''}</span>
+                  {entry.source && entry.source !== 'private' && (entry.vote ? (
+                    <span className="shopcoach__thanks">{entry.vote === 'up' ? 'Thanks!' : 'Thanks - this helps answers get better.'}</span>
+                  ) : (
+                    <span className="shopcoach__votes">
+                      <button type="button" aria-label="Helpful" title="Helpful" onClick={() => vote(index, true)}>👍</button>
+                      <button type="button" aria-label="Not helpful" title="Not helpful" onClick={() => vote(index, false)}>👎</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              {entry.vote === 'down' && entry.question && index === said.length - 1 && (
+                <button type="button" className="chip shopcoach__retry" onClick={() => { choose(other); void ask(entry.question!, other); }}>
+                  Ask {ASSISTANTS[other].name} instead
+                </button>
+              )}
+            </div>
+          );
+        })}
+        {busy && <div className="shopcoach__msg shopcoach__msg--assistant shopcoach__typing" aria-label="Puter AI is writing"><i /><i /><i /></div>}
         <div ref={end} />
       </div>
 
@@ -469,11 +525,32 @@ function CoachChat({ store, signals, plan, run }: {
 
       <form className="shopcoach__form" onSubmit={submit}>
         <input value={draft} onChange={(event) => setDraft(event.target.value)} maxLength={500}
-          placeholder="Ask about listing, orders, marketing…" aria-label="Ask the coach" />
+          onFocus={() => setEngaged(true)} onPointerDown={() => setEngaged(true)}
+          placeholder={`Ask ${ASSISTANTS[who].name} anything…`} aria-label={`Ask ${ASSISTANTS[who].name}`} />
         <button type="submit" className="btn btn--sm" disabled={busy} aria-label="Send">
           <Icon name="send" size={16} />
         </button>
       </form>
+
+      {(engaged || who === 'puter' || said.length > 0) && (
+        <div className="shopcoach__picker" ref={picker}>
+          <button type="button" className="shopcoach__pick" aria-haspopup="listbox" aria-expanded={picking}
+            onClick={() => setPicking(!picking)}>
+            {ASSISTANTS[who].name} <Icon name="down" size={12} />
+          </button>
+          {picking && (
+            <div className="shopcoach__menu" role="listbox" aria-label="Who answers">
+              {(['figgy', 'puter'] as const).map((id) => (
+                <button key={id} type="button" role="option" aria-selected={who === id}
+                  className={`shopcoach__option${who === id ? ' is-on' : ''}`} onClick={() => choose(id)}>
+                  <b>{ASSISTANTS[id].name}{who === id && <Icon name="check" size={14} />}</b>
+                  <span>{ASSISTANTS[id].blurb}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
