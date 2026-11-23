@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type Dispatch, type PointerEvent as ReactPointerEvent, type SetStateAction } from 'react';
 import { saleFee, type FeeTerms } from '@shared/billing';
 import { MAX_PIECES, parsePriceList } from '@shared/pieces';
-import { sameness } from '@shared/photo-things';
+import { readingOrder, sameness } from '@shared/photo-things';
+import { mergeThings } from '../photoThings';
 import { api, type PhotoBox } from '../api';
 import { formatMoney } from '../format';
 import { haptic } from '../haptics';
@@ -83,15 +84,6 @@ export function sharesOf(totalMinor: number, rows: number): number[] {
   if (rows <= 0) return [];
   const share = Math.floor(totalMinor / rows);
   return Array.from({ length: rows }, (_, index) => share + (index === 0 ? totalMinor - share * rows : 0));
-}
-
-/** Top row first, then left to right: how the rows are numbered. */
-function byReading(a: { boxes: PhotoBox[] }, b: { boxes: PhotoBox[] }): number {
-  const [ax, ay, , ah] = a.boxes[0] ?? [0, 0, 0, 0];
-  const [bx, by, , bh] = b.boxes[0] ?? [0, 0, 0, 0];
-  const acy = ay + ah / 2; const bcy = by + bh / 2;
-  if (Math.abs(acy - bcy) > Math.min(ah, bh) / 2) return acy - bcy;
-  return ax - bx;
 }
 
 /** What still stands between this group and publishing, in words; empty when nothing does. */
@@ -184,21 +176,15 @@ export function PhotoGroupBox({ photoUrl, group, onChange }: {
     const server = api.detectPieces(photoUrl).then((result) => result.pieces).catch(() => []);
     const settle = (named: { label: string | null; boxes: PhotoBox[] }[], boxes: PhotoBox[], final: boolean) => {
       if (!live) return;
-      // The server's first - it knows names and which boxes are one thing -
-      // then whatever the phone found where the server found nothing.
-      const found: DraftPiece[] = named.map((piece) => ({ key: newKey(), title: piece.label ?? '', price: '', boxes: piece.boxes, label: piece.label }));
-      for (const box of boxes) {
-        if (!found.some((piece) => piece.boxes.some((known) => sameness(known, box) >= 0.45))) {
-          found.push({ key: newKey(), title: '', price: '', boxes: [box], label: null });
-        }
-      }
-      found.sort(byReading);
+      // Put together as photo search does (photoThings.ts), so a photo shows the same things in both.
+      const found: DraftPiece[] = mergeThings(named, boxes, MAX_PIECES)
+        .map((thing) => ({ key: newKey(), title: thing.label ?? '', price: '', boxes: thing.boxes, label: thing.label }));
       onChange((now) => {
         if (now.photoUrl !== photoUrl) return now;
         // Rows the seller already touched are kept; the rest follow the better reading.
         const touched = now.pieces.filter((piece) => piece.title !== (piece.label ?? '') || piece.price);
         const fresh = found.filter((piece) => !touched.some((kept) => kept.boxes.some((box) => piece.boxes.some((other) => sameness(box, other) >= 0.45))));
-        const pieces = [...touched, ...fresh].sort(byReading).slice(0, MAX_PIECES);
+        const pieces = [...touched, ...fresh].sort(readingOrder).slice(0, MAX_PIECES);
         const asked = now.mode === 'pieces' || now.mode === 'lot';
         return {
           ...now,
