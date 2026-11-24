@@ -48,7 +48,7 @@
   color: var(--lime-ink); background: var(--lime);
 }
 .gohero__title {
-  margin: 0; color: var(--text); font: 800 calc(clamp(34px, 9vw, 54px) * var(--text-scale))/1.1 var(--display);
+  margin: 0; color: var(--text); font: italic 800 calc(clamp(34px, 9vw, 54px) * var(--text-scale))/1.1 var(--display);
   letter-spacing: -0.025em; padding-bottom: 0.08em;
 }
 .gohero__line { margin: 0; max-width: 52ch; color: var(--text-dim); font-size: var(--t-md); line-height: 1.5; }
@@ -72,7 +72,7 @@
 .goticker b { font-size: var(--t-sm); font-weight: 700; color: var(--text-dim); }
 @keyframes gopro-ticker { to { transform: translateX(-50%); } }
 
-.gohead { margin: 0; font: 800 var(--t-lg)/1.2 var(--display); letter-spacing: -0.01em; }
+.gohead { margin: 0; font: italic 800 var(--t-lg)/1.2 var(--display); letter-spacing: -0.01em; }
 
 .gobens { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .gobens > li { animation: gopro-rise 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both; animation-delay: calc(var(--i, 0) * 50ms); }
@@ -85,7 +85,7 @@
 }
 .goben:hover, .goben:focus-visible { border-color: var(--gold); background: var(--surface-2); transform: translateX(4px); }
 .goben:active { transform: translateX(2px) scale(0.99); }
-.goben__num { font: 800 var(--t-sm)/1 var(--display); color: var(--gold); opacity: 0.8; }
+.goben__num { font: italic 800 var(--t-sm)/1 var(--display); color: var(--gold); opacity: 0.8; }
 .goben__icon {
   display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; font-size: calc(20px * var(--text-scale));
   background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(236, 72, 153, 0.18)); transform: rotate(-6deg);
@@ -126,7 +126,7 @@
     linear-gradient(120deg, var(--gold-text), var(--gold) 45%, var(--pink)) border-box;
 }
 .goplan__months {
-  position: absolute; right: -4px; top: -16px; font: 800 calc(110px * var(--text-scale))/1 var(--display);
+  position: absolute; right: -4px; top: -16px; font: italic 900 calc(110px * var(--text-scale))/1 var(--display);
   letter-spacing: -0.06em; color: transparent; -webkit-text-stroke: 1.5px var(--border-strong); pointer-events: none;
 }
 .goplan.is-best .goplan__months { -webkit-text-stroke-color: rgba(245, 158, 11, 0.45); }
