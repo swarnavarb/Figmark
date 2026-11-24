@@ -276,9 +276,13 @@ export const admin = {
   pricing: () => request<Pricing>('/ops/pricing'),
   savePricing: (pricing: Partial<Omit<Pricing, 'updatedAt' | 'updatedBy'>>) => post<Pricing>('/ops/pricing/save', pricing),
   vouchers: () => request<{ vouchers: ProVoucher[] }>('/ops/pro/vouchers'),
-  makeVouchers: (body: { days: number; count?: number; maxUses?: number; expiresAt?: string | null; prefix?: string; code?: string; note?: string }) =>
+  makeVouchers: (body: {
+    days: number; count?: number; maxUses?: number; expiresAt?: string | null; prefix?: string; code?: string; note?: string; title?: string; details?: string;
+  }) =>
     post<{ vouchers: ProVoucher[] }>('/ops/pro/vouchers/make', body),
   toggleVoucher: (code: string) => post<{ ok: true }>(`/ops/pro/vouchers/${encodeURIComponent(code)}/toggle`),
+  editVoucher: (code: string, body: { title?: string; details?: string; note?: string }) =>
+    post<{ voucher: ProVoucher }>(`/ops/pro/vouchers/${encodeURIComponent(code)}/edit`, body),
   grantPro: (userId: string, days: number) => post<{ pro: ProState }>('/ops/pro/grant', { userId, days }),
   fees: () => request<{
     accounts: { userId: string; name: string; owedMinor: number; overdueMinor: number; locked: boolean; nextDueAt: string | null; checkedAt: string }[];

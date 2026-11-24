@@ -5,7 +5,7 @@ import type { PayoutSummary } from '@shared/payouts';
 import type { DnaLinkKind, DnaSummary, DnaView } from '@shared/dna';
 import type { DayRange, DaySource, ShopDays } from '@shared/step-days';
 import type { LotCostKey, LotSplit } from '@shared/lot-costs';
-import type { CancelFlag, CancelSettings, CancelStats, FeeSettlement, FeeStatement, GiftMethod, GiverKind, PlatformFees, Pricing, ProFeatureId, ProGrant, ProPlan, StoreGift } from '@shared/billing';
+import type { CancelFlag, CancelSettings, CancelStats, FeeSettlement, FeeStatement, GiftMethod, GiverKind, PlatformFees, Pricing, ProFeatureId, ProGrant, ProPlan, ProVoucherPreview, StoreGift } from '@shared/billing';
 import type { CardProgress, IssuedReward, LoyaltyApplied, LoyaltyCard, LoyaltyReward, LoyaltySettings } from '@shared/loyalty';
 import type { StoreInsights } from '@shared/service-insights';
 import type { AppliedOffer, ListingOffer } from '@shared/offers';
@@ -2988,6 +2988,7 @@ export const api = {
   myPro: () => request<ProView>('/me/pro'),
   proStatus: (ownerId: string) => request<ProStatus>(`/pro/status?owner=${encodeURIComponent(ownerId)}`),
   buyPro: (months: number) => post<ProView>('/me/pro/buy', { months }),
+  checkProCode: (code: string) => post<{ voucher: ProVoucherPreview }>('/me/pro/redeem/check', { code }),
   redeemPro: (code: string) => post<ProView>('/me/pro/redeem', { code }),
   startProTrial: () => post<ProView>('/me/pro/trial', {}),
   storeGifts: (kind: GiverKind, ownerId?: string) =>
