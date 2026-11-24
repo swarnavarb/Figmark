@@ -8,7 +8,7 @@ import { MAX_THINGS } from '../../../shared/photo-things.js';
 import { listedInShop, shopRefusal, shopStatusOf } from '../../../shared/shop-status.js';
 import { isProActive } from '../../../shared/billing.js';
 import { lockTimedOffers, repriceBasket, snapshotFromListing } from '../offers.js';
-import { cleanOffers } from '../../../shared/offers.js';
+import { cleanOffers, shippingOfferClash } from '../../../shared/offers.js';
 import { randomUUID } from 'node:crypto';
 import { forgetFollowerCount, realFollowerCount } from '../follower-count.js';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
@@ -1842,7 +1842,12 @@ async function myListings(request: HttpRequest, _context: InvocationContext) {
 }
 
 /** Why this shipping fee or these offers cannot be saved, or null when they can. */
-function offerRefusal(body: { shippingMinor?: number | null; offers?: unknown }, priceMinor: number): ReturnType<typeof error> | null {
+function offerRefusal(
+  body: { shippingMinor?: number | null; offers?: unknown },
+  priceMinor: number,
+  /** On an edit, what the listing has now, for whichever of the two the edit leaves alone. */
+  current?: Pick<Listing, 'shippingMinor' | 'offers'>,
+): ReturnType<typeof error> | null {
   if (body.shippingMinor !== undefined && body.shippingMinor !== null) {
     const fee = Number(body.shippingMinor);
     if (!Number.isFinite(fee) || fee < 0 || fee > 10_000_000) {
@@ -1852,6 +1857,13 @@ function offerRefusal(body: { shippingMinor?: number | null; offers?: unknown },
   if (body.offers !== undefined) {
     const { error: problem } = cleanOffers(body.offers, priceMinor);
     if (problem) return error(400, 'invalid_offer', problem);
+  }
+  // Free shipping on the item already: a free-shipping offer would give nothing.
+  if (body.shippingMinor !== undefined || body.offers !== undefined) {
+    const shipping = body.shippingMinor !== undefined ? body.shippingMinor : current?.shippingMinor;
+    const offers = body.offers !== undefined ? cleanOffers(body.offers, priceMinor).offers : current?.offers;
+    const clash = shippingOfferClash(offers, shipping === null || shipping === undefined ? shipping : Math.round(Number(shipping)));
+    if (clash) return error(400, 'invalid_offer', clash);
   }
   return null;
 }
@@ -2058,7 +2070,7 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
   }
   const newPrice = body.priceMinor === undefined ? undefined : listablePrice(body.priceMinor);
   if (newPrice === null) return error(400, 'invalid_listing', PRICE_RANGE_MESSAGE);
-  const offerProblem = offerRefusal(body, newPrice ?? listing.priceMinor);
+  const offerProblem = offerRefusal(body, newPrice ?? listing.priceMinor, listing);
   if (offerProblem) return offerProblem;
   // Stock is a change, not a count. The form was drawn minutes ago; a sale
   // since then has already taken its unit, and writing the old number back

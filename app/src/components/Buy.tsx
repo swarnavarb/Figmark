@@ -377,7 +377,8 @@ export function TermsFields({ value, onChange, preOrder = false, publicLater = f
             <span className="field__hint">Charged on each item. Offers below can make it free when buyers take more.</span>
           </label>
         )}
-        <OfferEditor offers={value.offers} onChange={(offers) => set({ offers })} priceMinor={priceMinor ?? 0} />
+        <OfferEditor offers={value.offers} onChange={(offers) => set({ offers })} priceMinor={priceMinor ?? 0}
+          shippingMinor={shippingMinorOf(value)} />
         {value.offers.length > 0 && (
           <span className="field__hint">
             Offers apply on their own at checkout.{' '}
