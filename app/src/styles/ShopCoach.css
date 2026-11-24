@@ -492,6 +492,8 @@
 
 /* Did you know? One fact at a time, with arrows. */
 .shopcoach__dyk {
+  position: relative;
+  overflow: hidden;
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: start;
@@ -503,6 +505,22 @@
     radial-gradient(120% 140% at 0% 0%, var(--q-gold-soft), transparent 60%),
     var(--bg);
 }
+/* The time left on this tip, along the bottom edge. */
+.shopcoach__dykclock {
+  position: absolute;
+  left: var(--s4);
+  right: var(--s4);
+  bottom: 6px;
+  height: 2px;
+  border-radius: var(--r-pill);
+  background: var(--gold);
+  opacity: 0.55;
+  transform-origin: left;
+  animation-name: shopcoach-clock;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+}
+@keyframes shopcoach-clock { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 .shopcoach__dykmark {
   display: inline-grid;
   place-items: center;
@@ -581,5 +599,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .shopcoach__dykclock { display: none; }
   .shopcoach, .shopcoach__dyktext--next, .shopcoach__dyktext--prev, .shopcoach__typing i, .shopcoach__menu, .shopcoach__act, .shopcoach__votes button, .shopcoach__dyknav button { transition: none; animation: none; }
 }
