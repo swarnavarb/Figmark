@@ -268,18 +268,21 @@ export function DetailBlocks({ listing }: { listing: Listing }) {
  * thumbnails under it, and a tap on the stage opens it full screen, growing
  * out of the frame it was in.
  */
-export function Gallery({ photos, title, fallback, children }: {
+export function Gallery({ photos, title, fallback, children, overlay }: {
   photos: string[];
   title: string;
   /** What stands in when there are no photos at all. */
   fallback: ReactNode;
   /** Badges laid over the stage. */
   children?: ReactNode;
+  /** A control over the stage's top-right corner - the save heart. Beside the stage, not in it: the stage is a button. */
+  overlay?: ReactNode;
 }) {
   const [at, setAt] = useState(0);
   const [open, setOpen] = useState<DOMRect | null>(null);
 
-  if (photos.length === 0) return <div className="gallery"><div className="gallery__stage">{fallback}{children}</div></div>;
+  const over = overlay ? <span className="gallery__over">{overlay}</span> : null;
+  if (photos.length === 0) return <div className="gallery"><div className="gallery__stage">{fallback}{children}</div>{over}</div>;
 
   return (
     <div className="gallery">
@@ -298,6 +301,7 @@ export function Gallery({ photos, title, fallback, children }: {
         {children}
       </button>
 
+      {over}
       {photos.length > 1 && (
         <div className="gallery__strip" role="tablist" aria-label="Photos">
           {photos.map((url, index) => (

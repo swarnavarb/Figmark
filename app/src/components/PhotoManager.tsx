@@ -18,11 +18,13 @@ export const shrink = (file: Blob): Promise<string> => compressImage(file);
  * decision a seller makes deliberately - by dragging on a pointer, or with the
  * arrows, which are the only ones that work on a phone.
  */
-export function PhotoManager({ photos, onChange, label = 'Item photos' }: {
+export function PhotoManager({ photos, onChange, label = 'Item photos', keep = [] }: {
   photos: PhotoDraft[];
   onChange: (next: PhotoDraft[]) => void;
   /** Null inside a box that already says what this is. */
   label?: string | null;
+  /** Photos that can be moved but not deleted - an item somebody has bought keeps its photos. */
+  keep?: readonly string[];
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -122,13 +124,13 @@ export function PhotoManager({ photos, onChange, label = 'Item photos' }: {
                 onClick={() => commit(photos.map((row, i) => ({ ...row, isPrimary: i === index })))}><Icon name="star" size={13} /></button>
               <button type="button" className="iconbtn" aria-label={`Move photo ${index + 1} right`}
                 disabled={index === photos.length - 1} onClick={() => move(index, index + 1)}><Icon name="right" size={13} /></button>
-              <button type="button" className="iconbtn iconbtn--danger" aria-label={`Delete photo ${index + 1}`}
+              {!keep.includes(photo.url) && <button type="button" className="iconbtn iconbtn--danger" aria-label={`Delete photo ${index + 1}`}
                 onClick={() => {
                   // One picked in this session and never saved is deleted from storage
                   // at once; one already on the listing stays until it is saved without it.
                   if (fresh.current.delete(photo.url)) void api.discardPhoto(photo.url);
                   commit(photos.filter((_, i) => i !== index));
-                }}><Icon name="close" size={13} /></button>
+                }}><Icon name="close" size={13} /></button>}
             </div>
           </figure>
         ))}

@@ -1,3 +1,4 @@
+import { lockedChange } from '../../../shared/listing-lock.js';
 import {
   MAX_BUNDLE_COUNT, cleanBox, cleanPieces, cleanSetItems, fromPriceMinor, hasPieces, isPieceSold, mergePieces, piecesLeft, piecesName, publicPieces, spreadUnits,
   type BundleCount, type ListingPiece, type OrderPiece,
@@ -2022,6 +2023,9 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
     pieces?: unknown;
     /** What a set holds, as the seller left it. */
     setItems?: unknown;
+    /** The category's questions - condition, original or copy, type, size… */
+    attributes?: unknown;
+    tags?: unknown;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -2030,6 +2034,23 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
   }
 
   if (body.title !== undefined && !body.title.trim()) return error(400, 'invalid_listing', 'A title is required.');
+  // The category's answers, checked as on the way in; "Mixed" only for several items in one photo.
+  let attributes: Record<string, string> | undefined;
+  if (body.attributes !== undefined && body.attributes !== null) {
+    const cleaned = cleanAttributes(listing.category, body.attributes, { allowMixed: hasPieces(listing) || Boolean(listing.bundle) });
+    if (cleaned.error) return error(400, 'invalid_listing', cleaned.error);
+    attributes = cleaned.attributes;
+  }
+  const tags = Array.isArray(body.tags)
+    ? [...new Set(body.tags.filter((tag): tag is string => typeof tag === 'string').map((tag) => tag.trim().replace(/^#/, '')).filter(Boolean))].slice(0, 20)
+    : undefined;
+  // Bought once, it stays the item that was bought (shared/listing-lock.ts).
+  const locked = lockedChange(listing, {
+    ...(body.title !== undefined ? { title: body.title.trim() } : {}),
+    attributes: attributes ?? null,
+    photos: Array.isArray(body.photos) ? body.photos : null,
+  });
+  if (locked) return error(409, 'locked_after_sale', locked);
   // The items in the photo, edited after publishing. Sold pieces stay as they
   // sold; the fee count is worked out from the photo again, and never drops
   // below what the photo showed when it was listed.
@@ -2113,6 +2134,11 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
     }
     if (body.title !== undefined) next.title = body.title.trim();
     if (body.description !== undefined) next.description = body.description.trim();
+    if (tags) next.tags = tags;
+    if (attributes) {
+      next.attributes = attributes;
+      next.condition = conditionTagFor(current.category, attributes) || current.condition;
+    }
     if (photos) next.photos = photos;
     if (editedPieces && hasPieces(current)) {
       const merged = mergePieces(current.pieces!, editedPieces.pieces, editedPieces.ids);

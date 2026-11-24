@@ -30,6 +30,7 @@
 .sellform__btns .btn--ghost { padding-inline: var(--s3); white-space: nowrap; }
 .sellform__btns .sellform__go { flex: 1 1 auto; }
 .sellform__needs { margin: 0; font-size: var(--t-xs); color: var(--text-faint); }
+.sellform__lock { margin: 0; padding: 10px 12px; border-radius: var(--r-md); font-size: var(--t-xs); line-height: 1.45; color: var(--text-dim); background: var(--surface-2); border-left: 3px solid var(--warn); }
 .sellform__needs.is-shown { color: var(--coral-pale); }
 .sellform__again { justify-self: center; font-size: var(--t-sm); color: var(--text-dim); }
 .sellform__again:disabled { opacity: .5; cursor: default; }

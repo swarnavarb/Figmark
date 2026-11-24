@@ -64,6 +64,8 @@ function lineOf(order: Order, listing: Listing | null, groupFilled: boolean): Of
     listingId: order.listingId,
     lotId: inLot(order) ? order.lotId : null,
     quantity: order.quantity,
+    // Several items picked from one photo are one line; they count as what they are.
+    items: order.pieces?.length ? order.pieces.length * order.quantity : order.quantity,
     unitPriceMinor: order.unitPriceMinor,
     shippingPerItemMinor: shipping,
     offers: rules,
