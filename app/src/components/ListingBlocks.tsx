@@ -240,6 +240,22 @@ export function DetailBlocks({ listing }: { listing: Listing }) {
     });
   }
 
+  // Two to a row, always: an odd count is topped up with what is worth
+  // knowing next - how much attention it has had, then when it was listed.
+  const extras: Omit<Parameters<typeof Tile>[0], 'i'>[] = [];
+  if (listing.likeCount > 0 || listing.viewCount > 0) {
+    extras.push({
+      tone: 'cool', icon: 'views', label: 'Interest',
+      value: listing.viewCount > 0 ? `${listing.viewCount.toLocaleString('en-IN')} view${listing.viewCount === 1 ? '' : 's'}` : `${listing.likeCount} saved`,
+      note: listing.viewCount > 0 && listing.likeCount > 0 ? `${listing.likeCount} saved it` : undefined,
+    });
+  }
+  extras.push({
+    tone: 'sea', icon: 'clock', label: 'Listed', value: new Date(listing.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+    note: listing.category || undefined,
+  });
+  while (tiles.length % 2 === 1 && extras.length > 0) tiles.push(extras.shift()!);
+
   return (
     <div className="dtiles">
       {tiles.map((tile, i) => <Tile key={tile.label} {...tile} i={i} />)}

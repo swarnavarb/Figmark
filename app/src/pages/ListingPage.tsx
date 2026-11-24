@@ -77,12 +77,8 @@ export function ListingPage() {
   const [quantity, setQuantity] = useState(1);
   /** The offer whose details and terms are open, from the row or the wholesale callout. */
   const [busy, setBusy] = useState(false);
-  /** On a listing sold piece by piece, "Pick & buy" opens the photo to pick from. */
+  /** On a listing sold piece by piece, "Pick & buy" (or the shop's "See the listings") opens the photo to pick from, as a popup. */
   const [boardOpen, setBoardOpen] = useState(false);
-  const boardRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (boardOpen) boardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, [boardOpen]);
   const [editing, setEditing] = useState(false);
   // Just published from the Sell screen: the moment it goes live gets marked.
   const location = useLocation();
@@ -184,8 +180,7 @@ export function ListingPage() {
   const describePiece = (piece: { condition?: string; authenticity?: string }) => pieceFactsLine(listing.category, listing.attributes, piece);
   const openBoard = () => {
     haptic('tap');
-    if (boardOpen) boardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    else setBoardOpen(true);
+    setBoardOpen(true);
   };
   const buy = () =>
     byPiece ? openBoard() : run('', async () => {
@@ -198,6 +193,7 @@ export function ListingPage() {
     run('', async () => {
       haptic();
       const placed = await api.order(listing.id, 1, via, ref, fromPost, ids);
+      setBoardOpen(false);
       if (to === 'checkout') {
         navigate(`/order/${placed.order.id}`);
         return;
@@ -281,6 +277,11 @@ export function ListingPage() {
           <button className="btn buybox__buy" onClick={() => setEditing(true)}>
             {isExpired(listing) ? 'Make available again' : 'Edit, quantity or delete'}
           </button>
+          {byPiece && photos[0] && (
+            <button type="button" className="btn btn--ghost buybox__see" onClick={openBoard}>
+              <Svg name="tag" size={15} /> See the listings
+            </button>
+          )}
           <span className="buybox__bump">
             <button className="buybox__bumpbtn" onClick={() => void bump()} disabled={busy}>
               <span className="buybox__bumpicon" aria-hidden="true"><Glyph name="bolt" size={14} /></span>
@@ -348,6 +349,12 @@ export function ListingPage() {
             <Icon name="heart" size={18} />
           </button>
         </div>
+      )}
+      {/* Nobody can buy right now, but the items in the photo can still be looked at. */}
+      {byPiece && photos[0] && !data.isOwn && (!buyable || shut) && (
+        <button type="button" className="btn btn--ghost buybox__see" onClick={openBoard}>
+          <Svg name="tag" size={15} /> See the items
+        </button>
       )}
       {shut && !isExpired(listing) && listing.status !== 'archived' && (
         <p id="buybox-shut" className={`buybox__shut buybox__shut--${shut.state}`}>{shopStatusMessage(shut)}</p>
@@ -422,16 +429,16 @@ export function ListingPage() {
             </span>
           </Gallery>
           {/* Several things in one photo, each with its price: picked from the
-              photo itself, which opens once the buyer taps Pick & buy. The shop,
-              and anyone who cannot buy, sees it as it is. */}
-          {byPiece && photos[0] && (boardOpen || data.isOwn || !buyable || Boolean(shut)) && (
-            <div ref={boardRef} className="lp__board">
-              <PieceBoard src={photos[0]} pieces={pieces} title={listing.title}
+              photo itself, in a popup that Pick & buy opens - or, for the shop,
+              See the listings. The X closes it. */}
+          {byPiece && photos[0] && boardOpen && (
+            <Modal title={data.isOwn ? 'Your listings in this photo' : 'Pick from the photo'} layout="panel" onClose={() => setBoardOpen(false)}>
+              <PieceBoard src={photos[0]} pieces={pieces} title={listing.title} bare
                 disabled={data.isOwn || !buyable || busy || Boolean(shut)} describe={describePiece}
                 shippingMinor={listing.shippingMinor}
                 onBuy={(ids) => gate(() => void buyPieces(ids, 'checkout'), 'Sign in to buy these.')()}
                 onCart={(ids) => gate(() => void buyPieces(ids, 'cart'), 'Sign in to add these to your cart.')()} />
-            </div>
+            </Modal>
           )}
 
           <div className="detail__section rise" style={{ marginTop: 18, ['--i' as string]: 1 }}>
@@ -664,11 +671,10 @@ export function ListingPage() {
         </aside>
       </div>
       <SimilarItems listingId={listing.id} />
-      {buyable && !shut && <div className="buybar__room" aria-hidden="true" />}
       {/* The price and Buy, kept in reach once the buy box has scrolled away.
           Sold piece by piece, Pick & buy floats from the start, until the photo
           to pick from is open: its own bar takes over from there. */}
-      {buyable && !shut && (byPiece ? !boardOpen : boxGone) && createPortal(
+      {buyable && !shut && (byPiece || boxGone) && createPortal(
         <div className="buybar" role="region" aria-label="Buy this item">
           <span className="buybar__what">
             <span className="buybar__title">{listing.title}</span>

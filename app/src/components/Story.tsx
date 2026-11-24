@@ -10,7 +10,7 @@ import { useEffect, useId, useState, type CSSProperties, type ReactNode } from '
  * The styles are the `.story` rules at the end of styles.css; this file is the
  * markup of each scene and the little behaviour they share.
  */
-export type StoryTheme = 'carnival' | 'lab' | 'ocean' | 'stage' | 'map' | 'cinema';
+export type StoryTheme = 'carnival' | 'lab' | 'ocean' | 'stage' | 'map' | 'cinema' | 'night';
 
 /**
  * A chapter's classes, its scene, and the ref that runs both.
@@ -125,6 +125,7 @@ function StoryScene({ theme }: { theme: StoryTheme }) {
       {theme === 'stage' && <Stage />}
       {theme === 'map' && <QuestMap />}
       {theme === 'cinema' && <Cinema />}
+      {theme === 'night' && <NightSky />}
     </div>
   );
 }
@@ -346,6 +347,54 @@ function Cinema() {
         <i className="sc-film__flash" />
         <i className="sc-scratch" />
         <i className="sc-scratch sc-scratch--late" />
+      </span>
+    </>
+  );
+}
+
+/**
+ * Written in the stars - "You might also like", under an item. A night sky:
+ * stars twinkle; one by one a constellation draws itself between them, the
+ * way one find leads to the next; a shooting star crosses; and on the hill a
+ * little telescope follows it across the sky.
+ */
+function NightSky() {
+  const stars: [x: number, y: number, size: number, delay: number][] = [
+    [4, 18, 2, 0], [11, 62, 1.5, -1.2], [17, 30, 2.5, -2.4], [24, 74, 1.5, -0.6], [29, 12, 1.5, -3], [36, 48, 2, -1.8],
+    [43, 22, 1.5, -0.3], [49, 66, 2, -2.7], [56, 10, 2.5, -1.1], [61, 40, 1.5, -2.1], [68, 70, 2, -0.9], [73, 24, 1.5, -3.3],
+    [79, 54, 2, -1.5], [85, 14, 1.5, -2.6], [91, 44, 2.5, -0.4], [96, 72, 1.5, -1.9],
+  ];
+  const points: [number, number][] = [[52, 30], [118, 18], [170, 44], [236, 26], [292, 52], [348, 22]];
+  return (
+    <>
+      <span className="sc-nightglow" />
+      {stars.map(([x, y, size, delay], n) => (
+        <span key={n} className={`sc-star${n % 5 === 2 ? ' sc-star--spark' : ''}`}
+          style={at({ '--x': `${x}%`, '--y': `${y}%`, '--s': `${size * (n % 5 === 2 ? 4 : 1)}px`, '--d': `${delay}s` })} />
+      ))}
+      <svg className="sc-constellation" viewBox="0 0 400 70" preserveAspectRatio="none">
+        <path d={`M${points.map(([x, y]) => `${x} ${y}`).join(' L')}`} fill="none" stroke="#E9D5FF" strokeWidth="1.2"
+          strokeDasharray="2 4" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+      </svg>
+      <span className="sc-constars">
+        {points.map(([x, y], n) => (
+          <i key={n} style={at({ '--x': `${(x / 400) * 100}%`, '--y': `${(y / 70) * 100}%`, '--n': String(n) })} />
+        ))}
+      </span>
+      <span className="sc-moon" />
+      <span className="sc-shoot" />
+      <span className="sc-shoot sc-shoot--late" />
+      <span className="sc-hill" />
+      <span className="sc-scope">
+        <svg viewBox="0 0 48 40">
+          <g className="sc-scope__tube">
+            <rect x="14" y="9" width="28" height="7" rx="2" fill="#C4B5FD" />
+            <rect x="38" y="7.5" width="6" height="10" rx="1.5" fill="#A78BFA" />
+            <rect x="9" y="10.5" width="6" height="4" rx="1" fill="#DDD6FE" />
+          </g>
+          <path d="M24 16 L16 38 M24 16 L32 38 M24 16 L24 38" stroke="#1E1B4B" strokeWidth="2.2" strokeLinecap="round" />
+          <circle cx="24" cy="16" r="2.6" fill="#4C1D95" />
+        </svg>
       </span>
     </>
   );
