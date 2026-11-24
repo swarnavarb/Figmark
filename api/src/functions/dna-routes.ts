@@ -12,7 +12,7 @@ import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import {
   addLink, dnaForItem, dnaForWant, dnaIndex, dnasForListing, dnasForPost, dnasLinked, findBackground, getDna, isShown,
-  itemOnSale, itemsOf, linkedItems, listingsOf, photoOf, removeLink, saveDna, summaryOf, sweepListings, type LinkedItem,
+  coverOf, itemOnSale, itemsOf, linkedItems, listingsOf, photoOf, removeLink, saveDna, summaryOf, sweepListings, type LinkedItem,
 } from '../dna.js';
 import { moderation } from '../moderation.js';
 import { everListed } from '../photo-sales.js';
@@ -176,6 +176,7 @@ async function buildView(repository: Repo, dna: ProductDna, viewerId: string | n
       currency: listing.currency,
       shippingMinor: typeof listing.shippingMinor === 'number' ? listing.shippingMinor : null,
       photoUrl: photoOf(listing),
+      photoBox: item.piece ? item.boxes[0] ?? null : null,
       onSale: itemOnSale(item),
       condition: factsOf(listing).condition,
       shop: shopOf(userById.get(listing.sellerId)),
@@ -370,7 +371,7 @@ async function buildView(repository: Repo, dna: ProductDna, viewerId: string | n
   const theirHunt = theirWants.find((want) => wantLinked.has(want.id) && want.status === 'open' && want.expiresAt > now);
   const theirFollow = viewerId ? follows.find((entry) => entry.userId === viewerId) : undefined;
   return {
-    dna: { id: dna.id, name: dna.name, category: dna.category, cover: dna.cover ?? sellingNow[0]?.photoUrl ?? null, createdAt: dna.createdAt },
+    dna: { id: dna.id, name: dna.name, category: dna.category, ...coverOf(dna, linkedItems(dna, byId)), createdAt: dna.createdAt },
     price,
     trend,
     gap,

@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import type { DnaListingCard, DnaSummary, DnaView } from '@shared/dna';
 import { ApiRequestError, api } from '../api';
 import { BackLink } from '../components/ScrollManager';
-import { DnaHelix, DnaPicker, DnaTile, HeatBand, Stars, dnaHref, sequenceOf } from '../components/DnaKit';
+import { CropPic, DnaHelix, DnaPicker, DnaTile, HeatBand, Stars, dnaHref, sequenceOf } from '../components/DnaKit';
 import { useToast } from '../components/Feedback';
 import { Icon } from '../components/Icon';
 import { ReviewPhotoPicker, ReviewPhotoStrip } from '../components/ReviewPhotos';
@@ -214,7 +214,7 @@ function Hero({ view, onChanged }: { view: DnaView; onChanged: () => Promise<voi
         <span className="dnap__orb dnap__orb--b" />
       </div>
       <div className="dnap__specimen">
-        {dna.cover ? <img src={dna.cover} alt="" decoding="async" /> : <DnaHelix rungs={14} className="dnap__specimenhelix" />}
+        {dna.cover ? <CropPic src={dna.cover} box={dna.coverBox} /> : <DnaHelix rungs={14} className="dnap__specimenhelix" />}
         <span className="dnap__scanline" aria-hidden="true" />
         <span className="dnap__corner dnap__corner--tl" aria-hidden="true" />
         <span className="dnap__corner dnap__corner--br" aria-hidden="true" />
@@ -360,7 +360,7 @@ function WantSheet({ view, onClose, onDone }: { view: DnaView; onClose: () => vo
   return (
     <Modal title="I want this" onClose={onClose}>
       <div className="dnap__wantcard">
-        {view.dna.cover && <img src={view.dna.cover} alt="" decoding="async" />}
+        {view.dna.cover && <CropPic src={view.dna.cover} box={view.dna.coverBox} />}
         <div>
           <strong>{view.dna.name}</strong>
           <span className="dnap__dim">{view.dna.category} · goes on the Wanted board</span>
@@ -522,7 +522,7 @@ function ShopsStrand({ view }: { view: DnaView }) {
           {sellingNow.map((listing, at) => (
             <li key={`${listing.id}${listing.piece?.id ?? ''}`} style={{ ['--i' as string]: at } as CSSProperties}>
               <Link to={`/listing/${encodeURIComponent(listing.id)}`} className="dnap__offer">
-                <span className="dnap__offerpic">{listing.photoUrl ? <img src={listing.photoUrl} alt="" loading="lazy" decoding="async" /> : <Icon name="box" size={20} />}</span>
+                <span className="dnap__offerpic">{listing.photoUrl ? <CropPic src={listing.photoUrl} box={listing.photoBox} /> : <Icon name="box" size={20} />}</span>
                 <span className="dnap__offertext">
                   <b>{listing.shop?.name ?? 'A shop'}</b>
                   {listing.piece && (
@@ -854,7 +854,7 @@ function FixPanel({ view, onChanged }: { view: DnaView; onChanged: () => Promise
   const [merging, setMerging] = useState(false);
   if (view.yourLinks.length === 0 && !view.staff) return null;
   const here: DnaSummary = {
-    id: view.dna.id, name: view.dna.name, category: view.dna.category, cover: view.dna.cover,
+    id: view.dna.id, name: view.dna.name, category: view.dna.category, cover: view.dna.cover, coverBox: view.dna.coverBox,
     lowMinor: view.price?.lowMinor ?? null, highMinor: view.price?.highMinor ?? null, currency: view.price?.currency ?? 'INR',
     sellers: view.sellingNow.length, heat: view.demand.heat, heatLabel: view.demand.label,
     rating: view.rating.average, ratings: view.rating.count, mentions: view.posts.length + view.hunts.length,

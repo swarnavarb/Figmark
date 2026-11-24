@@ -2,10 +2,13 @@ import { canonicalCategory } from '../../shared/catalog.js';
 import type { Listing } from '../../shared/models.js';
 import { wordKeys } from '../../shared/shop-tags.js';
 import { isExpired } from '../../shared/payments.js';
-import { isFingerprinted, overlapOfBoxes, printsFor, storedPrints, type Prints } from './image-hash.js';
+import type { RegionBox } from '../../shared/models.js';
+import { isFingerprinted, overlapOfBoxes, printsFor, printsOfPixels, storedPrints, type Prints } from './image-hash.js';
 import { describedScore, onlyAlike, pictureLooksEach, pictureScore, type LearnedHash, type PictureLook } from './photo-search.js';
+import { thingsInPhoto } from './photo-things.js';
+import { decodeJpeg, type Raw } from './storage/compress.js';
 import { getPhotoStore } from './storage/index.js';
-import { describeItems, visionAvailable, type PhotoDescription } from './vision.js';
+import { visionAvailable, type PhotoDescription } from './vision.js';
 
 /**
  * Where the things in a photo are, or were, for sale.
@@ -15,8 +18,10 @@ import { describeItems, visionAvailable, type PhotoDescription } from './vision.
  * and answers the question a collector has looking at somebody's shelf: can I
  * buy that, and who has sold it before?
  *
- * The photo is split into the items in it when vision is on, each matched by
- * the words Claude read for it and by the fingerprint of the part of the
+ * The photo is split into the things in it the same way image search and the
+ * sell form split one (`photo-things.ts`): what Claude names, and whatever
+ * stands off the backdrop that it did not. Each is matched by the words read
+ * for it, when it was named, and by the fingerprint of the part of the
  * picture it sits in; the picture itself is matched by fingerprint either way,
  * whole and item by item, so a reposted listing photo finds its listing with
  * no key at all, and a shelf photo finds the listing of each thing on it.
@@ -40,6 +45,10 @@ import { describeItems, visionAvailable, type PhotoDescription } from './vision.
 export interface SalesGroup {
   /** What Claude named the item, or null for listings found by the picture alone. */
   label: string | null;
+  /** Where the thing is in the photo; empty for listings found by the words shown with it. */
+  boxes: RegionBox[];
+  /** Which of `things` it is; null for listings the words shown with the photo found. */
+  thing: number | null;
   /** Best match first. */
   listings: Listing[];
 }
@@ -67,7 +76,15 @@ export interface ProbableListing {
   chance: number;
 }
 
+/** One thing the photo was found to hold, whether or not anything matched it. */
+export interface PhotoThing {
+  label: string | null;
+  boxes: RegionBox[];
+}
+
 export interface PhotoSales {
+  /** Every thing the photo was read to hold, in reading order: named ones first. */
+  things: PhotoThing[];
   items: SalesGroup[];
   sellers: PastSeller[];
   likely: LikelySeller[];
@@ -147,18 +164,60 @@ function hasSold(listing: Listing): boolean {
  * the next look tries again. In-flight readings are shared, so a burst of
  * viewers opening the same new post costs one call.
  */
-const readings = new Map<string, Promise<PhotoDescription[] | null>>();
+const readings = new Map<string, Promise<ScannedItem[] | null>>();
 const READINGS_MAX = 5_000;
 
-/** Whether looking at this photo again would cost nothing - nothing to read, or already read. */
+/** A thing found in a photo: what was read for it - nothing, for one only seen - and its own fingerprint. */
+type ScannedItem = PhotoDescription & { hash: string | null; named: boolean };
+
+/** Things seen but not named, kept per photo: each is a fingerprint to compare. */
+const UNNAMED_MAX = 12;
+/** Things fingerprinted one by one per photo, at most. */
+const PRINTED_MAX = 30;
+
+/** Whether looking at this photo again would cost nothing - no call to Claude to make, or already made. */
 export function alreadyRead(blobName: string, vision: boolean): boolean {
   return !vision || readings.has(blobName);
 }
 
-function readItems(blobName: string, bytes: Uint8Array, contentType: string): Promise<PhotoDescription[] | null> {
+/**
+ * The things in a photo, read as image search and the sell form read one:
+ * named by Claude and boxed, then anything standing off the backdrop it did
+ * not name, each fingerprinted by the part of the picture it sits in. Null
+ * when Claude was asked and could not read it, so the next look tries again.
+ */
+async function scanItems(bytes: Uint8Array, contentType: string): Promise<ScannedItem[] | null> {
+  let raw: Raw | null = null;
+  if (contentType === 'image/jpeg') {
+    try { raw = decodeJpeg(bytes); } catch { raw = null; }
+  }
+  const { things, descriptions } = await thingsInPhoto(bytes, contentType, raw);
+  if (visionAvailable() && descriptions === null) return null;
+  const named = things.filter((thing) => thing.description);
+  const seen = things.filter((thing) => !thing.description).slice(0, UNNAMED_MAX);
+  const kept = [...named, ...seen];
+  const boxes = kept.map((thing) => thing.boxes[0]!).slice(0, PRINTED_MAX);
+  const prints = raw && boxes.length > 0 ? printsOfPixels(raw, boxes) : null;
+  const hashOf = (box: RegionBox) => prints?.regions.find((region) => region.box === box)?.imageHash ?? null;
+  const items: ScannedItem[] = kept.map((thing) => ({
+    ...(thing.description ?? { query: '', keywords: [], category: null }),
+    box: thing.boxes[0] ?? null,
+    boxes: thing.boxes,
+    hash: hashOf(thing.boxes[0]!),
+    named: Boolean(thing.description),
+  }));
+  // Things Claude named but could not place: their words still count.
+  const placed = new Set(named.map((thing) => thing.description));
+  for (const description of descriptions ?? []) {
+    if (!placed.has(description)) items.push({ ...description, box: null, boxes: [], hash: null, named: true });
+  }
+  return items;
+}
+
+function readItems(blobName: string, bytes: Uint8Array, contentType: string): Promise<ScannedItem[] | null> {
   const known = readings.get(blobName);
   if (known) return known;
-  const reading = describeItems(bytes, contentType).then((items) => {
+  const reading = scanItems(bytes, contentType).catch(() => null).then((items) => {
     if (items === null) readings.delete(blobName);
     return items;
   });
@@ -217,22 +276,21 @@ export async function findSales(
   // The photo's bytes are read only when something needs them: a fingerprint
   // this instance has not worked out, or items Claude has not read. A photo
   // fingerprinted before was in the store, so need not be read to know it is.
-  const vision = visionAvailable();
   let prints: Prints | null;
-  let described: PhotoDescription[] | null;
-  if (isFingerprinted(blobName) && alreadyRead(blobName, vision)) {
-    [prints, described] = await Promise.all([storedPrints(blobName), vision ? readings.get(blobName)! : null]);
+  let described: ScannedItem[] | null;
+  if (isFingerprinted(blobName) && readings.has(blobName)) {
+    [prints, described] = await Promise.all([storedPrints(blobName), readings.get(blobName)!]);
   } else {
     const photo = await (await getPhotoStore()).read(blobName);
     if (!photo) return null;
     prints = printsFor(blobName, photo.bytes, photo.contentType);
-    described = vision ? await readItems(blobName, photo.bytes, photo.contentType) : null;
+    described = await readItems(blobName, photo.bytes, photo.contentType);
   }
 
   const found = answer(ready, prints ? await looksFor(ready.pool, prints, by, described ?? []) : noLooks(),
     described ?? [], about, by);
   // A reading that failed is tried again on the next look, so its answer is not kept.
-  if (!vision || described) {
+  if (described) {
     if (ready.answers.size >= ANSWERS_MAX) ready.answers.delete(ready.answers.keys().next().value!);
     // Kept without what was learned: that is stored once, by the first answer.
     ready.answers.set(key, { ...found, learned: [] });
@@ -265,13 +323,14 @@ interface Looks {
 const noLooks = (): Looks => ({ looks: new Map(), whole: new Map(), items: [], learned: [] });
 
 /** How the pool compares with the photo, the poster's own listings and the newest compared first. */
-async function looksFor(pool: Listing[], prints: Prints, by: string | null, items: PhotoDescription[]): Promise<Looks> {
+async function looksFor(pool: Listing[], prints: Prints, by: string | null, items: ScannedItem[]): Promise<Looks> {
   // Those are the likeliest, and the ones to compare when there are more photos than one look can read.
   const ordered = [...pool].sort((a, b) => Number(b.sellerId === by) - Number(a.sellerId === by)
     || b.createdAt.localeCompare(a.createdAt));
   const learned: LearnedHash[] = [];
-  // Each item Claude boxed takes the item the picture told apart in the same place.
+  // Each thing takes its own fingerprint, or the item the picture told apart in the same place.
   const itemHashes = items.map((item) => {
+    if (item.hash) return [item.hash];
     const box = item.box;
     const region = box ? prints.regions.find((entry) => overlapOfBoxes(entry.box, box) >= 0.5) : undefined;
     return region ? [region.imageHash] : [];
@@ -283,9 +342,19 @@ async function looksFor(pool: Listing[], prints: Prints, by: string | null, item
 }
 
 function answer(
-  { pool, index, shops }: Prepared, { looks, whole, items: itemLooks, learned }: Looks,
-  items: PhotoDescription[], about: string, by: string | null,
+  prepared: Prepared, looked: Looks, scanned: ScannedItem[], about: string, by: string | null,
 ): PhotoSales {
+  const things: PhotoThing[] = scanned.filter((item) => (item.boxes?.length ?? 0) > 0)
+    .map((item) => ({ label: item.query || item.keywords.join(' ') || null, boxes: item.boxes ?? [] }));
+  // Nothing named: the picture as a whole, and any part of it, is all there is to go on, as before.
+  if (!scanned.some((item) => item.named)) return { ...matchItems(prepared, { ...looked, items: [] }, [], about, by, []), things };
+  return { ...matchItems(prepared, looked, scanned, about, by, things), things };
+}
+
+function matchItems(
+  { pool, index, shops }: Prepared, { looks, whole, items: itemLooks, learned }: Looks,
+  items: ScannedItem[], about: string, by: string | null, things: PhotoThing[],
+): Omit<PhotoSales, 'things'> {
   // With items named, the whole photo goes to the first and each item's own
   // part of the picture to it; with none, any part of the picture counts.
   const pictures = onlyAlike(items.length > 0 ? whole : looks);
@@ -295,8 +364,14 @@ function answer(
   // very picture is about the photo's main item, so it counts toward the first.
   const best = new Map<string, { group: number; score: number }>();
   const labels: (string | null)[] = items.length > 0
-    ? items.map((item) => item.query || item.keywords.join(' '))
+    ? items.map((item) => item.query || item.keywords.join(' ') || null)
     : [null];
+  const thingOf = (group: number): number | null => {
+    const boxes = items[group]?.boxes;
+    if (!boxes?.length) return null;
+    const at = things.findIndex((thing) => thing.boxes === boxes);
+    return at < 0 ? null : at;
+  };
   const itemWords = items.map((item) => new Set(keyWords([...item.keywords, item.query].join(' '))));
   // Only listings something points at are scored: a picture match, or a title word Claude read.
   const named = new Set(itemWords.flatMap((words) => [...words]));
@@ -327,6 +402,8 @@ function answer(
   const placed = pool.filter((listing) => best.has(listing.id));
   const groups: SalesGroup[] = labels.map((label, group) => ({
     label,
+    boxes: items[group]?.boxes ?? [],
+    thing: thingOf(group),
     listings: placed
       .filter((listing) => best.get(listing.id)!.group === group)
       .sort((a, b) => Number(onSale(b)) - Number(onSale(a))

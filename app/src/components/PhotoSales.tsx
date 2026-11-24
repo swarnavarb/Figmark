@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { ApiRequestError, api, type PhotoSalesResponse } from '../api';
 import { useSession } from '../session';
@@ -8,8 +7,8 @@ import { Icon } from './Icon';
 import { Avatar, Thumb, leadPhoto } from './ui';
 
 /**
- * "Seen for sale": the bar under a photo that says whether the things in it
- * can be bought here, and the sheet it opens.
+ * Product DNA for any photo: the button under it, and what the photo's own
+ * Product DNA page shows about where the things in it can be had.
  *
  * Every full-screen photo carries one - a post's, a listing's, an order's, a
  * collection card's - because the question a photo of somebody's haul raises
@@ -124,7 +123,8 @@ function summary(found: PhotoSalesResponse): string {
   const live = listings.filter((listing) => listing.onSale).length;
   const probable = found.probable.length;
   const parts = [
-    found.items.length > 1 ? count(found.items.length, 'item') + ' spotted' : null,
+    Math.max(found.things?.length ?? 0, found.items.length) > 1
+      ? count(Math.max(found.things?.length ?? 0, found.items.length), 'product') + ' spotted' : null,
     live > 0 ? `${live} for sale` : listings.length > 0 ? count(listings.length, 'past listing') : null,
     found.sellers.length > 0 ? `${count(found.sellers.length, 'past seller')}` : null,
     probable > 0 ? `${count(probable, 'probable match', 'probable matches')}` : null,
@@ -150,10 +150,28 @@ const QUICK_ASKS = [
   'Would you sell it?',
 ];
 
+/** Where a photo's Product DNA page is: the photo, the words with it, and who posted it. */
+export function photoDnaHref(url: string, about = '', by = '', poster: PhotoPoster | null = null): string {
+  const query = new URLSearchParams({ u: url });
+  if (about) query.set('a', about.slice(0, 300));
+  if (by) query.set('b', by);
+  if (poster?.name) query.set('pn', poster.name);
+  if (poster?.handle) query.set('ph', poster.handle);
+  if (poster?.link) query.set('pl', poster.link);
+  return `/dna/photo?${query.toString()}`;
+}
+
+/**
+ * The Product DNA button under a photo: every photo on Figmark carries one,
+ * once it is known to hold something - a thing for sale, a shop that has
+ * sold it, a likely match, or a poster to ask. It opens the photo's own
+ * Product DNA page, where each thing in it is cut out and followed to its
+ * product, and everything about where to get it is laid out.
+ */
 export function PhotoSales({ url, about = '', by = '', poster = null, onLeave, tone = 'dark' }: {
   url: string | undefined;
   /**
-   * Who posted it. With nothing of theirs tagged on it, the sheet offers a
+   * Who posted it. With nothing of theirs tagged on it, the page offers a
    * quick message to ask them - before it lists anybody else's.
    */
   poster?: PhotoPoster | null;
@@ -161,7 +179,7 @@ export function PhotoSales({ url, about = '', by = '', poster = null, onLeave, t
   about?: string;
   /** Who posted it: their own listings are the likelier guesses. */
   by?: string;
-  /** Called as a link in the sheet is followed, so whatever shows the photo can close. */
+  /** Called as the button is followed, so whatever shows the photo can close. */
   onLeave?: () => void;
   /**
    * Over a dark photo viewer, in a light dialog, or under a photo in the feed -
@@ -170,7 +188,6 @@ export function PhotoSales({ url, about = '', by = '', poster = null, onLeave, t
   tone?: 'dark' | 'light' | 'inline';
 }) {
   const [found, setFound] = useState<{ url: string; sales: PhotoSalesResponse | null } | null>(null);
-  const [open, setOpen] = useState(false);
   const inline = tone === 'inline';
   const slot = useRef<HTMLDivElement>(null);
   // A feed is scrolled past far more than it is read: only ask about photos
@@ -191,7 +208,6 @@ export function PhotoSales({ url, about = '', by = '', poster = null, onLeave, t
   useEffect(() => {
     if (!url || !inView) return;
     let live = true;
-    setOpen(false);
     void salesFor(url, about, by).then((sales) => { if (live) setFound({ url, sales }); });
     return () => { live = false; };
   }, [url, about, by, inView]);
@@ -202,47 +218,38 @@ export function PhotoSales({ url, about = '', by = '', poster = null, onLeave, t
   const own = sales?.own ?? [];
   // Somebody else's photo with nothing of theirs on it: they can be asked.
   const askable = Boolean(poster?.handle && by && user?.id !== by && own.length === 0);
-  const any = Boolean(sales && (own.length > 0 || sales.items.length > 0 || sales.likely.length > 0 || sales.probable.length > 0));
-  // With nothing of theirs on it, asking them comes first; whatever else is for sale follows.
-  const line = sales ? (askable ? [`Ask ${poster!.name.split(' ')[0]} about this`, any ? summary(sales) : ''].filter(Boolean).join(' · ') : barLine(sales, poster)) : '';
+  const any = Boolean(sales && (own.length > 0 || sales.items.length > 0 || sales.likely.length > 0
+    || sales.probable.length > 0 || (sales.things?.length ?? 0) > 0));
+  const line = sales ? (askable ? [any ? summary(sales) : '', `Ask ${poster!.name.split(' ')[0]}`].filter(Boolean).join(' · ') : barLine(sales, poster)) : '';
+  const button = (
+    <Link to={photoDnaHref(url ?? '', about, by, askable ? poster : null)} className={`pdna pdna--${tone}${own.length > 0 ? ' pdna--tagged' : ''}`}
+      onClick={(event) => { event.stopPropagation(); onLeave?.(); }}
+      onTouchStart={(event) => event.stopPropagation()} onTouchEnd={(event) => event.stopPropagation()}>
+      <span className="pdna__mark" aria-hidden="true">
+        <span className="pdna__strand" /><span className="pdna__strand pdna__strand--b" />
+        <Icon name="dna" size={16} />
+      </span>
+      <span className="pdna__text">
+        <b>Product DNA</b>
+        {line && <small>{line}</small>}
+      </span>
+      <Icon name="right" size={15} />
+    </Link>
+  );
 
   if (inline) {
-    return (
-      <div ref={slot} className="psales-slot">
-        {!loading && sales && (any || askable) && (
-          <>
-            <button type="button" className={`psales psales--inline${own.length > 0 ? ' psales--tagged' : ''}`} aria-haspopup="dialog"
-              onClick={(event) => { event.stopPropagation(); setOpen(true); }}>
-              <Icon name={own.length > 0 || (any && !askable) ? 'tag' : 'message'} size={15} />
-              <span className="psales__text">{line || `Ask ${poster?.name ?? 'them'} about this`}</span>
-              <Icon name="right" size={14} />
-            </button>
-            {open && <SalesSheet sales={sales} poster={askable ? poster : null} by={by} onClose={() => setOpen(false)} onLeave={onLeave} />}
-          </>
-        )}
-      </div>
-    );
+    return <div ref={slot} className="psales-slot">{!loading && sales && (any || askable) && button}</div>;
   }
   if (loading) {
     return (
       <div className={`psales psales--${tone} is-loading`} aria-live="polite">
         <span className="psales__dot" aria-hidden="true" />
-        Looking for this on Figmark…
+        Reading this photo…
       </div>
     );
   }
-  if (!sales || !(any || askable)) return null;
-
-  return (
-    <>
-      <button type="button" className={`psales psales--${tone}`} onClick={() => setOpen(true)} aria-haspopup="dialog">
-        <Icon name={any && !askable ? 'tag' : 'message'} size={15} />
-        <span className="psales__text">{line || `Ask ${poster?.name ?? 'them'} about this`}</span>
-        <Icon name="chevron" size={14} />
-      </button>
-      {open && <SalesSheet sales={sales} poster={askable ? poster : null} by={by} onClose={() => setOpen(false)} onLeave={onLeave} />}
-    </>
-  );
+  if (!url || !sales || !(any || askable)) return null;
+  return button;
 }
 
 /**
@@ -313,26 +320,20 @@ function AskPoster({ poster, onLeave }: { poster: PhotoPoster; onLeave: () => vo
   );
 }
 
-function SalesSheet({ sales, poster, by, onClose, onLeave }: {
+/**
+ * Everything about where a photo's things can be had: the poster's own tagged
+ * items, a quick question to the poster, every thing's listings on sale now
+ * and before, the shops that sold them, the probable matches and the shops
+ * likely to get them. The photo's Product DNA page lays it out.
+ */
+export function SalesDetails({ sales, poster, by, onLeave }: {
   sales: PhotoSalesResponse;
   /** Set when nothing of the poster's is tagged and they can be asked. */
   poster: PhotoPoster | null;
   by: string;
-  onClose: () => void;
   onLeave?: () => void;
 }) {
-  // Escape closes the sheet, not the photo under it: caught before the viewer's own listener.
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      event.stopImmediatePropagation();
-      onClose();
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, [onClose]);
-
-  const leave = () => { onClose(); onLeave?.(); };
+  const leave = () => onLeave?.();
   const several = sales.items.length > 1;
   const own = sales.own ?? [];
   const ownIds = new Set(own.map((listing) => listing.id));
@@ -343,21 +344,8 @@ function SalesSheet({ sales, poster, by, onClose, onLeave }: {
   ].filter((listing, at, all) => listing.onSale && listing.sellerId !== by && !ownIds.has(listing.id)
     && all.findIndex((other) => other.id === listing.id) === at).slice(0, 8);
 
-  // Portalled above the viewer. React still bubbles its events through the
-  // viewer, whose swipe would turn the photo, so they stop here.
-  return createPortal(
-    <div className="psheet" role="dialog" aria-modal="true" aria-label="For sale from this photo"
-      onClick={(event) => { event.stopPropagation(); if (event.target === event.currentTarget) onClose(); }}
-      onTouchStart={(event) => event.stopPropagation()}
-      onTouchEnd={(event) => event.stopPropagation()}>
-      <div className="psheet__box">
-        <div className="psheet__head">
-          <h2 className="psheet__title">From this photo</h2>
-          <button type="button" className="btn btn--quiet btn--sm" onClick={onClose} aria-label="Close">
-            <Icon name="close" size={14} />
-          </button>
-        </div>
-
+  return (
+    <div className="psheet__details">
         {own.length > 0 && (
           <section className="psheet__item psheet__item--own">
             <h3 className="psheet__label">🏷️ Tagged in this photo</h3>
@@ -478,9 +466,7 @@ function SalesSheet({ sales, poster, by, onClose, onLeave }: {
             })}
           </section>
         )}
-      </div>
-    </div>,
-    document.body,
+    </div>
   );
 }
 

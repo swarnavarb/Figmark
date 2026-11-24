@@ -1,0 +1,195 @@
+/* ==========================================================================
+   A photo's Product DNA.
+
+   The photo on a lab plate, each thing in it numbered where it sits; the
+   things cut out of it below, each leading to its own product; then where
+   to get them, on the app's own surface. Every animation is in the
+   reduced-motion block at the end.
+   ========================================================================== */
+
+.pdnap { padding-bottom: 48px; display: grid; gap: 18px; align-content: start; }
+.pdnap__backtitle { display: inline-flex; align-items: center; gap: 6px; }
+
+/* ---- hero: the photo, numbered ------------------------------------------ */
+
+.pdnap__hero {
+  display: grid;
+  gap: 16px;
+  margin-top: 8px;
+  padding: 16px;
+  border-radius: 24px;
+  color: #EAFBFF;
+  border: 1px solid rgba(6, 214, 231, 0.25);
+  background:
+    linear-gradient(rgba(6, 214, 231, 0.07) 1px, transparent 1px) 0 0 / 18px 18px,
+    linear-gradient(90deg, rgba(6, 214, 231, 0.07) 1px, transparent 1px) 0 0 / 18px 18px,
+    linear-gradient(140deg, #08131F 0%, #0E0A22 60%, #1A0B1E 100%);
+}
+.pdnap__photo {
+  position: relative;
+  justify-self: center;
+  width: 100%;
+  min-height: 160px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #070C16;
+  box-shadow: 0 0 0 1px rgba(6, 214, 231, 0.35), 0 18px 44px rgba(0, 0, 0, 0.45);
+}
+.pdnap__photo > img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.pdnap__scan {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 30%;
+  background: linear-gradient(180deg, transparent, rgba(6, 214, 231, 0.28), transparent);
+  animation: pdnap-scan 1.8s ease-in-out infinite;
+}
+@keyframes pdnap-scan { from { transform: translateY(-100%); } to { transform: translateY(340%); } }
+.pdnap__mark {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  translate: -50% -50%;
+  border-radius: 50%;
+  font: 700 11px/1 'IBM Plex Mono', ui-monospace, monospace;
+  color: #07121C;
+  text-decoration: none;
+  background: rgba(234, 251, 255, 0.85);
+  box-shadow: 0 0 0 2px rgba(7, 12, 22, 0.55), 0 4px 10px rgba(0, 0, 0, 0.4);
+  animation: pdnap-pop 360ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation-delay: calc(var(--i, 0) * 45ms + 150ms);
+  transition: transform 160ms ease, background 160ms ease;
+}
+.pdnap__mark.has-dna { background: var(--aqua); box-shadow: 0 0 0 2px rgba(7, 12, 22, 0.55), 0 0 14px rgba(6, 214, 231, 0.7); }
+.pdnap__mark.is-lit { transform: scale(1.25); background: var(--coral); color: #fff; }
+@keyframes pdnap-pop { from { transform: scale(0); opacity: 0; } }
+.pdnap__box {
+  position: absolute;
+  z-index: 1;
+  border-radius: 8px;
+  border: 2px solid var(--aqua);
+  box-shadow: 0 0 0 9999px rgba(4, 8, 15, 0.45), 0 0 18px rgba(6, 214, 231, 0.6);
+  pointer-events: none;
+  transition: left 220ms ease, top 220ms ease, width 220ms ease, height 220ms ease;
+}
+.pdnap__herotext { display: grid; gap: 6px; }
+.pdnap__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: calc(11px * var(--text-scale));
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8EF3FB;
+}
+.pdnap__title {
+  margin: 0;
+  font-family: 'Bricolage Grotesque', 'Archivo', sans-serif;
+  font-size: calc(24px * var(--text-scale));
+  line-height: 1.15;
+}
+.pdnap__lede { margin: 0; color: rgba(234, 251, 255, 0.72); font-size: calc(14px * var(--text-scale)); }
+.pdnap__about { font-style: italic; }
+
+/* ---- the things, cut out ------------------------------------------------- */
+
+.pdnap__section { display: grid; gap: 10px; }
+.pdnap__h2 { margin: 0; font-size: var(--t-md); }
+.pdnap__things {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 10px;
+}
+.pdnap__things > li { animation: pdnap-rise 420ms var(--ease-out, ease-out) both; animation-delay: calc(var(--i, 0) * 40ms); border-radius: 16px; }
+@keyframes pdnap-rise { from { transform: translateY(10px); opacity: 0; } }
+.pdnap__ghost { display: block; height: 76px; border-radius: 16px; background: var(--surface-2); animation: pdnap-breathe 1.4s ease-in-out infinite alternate; }
+@keyframes pdnap-breathe { to { opacity: 0.5; } }
+.pdnap__thing {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px 8px 8px;
+  border-radius: 16px;
+  color: var(--text);
+  text-decoration: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+.pdnap__thing.has-dna {
+  color: #EAFBFF;
+  border-color: rgba(6, 214, 231, 0.35);
+  background:
+    linear-gradient(rgba(6, 214, 231, 0.05) 1px, transparent 1px) 0 0 / 12px 12px,
+    linear-gradient(90deg, rgba(6, 214, 231, 0.05) 1px, transparent 1px) 0 0 / 12px 12px,
+    linear-gradient(120deg, #0B1626 0%, #140C28 100%);
+}
+.pdnap__thing.has-dna:active { transform: scale(0.985); }
+@media (hover: hover) {
+  .pdnap__thing.has-dna:hover { border-color: rgba(6, 214, 231, 0.7); box-shadow: 0 10px 28px rgba(6, 214, 231, 0.18); }
+}
+.pdnap__things > li.is-lit .pdnap__thing { border-color: var(--coral); box-shadow: 0 0 0 1px var(--coral); }
+.pdnap__pic {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 60px;
+  height: 60px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #070C16;
+}
+.pdnap__pic > img { width: 100%; height: 100%; object-fit: cover; }
+.pdnap__num {
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  font: 700 10px/1 'IBM Plex Mono', ui-monospace, monospace;
+  color: #07121C;
+  background: rgba(234, 251, 255, 0.9);
+}
+.pdnap__thingtext { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.pdnap__thingtext b { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: calc(15px * var(--text-scale)); }
+.pdnap__seq { font: 500 calc(10.5px * var(--text-scale)) 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.04em; color: rgba(142, 243, 251, 0.75); }
+.pdnap__meta { font-size: calc(12.5px * var(--text-scale)); color: var(--text-faint); }
+.pdnap__thing.has-dna .pdnap__meta { color: rgba(234, 251, 255, 0.7); }
+.pdnap__meta em { font-style: normal; font-family: 'IBM Plex Mono', ui-monospace, monospace; color: #8EF3FB; }
+.pdnap__thing > svg { flex: none; color: var(--aqua); }
+
+/* ---- where to get them --------------------------------------------------- */
+
+.pdnap__where { padding: var(--s4); border-radius: var(--r-lg); background: var(--surface); border: 1px solid var(--border); }
+
+@media (prefers-reduced-motion: reduce) {
+  .pdnap__scan, .pdnap__mark, .pdnap__things > li, .pdnap__ghost { animation: none; }
+  .pdnap__box { transition: none; }
+}
+
+/* ---- things only seen: a strip of cut-outs ------------------------------- */
+
+.pdnap__h2note { margin-left: 8px; color: var(--text-faint); font-size: var(--t-xs); font-weight: 400; }
+.pdnap__loose {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 8px;
+}
+.pdnap__loosepic {
+  position: relative; display: block; width: 100%; aspect-ratio: 1; padding: 0;
+  border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: #070C16; cursor: pointer;
+  transition: transform 160ms ease, border-color 160ms ease;
+}
+.pdnap__loosepic:active { transform: scale(0.95); }
+.pdnap__loose > li.is-lit .pdnap__loosepic { border-color: var(--coral); box-shadow: 0 0 0 1px var(--coral); }
