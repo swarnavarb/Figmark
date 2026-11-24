@@ -27,39 +27,14 @@ const message = (err: unknown, fallback: string) => (err instanceof ApiRequestEr
 interface Benefit { id: string; icon: string; title: string; say: string; more: string }
 
 /**
- * Each Pro tool in short, simple words: what a seller gets, not how it works.
- * The longer feature copy in `PRO_FEATURES` is the fallback for a tool added
- * later and not yet written here.
+ * Shorter names for the tools, for the Pro list. What each one does, in
+ * simple words, is in `PRO_FEATURES`, so the 🔒 boxes across the app say the same.
  */
-const SIMPLE: Partial<Record<ProFeatureId, { title: string; say: string; more: string }>> = {
-  insights: {
-    title: 'Insights', say: 'See which items sell best',
-    more: 'See which items sell more each week, which buyers have stopped coming back, and what to buy next. Buy what sells. Stop guessing.',
-  },
-  coach: {
-    title: 'Shop helper (AI)', say: 'Get simple tips to grow your shop',
-    more: 'The helper looks at your items and orders and tells you what to do today and when to post. Figgy answers common selling questions.',
-  },
-  calculator: {
-    title: 'Profit calculator', say: 'Find the right price fast',
-    more: 'Type the price you paid abroad. See your full cost, your profit and a good selling price. It uses your own shipping and exchange rates.',
-  },
-  costs: {
-    title: 'Cost sheets', say: 'Know your real profit',
-    more: 'Add shipping, customs, packing and fees for each item. Your profit book then shows what you really earned, and which items lose money.',
-  },
-  customers: {
-    title: 'Buyer messages', say: 'Message buyers who want your item',
-    more: 'See who saved or asked for an item. When it arrives, send a message to just those people.',
-  },
-  powerSale: {
-    title: 'Timed sales', say: 'Run a quick sale for your followers',
-    more: 'Start a sale with a timer. All your followers hear about it at the same time, so items sell fast.',
-  },
-  loyalty: {
-    title: 'Loyalty cards', say: 'Bring buyers back again',
-    more: 'Buyers get a stamp for each order. Give cashback, a free item or money off on the stamps you choose.',
-  },
+const SHORT_NAMES: Partial<Record<ProFeatureId, string>> = {
+  coach: 'Shop coach (AI)',
+  costs: 'Cost sheets',
+  customers: 'Buyer messages',
+  powerSale: 'Timed sales',
 };
 
 /**
@@ -170,17 +145,16 @@ export function ProPage() {
   const canTry = view.enabled && view.trialDays > 0 && !view.trialUsed && view.history.length === 0;
 
   const benefits: Benefit[] = [
-    ...view.features.filter((feature) => feature.pro).map((feature) => {
-      const simple = SIMPLE[feature.id];
-      return { id: feature.id, icon: feature.icon, title: simple?.title ?? feature.title, say: simple?.say ?? feature.punch, more: simple?.more ?? feature.benefit };
-    }),
+    ...view.features.filter((feature) => feature.pro).map((feature) => ({
+      id: feature.id, icon: feature.icon, title: SHORT_NAMES[feature.id] ?? feature.title, say: feature.punch, more: feature.benefit,
+    })),
     {
-      id: 'bumps', icon: '🚀', title: 'Bump points', say: 'Move your items to the top',
-      more: `Plans come with bump points. Use one to move an item to the top of Discover, where buyers look first. You have ${view.bumpPoints} now.`,
+      id: 'bumps', icon: '🚀', title: 'Bump points', say: 'Put your items on top',
+      more: `Use a bump point to put an item at the top of Discover. Buyers see it first. Plans come with free bump points. You have ${view.bumpPoints} now.`,
     },
     {
-      id: 'badge', icon: '🏅', title: 'PRO badge', say: 'Show buyers your shop is serious',
-      more: 'A gold PRO sign next to your shop name, on your items, in search and on your shop page.',
+      id: 'badge', icon: '🏅', title: 'PRO badge', say: 'Show buyers you are serious',
+      more: 'A gold PRO sign shows next to your shop name. Buyers see it on your items, in search and on your shop page.',
     },
   ];
   const open = benefits.find((entry) => entry.id === openBenefit) ?? null;
