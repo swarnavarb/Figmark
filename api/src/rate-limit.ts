@@ -18,7 +18,8 @@ import { error } from './functions/http.js';
 export type Action = 'post' | 'seen' | 'feedpref' | 'comment' | 'react' | 'share' | 'message' | 'want' | 'offer' | 'push_test' | 'chatphoto' | 'photosearch' | 'photopicture' | 'photosales'
   | 'verify_email' | 'verify_code' | 'verify_phone' | 'verify_aadhaar' | 'verify_review'
   | 'upload' | 'login' | 'signup' | 'login_fail' | 'login_fail_account' | 'handle_check'
-  | 'reset' | 'reset_account' | 'export' | 'clienterror' | 'billing' | 'voucher' | 'gift';
+  | 'reset' | 'reset_account' | 'export' | 'clienterror' | 'billing' | 'voucher' | 'gift'
+  | 'aiscan' | 'aicoach';
 
 const MINUTE = 60_000;
 const HOUR = 3_600_000;
@@ -34,6 +35,10 @@ const LIMITS: Record<Action, { max: number; ms: number }[]> = {
   voucher: [{ max: 12, ms: 10 * MINUTE }, { max: 40, ms: DAY }],
   // A store paying or crediting people.
   gift: [{ max: 20, ms: 10 * MINUTE }, { max: 200, ms: DAY }],
+  // Free-tier AI: the site's whole daily allowance is shared, so no one
+  // account may spend much of it.
+  aiscan: [{ max: 6, ms: MINUTE }, { max: 25, ms: DAY }],
+  aicoach: [{ max: 10, ms: MINUTE }, { max: 60, ms: DAY }],
   // A batch of what was on screen, sent every few seconds while somebody scrolls.
   seen: [{ max: 30, ms: MINUTE }, { max: 600, ms: HOUR }],
   // Saving, hiding and muting: a tap each, but a tap that writes the account.

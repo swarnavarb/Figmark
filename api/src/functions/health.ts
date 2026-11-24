@@ -4,6 +4,7 @@ import { getAuthService } from '../auth/index.js';
 import { config, runningInAzure } from '../config.js';
 import { getRepository } from '../data/index.js';
 import { getPhotoStore } from '../storage/index.js';
+import { freeAiStatus } from '../free-ai.js';
 import { visionAvailable } from '../vision.js';
 import { cached, handler, json } from './http.js';
 
@@ -65,6 +66,7 @@ async function health(request: HttpRequest, _context: InvocationContext) {
     photoSearch: visionAvailable()
       ? { vision: true, detail: `Photos are read by ${config.vision!.model} and matched by picture.` }
       : { vision: false, detail: 'Matching by picture only. Set ANTHROPIC_API_KEY to also find items from what is in the photo.' },
+    freeAi: freeAiHealth(),
   };
 
   // Everyone gets what the app's own banners and sign-up form are drawn from;
@@ -81,10 +83,27 @@ async function health(request: HttpRequest, _context: InvocationContext) {
   return cached(json(200, body), 'private, max-age=30');
 }
 
+/** Whether "Scan with AI" and the coach chat run on the site's free keys, or fall back to Puter. */
+function freeAiHealth(): NonNullable<HealthResponse['freeAi']> {
+  const status = freeAiStatus();
+  const models = [
+    config.freeAi.gemini ? `Gemini (${config.freeAi.gemini.model})` : null,
+    config.freeAi.groq ? `Groq (${config.freeAi.groq.model})` : null,
+  ].filter(Boolean);
+  return {
+    scan: status.scan,
+    chat: status.chat,
+    detail: models.length > 0
+      ? `Free AI on ${models.join(' and ')}; Puter only when the free day is used up.${status.scan ? '' : ' Set GEMINI_API_KEY for Scan with AI.'}`
+      : 'No free AI keys: Scan with AI and the coach chat ask people to sign in to Puter. Set GEMINI_API_KEY and GROQ_API_KEY.',
+  };
+}
+
 /** Trim a health report down to what a visitor's browser needs. */
 function publicView(body: HealthResponse): void {
   delete body.version;
   delete body.auth.mode;
+  if (body.freeAi) delete body.freeAi.detail;
   // A key that works is "configured" however it was made; the two that do not
   // still say so, since the app warns about them on every page.
   if (body.auth.sessionSecretSource === 'derived') body.auth.sessionSecretSource = 'configured';

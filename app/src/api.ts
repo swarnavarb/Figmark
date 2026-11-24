@@ -3557,6 +3557,11 @@ export const api = {
   /** A rating of one of the coach's answers, or a question Figgy had no answer for: how its answers improve. */
   coachAnswer: (storeId: string, body: { source: string; helpful: boolean } | { missed: string }) =>
     post<{ ok: true; recorded: number }>(`/me/coach/answer?store=${encodeURIComponent(storeId)}`, body),
+  /** The coach's AI chat on the site's free keys: the model's raw reply to the last question. */
+  coachChat: (storeId: string, turns: { role: 'user' | 'assistant'; content: string }[]) =>
+    record<{ text: string; model: string }>(`/me/coach/chat?store=${encodeURIComponent(storeId)}`, { turns }),
+  /** "Scan with AI" on the site's free key: the model's raw list of labels and boxes. */
+  aiScan: (image: string) => record<{ text: string; model: string }>('/ai/scan', { image }),
   /** Which coach tips were on screen, or pressed: how the coach learns which ones help. */
   coachEvents: (storeId: string, body: { seen?: string[]; pressed?: string }) =>
     post<{ ok: true; recorded: number }>(`/me/coach/events?store=${encodeURIComponent(storeId)}`, body),

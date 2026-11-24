@@ -8,7 +8,7 @@ import { expiresSoon, isExpired, isLowStock } from '../../../shared/payments.js'
 import { can } from '../../../shared/stores.js';
 import { isProActive } from '../../../shared/billing.js';
 import { dayKey, viewsBetween } from '../../../shared/seller-data.js';
-import { GUIDES, coachPlan, orderTiming, type CoachItem, type CoachSignals } from '../../../shared/coach.js';
+import { GUIDES, coachBrief, coachPlan, isPrivateQuestion, orderTiming, type CoachItem, type CoachSignals } from '../../../shared/coach.js';
 import {
   ANSWER_STATS_ID, addMiss, addRating, answerView, emptyAnswerLog, guideWeights, missWords, ruleNudges, shopFatigue,
   type AnswerStats,
@@ -19,6 +19,8 @@ import {
 } from '../../../shared/coach-log.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
+import { AiUnavailable, coachChat, type ChatMessage } from '../free-ai.js';
+import { tooFast } from '../rate-limit.js';
 import { error, handler, json } from './http.js';
 
 /**
@@ -388,7 +390,58 @@ function isDone(order: { status: string; checkpoints?: { delivered?: string | nu
     || order.status === 'delivered' || Boolean(order.checkpoints?.delivered);
 }
 
+/** How many earlier turns go with each question, and how long each may be. */
+const CHAT_TURNS = 8;
+const CHAT_TURN_CHARS = 2000;
+
+/**
+ * POST /api/me/coach/chat?store= - the coach's AI chat on the site's free
+ * keys (free-ai.ts), so the seller signs in to nothing.
+ *
+ * Body: { turns: [{ role, content }] }, the last one the seller's question.
+ * The brief is built here from the shop's own counts, never taken from the
+ * app, so the key answers this shop's coach and nothing else. 503
+ * `ai_unavailable` when no key is set or the free day is spent: the app then
+ * asks Puter.
+ */
+async function chat(request: HttpRequest, context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const slow = await tooFast(user.id, 'aicoach');
+  if (slow) return slow;
+
+  let body: { turns?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'bad_request', 'Send the conversation as JSON.');
+  }
+  const raw = Array.isArray(body?.turns) ? body.turns.slice(-CHAT_TURNS) : [];
+  const turns: ChatMessage[] = [];
+  for (const entry of raw) {
+    const role = (entry as { role?: unknown })?.role;
+    const content = (entry as { content?: unknown })?.content;
+    if ((role !== 'user' && role !== 'assistant') || typeof content !== 'string' || !content.trim()) continue;
+    turns.push({ role, content: content.slice(0, CHAT_TURN_CHARS) });
+  }
+  while (turns.length > 0 && turns[0]!.role !== 'user') turns.shift();
+  const last = turns.at(-1);
+  if (!last || last.role !== 'user') return error(400, 'bad_request', 'Ask a question.');
+  if (isPrivateQuestion(last.content)) return error(400, 'private_question', 'That is not something the coach can answer.');
+
+  const built = await buildCoach(request);
+  if (built.refusal) return built.refusal;
+  try {
+    return json(200, await coachChat(coachBrief(built.signals, built.plan), turns));
+  } catch (cause) {
+    if (!(cause instanceof AiUnavailable)) throw cause;
+    context.log(`ai coach unavailable: ${cause.message}`);
+    return error(503, 'ai_unavailable', 'The free AI is busy right now.');
+  }
+}
+
 export const coachRoute = handler(coach);
+export const coachChatRoute = handler(chat);
 export const coachEventsRoute = handler(events);
 export const opsCoachRoute = handler(opsCoach);
 export const coachAnswerRoute = handler(rateAnswer);
@@ -405,6 +458,13 @@ app.http('me-coach-events', {
   methods: ['POST'],
   route: 'me/coach/events',
   handler: coachEventsRoute,
+});
+
+app.http('me-coach-chat', {
+  authLevel: 'anonymous',
+  methods: ['POST'],
+  route: 'me/coach/chat',
+  handler: coachChatRoute,
 });
 
 app.http('me-coach-answer', {

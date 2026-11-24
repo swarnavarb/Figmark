@@ -51,6 +51,12 @@ export interface AppConfig {
    * ANTHROPIC_API_KEY is unset; photo search then matches on the picture alone.
    */
   vision: VisionConfig | null;
+  /**
+   * Free-tier AI keys (no card needed) for "Scan with AI" and the coach chat,
+   * so nobody has to sign in to Puter. Each is null until its key is set:
+   * GEMINI_API_KEY (scan and chat) and GROQ_API_KEY (chat). See free-ai.ts.
+   */
+  freeAi: FreeAiConfig;
   /** Email, WhatsApp and Aadhaar verification. Each piece is null until configured. */
   verification: VerificationConfig;
   /**
@@ -146,6 +152,21 @@ export interface VerificationConfig {
    * shipped in api/assets/uidai. Null: only the shipped ones are used.
    */
   aadhaarCertificate: string | null;
+}
+
+export interface FreeAiConfig {
+  gemini: { apiKey: string; model: string } | null;
+  groq: { apiKey: string; model: string } | null;
+}
+
+function resolveFreeAi(): FreeAiConfig {
+  const geminiKey = env('GEMINI_API_KEY');
+  const groqKey = env('GROQ_API_KEY');
+  return {
+    // Flash-Lite: the free plan's largest daily allowance, and it answers with boxes.
+    gemini: geminiKey ? { apiKey: geminiKey, model: env('GEMINI_MODEL') ?? 'gemini-flash-lite-latest' } : null,
+    groq: groqKey ? { apiKey: groqKey, model: env('GROQ_MODEL') ?? 'openai/gpt-oss-120b' } : null,
+  };
 }
 
 export interface VisionConfig {
@@ -350,6 +371,7 @@ export const config: AppConfig = {
   storage: resolveStorage(),
   adminEmails: resolveAdmins(),
   vision: resolveVision(),
+  freeAi: resolveFreeAi(),
   verification: resolveVerification(),
   passwordBreachCheck: env('PASSWORD_BREACH_CHECK') ? env('PASSWORD_BREACH_CHECK') === 'on' : runningInAzure(),
   staffMfa: env('STAFF_MFA') ? env('STAFF_MFA') === 'on' : runningInAzure(),
