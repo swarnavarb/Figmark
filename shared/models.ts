@@ -2346,8 +2346,19 @@ export interface CreditRecord {
    * `open` - nobody has decided yet. `held` - the seller is keeping it for
    * the buyer's future orders. `refund_pending` - the seller says they sent it
    * back and the buyer has not answered. `refunded` / `applied` - nothing left.
+   * `choosing` - an offer lowered the price after it was paid, and the buyer
+   * has yet to choose money back or the store credit the shop offers instead.
    */
-  status: 'open' | 'held' | 'refund_pending' | 'refunded' | 'applied';
+  status: 'open' | 'held' | 'refund_pending' | 'refunded' | 'applied' | 'choosing';
+  /**
+   * Money owed back because an offer lowered the price: the store credit the
+   * shop offers instead of a refund - never less than what is owed, and only
+   * ever raised - with every offer it made, and what the buyer chose.
+   */
+  storeCreditOfferMinor?: number;
+  creditOffers?: { amountMinor: number; at: string }[];
+  chosen?: 'refund' | 'store_credit' | null;
+  chosenAt?: string | null;
   /** Moved onto the buyer's other orders from this seller. */
   appliedMinor?: number;
   applications?: { orderId: string; itemName: string; amountMinor: number; at: string }[];
@@ -2368,7 +2379,7 @@ export interface CreditRecord {
   refundLog?: RefundLogEntry[];
 }
 
-export type RefundOrigin = 'overpaid' | 'cancelled' | 'manual';
+export type RefundOrigin = 'overpaid' | 'cancelled' | 'manual' | 'offer';
 
 /**
  * What a dispute is about. Every dispute on the marketplace is one `Dispute`
@@ -2406,6 +2417,8 @@ export interface RefundLogEntry {
   /** `awaiting` until the buyer answers. */
   status: 'awaiting' | 'received' | 'not_received';
   answeredAt: string | null;
+  /** Settled as store credit at the shop rather than money: what was credited. */
+  storeCreditMinor?: number;
 }
 
 /** One buyer's assertion that they sent the money, and the seller's answer. */

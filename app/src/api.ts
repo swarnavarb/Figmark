@@ -85,7 +85,7 @@ export interface EvidenceDraft {
 import type {
   BuyerReversalDetails, Dispute, DisputeDecision, DisputeSanction, DisputeSide, FeePayment, Forum, ForwarderProfile, Listing, ListingComment, Lot, Message,
   MessageDeal, MessageParty, Order, OrderShipment, PaymentClaim, PaymentMethod, Post, Review, SellerPaymentDetails, SellerProfile, StageEvent,
-  StoreManager, RefundLogEntry, RefundOrigin, DisputeTopic,
+  StoreManager, RefundLogEntry, RefundOrigin, CreditRecord, DisputeTopic,
   ArtistJob, ArtistOffering, ArtistProfile, FreightLane, InsurancePlan, OrderAddOn, PortfolioPiece, StoreCore, StoreLink,
   StoreMember, StoreRight, StoreStatus, StoreWarehouse, ServiceFormField,
 } from '@shared/models';
@@ -1007,8 +1007,11 @@ export interface ShopCredit {
   amountMinor: number;
   refundedMinor: number;
   leftMinor: number;
-  status: 'open' | 'held' | 'refund_pending' | 'refunded' | 'applied';
+  status: CreditRecord['status'];
   pendingRefund: { amountMinor: number; reference: string | null; screenshotUrl?: string | null; sentAt: string } | null;
+  /** Money an offer made owed back: the store credit offered instead, and what the buyer chose. */
+  storeCreditOfferMinor: number | null;
+  chosen: 'refund' | 'store_credit' | null;
   refundDenials: number;
   disputable: DisputeSubject[];
   /** Where the buyer's money goes back to, if they have said. */
@@ -1037,6 +1040,8 @@ export interface RefundHistoryEntry {
   status: RefundLogEntry['status'];
   answeredAt: string | null;
   movedTo: string | null;
+  /** Settled as store credit instead of money: what was credited. */
+  storeCreditMinor: number | null;
 }
 
 /** An order a fresh refund could be started on, and how much of it could go back. */
@@ -1067,6 +1072,8 @@ export interface MyRefund {
   leftMinor: number;
   status: ShopCredit['status'];
   pendingRefund: ShopCredit['pendingRefund'];
+  storeCreditOfferMinor: number | null;
+  chosen: ShopCredit['chosen'];
   log: RefundLogEntry[];
   applications: ShopCredit['applications'];
 }
@@ -3160,6 +3167,12 @@ export const api = {
     inPerson?: boolean;
   }) =>
     post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/refund-new`, body),
+  /** The shop offers more store credit in place of money an offer made owed back. */
+  offerMoreCredit: (id: string, creditId: string, amountMinor: number) =>
+    post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/offer-credit`, { creditId, amountMinor }),
+  /** The buyer chooses: that money back as a refund, or the shop's store credit. */
+  chooseOfferRefund: (id: string, creditId: string, choice: 'refund' | 'store_credit') =>
+    post<{ order: Order }>(`/orders/${encodeURIComponent(id)}/offer-choose`, { creditId, choice }),
   /** Reviews this person still owes on recent trades, and deliveries they have yet to confirm. */
   pendingReviews: () => request<PendingReviews>('/me/pending-reviews'),
   myRefunds: () => request<{

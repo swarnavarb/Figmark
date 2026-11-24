@@ -7,6 +7,7 @@ import { orderMoney, rupees } from '../../shared/payments.js';
 import { orderTotalMinor } from '../../shared/service-stores.js';
 import type { getRepository } from './data/index.js';
 import { notify, orderNames } from './functions/notify.js';
+import { choiceLink, choiceMessage, isOfferChoice, offerSettledMinor, orderMessage, syncOfferChoice } from './offer-refund.js';
 
 type Repo = Awaited<ReturnType<typeof getRepository>>;
 
@@ -141,20 +142,30 @@ export async function repriceBasket(
     const after = orderTotalMinor(order);
     // Money already paid: say what is owed back or owed on top, and keep the
     // payment status honest for orders settled outside Figmark.
+    // What an offer already gave back - a refund the buyer chose, or store
+    // credit they took instead - is no longer theirs to claim on this order.
     const money = orderMoney(order);
+    const kept = money.paidMinor - offerSettledMinor(order);
     if (money.paidMinor > 0) {
-      order.offerRefundDueMinor = Math.max(0, money.paidMinor - after);
-      order.offerBalanceDueMinor = Math.max(0, after - money.paidMinor);
+      order.offerRefundDueMinor = Math.max(0, kept - after);
+      order.offerBalanceDueMinor = Math.max(0, after - kept);
       if (order.hold.state === 'none') {
-        if (order.paymentStatus === 'paid' && money.paidMinor < after) order.paymentStatus = 'partially_paid';
-        else if (order.paymentStatus === 'partially_paid' && money.paidMinor >= after) order.paymentStatus = 'paid';
+        if (order.paymentStatus === 'paid' && kept < after) order.paymentStatus = 'partially_paid';
+        else if (order.paymentStatus === 'partially_paid' && kept >= after) order.paymentStatus = 'paid';
       }
     } else {
       order.offerRefundDueMinor = 0;
       order.offerBalanceDueMinor = 0;
     }
+    // Owed back: the buyer chooses a refund or the shop's store credit.
+    const choice = syncOfferChoice(order, order.updatedAt);
     await repository.updateOrder(order);
     changed.push(order);
+
+    const open = (order.credits ?? []).find(isOfferChoice);
+    if (!options.quiet && open && (choice === 'opened' || choice === 'changed')) {
+      await orderMessage(repository, order, 'seller', choiceMessage(order, open), choiceLink(order));
+    }
 
     if (!options.quiet && !unplaced && after !== before) {
       await tellBoth(repository, order, before, after, next, cause, options.actorId);
@@ -180,7 +191,7 @@ async function tellBoth(
       ? `Good news: ${order.itemName} from ${names.shop} is ${diff} cheaper`
       : `The price of ${order.itemName} from ${names.shop} went up by ${diff}`,
     body: down
-      ? `Now ${rupees(after)}, ${why}: ${describe(pricing)}.${owed > 0 ? ` ${names.shop} will send back the ${rupees(owed)} you already paid.` : ''}`
+      ? `Now ${rupees(after)}, ${why}: ${describe(pricing)}.${owed > 0 ? ` ${rupees(owed)} you already paid is yours back: choose a refund or store credit.` : ''}`
       : `Now ${rupees(after)}, ${why}. The offer it was under no longer applies.${topUp > 0 ? ` ${rupees(topUp)} is now due.` : ''}`,
     link,
   }, { except: actorId });
@@ -190,9 +201,9 @@ async function tellBoth(
       ? `${names.buyer}'s ${order.itemName} dropped by ${diff}`
       : `${names.buyer}'s ${order.itemName} went up by ${diff}`,
     body: down
-      ? `Now ${rupees(after)}, ${why}: ${describe(pricing)}.${owed > 0 ? ` Send back ${rupees(owed)}, which they paid already.` : ''}`
+      ? `Now ${rupees(after)}, ${why}: ${describe(pricing)}.${owed > 0 ? ` ${rupees(owed)} they paid is owed back: they choose a refund or store credit, and you can offer more credit.` : ''}`
       : `Now ${rupees(after)}, ${why}.${topUp > 0 ? ` They owe ${rupees(topUp)} more.` : ''}`,
-    link,
+    link: owed > 0 ? '/shop?tab=refunds' : link,
   }, { except: actorId });
 }
 

@@ -82,7 +82,7 @@ const {
   claimPaymentRoute, settleClaimRoute, rejectOrderRoute, closeOrderRoute, payMoreRoute, refundCreditRoute,
   acceptOrderRoute, cancelOrderRoute, discardCheckoutRoute, requestReversalDetailsRoute, confirmReversalDetailsRoute,
   submitReversalRoute, ackReversalRoute, raiseDisputeRoute, bookOrderRoute,
-  ackCreditRefundRoute, applyCreditRoute, holdCreditRoute, startRefundRoute, myRefundsRoute, pendingReviewsRoute, flagDisputeRoute, myDisputesRoute,
+  ackCreditRefundRoute, applyCreditRoute, holdCreditRoute, startRefundRoute, offerMoreCreditRoute, chooseOfferRefundRoute, myRefundsRoute, pendingReviewsRoute, flagDisputeRoute, myDisputesRoute,
 } = await import(new URL('order-routes.js', apiRoot));
 const {
   wantsBoardRoute, wantPostRoute, wantReadRoute, wantOfferRoute, wantCloseRoute, wantAlsoMeRoute,
@@ -350,6 +350,8 @@ const routes = [
   ['POST', '/api/orders/:id/credit-apply', applyCreditRoute],
   ['POST', '/api/orders/:id/credit-hold', holdCreditRoute],
   ['POST', '/api/orders/:id/refund-new', startRefundRoute],
+  ['POST', '/api/orders/:id/offer-credit', offerMoreCreditRoute],
+  ['POST', '/api/orders/:id/offer-choose', chooseOfferRefundRoute],
   ['GET', '/api/me/refunds', myRefundsRoute],
   ['GET', '/api/me/pending-reviews', pendingReviewsRoute],
   ['GET', '/api/me/disputes', myDisputesRoute],

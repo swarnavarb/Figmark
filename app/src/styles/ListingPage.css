@@ -100,6 +100,7 @@
 .sellercard__sign { position: relative; z-index: 2; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: end; }
 .sellercard__who { display: grid; gap: 0; min-width: 0; color: #fff; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.45); }
 .sellercard__who .dtile__label, .sellercard__who .sellercard__where, .sellercard__who .sellercard__name { color: #fff; }
+.sellercard__who .sellercard__name { font-size: var(--t-md); line-height: 1.25; overflow-wrap: anywhere; }
 .sellercard__stat dd small { font-size: var(--t-xs); color: var(--text-faint); font-weight: var(--w-semi); }
 .sellercard__acts .btn:not(.btn--ghost) { background: var(--acid); color: var(--ink-black); border: 0; }
 .lshare__text { display: grid; gap: 2px; flex: 1; min-width: 0; }
@@ -279,13 +280,13 @@
 .buybar__buy { flex: none; height: 44px; padding: 0 var(--s4); background: var(--acid); color: var(--ink-black); }
 @keyframes buybar-in { from { opacity: 0; transform: translate(-50%, 16px); } to { opacity: 1; transform: translate(-50%, 0); } }
 @media (prefers-reduced-motion: reduce) { .buybar { animation: none; } }
-/* Room under the page for the bar, so it never sits on the last of it. */
-.buybar__room { height: 76px; }
+
 
 /* The level and Shop tags sit on the shop's own colour: keep them readable on any hue. */
 .sellercard__who .lvtag__title { background: none; color: rgba(255, 255, 255, 0.92); text-shadow: 0 1px 4px rgba(0, 0, 0, 0.55); }
 .sellercard__who .lvtag__shop { color: #fff; background: rgba(0, 0, 0, 0.35); border-color: rgba(255, 255, 255, 0.55); }
 .sellercard__pending { margin: 0; font-size: var(--t-xs); color: var(--text-faint); line-height: 1.45; }
 
-/* The photo to pick from, opened by Pick & buy: scrolled to clear of the top bar. */
-.lp__board { scroll-margin-top: 72px; }
+/* The shop's See the listings, and a visitor's See the items when nothing can be bought. */
+.buybox__see { width: 100%; justify-content: center; }
+.buybox__acts--own .buybox__see { grid-column: 1 / -1; }

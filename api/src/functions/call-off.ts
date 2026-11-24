@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Order } from '../../../shared/models.js';
 import { orderMoney, rupees } from '../../../shared/payments.js';
+import { isOfferChoice, offerSettledMinor } from '../offer-refund.js';
 
 /**
  * Calling off an order on the seller's side, as state: what it becomes, and
@@ -43,13 +44,17 @@ export function callOffOrder(order: Order, reason: string, actorId: string, by =
   // What was paid is now owed back, and it goes where every refund goes: onto
   // the seller's Refunds list, to return in one go or in parts, or to put
   // towards another of this buyer's orders.
-  order.credits = [...(order.credits ?? []), {
-    id: `crd_${randomUUID().slice(0, 12)}`, createdAt: now, amountMinor: money.paidMinor, batchId: null,
+  // An offer's money back not yet chosen is part of this; one already chosen
+  // goes back its own way, so it is not refunded twice.
+  const back = Math.max(0, money.paidMinor - offerSettledMinor(order));
+  order.reversal.amountMinor = back;
+  order.credits = [...(order.credits ?? []).filter((credit) => !isOfferChoice(credit)), {
+    id: `crd_${randomUUID().slice(0, 12)}`, createdAt: now, amountMinor: back, batchId: null,
     refundedMinor: 0, refundedAt: null, refundedBy: null, status: 'open', origin: 'cancelled', reason,
   }];
   note(order, `Order cancelled by ${by}, payment reversal pending: ${reason}`, actorId);
-  note(order, `Payment reversal initiated — ${rupees(money.paidMinor)}`, actorId);
-  return money.paidMinor;
+  note(order, `Payment reversal initiated — ${rupees(back)}`, actorId);
+  return back;
 }
 
 function note(order: Order, text: string, by: string): void {

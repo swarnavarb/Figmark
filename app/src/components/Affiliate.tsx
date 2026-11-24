@@ -9,6 +9,7 @@ import { formatMoney } from '../format';
 import { useSession } from '../session';
 import { Svg } from './ListingBlocks';
 import { LevelChip, Thumb, leadPhoto } from './ui';
+import { StoryTag, useStory } from './Story';
 import '../styles/Affiliate.css';
 
 /** What sharing a listing pays per sale, in paise; zero when it pays nothing. */
@@ -150,6 +151,9 @@ export function EarnPill({ amountMinor, currency = 'INR', bare }: { amountMinor:
   );
 }
 
+/** Each print's slant, in turn. */
+const TILTS = [-3, 2.2, -1.4, 3, -2.2, 1.4];
+
 /**
  * More like this, under the item: same category first, then shared tags,
  * then the same shop. A shelf that scrolls sideways, so it never pushes the
@@ -157,6 +161,7 @@ export function EarnPill({ amountMinor, currency = 'INR', bare }: { amountMinor:
  */
 export function SimilarItems({ listingId }: { listingId: string }) {
   const [items, setItems] = useState<FeedListing[] | null>(null);
+  const story = useStory('night');
 
   useEffect(() => {
     let cancelled = false;
@@ -172,7 +177,9 @@ export function SimilarItems({ listingId }: { listingId: string }) {
   if (items && items.length === 0) return null;
 
   return (
-    <section className="similar" aria-label="Similar items">
+    <section ref={story.ref} className={`similar ${story.className}`} aria-label="Similar items">
+      {story.scene}
+      <StoryTag>Written in the stars</StoryTag>
       <header className="similar__head">
         <span className="similar__icon" aria-hidden="true"><Svg name="star" size={16} /></span>
         <span className="similar__titles">
@@ -180,20 +187,23 @@ export function SimilarItems({ listingId }: { listingId: string }) {
           <small>Picked for being like this one</small>
         </span>
       </header>
-      <div className="similar__track">
+      <div className="similar__track story__row">
         {items === null
           ? Array.from({ length: 4 }, (_, n) => <span key={n} className="simcard simcard--ghost" aria-hidden="true" />)
           : items.map((item, n) => (
             <Link key={item.id} to={`/listing/${item.id}`} className={`simcard${item.affiliate ? ' is-affiliate' : ''}`}
-              style={{ ['--i' as string]: n }}>
-              <Thumb seed={item.id} label={item.title} photo={leadPhoto(item)} className="thumb simcard__photo" />
-              <span className="simcard__body">
-                <span className="simcard__title">{item.title}</span>
-                <span className="pricerow">
-                  <b className="simcard__price">{formatMoney(item.priceMinor, item.currency)}</b>
-                  <EarnPill amountMinor={earnOf(item)} currency={item.currency} />
+              style={{ ['--i' as string]: n, ['--tilt' as string]: `${TILTS[n % TILTS.length]}deg` }}>
+              {/* A print pinned to the night by a star, each at its own slant. */}
+              <span className="simcard__frame">
+                <Thumb seed={item.id} label={item.title} photo={leadPhoto(item)} className="thumb simcard__photo" />
+                <span className="simcard__body">
+                  <span className="simcard__title">{item.title}</span>
+                  <span className="simcard__foot">
+                    <b className="simcard__price">{formatMoney(item.priceMinor, item.currency)}</b>
+                    <EarnPill amountMinor={earnOf(item)} currency={item.currency} />
+                  </span>
+                  <small className="simcard__shop">{item.seller?.storefrontName ?? item.category}{(item.seller?.level?.level ?? 0) >= 3 && <LevelChip tag={item.seller?.level} inline />}</small>
                 </span>
-                <small className="simcard__shop">{item.seller?.storefrontName ?? item.category}{(item.seller?.level?.level ?? 0) >= 3 && <LevelChip tag={item.seller?.level} inline />}</small>
               </span>
             </Link>
           ))}
