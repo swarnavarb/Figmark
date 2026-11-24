@@ -3,6 +3,7 @@ import {
   OFFER_KIND_INFO, OFFER_KINDS, MAX_OFFERS_PER_ITEM, MAX_WHOLESALE_TIERS, cleanOffers, nextStepFor, offerLabel,
   offerSummary, offerTerms, wholesaleHint,
   type AppliedOffer, type ListingOffer, type OfferKind, type OfferScope, type OfferValue, type WholesaleTier,
+  FREE_SHIPPING_TAKEN, givesFreeShipping, shippingOfferClash,
 } from '@shared/offers';
 import { formatMoney } from '../format';
 import { InfoTip } from './InfoTip';
@@ -303,10 +304,16 @@ function WholesaleFields({ tiers, onChange }: { tiers: WholesaleTier[]; onChange
  * and see straight away if one cannot be priced. What is saved is exactly what
  * the buyer is shown.
  */
-export function OfferEditor({ offers, onChange, priceMinor }: {
+export function OfferEditor({ offers, onChange, priceMinor, shippingMinor }: {
   offers: ListingOffer[]; onChange: (next: ListingOffer[]) => void; priceMinor: number;
+  /** The item's own shipping: 0 is free already, so free shipping cannot also be an offer. */
+  shippingMinor?: number | null;
 }) {
-  const problem = priceMinor > 0 ? cleanOffers(offers, priceMinor).error : cleanOffers(offers).error;
+  const shipsFree = shippingMinor === 0;
+  /** Said when a free-shipping offer was picked for an item that already ships free. */
+  const [refused, setRefused] = useState(false);
+  const problem = (priceMinor > 0 ? cleanOffers(offers, priceMinor).error : cleanOffers(offers).error)
+    ?? shippingOfferClash(offers, shippingMinor);
   // One of each kind, except the two that are about different numbers of items.
   const available = OFFER_KINDS.filter((kind) =>
     kind === 'free_shipping' || kind === 'discount' || !offers.some((offer) => offer.kind === kind));
@@ -321,14 +328,26 @@ export function OfferEditor({ offers, onChange, priceMinor }: {
           </div>
           <OfferFields offer={offer} onChange={(next) => onChange(offers.map((entry, i) => (i === index ? next : entry)))} />
           <p className="offr-edit__preview">Buyers will see: <b>{offerSummary(offer)}</b></p>
+          {shipsFree && givesFreeShipping(offer) && (
+            <p className="notice notice--warn">{FREE_SHIPPING_TAKEN} Remove it, or choose &quot;Shipping extra&quot; above.</p>
+          )}
         </div>
       ))}
-      {problem && <p className="notice notice--error">{problem}</p>}
+      {problem && problem !== FREE_SHIPPING_TAKEN && <p className="notice notice--error">{problem}</p>}
+      {refused && shipsFree && <p className="notice notice--warn" role="status">{FREE_SHIPPING_TAKEN}</p>}
       {offers.length < MAX_OFFERS_PER_ITEM && available.length > 0 && (
         <label className="field">
           <span>Add an offer</span>
           <select value="" onChange={(e) => {
-            if (e.target.value) onChange([...offers, defaultOffer(e.target.value as OfferKind, priceMinor)]);
+            if (!e.target.value) return;
+            const picked = defaultOffer(e.target.value as OfferKind, priceMinor);
+            // A group buy on an item that already ships free rewards money off instead.
+            const offer: ListingOffer = shipsFree && picked.kind === 'group_fill'
+              ? { ...picked, freeShipping: false, discount: { type: 'percent', value: 5 } } : picked;
+            // The item ships free already: say so rather than add an offer that gives nothing.
+            if (shipsFree && givesFreeShipping(offer)) { setRefused(true); return; }
+            setRefused(false);
+            onChange([...offers, offer]);
           }}>
             <option value="">Choose an offer to add…</option>
             {available.map((kind) => <option key={kind} value={kind}>{OFFER_KIND_INFO[kind].name}</option>)}
