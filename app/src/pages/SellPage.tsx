@@ -1,3 +1,4 @@
+import { LOCK_AFTER_SALE_NOTE } from '@shared/listing-lock';
 import { FeeHint } from '../components/Billing';
 import { ServiceNudge } from '../components/ServiceCards';
 import { haptic } from '../haptics';
@@ -1156,6 +1157,9 @@ function SellForm({ serverDraft, draftMissing }: {
           {error && <ErrorNotice message={error} />}
 
           {savedNote && !error && <p className="notice notice--ok" role="status">{savedNote}</p>}
+
+          {/* Said before it goes live: once bought, it stays the item that was bought. */}
+          {showRest && verified && <p className="sellform__lock">🔒 {LOCK_AFTER_SALE_NOTE}</p>}
 
           {/* Pinned to the bottom of a phone screen, so it is never a scroll away. */}
           {showRest && (<>

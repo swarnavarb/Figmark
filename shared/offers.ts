@@ -386,6 +386,13 @@ export interface OfferLine {
   /** The real lot it is travelling in, or null while it waits for one. */
   lotId: string | null;
   quantity: number;
+  /**
+   * How many things the line holds, for offers that count items ("2 or more"):
+   * the quantity, or - for several items picked from one photo, which is one
+   * line of quantity 1 - how many were picked. They ship together in one
+   * parcel, so they count together whether or not a lot holds them yet.
+   */
+  items?: number;
   unitPriceMinor: number;
   /** What the shop charges to ship one of it, before any offer. */
   shippingPerItemMinor: number;
@@ -462,7 +469,7 @@ function groupCount(line: OfferLine, lines: readonly OfferLine[], scope: OfferSc
     : line.lotId
       ? lines.filter((other) => other.active && other.lotId === line.lotId)
       : [line];
-  return inGroup.reduce((sum, other) => sum + other.quantity, 0);
+  return inGroup.reduce((sum, other) => sum + (other.items ?? other.quantity), 0);
 }
 
 /**
