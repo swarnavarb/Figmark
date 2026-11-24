@@ -79,30 +79,38 @@ Right answer ranked first:
 
 | | n | Fingerprints | CLIP | DINOv2 | SigLIP | Hybrid + SigLIP |
 |---|---:|---:|---:|---:|---:|---:|
-| Same photo (resized, mirrored) | 31 | 90% | 100% | 100% | 100% | 100% |
-| Same item, different photo (real) | 3 | 0% | 100% | 100% | 100% | 100% |
-| Same item, re-shot (simulated) | 23 | 9% | 70% | 87% | 91% | 91% |
-| One item, find its lot | 14 | 0% | 14% | 21% | 14% | 14% |
-| Several items (Figmark's boxes) | 12 | 17% | 92% | 92% | 100% | 100% |
-| **All** | 95 | 35% | 78% | 84% | 85% | 85% |
+| Same photo (resized, mirrored) | 31 | 97% | 90% | 97% | 97% | 100% |
+| Same item, different photo (real) | 3 | 0% | 67% | 100% | 100% | 100% |
+| Same item, re-shot (simulated) | 23 | 43% | 78% | 87% | 91% | 91% |
+| One item, find its lot | 14 | 36% | 93% | 86% | 100% | 100% |
+| Several items (Figmark's boxes) | 12 | 33% | 92% | 92% | 100% | 100% |
+| **All** | 95 | 56% | 87% | 93% | 97% | 98% |
 
 "All" also counts the several-item searches run with exact boxes; every row and the
 hybrid columns for each model are in RESULTS.md.
 
-With `--gentle` re-shoots (no relighting or recolouring), fingerprints rise to 22%
-on that row and SigLIP to 100%, so the gap is not just colour shifts.
+These numbers include the two fingerprint fixes below. Before them, fingerprints
+scored 35% overall: 0% on finding a lot from one of its items, 9% on re-shot items.
+Much of the re-shot gain is the lot: a re-shot shelf or boxed figure now also finds
+the lot listing that holds it. A lot listing here keeps the boxes the phone
+detector actually recorded for its photo (`test-fixtures/scan/cases.json`, 55 on
+the shelf), as a listing keeps `foundBoxes`, not the hand-drawn ones.
+
+With `--gentle` re-shoots (no relighting or recolouring) the gap between fingerprints
+and the models narrows a little but stays wide, so it is not just colour shifts.
 
 ### What this says
 
 1. **Embeddings find the same item in another photo; fingerprints mostly don't.**
    That is the case photo search exists for (a shopper's own photo, or another
    seller's): DINOv2 and SigLIP put it first 87-100% of the time and CLIP
-   70-100%, against 0-22% for fingerprints. Fingerprints stay excellent at what they were built for: reposts of
+   67-78%. Fingerprints stay excellent at what they were built for: reposts of
    the same photo.
 2. **SigLIP is the most accurate here and DINOv2 a close, cheaper second.**
    SigLIP costs about 120 ms per vector on CPU and DINOv2 about 60 ms. CLIP is
    the fastest but the one most fooled by look-alikes: it ranked the other T-800
-   release first.
+   release first, and with a lot's 55 item crops to compare against it sometimes
+   ranks a look-alike in the lot above the right single listing.
 3. **8-bit models (q8) are as good as full precision (fp32)** here, at a quarter
    of the size.
 4. **A similarity cut-off is not enough on its own.** The scores of right answers
@@ -110,15 +118,23 @@ on that row and SigLIP to 100%, so the gap is not just colour shifts.
    simply say "above 0.8 is a match". It needs a relative rule (well ahead of the
    runner-up), Claude's words as a second signal, or results presented as
    "similar items" rather than "this is it".
-5. **Large lots are limited by how many items get boxed, not by matching.**
-   Figmark stores at most 12 items per photo (`MAX_REGIONS`), so most of a
-   55-figure shelf is never indexed and no method can find those figures from
-   one of them. Vectors are cheap to store, so an embedding index could keep
-   every box Claude, Puter or the phone finds.
-6. **A fingerprint bug turned up along the way.** A smaller copy of `t800a.jpg`
-   is not found by today's search: `printsOfPixels()` (what is stored and
-   searched) separates the backdrop differently at the two sizes, scoring 0.49,
-   while plain `fingerprint()` on the same pair says "same photo" (0.89).
+
+### Fixed in the fingerprints because of this trial
+
+- **A smaller copy of a photo stopped being the same photo.** On `t800a.jpg` (a
+  window box filling the frame), a copy under about half size had the same shape
+  hash to within a bit or two, but its backdrop was read differently, its
+  silhouette with it, and the silhouette alone vetoed "same photo". The veto is
+  for two products on one white sweep, whose frames match but whose items do
+  not; `likenessOf` now lets it stand only when the items cut out of the two
+  photos are not alike too. Exact copies at 27-80% size are now recognised 62
+  times in 64 across the fixtures (50 before), with no new false matches among
+  595 pairs of different photos. Stored fingerprints are unchanged.
+- **A lot's photo kept at most twelve items, found by the backdrop alone.** A
+  listing's lead photo is now fingerprinted at every place the listing names a
+  thing - each piece, each item of a set, each thing the seller's phone found -
+  up to 60, then anything else standing off the backdrop. Listings saved before
+  this are worked out again the next time a search reads them.
 
 ### Caveats
 

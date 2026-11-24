@@ -27,6 +27,9 @@ import sharp from 'sharp';
  */
 
 const scan = (name) => readFileSync(new URL(`../../test-fixtures/scan/${name}`, import.meta.url));
+/** The places a phone's detector found things in each fixture photo, as a listing keeps them (foundBoxes). */
+const phoneBoxes = (name) => JSON.parse(readFileSync(new URL('../../test-fixtures/scan/cases.json', import.meta.url), 'utf8'))
+  .find((entry) => entry.photo === name)?.boxes ?? [];
 
 /** [left, top, width, height] as fractions of marvel-shelf.jpg. */
 export const SHELF = {
@@ -175,8 +178,8 @@ async function sideBySide(bufs, seed) {
  */
 export async function fixtureSet({ gentle = false } = {}) {
   const listings = []; const queries = [];
-  const photo = (id, buf) => ({ key: id, buf });
-  const list = (id, title, buf) => listings.push({ id, title, photos: [photo(id, buf)] });
+  const photo = (id, buf, named = []) => ({ key: id, buf, named });
+  const list = (id, title, buf, named) => listings.push({ id, title, photos: [photo(id, buf, named)] });
 
   const shelf = scan('marvel-shelf.jpg'); const boxed = scan('boxed-figures.jpg');
   const collage = scan('terminator-collage.jpg'); const wolverines = scan('wolverine-copies.jpg');
@@ -192,12 +195,13 @@ export async function fixtureSet({ gentle = false } = {}) {
     crops[`boxed-${name}`] = await crop(boxed, box);
     list(`boxed-${name}`, `Boxed: ${name}`, crops[`boxed-${name}`]);
   }
-  list('boxed-lot', 'Lot: seven boxed figures', boxed);
+  // A lot keeps the places the seller's phone found things in its photo; those are its items.
+  list('boxed-lot', 'Lot: seven boxed figures', boxed, phoneBoxes('boxed-figures.jpg'));
   for (const name of SHELF_LISTED) {
     crops[`shelf-${name}`] = await crop(shelf, SHELF[name]);
     list(`shelf-${name}`, `Loose: ${name}`, crops[`shelf-${name}`]);
   }
-  list('shelf-lot', 'Lot: shelf of 55 loose figures', shelf);
+  list('shelf-lot', 'Lot: shelf of 55 loose figures', shelf, phoneBoxes('marvel-shelf.jpg'));
 
   // Where else each listing's item can rightly be found: a single listed figure is in its lot too.
   const alsoIn = (id) => (id.startsWith('shelf-') && id !== 'shelf-lot' ? ['shelf-lot'] : id.startsWith('boxed-') && id !== 'boxed-lot' ? ['boxed-lot'] : []);

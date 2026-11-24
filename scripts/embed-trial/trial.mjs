@@ -117,9 +117,16 @@ async function asUpload(buf) {
   return sharp(buf).rotate().resize({ width: 1600, height: 1600, fit: 'inside', withoutEnlargement: true }).removeAlpha().jpeg({ quality: 85 }).toBuffer();
 }
 
-/** What an upload stores (rememberFingerprint): the photo's fingerprint and each item's, items found by Figmark's detector. */
-function listingPrints(raw) {
-  const prints = hash.printsOfPixels(raw);
+/**
+ * What a listing stores for a photo: the photo's fingerprint and each item's.
+ * Items are those Figmark's detector finds (rememberFingerprint), or, for a
+ * lot that names where its things are - pieces, a set, what the phone found -
+ * those places first and then anything else found (photosWithNamedItems).
+ */
+function listingPrints(raw, named = []) {
+  const prints = named.length > 0
+    ? hash.printsOfPixels(raw, hash.listedItemBoxes(raw, named), hash.MAX_LISTED_REGIONS)
+    : hash.printsOfPixels(raw);
   return prints ? { whole: prints.hash, hashes: [prints.hash, ...prints.regions.map((r) => r.imageHash)], boxes: prints.regions.map((r) => r.box) } : { whole: null, hashes: [], boxes: [] };
 }
 
@@ -211,7 +218,7 @@ async function preparePhoto(photo) {
   photo.jpg = await asUpload(photo.buf);
   photo.raw = decodeJpeg(new Uint8Array(photo.jpg));
   const t = performance.now();
-  photo.fp = listingPrints(photo.raw);
+  photo.fp = listingPrints(photo.raw, photo.named ?? []);
   timing.fingerprintMs.push(performance.now() - t);
   photo.vec = {};
 }
