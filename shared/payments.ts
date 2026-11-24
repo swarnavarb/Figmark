@@ -183,7 +183,11 @@ export const REFUND_ORIGIN_LABELS = {
   overpaid: 'Extra payment',
   cancelled: 'Cancelled order',
   manual: 'Refund started by seller',
+  offer: 'Offer lowered the price',
 } as const;
+
+/** The most store credit a shop can offer instead of an offer's money back: five times it. */
+export const CREDIT_OFFER_MAX_TIMES = 5;
 
 /** What is still the buyer's on one credit: neither returned nor moved onto another order. */
 export function creditLeft(credit: Pick<CreditRecord, 'amountMinor' | 'refundedMinor' | 'appliedMinor'>): number {

@@ -11564,3 +11564,45 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .pcs-chip { display: inline-flex; gap: 6px; align-items: center; padding: 2px 8px; border-radius: 999px; background: var(--aqua-soft); color: var(--aqua); }
 .pcs-setprice__box input:focus, .pcs-pricebox input:focus { outline: none; border: 0; box-shadow: none; }
 .pcs-setprice__box:focus-within { border-color: var(--accent-text); }
+
+/* ── Money an offer made owed back: refund or store credit ─────────────── */
+.orc {
+  display: grid; gap: 12px; padding: 14px; border-radius: var(--r-lg);
+  border: 1px solid color-mix(in srgb, var(--acid) 35%, var(--border));
+  background: linear-gradient(160deg, color-mix(in srgb, var(--acid) 9%, var(--surface)), var(--surface) 60%);
+}
+.orc__head { display: flex; align-items: flex-start; gap: 10px; }
+.orc__icon { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--surface-2); font-size: calc(18px * var(--text-scale)); }
+.orc__lead { display: grid; gap: 2px; min-width: 0; }
+.orc__lead b { font-size: var(--t-md); overflow-wrap: anywhere; }
+.orc__lead small { color: var(--text-dim); font-size: var(--t-xs); line-height: 1.4; }
+.orc__opts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.orc__opt {
+  display: grid; gap: 2px; align-content: start; min-width: 0; padding: 12px; border-radius: var(--r-md);
+  border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text); font: inherit; text-align: left; cursor: pointer;
+  transition: transform var(--dur-1) ease, border-color var(--dur-1) ease;
+}
+.orc__opt:hover:not(:disabled) { transform: translateY(-1px); border-color: var(--text-dim); }
+.orc__opt:disabled { opacity: 0.6; cursor: default; }
+.orc__opt--credit { border-color: color-mix(in srgb, var(--acid) 55%, transparent); }
+.orc__opt--credit:hover:not(:disabled) { border-color: var(--acid); }
+.orc__optname { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--text-dim); font-size: var(--t-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+.orc__extra { padding: 1px 6px; border-radius: var(--r-pill); background: var(--acid); color: var(--ink-black); font-style: normal; text-transform: none; letter-spacing: 0; }
+.orc__optamt { font-size: var(--t-xl); font-variant-numeric: tabular-nums; line-height: 1.2; }
+.orc__opt small { color: var(--text-dim); font-size: var(--t-2xs); line-height: 1.35; }
+.orc__go {
+  margin-top: 8px; padding: 8px 10px; border-radius: var(--r-pill); text-align: center; font-weight: 700; font-size: var(--t-sm);
+  background: var(--surface); box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+.orc__opt--credit .orc__go { background: var(--acid); color: var(--ink-black); box-shadow: none; }
+.orc__seller { display: grid; gap: 8px; }
+.orc__state { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; font-size: var(--t-sm); }
+.orc__more { display: flex; align-items: flex-end; gap: 8px; }
+.orc__field { flex: 1; min-width: 0; display: grid; gap: 4px; font-size: var(--t-xs); color: var(--text-dim); }
+.orc__input { display: flex; align-items: center; gap: 6px; padding: 0 12px; height: 40px; border-radius: var(--r-md); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border-strong); color: var(--text); }
+.orc__input input { flex: 1; min-width: 0; border: 0; background: none; color: inherit; font: inherit; font-size: var(--t-md); outline: none; }
+.orc__more .btn { height: 40px; }
+.orc__hint { color: var(--text-dim); font-size: var(--t-2xs); }
+.orc__problem { margin: 0; }
+.orc__chat { justify-self: start; font-size: var(--t-sm); font-weight: 600; color: var(--accent-text); }
+@media (max-width: 360px) { .orc__opts { grid-template-columns: minmax(0, 1fr); } }

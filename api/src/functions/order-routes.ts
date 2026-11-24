@@ -15,8 +15,10 @@ import {
 import { orderTotalMinor } from '../../../shared/service-stores.js';
 import { applyLoyaltyOff, checkoutLoyalty } from '../loyalty.js';
 import { directRefusal, noteSellerCancel } from '../cancel-watch.js';
-import { directPaused } from '../../../shared/billing.js';
+import { creditStoreId, directPaused } from '../../../shared/billing.js';
 import { cancellationImpact, prepaySavingMinor, repriceBasket } from '../offers.js';
+import { CREDIT_OFFER_MAX_TIMES, choiceLink, isOfferChoice, orderMessage } from '../offer-refund.js';
+import type { StoreCredit } from '../../../shared/play.js';
 
 import { personRef, sellerRef } from '../../../shared/parties.js';
 import {
@@ -1350,7 +1352,7 @@ async function startRefund(request: HttpRequest, _context: InvocationContext) {
   // not use any of it up. A cancellation or an earlier refund of this kind
   // does, whole, whether or not it has gone back yet.
   const alreadyBack = (order.credits ?? [])
-    .filter((credit) => credit.origin === 'cancelled' || credit.origin === 'manual')
+    .filter((credit) => credit.origin === 'cancelled' || credit.origin === 'manual' || credit.origin === 'offer')
     .reduce((sum, credit) => sum + credit.amountMinor, 0);
   const ceiling = orderMoney(order).paidMinor - alreadyBack;
   if (amountMinor > ceiling) {
@@ -1371,6 +1373,136 @@ async function startRefund(request: HttpRequest, _context: InvocationContext) {
 
   await tellBuyerRefunded(repository, order, amountMinor, reference, body.message);
   return json(201, { order: saved, credit });
+}
+
+/**
+ * POST /api/orders/{id}/offer-credit { creditId, amountMinor } - the shop
+ * offers more store credit in place of money an offer made owed back.
+ *
+ * Only ever up: an offer once made is the buyer's to take. Said in their chat
+ * as well as the bell, since that is where the two of them are talking it over.
+ */
+async function offerMoreCredit(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const found = await ownOrder(request, repository, user.id);
+  if ('refusal' in found) return found.refusal;
+  const order = found.order;
+  if (order.sellerId !== user.id) return error(403, 'not_the_seller', 'Only the shop can offer store credit.');
+  const body = await bodyOf<{ creditId: string; amountMinor: number }>(request);
+  const credit = (order.credits ?? []).find((entry) => isOfferChoice(entry) && (!body.creditId || entry.id === body.creditId));
+  if (!credit) return error(409, 'already_chosen', 'The buyer has already chosen how to get this back.');
+  const amountMinor = Math.round(Number(body.amountMinor) || 0);
+  const current = credit.storeCreditOfferMinor ?? credit.amountMinor;
+  if (amountMinor <= current) return error(400, 'not_more', `Offer more than the ${rupees(current)} already offered.`);
+  if (amountMinor > credit.amountMinor * CREDIT_OFFER_MAX_TIMES) {
+    return error(400, 'too_much', `Up to ${rupees(credit.amountMinor * CREDIT_OFFER_MAX_TIMES)} store credit for ${rupees(credit.amountMinor)} owed.`);
+  }
+
+  const now = new Date().toISOString();
+  credit.storeCreditOfferMinor = amountMinor;
+  credit.creditOffers = [...(credit.creditOffers ?? []), { amountMinor, at: now }];
+  note(order, `🎁 Shop offered ${rupees(amountMinor)} store credit instead of a ${rupees(credit.amountMinor)} refund.`, user.id);
+  order.updatedAt = now;
+  const saved = await repository.updateOrder(order);
+
+  const named = await orderNames(repository, order);
+  await notify(repository, [order.buyerId], {
+    kind: 'offer_applied',
+    title: `${named.shop} offers ${rupees(amountMinor)} store credit`,
+    body: `Instead of the ${rupees(credit.amountMinor)} refund on ${order.itemName}. Take it, or keep the refund - your choice.`,
+    link: `/order/${encodeURIComponent(order.id)}`,
+  });
+  await orderMessage(repository, order, 'seller',
+    `I can offer ${rupees(amountMinor)} store credit instead of the ${rupees(credit.amountMinor)} refund on "${order.itemName}". Or keep the refund - your choice.`,
+    choiceLink(order));
+  return json(200, { order: saved, credit });
+}
+
+/**
+ * POST /api/orders/{id}/offer-choose { creditId, choice } - the buyer chooses
+ * how money an offer made owed back comes to them.
+ *
+ * `refund`: it becomes an ordinary refund, which the shop sends and the buyer
+ * confirms. `store_credit`: the shop's best offer lands in their wallet at
+ * once, never lapses, and the refund is settled.
+ */
+async function chooseOfferRefund(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  const user = await auth.requireAuth(request);
+  const repository = await getRepository();
+
+  const found = await ownOrder(request, repository, user.id);
+  if ('refusal' in found) return found.refusal;
+  const order = found.order;
+  if (order.buyerId !== user.id) return error(403, 'not_the_buyer', 'Only the buyer chooses how to get this back.');
+  const body = await bodyOf<{ creditId: string; choice: string }>(request);
+  if (body.choice !== 'refund' && body.choice !== 'store_credit') return error(400, 'bad_choice', 'Choose a refund or store credit.');
+  const credit = (order.credits ?? []).find((entry) => isOfferChoice(entry) && (!body.creditId || entry.id === body.creditId));
+  if (!credit) return error(409, 'already_chosen', 'You have already chosen how to get this back.');
+
+  const now = new Date().toISOString();
+  const named = await orderNames(repository, order);
+  const offer = Math.max(credit.amountMinor, credit.storeCreditOfferMinor ?? 0);
+  credit.chosen = body.choice;
+  credit.chosenAt = now;
+  if (body.choice === 'refund') {
+    credit.status = 'open';
+    note(order, `↩️ Buyer chose a refund of ${rupees(credit.amountMinor)}.`, user.id);
+  } else {
+    const shop = await repository.getUserById(order.sellerId);
+    const buyer = await repository.getUserById(order.buyerId);
+    if (!shop || !buyer) return error(404, 'not_found', 'The shop or buyer is no longer here.');
+    const gift: StoreCredit = {
+      id: `ofr_${credit.id}`,
+      storeId: creditStoreId('shop', order.sellerId),
+      storeName: named.shop,
+      amountMinor: offer,
+      spentMinor: 0,
+      reason: `In place of a ${rupees(credit.amountMinor)} refund on ${order.itemName}`,
+      link: `/${shop.sellerProfile?.username ?? shop.username ?? ''}`,
+      createdAt: now,
+      spends: [],
+      kind: 'shop',
+      given: true,
+      expiresAt: null,
+      refund: true,
+    };
+    if (!(buyer.storeCredits ?? []).some((entry) => entry.id === gift.id)) {
+      await repository.updateUser({ ...buyer, storeCredits: [...(buyer.storeCredits ?? []), gift] });
+    }
+    credit.status = 'refunded';
+    credit.refundedMinor = credit.amountMinor;
+    credit.refundedAt = now;
+    credit.refundedBy = order.sellerId;
+    credit.refundLog = [...(credit.refundLog ?? []), {
+      id: `rfl_${randomUUID().slice(0, 12)}`, amountMinor: credit.amountMinor, reference: null,
+      sentAt: now, sentBy: order.sellerId, status: 'received', answeredAt: now, storeCreditMinor: offer,
+    }];
+    note(order, `🎁 Buyer took ${rupees(offer)} store credit instead of a ${rupees(credit.amountMinor)} refund.`, user.id);
+  }
+  order.offerRefundDueMinor = Math.max(0, (order.offerRefundDueMinor ?? 0) - credit.amountMinor);
+  order.updatedAt = now;
+  const saved = await repository.updateOrder(order);
+
+  const refund = body.choice === 'refund';
+  await notify(repository, [order.sellerId], {
+    kind: refund ? 'refund_started' : 'credit_refund_answered',
+    title: refund
+      ? `${named.buyer} chose a ${rupees(credit.amountMinor)} refund`
+      : `${named.buyer} took ${rupees(offer)} store credit`,
+    body: refund
+      ? `For ${order.itemName}. Send it from Refunds, with the reference.`
+      : `In place of the ${rupees(credit.amountMinor)} refund on ${order.itemName}. It is in their wallet; nothing more to send.`,
+    link: '/shop?tab=refunds',
+  });
+  await orderMessage(repository, order, 'buyer', refund
+    ? `I'd like the ${rupees(credit.amountMinor)} back as a refund for "${order.itemName}", please.`
+    : `I'll take the ${rupees(offer)} store credit for "${order.itemName}". Thank you!`,
+  refund ? { href: '/shop?tab=refunds', label: 'Send the refund' } : undefined);
+  return json(200, { order: saved, credit });
 }
 
 /**
@@ -1407,6 +1539,8 @@ async function myRefunds(request: HttpRequest, _context: InvocationContext) {
       leftMinor: creditLeft(credit),
       status: credit.status,
       pendingRefund: credit.pendingRefund ?? null,
+      storeCreditOfferMinor: credit.storeCreditOfferMinor ?? null,
+      chosen: credit.chosen ?? null,
       log: credit.refundLog ?? [],
       applications: credit.applications ?? [],
     };
@@ -1843,6 +1977,8 @@ export const ackCreditRefundRoute = handler(ackCreditRefund);
 export const applyCreditRoute = handler(applyCredit);
 export const holdCreditRoute = handler(holdCredit);
 export const startRefundRoute = handler(startRefund);
+export const offerMoreCreditRoute = handler(offerMoreCredit);
+export const chooseOfferRefundRoute = handler(chooseOfferRefund);
 export const flagDisputeRoute = handler(flagDispute);
 export const myDisputesRoute = handler(myDisputes);
 export const myRefundsRoute = handler(myRefunds);
@@ -2665,6 +2801,8 @@ app.http('order-refund-credit', { ...anon, methods: ['POST'], route: 'orders/{id
 app.http('order-credit-ack', { ...anon, methods: ['POST'], route: 'orders/{id}/credit-ack', handler: ackCreditRefundRoute });
 app.http('order-credit-apply', { ...anon, methods: ['POST'], route: 'orders/{id}/credit-apply', handler: applyCreditRoute });
 app.http('order-refund-new', { ...anon, methods: ['POST'], route: 'orders/{id}/refund-new', handler: startRefundRoute });
+app.http('order-offer-credit', { ...anon, methods: ['POST'], route: 'orders/{id}/offer-credit', handler: offerMoreCreditRoute });
+app.http('order-offer-choose', { ...anon, methods: ['POST'], route: 'orders/{id}/offer-choose', handler: chooseOfferRefundRoute });
 app.http('order-flag-dispute', { ...anon, methods: ['POST'], route: 'orders/{id}/flag-dispute', handler: flagDisputeRoute });
 app.http('my-disputes', { ...anon, methods: ['GET'], route: 'me/disputes', handler: myDisputesRoute });
 app.http('me-pending-reviews', { ...anon, methods: ['GET'], route: 'me/pending-reviews', handler: pendingReviewsRoute });

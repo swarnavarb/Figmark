@@ -8,6 +8,7 @@ import { RestockChoice } from '../components/RestockChoice';
 import { ManagerMark } from '../components/ManagerBadge';
 import { compressImage } from '../imageCompress';
 import { OrderServices } from '../components/OrderServices';
+import { OfferRefundChoice } from '../components/OfferRefundChoice';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { BackBar, canGoBack } from '../components/ScrollManager';
@@ -242,6 +243,15 @@ export function OrderPage() {
         </button>
       </div>}
 
+      {/* Money an offer made owed back: the buyer chooses a refund or store
+          credit, and the shop can offer more. Above both tabs, as it waits on
+          somebody. */}
+      {placed && state.side && (order.credits ?? []).filter((credit) => credit.origin === 'offer' && credit.status === 'choosing').map((credit) => (
+        <OfferRefundChoice key={credit.id} orderId={order.id} creditId={credit.id} amountMinor={credit.amountMinor}
+          offerMinor={credit.storeCreditOfferMinor ?? null} currency={order.currency} side={state.side!}
+          shopName={state.side === 'buyer' ? state.counterparty.name : undefined} onDone={load}
+          chatHref={state.counterparty.handle ? `/messages/${encodeURIComponent(state.counterparty.handle)}` : null} />
+      ))}
       {placed && tab === 'tracking' && (
         <div className="stack">
 
@@ -381,13 +391,6 @@ export function OrderPage() {
               <PriceBreakdown goodsMinor={order.unitPriceMinor * order.quantity} shippingMinor={order.shippingMinor}
                 discountMinor={order.offerDiscountMinor} applied={order.appliedOffers} rules={order.offerRules}
                 loyalty={order.loyaltyApplied} totalMinor={orderTotalMinor(order)} currency={order.currency} />
-            )}
-            {(order.offerRefundDueMinor ?? 0) > 0 && order.status !== 'cancelled' && (
-              <p className="offr-warn">
-                {state.side === 'seller'
-                  ? `An offer lowered this order's price after it was paid. Send ${formatMoney(order.offerRefundDueMinor!, order.currency)} back to the buyer.`
-                  : `An offer lowered the price after you paid. The shop will send back ${formatMoney(order.offerRefundDueMinor!, order.currency)}.`}
-              </p>
             )}
             {(order.offerBalanceDueMinor ?? 0) > 0 && (
               <p className="offr-warn">
