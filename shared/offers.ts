@@ -234,6 +234,20 @@ export function givesFreeShipping(offer: Pick<ListingOffer, 'kind' | 'freeShippi
   return offer.kind === 'free_shipping' || offer.kind === 'spend_free_shipping' || (offer.kind === 'group_fill' && offer.freeShipping === true);
 }
 
+/** Offers as a buyer reads them: free shipping always first, the rest in the shop's order. */
+export function offersInOrder<T extends Pick<ListingOffer, 'kind' | 'freeShipping'>>(offers: readonly T[]): T[] {
+  return [...offers.filter(givesFreeShipping), ...offers.filter((offer) => !givesFreeShipping(offer))];
+}
+
+/** The way an item's paid shipping becomes free, in a card's few words: "Free ship on 2+". Null when there is none. */
+export function freeShipShort(offers: readonly ListingOffer[] | null | undefined): string | null {
+  const ship = (offers ?? []).filter((offer) => offer.kind === 'free_shipping')
+    .sort((a, b) => (a.minItems ?? 2) - (b.minItems ?? 2))[0];
+  if (ship) return `Free ship on ${ship.minItems ?? 2}+`;
+  const spend = (offers ?? []).find((offer) => offer.kind === 'spend_free_shipping');
+  return spend ? `Free ship over ${rupees(spend.minSpendMinor ?? 0)}` : null;
+}
+
 /** Free shipping on the item and free shipping as an offer: the offer gives nothing. Null when there is no clash. */
 export function shippingOfferClash(offers: readonly Pick<ListingOffer, 'kind' | 'freeShipping'>[] | null | undefined, shippingMinor: number | null | undefined): string | null {
   return shippingMinor === 0 && (offers ?? []).some(givesFreeShipping) ? FREE_SHIPPING_TAKEN : null;
@@ -335,7 +349,8 @@ export function cleanOffers(raw: unknown, unitPriceMinor?: number): { offers: Li
     }
     offers.push(offer);
   }
-  return { offers, error: null };
+  // Stored with free shipping first, so every place that lists them shows it first.
+  return { offers: offersInOrder(offers), error: null };
 }
 
 /** The headline for a card: the lowest wholesale price, when the item has one. */

@@ -228,4 +228,17 @@ check('an item that ships free cannot also offer free shipping', () => {
   assert.equal(shippingOfferClash(ship, null), null);
 });
 
+check('free shipping is listed first, and a card says it in a few words', () => {
+  const { offersInOrder, freeShipShort, cleanOffers: clean } = offers;
+  const list = [
+    { id: 'd', kind: 'discount', minItems: 3, scope: 'lot', discount: { type: 'percent', value: 10 } },
+    { id: 'f', kind: 'free_shipping', minItems: 2, scope: 'lot' },
+  ];
+  assert.deepEqual(offersInOrder(list).map((offer) => offer.id), ['f', 'd']);
+  assert.deepEqual(clean(list, 100_000).offers.map((offer) => offer.id), ['f', 'd'], 'saved in that order');
+  assert.equal(freeShipShort(list), 'Free ship on 2+');
+  assert.match(freeShipShort([{ id: 's', kind: 'spend_free_shipping', minSpendMinor: 200_000 }]), /^Free ship over ₹2,?000$/);
+  assert.equal(freeShipShort([list[0]]), null);
+});
+
 console.log(`\n${passed} checks passed`);
