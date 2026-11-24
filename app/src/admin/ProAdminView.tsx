@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { ProVoucher } from '@shared/billing';
+import { VOUCHER_DETAILS_MAX, VOUCHER_TITLE_MAX, type ProVoucher } from '@shared/billing';
 import { ApiRequestError, admin } from './api';
 import { formatMoney, timeAgo } from '../format';
 import { SkelFigures, SkelRows } from '../components/PageSkeletons';
@@ -15,7 +15,9 @@ export function ProAdminView() {
   const [vouchers, setVouchers] = useState<ProVoucher[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [made, setMade] = useState<ProVoucher[]>([]);
-  const [form, setForm] = useState({ days: '30', count: '1', maxUses: '1', expiresAt: '', prefix: 'PRO', code: '', note: '' });
+  const [form, setForm] = useState({ days: '30', count: '1', maxUses: '1', expiresAt: '', prefix: 'PRO', code: '', note: '', title: '', details: '' });
+  /** The code whose popup words are being changed, and the words so far. */
+  const [editing, setEditing] = useState<{ code: string; title: string; details: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [grant, setGrant] = useState({ userId: '', days: '30' });
   const [granted, setGranted] = useState<string | null>(null);
@@ -31,12 +33,27 @@ export function ProAdminView() {
       const body = await admin.makeVouchers({
         days: Number(form.days), count: Number(form.count) || 1, maxUses: Number(form.maxUses) || 1,
         expiresAt: form.expiresAt ? new Date(`${form.expiresAt}T23:59:59+05:30`).toISOString() : null,
-        prefix: form.prefix, code: form.code || undefined, note: form.note,
+        prefix: form.prefix, code: form.code || undefined, note: form.note, title: form.title, details: form.details,
       });
       setMade(body.vouchers);
       await load();
     } catch (err) {
       setError(message(err, 'Could not make the codes.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveWords() {
+    if (!editing) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await admin.editVoucher(editing.code, { title: editing.title, details: editing.details });
+      setEditing(null);
+      await load();
+    } catch (err) {
+      setError(message(err, 'Could not save what the code says.'));
     } finally {
       setBusy(false);
     }
@@ -73,7 +90,19 @@ export function ProAdminView() {
           <label className="field" style={{ maxWidth: 200 }}>
             <span>Or one named code</span><input value={form.code} placeholder="LAUNCH30" onChange={set('code')} />
           </label>
-          <label className="field" style={{ flex: 1, minWidth: 200 }}><span>Note</span><input value={form.note} placeholder="Diwali campaign" onChange={set('note')} /></label>
+          <label className="field" style={{ flex: 1, minWidth: 200 }}><span>Note (only staff see this)</span><input value={form.note} placeholder="Diwali campaign" onChange={set('note')} /></label>
+        </div>
+        <div className="stack" style={{ gap: 8 }}>
+          <b>What the coupon is</b>
+          <p className="muted" style={{ margin: 0 }}>
+            People see this in a popup when they type the code and press Claim, before they apply it. Leave it empty and they see
+            “{Number(form.days) > 0 ? Number(form.days) : 30} days of Pro, free”.
+          </p>
+          <label className="field"><span>Name</span>
+            <input value={form.title} maxLength={VOUCHER_TITLE_MAX} placeholder="Diwali gift: 1 month of Pro, free" onChange={set('title')} /></label>
+          <label className="field"><span>What it gives (plain words)</span>
+            <textarea rows={3} value={form.details} maxLength={VOUCHER_DETAILS_MAX}
+              placeholder="Get every Pro tool free for 30 days. No payment needed. After 30 days, Pro stops on its own." onChange={set('details')} /></label>
         </div>
         <button type="button" className="btn" style={{ justifySelf: 'start' }} disabled={busy || !(Number(form.days) > 0)} onClick={() => void make()}>
           {busy ? 'Making…' : 'Make codes'}
@@ -102,16 +131,37 @@ export function ProAdminView() {
         {!vouchers ? <SkelRows n={4} /> : vouchers.length === 0 ? <p className="muted card--pad">No codes yet.</p> : vouchers.map((voucher) => (
           <div key={voucher.code} className="userrow" style={{ cursor: 'default' }}>
             <div className="userrow__main">
-              <span className="userrow__name"><code>{voucher.code}</code> · {voucher.days} days</span>
+              <span className="userrow__name"><code>{voucher.code}</code> · {voucher.days} days{voucher.title ? ` · ${voucher.title}` : ''}</span>
               <span className="userrow__meta">
                 Used {voucher.redeemed.length} of {voucher.maxUses}
                 {voucher.expiresAt ? ` · expires ${new Date(voucher.expiresAt).toLocaleDateString('en-IN')}` : ''}
                 {voucher.note ? ` · ${voucher.note}` : ''} · made {timeAgo(voucher.createdAt)} by {voucher.createdBy}
                 {voucher.redeemed.length > 0 && ` · by ${voucher.redeemed.slice(-3).map((entry) => entry.name).join(', ')}`}
               </span>
+              {voucher.details && editing?.code !== voucher.code && <span className="userrow__meta">“{voucher.details}”</span>}
+              {editing?.code === voucher.code && (
+                <div className="stack" style={{ gap: 8, marginTop: 8 }}>
+                  <label className="field"><span>Name</span>
+                    <input value={editing.title} maxLength={VOUCHER_TITLE_MAX} placeholder={`${voucher.days} days of Pro, free`}
+                      onChange={(e) => setEditing({ ...editing, title: e.target.value })} /></label>
+                  <label className="field"><span>What it gives (plain words)</span>
+                    <textarea rows={3} value={editing.details} maxLength={VOUCHER_DETAILS_MAX}
+                      onChange={(e) => setEditing({ ...editing, details: e.target.value })} /></label>
+                  <div className="row" style={{ gap: 8 }}>
+                    <button type="button" className="btn btn--sm" disabled={busy} onClick={() => void saveWords()}>{busy ? 'Saving…' : 'Save'}</button>
+                    <button type="button" className="btn btn--quiet btn--sm" onClick={() => setEditing(null)}>Cancel</button>
+                  </div>
+                </div>
+              )}
             </div>
             <div className="userrow__tags">
               {voucher.disabled && <span className="badge badge--danger">Off</span>}
+              {editing?.code !== voucher.code && (
+                <button type="button" className="btn btn--quiet btn--sm"
+                  onClick={() => setEditing({ code: voucher.code, title: voucher.title ?? '', details: voucher.details ?? '' })}>
+                  Edit words
+                </button>
+              )}
               <button type="button" className="btn btn--quiet btn--sm" onClick={() => void admin.toggleVoucher(voucher.code).then(load)}>
                 {voucher.disabled ? 'Switch on' : 'Switch off'}
               </button>

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import {
   GIFT_METHODS, GIVER_KINDS, PRO_FEATURES, cleanPricing, cleanVoucherCode, creditStoreId, daysForMonths, extendPro,
-  gstFor, gstSplit, isProActive, proDaysLeft, proLocked, voucherProblem,
+  gstFor, gstSplit, isProActive, proDaysLeft, proLocked, voucherPreview, voucherProblem, VOUCHER_DETAILS_MAX, VOUCHER_TITLE_MAX,
   type GiftMethod, type GiverKind, type ProGrant, type ProVoucher, type Pricing, type StoreGift,
 } from '../../../shared/billing.js';
 import type { User } from '../../../shared/models.js';
@@ -238,6 +238,26 @@ async function loadVouchers(repository: Repo): Promise<ProVoucher[]> {
 
 const mutateVouchers = (repository: Repo, by: string, change: (list: ProVoucher[]) => ProVoucher[]) =>
   mutateList<ProVoucher>(repository, VOUCHERS_ID, 'vouchers', 5_000, by, change);
+
+/**
+ * POST /api/me/pro/redeem/check { code } - what a code is, before it is used:
+ * the popup the person reads before they press Apply. Nothing is spent.
+ */
+async function checkVoucher(request: HttpRequest, _context: InvocationContext) {
+  const { user, repository } = await me(request);
+  // Counted with redeeming: checking is guessing too.
+  const slow = await tooFast(user.id, 'voucher');
+  if (slow) return slow;
+  const input = await body<{ code?: unknown }>(request);
+  const code = cleanVoucherCode(input?.code);
+  if (!code) return error(400, 'no_code', 'Enter the code.');
+  const pricing = await loadPricing(repository);
+  if (!pricing.pro.enabled) return error(409, 'pro_off', 'Pro is free for everyone right now, so codes are not needed.');
+  const voucher = (await loadVouchers(repository)).find((entry) => entry.code === code);
+  const refused = voucherProblem(voucher, user.id);
+  if (refused || !voucher) return error(400, 'bad_code', refused ?? 'That code does not exist.');
+  return json(200, { voucher: voucherPreview(voucher) });
+}
 
 /** POST /api/me/pro/redeem { code } */
 async function redeemVoucher(request: HttpRequest, _context: InvocationContext) {
@@ -591,7 +611,7 @@ async function opsMakeVouchers(request: HttpRequest, _context: InvocationContext
       taken.add(code);
       made.push({
         code, days, maxUses, expiresAt: expires ? expires.toISOString() : null, disabled: false,
-        note: text(input?.note, 120), createdAt: now, createdBy: user.displayName ?? user.email, redeemed: [],
+        note: text(input?.note, 120), title: text(input?.title, VOUCHER_TITLE_MAX), details: text(input?.details, VOUCHER_DETAILS_MAX), createdAt: now, createdBy: user.displayName ?? user.email, redeemed: [],
       });
     }
     return [...list, ...made];
@@ -611,6 +631,28 @@ async function opsToggleVoucher(request: HttpRequest, _context: InvocationContex
     return { ...voucher, disabled: !voucher.disabled };
   }));
   return found ? json(200, { ok: true }) : error(404, 'not_found', 'No such code.');
+}
+
+/**
+ * POST /api/ops/pro/vouchers/{code}/edit { title?, details?, note? } - change
+ * what a code says it is. Its days and uses stay as they were made.
+ */
+async function opsEditVoucher(request: HttpRequest, _context: InvocationContext) {
+  const user = await operator(request);
+  const code = cleanVoucherCode(request.params.code);
+  const input = await body<Record<string, unknown>>(request);
+  let found: ProVoucher | null = null;
+  await mutateVouchers(await getRepository(), user.id, (list) => list.map((voucher) => {
+    if (voucher.code !== code) return voucher;
+    found = {
+      ...voucher,
+      ...(typeof input?.title === 'string' ? { title: text(input.title, VOUCHER_TITLE_MAX) } : {}),
+      ...(typeof input?.details === 'string' ? { details: text(input.details, VOUCHER_DETAILS_MAX) } : {}),
+      ...(typeof input?.note === 'string' ? { note: text(input.note, 120) } : {}),
+    };
+    return found;
+  }));
+  return found ? json(200, { voucher: found }) : error(404, 'not_found', 'No such code.');
 }
 
 /** POST /api/ops/pro/grant { userId, days } - Pro given by hand (negative days take it back). */
@@ -692,6 +734,7 @@ export const payFeesRoute = handler(payFees);
 export const myProRoute = handler(myPro);
 export const proStatusRoute = handler(proStatus);
 export const buyProRoute = handler(buyPro);
+export const checkVoucherRoute = handler(checkVoucher);
 export const redeemVoucherRoute = handler(redeemVoucher);
 export const startTrialRoute = handler(startTrial);
 export const listGivenRoute = handler(listGiven);
@@ -704,6 +747,7 @@ export const opsSavePricingRoute = audited('pricing.save', handler(opsSavePricin
 export const opsVouchersRoute = handler(opsVouchers);
 export const opsMakeVouchersRoute = audited('pro.vouchers.create', handler(opsMakeVouchers));
 export const opsToggleVoucherRoute = audited('pro.vouchers.toggle', handler(opsToggleVoucher));
+export const opsEditVoucherRoute = audited('pro.vouchers.edit', handler(opsEditVoucher));
 export const opsGrantProRoute = audited('pro.grant', handler(opsGrantPro));
 export const opsFeesRoute = handler(opsFees);
 export const opsRefreshFeesRoute = handler(opsRefreshFees);
@@ -715,6 +759,7 @@ app.http('my-fees-pay', { ...anon, methods: ['POST'], route: 'me/fees/pay', hand
 app.http('my-pro', { ...anon, methods: ['GET'], route: 'me/pro', handler: myProRoute });
 app.http('pro-status', { ...anon, methods: ['GET'], route: 'pro/status', handler: proStatusRoute });
 app.http('my-pro-buy', { ...anon, methods: ['POST'], route: 'me/pro/buy', handler: buyProRoute });
+app.http('my-pro-redeem-check', { ...anon, methods: ['POST'], route: 'me/pro/redeem/check', handler: checkVoucherRoute });
 app.http('my-pro-redeem', { ...anon, methods: ['POST'], route: 'me/pro/redeem', handler: redeemVoucherRoute });
 app.http('my-pro-trial', { ...anon, methods: ['POST'], route: 'me/pro/trial', handler: startTrialRoute });
 app.http('my-gifts', { ...anon, methods: ['GET'], route: 'me/gifts', handler: listGivenRoute });
@@ -727,6 +772,7 @@ app.http('ops-pricing-save', { ...anon, methods: ['POST'], route: 'ops/pricing/s
 app.http('ops-pro-vouchers', { ...anon, methods: ['GET'], route: 'ops/pro/vouchers', handler: opsVouchersRoute });
 app.http('ops-pro-vouchers-make', { ...anon, methods: ['POST'], route: 'ops/pro/vouchers/make', handler: opsMakeVouchersRoute });
 app.http('ops-pro-voucher-toggle', { ...anon, methods: ['POST'], route: 'ops/pro/vouchers/{code}/toggle', handler: opsToggleVoucherRoute });
+app.http('ops-pro-voucher-edit', { ...anon, methods: ['POST'], route: 'ops/pro/vouchers/{code}/edit', handler: opsEditVoucherRoute });
 app.http('ops-pro-grant', { ...anon, methods: ['POST'], route: 'ops/pro/grant', handler: opsGrantProRoute });
 app.http('ops-fees', { ...anon, methods: ['GET'], route: 'ops/fees', handler: opsFeesRoute });
 app.http('ops-fees-refresh', { ...anon, methods: ['POST'], route: 'ops/fees/{id}/refresh', handler: opsRefreshFeesRoute });

@@ -224,7 +224,14 @@ export interface ProVoucher {
   maxUses: number;
   expiresAt: string | null;
   disabled: boolean;
+  /** For the console only: why the code was made. */
   note: string;
+  /**
+   * What the code is, in the words the person claiming it reads in the popup
+   * before they apply it. Empty: a plain line made from the days.
+   */
+  title?: string;
+  details?: string;
   createdAt: string;
   createdBy: string;
   redeemed: { userId: string; name: string; at: string }[];
@@ -237,6 +244,28 @@ export function voucherProblem(voucher: ProVoucher | undefined, userId: string, 
   if (voucher.redeemed.some((entry) => entry.userId === userId)) return 'You have already used that code.';
   if (voucher.redeemed.length >= voucher.maxUses) return 'That code has been used up.';
   return null;
+}
+
+/** What a person sees about a code before they apply it - never who used it. */
+export interface ProVoucherPreview {
+  code: string;
+  title: string;
+  details: string;
+  days: number;
+  expiresAt: string | null;
+}
+
+export const VOUCHER_TITLE_MAX = 80;
+export const VOUCHER_DETAILS_MAX = 600;
+
+export function voucherPreview(voucher: ProVoucher): ProVoucherPreview {
+  return {
+    code: voucher.code,
+    title: voucher.title?.trim() || `${voucher.days} days of Pro, free`,
+    details: voucher.details?.trim() || '',
+    days: voucher.days,
+    expiresAt: voucher.expiresAt,
+  };
 }
 
 export const cleanVoucherCode = (raw: unknown) =>
