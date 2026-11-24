@@ -11499,6 +11499,8 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .pcs-erow__title { width: 100%; min-width: 0; height: 40px; }
 .pcs-erow__share { color: var(--text-dim); font-size: var(--t-sm); font-weight: 600; white-space: nowrap; }
 .pcs-erow__sold { color: var(--danger); font-size: var(--t-sm); font-weight: 700; }
+.pcs-erow__fee { grid-column: 2 / -1; color: var(--text-faint); font-size: var(--t-xs); line-height: 1.2; }
+.pcs-erow__fee b { color: var(--text-dim); font-weight: 600; }
 /* Condition and original-or-copy for every item at once, under the price tools. */
 .pcs-bulk { display: grid; gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); }
 .pcs-bulk__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
