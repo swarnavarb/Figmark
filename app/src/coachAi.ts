@@ -1,8 +1,14 @@
 import { parseToolTags, type CoachAnswer } from '@shared/coach';
+import { ApiRequestError, api } from './api';
 import { loadPuter, warmPuter } from './puterVision';
 
 /**
- * The coach's AI chat, through Puter.js - free to Figmark and to the seller.
+ * The coach's AI chat - free to Figmark and to the seller.
+ *
+ * First on the site's own free-tier keys (POST /api/me/coach/chat): no
+ * sign-in at all, and the server builds the brief itself from the shop's
+ * counts. When those keys are not set, or the shared free day is used up,
+ * it falls back to Puter.js.
  *
  * The same seam as "Scan with AI" (puterVision.ts): Puter's "user pays"
  * model means no key here and no bill for the site. The seller signs in to
@@ -57,7 +63,23 @@ function textOf(response: unknown): string {
  * The model's answer to the last turn, with its tool tags turned into
  * buttons. Rejects with a sentence to show when it cannot answer.
  */
-export async function askCoachAi(brief: string, turns: readonly ChatTurn[]): Promise<CoachAnswer> {
+export async function askCoachAi(storeId: string, brief: string, turns: readonly ChatTurn[]): Promise<CoachAnswer> {
+  const recent = turns.slice(-HISTORY);
+  try {
+    const reply = await within(api.coachChat(storeId, recent), ANSWER_MS, 'timeout');
+    const answer = parseToolTags(reply.text);
+    if (answer.text) return answer;
+  } catch (err) {
+    // Refused for this seller (Pro only, or not their shop): Puter would be no different.
+    if (err instanceof ApiRequestError && (err.status === 401 || err.status === 403)) {
+      throw new Error(`${err.message} Figgy has answered instead.`);
+    }
+    // Otherwise the free keys are off or busy: Puter, on the seller's own account, is next.
+  }
+  return askPuter(brief, recent);
+}
+
+async function askPuter(brief: string, turns: readonly ChatTurn[]): Promise<CoachAnswer> {
   const puter = (await within(loadPuter(), LOAD_MS, 'Puter AI did not load. Check your connection - Figgy has answered instead.')) as unknown as PuterText;
   if (!puter.auth.isSignedIn()) {
     try {
@@ -69,7 +91,7 @@ export async function askCoachAi(brief: string, turns: readonly ChatTurn[]): Pro
   let response: unknown;
   try {
     response = await within(puter.ai.chat(
-      [{ role: 'system', content: brief }, ...turns.slice(-HISTORY)],
+      [{ role: 'system', content: brief }, ...turns],
       { temperature: 0.4, max_tokens: 600 },
     ), ANSWER_MS, 'timeout');
   } catch {

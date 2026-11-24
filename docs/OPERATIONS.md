@@ -25,6 +25,8 @@ Set these as Static Web App application settings
 | `WEB_PUSH_PUBLIC_KEY`, `WEB_PUSH_PRIVATE_KEY`, `WEB_PUSH_SUBJECT` | `npm run push:keys` | Lock-screen notifications. |
 | `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` | Cloudflare dashboard → Turnstile | CAPTCHA on sign-up. Off when unset. |
 | `ANTHROPIC_API_KEY` | optional | Photo search by what is in the picture. |
+| `GEMINI_API_KEY` | optional | Free key from Google AI Studio (no card). "Scan with AI", and the coach chat when Groq is off or busy. `GEMINI_MODEL` overrides `gemini-flash-lite-latest`. |
+| `GROQ_API_KEY` | optional | Free key from console.groq.com (no card). The coach AI chat. `GROQ_MODEL` overrides `openai/gpt-oss-120b`. |
 
 After setting them, open `/api/health` signed in as an operator: every line
 should read connected, `sessionSecretSource` should be `configured`, and

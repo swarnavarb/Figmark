@@ -1,4 +1,4 @@
-import type { PhotoBox } from './api';
+import { api, type PhotoBox } from './api';
 import { readableUrl } from './photoDetect';
 import type { FoundThing } from './photoThings';
 
@@ -153,11 +153,24 @@ export function parseItems(text: string): FoundThing[] {
 }
 
 /**
- * Every item in the photo, as read by a vision model through the person's
- * own Puter account. Call it straight from a tap: the first time, it opens
- * Puter's sign-in window. Rejects with a message to show when it cannot.
+ * Every item in the photo, as read by a vision model: on the site's free
+ * Gemini key when it can (POST /api/ai/scan), else through the person's own
+ * Puter account. Call it straight from a tap: Puter's first use opens its
+ * sign-in window. Rejects with a message to show when it cannot.
  */
 export async function scanWithAI(photoUrl: string): Promise<{ things: FoundThing[]; model: string | null }> {
+  // First the site's own free key: no sign-in. Off or busy, Puter is next.
+  const image = await photoToSend(photoUrl);
+  const free = await api.aiScan(image).catch(() => null);
+  if (free) {
+    const items = parseItems(free.text);
+    if (items.length === 0) throw new Error('The AI found nothing it could box in this photo.');
+    return { things: items, model: free.model };
+  }
+  return scanWithPuter(image);
+}
+
+async function scanWithPuter(image: string): Promise<{ things: FoundThing[]; model: string | null }> {
   const puter = await loadPuter();
   if (!puter.auth.isSignedIn()) {
     try {
@@ -166,7 +179,7 @@ export async function scanWithAI(photoUrl: string): Promise<{ things: FoundThing
       throw new Error('Puter sign-in was closed. Sign in to scan with AI.');
     }
   }
-  const [image, model] = await Promise.all([photoToSend(photoUrl), modelFor(puter)]);
+  const model = await modelFor(puter);
   // The best model Puter listed; failing that, a Gemini model asked for by name, then Puter's own default.
   const tries = [...new Set([model, ...FALLBACK_MODELS, undefined])];
   let response: PuterChatResponse | null = null;

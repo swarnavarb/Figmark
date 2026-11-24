@@ -196,6 +196,13 @@ export interface HealthResponse {
     vision: boolean;
     detail: string;
   };
+  /** Free-tier AI on the site's own keys; without it the app asks Puter (a sign-in). */
+  freeAi?: {
+    scan: boolean;
+    chat: boolean;
+    /** Which keys are set and which models answer - for the people running the site. */
+    detail?: string;
+  };
 }
 
 /** A seeded sign-in hint, shown only while the mock provider is active. */
