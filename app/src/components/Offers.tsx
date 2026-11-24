@@ -318,7 +318,7 @@ export function OfferEditor({ offers, onChange, priceMinor, shippingMinor }: {
   const available = OFFER_KINDS.filter((kind) =>
     kind === 'free_shipping' || kind === 'discount' || !offers.some((offer) => offer.kind === kind));
   return (
-    <div className="offr-edit">
+    <div className="offr-edit" data-offer-editor>
       {offers.map((offer, index) => (
         <div key={offer.id} className="offr-edit__card">
           <div className="offr-edit__head">

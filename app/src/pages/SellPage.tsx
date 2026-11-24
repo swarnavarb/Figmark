@@ -742,7 +742,7 @@ function SellForm({ serverDraft, draftMissing }: {
       if (shippingClash && groupNeeded.length === 0 && title.trim().length > 2 && !etaIssue
         && priceMinor >= MIN_PRICE_MINOR && priceMinor <= MAX_PRICE_MINOR) {
         setMore(true);
-        requestAnimationFrame(() => document.querySelector<HTMLElement>('.offr-edit')?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+        requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-offer-editor]')?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
         return;
       }
       if (groupNeeded.length > 0 && title.trim().length > 2) {
