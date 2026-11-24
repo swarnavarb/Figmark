@@ -516,4 +516,69 @@ await check('a seller moves one thing of their lot, and only that thing', async 
   assert.equal(after.items[1].dna.id, before.items[1].dna.id, 'the other thing stays where it was');
 });
 
+console.log('model numbers, and the image scan');
+
+const { useEyeCheck, addLink, getDna } = await import(new URL('api/src/dna.js', dist));
+const { getPhotoStore } = await import(new URL('api/src/storage/index.js', dist));
+const { readFileSync } = await import('node:fs');
+const photoStore = await getPhotoStore();
+const stored = async (name) => {
+  const photo = await photoStore.upload(new Uint8Array(readFileSync(new URL(`../test-fixtures/scan/${name}.jpg`, import.meta.url))), 'image/jpeg');
+  return [{ blobName: photo.blobName, url: photo.url, imageHash: null, isPrimary: true }];
+};
+
+await check('sizes, counts and scales are not model numbers; model numbers are kept', () => {
+  assert.deepEqual(dna.productWords('Nike Dunk Low Panda size 10.5'), dna.productWords('Nike Dunk Low Panda'));
+  assert.deepEqual(dna.productWords('Spy x Family keychain set — 6 pieces'), ['spy', 'family', 'keychain']);
+  assert.ok(dna.productWords('Air Jordan 1 Chicago').includes('1'));
+  assert.ok(dna.otherModel(dna.productWords('Air Jordan 1 Chicago'), dna.productWords('Air Jordan 4 Chicago')));
+  assert.equal(dna.sameProductWords(dna.productWords('Hot Toys Iron Man Mark 85 — 1/6'), dna.productWords('Hot Toys Iron Man Mark III')), false);
+});
+
+await check('Mark III does not join Mark 85, and one already put there moves out', async () => {
+  const opts = { authenticity: 'Original' };
+  const m85 = await list(otherSeller, 'Hot Toys Iron Man Mark 85 — 1/6', opts, 3800000, { category: 'Figures' });
+  const m3 = await list(me.id, 'Hot Toys Iron Man Mark III', opts, 2500000, { category: 'Figures' });
+  const m85dna = await of(m85);
+  assert.notEqual((await of(m3)).id, m85dna.id);
+  // As the old matcher had it: Mark III on Mark 85's DNA.
+  const m3b = await list(me.id, 'Hot Toys Iron Man Mark III Diecast', opts, 2600000, { category: 'Figures' });
+  await addLink(repository, m85dna.id, { kind: 'listing', id: m3b.id, partition: me.id, by: 'auto', at: new Date().toISOString() });
+  forgetCatalogue();
+  const moved = await of(m3b);
+  assert.notEqual(moved.id, m85dna.id);
+  assert.ok(!(await getDna(repository, m85dna.id)).links.some((entry) => entry.id === m3b.id));
+});
+
+await check('two listings named alike are looked at side by side, and kept apart when they are two figures', async () => {
+  const asked = [];
+  useEyeCheck(async (a, b, titles) => { asked.push({ a, b, titles }); return false; });
+  const opts = { authenticity: 'Original' };
+  const first = await list(otherSeller, 'NECA Terminator 2 T-800 Ultimate figure', opts, 400000, { category: 'Figures', photos: await stored('t800a') });
+  const firstDna = await of(first);
+  const second = await list(me.id, 'NECA Terminator 2 T-800 Ultimate', opts, 420000, { category: 'Figures', photos: await stored('t800b') });
+  forgetCatalogue();
+  assert.notEqual((await of(second)).id, firstDna.id, 'the pictures said two figures');
+  assert.equal(asked.length, 1);
+  assert.equal(asked[0].a.contentType, 'image/jpeg');
+  assert.ok(asked[0].a.bytes.length > 1000 && asked[0].b.bytes.length > 1000, 'both pictures were looked at');
+  assert.deepEqual(asked[0].titles, ['NECA Terminator 2 T-800 Ultimate', 'NECA Terminator 2 T-800 Ultimate figure']);
+});
+
+await check('the same picture needs no second look, and a look that agrees joins them', async () => {
+  const asked = [];
+  useEyeCheck(async () => { asked.push(1); return true; });
+  const opts = { authenticity: 'Original' };
+  const first = await list(otherSeller, 'McFarlane Superman Elite Edition Clark Kent', opts, 500000, { category: 'Figures', photos: await stored('clark-kent') });
+  const firstDna = await of(first);
+  const again = await list(me.id, 'McFarlane Superman Clark Kent Elite', opts, 520000, { category: 'Figures', photos: await stored('clark-kent') });
+  forgetCatalogue();
+  assert.equal((await of(again)).id, firstDna.id);
+  assert.equal(asked.length, 0, 'the same photo settles it');
+  const third = await list(me.id, 'McFarlane Superman Clark Kent Elite Edition figure', opts, 510000, { category: 'Figures', photos: await stored('cyclops-in-hand') });
+  forgetCatalogue();
+  assert.equal((await of(third)).id, firstDna.id, 'a look that agrees joins');
+  useEyeCheck(null);
+});
+
 console.log(`\n${passed} DNA checks passed`);

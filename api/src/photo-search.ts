@@ -228,6 +228,11 @@ export async function pictureLooks(
   return compareAll(await catalogPrints(pool, learned), Array.isArray(hash) ? hash : [hash]);
 }
 
+/** The fingerprints of a listing's stored photos, each whole and each item in it: worked out if need be. */
+export async function listingHashes(listing: Listing): Promise<string[]> {
+  return (await catalogPrints([listing], []))[0]?.hashes ?? [];
+}
+
 /** `pictureLooks` for several photos at once - a whole and each item in it - reading the catalogue once. */
 export async function pictureLooksEach(
   pool: Listing[], hashes: (string | string[])[], learned: LearnedHash[] = [],

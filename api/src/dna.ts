@@ -1,16 +1,18 @@
 import { randomUUID } from 'node:crypto';
 import type { Listing, Post, RegionBox, SiteContent, Want } from '../../shared/models.js';
 import {
-  DNA_PREFIX, DNA_TAGS_PER_POST, HUNT_COVERED, SAME_WITH_PHOTO, sameProductWords, covered, dnaDocId, heatOf, lineOf,
+  DNA_PREFIX, DNA_TAGS_PER_POST, HUNT_COVERED, SAME_WITH_PHOTO, otherModel, sameProductWords, covered, dnaDocId, heatOf, lineOf,
   linkKey, nameFrom, pieceKey, productWords, sameCategory, wordLikeness,
   type DnaLine, type DnaLink, type DnaLinkKind, type DnaSummary, type ProductDna,
 } from '../../shared/dna.js';
 import { getRepository } from './data/index.js';
 import { hasPieces, isPieceSold, MAX_PIECES } from '../../shared/pieces.js';
-import { overlapOfBoxes } from './image-hash.js';
+import { cropPixels, overlapOfBoxes, printsOfPixels } from './image-hash.js';
+import { decodeJpeg, encodeJpeg } from './storage/compress.js';
+import { sameProductInPhotos, visionAvailable } from './vision.js';
 import { everListed, findSales, onSale, textSales } from './photo-sales.js';
-import { pictureMatches } from './photo-search.js';
-import { ownPhotoName } from './storage/index.js';
+import { listingHashes, pictureLooks, type PictureLook } from './photo-search.js';
+import { getPhotoStore, ownPhotoName } from './storage/index.js';
 
 /**
  * Product DNA on the server: where each DNA is kept, how things are linked to
@@ -65,6 +67,7 @@ function place(index: DnaIndex, dna: ProductDna): void {
       if (left.length) index.byLink.set(key, left); else index.byLink.delete(key);
     }
   }
+  dna = withNameWords(dna);
   index.byId.set(dna.id, dna);
   if (dna.mergedInto) return;
   for (const link of dna.links) {
@@ -72,6 +75,15 @@ function place(index: DnaIndex, dna: ProductDna): void {
     const ids = index.byLink.get(key) ?? [];
     if (!ids.includes(dna.id)) index.byLink.set(key, [...ids, dna.id]);
   }
+}
+
+/**
+ * A DNA's words with its name's: DNAs started before model numbers were kept
+ * ("Mark 85") stored words without them, and their names still have them.
+ */
+function withNameWords(dna: ProductDna): ProductDna {
+  const extra = productWords(dna.name).filter((word) => !dna.words.includes(word));
+  return extra.length > 0 ? { ...dna, words: [...dna.words, ...extra] } : dna;
 }
 
 /** Every DNA, from this instance's copy when it is under a minute old. */
@@ -300,6 +312,17 @@ export async function dnasForListing(repository: Repo, listing: Listing, catalog
       await removeLink(repository, dna.id, 'listing', listing.id, false, entry.piece ?? null);
     }
   }
+  // The matcher's own links that number the model differently from the thing
+  // ("Mark III" on "Mark 85"): taken off, so the thing is matched again.
+  for (const dna of await dnasLinked(repository, 'listing', listing.id)) {
+    for (const entry of dna.links) {
+      if (entry.kind !== 'listing' || entry.id !== listing.id || entry.by !== 'auto') continue;
+      const item = items.find((each) => each.piece === (entry.piece ?? null));
+      if (item && otherModel(productWords(item.title), dna.words)) {
+        await removeLink(repository, dna.id, 'listing', listing.id, false, entry.piece ?? null);
+      }
+    }
+  }
   const found: ProductDna[] = [];
   for (const item of items) {
     const dna = await dnaForItem(repository, listing, item, catalogue, false).catch(() => null);
@@ -338,39 +361,41 @@ export async function dnaForItem(
   const candidates = fresh ? [] : [...index.byId.values()].filter((dna) => !dna.mergedInto && dna.line === item.line
     && sameCategory(dna.category, listing.category) && !keys.some((key) => dna.blocked.includes(key)));
 
-  // The photo, against the photos of listings already on a candidate.
-  const pictured = new Map<string, number>();
-  const hashes = hashesOf(listing, item);
-  if (hashes.length > 0 && candidates.length > 0) {
-    const onCandidates = new Map<string, string[]>();
-    for (const dna of candidates) {
-      for (const entry of dna.links) {
-        if (entry.kind === 'listing') onCandidates.set(entry.id, [...(onCandidates.get(entry.id) ?? []), dna.id]);
-      }
-    }
-    const pool = catalogue.filter((other) => other.id !== listing.id && onCandidates.has(other.id)
-      && other.photos.some((photo) => photo.imageHash));
-    if (pool.length > 0) {
-      const matches = await pictureMatches(pool, hashes).catch(() => new Map());
-      for (const [listingId, match] of matches) {
-        const strength = match.same ? 2 : match.sameItem ? 1 : 0;
-        // A lot's photo is on each of its things' DNAs: the names say which.
-        for (const dnaId of onCandidates.get(listingId) ?? []) {
-          if (strength > (pictured.get(dnaId) ?? 0)) pictured.set(dnaId, strength);
-        }
-      }
-    }
-  }
+  // The image scan: the thing's own picture against the pictures of the
+  // listings already on each DNA its name could be. The same picture, or the
+  // same thing in another picture, makes a weaker name enough; and a match on
+  // the name alone has to stand up to the pictures - another colourway of the
+  // same mould, or a thing that looks nothing like it, is another product.
+  const plausible = candidates.filter((dna) => !otherModel(words, dna.words) && wordLikeness(words, dna.words) >= PHOTO_WORDS);
+  const scanned = await scanAgainst(listing, item, plausible, catalogue).catch(() => new Map<string, PictureLook>());
 
-  let best: { dna: ProductDna; score: number } | null = null;
-  for (const dna of candidates) {
+  const ranked = plausible.map((dna) => {
     const like = wordLikeness(words, dna.words);
-    const photo = pictured.get(dna.id) ?? 0;
-    const score = photo === 2 && like >= 0.34 ? 2 + like
+    const look = scanned.get(dna.id);
+    const photo = look?.same ? 2 : look?.sameItem ? 1 : 0;
+    const score = photo === 2 ? 2 + like
       : photo === 1 && like >= SAME_WITH_PHOTO ? 1 + like
         : sameProductWords(words, dna.words) ? like : 0;
-    if (score > 0 && (!best || score > best.score
-      || (score === best.score && dna.links.length > best.dna.links.length))) best = { dna, score };
+    return { dna, score, like, photo, look };
+  }).filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score || b.dna.links.length - a.dna.links.length);
+
+  // A match on the name alone, the pictures not settling it, is looked at:
+  // the same mould in other colours is another product, and so is whatever
+  // Claude, seeing both pictures, says is another version.
+  let best: { dna: ProductDna; score: number } | null = null;
+  let looked = 0;
+  for (const entry of ranked) {
+    if (entry.photo === 0 && entry.like < 1) {
+      if (entry.look?.variant) continue;
+      if (looked < EYE_CHECKS) {
+        looked += 1;
+        const same = await sameByEye(listing, item, entry.dna, catalogue).catch(() => null);
+        if (same === false) continue;
+      }
+    }
+    best = entry;
+    break;
   }
 
   const entry = link('listing', listing.id, listing.sellerId, fresh ? 'owner' : 'auto', item.piece);
@@ -394,6 +419,122 @@ export async function dnaForItem(
     .slice(0, 60)
     .map((other) => link('listing', other.id, other.sellerId, 'auto'));
   return saveDna(repository, started.id, () => ({ ...started, links: [entry, ...siblings] }));
+}
+
+/** Names this alike are worth a look at the pictures; a picture of the same thing then needs no more. */
+const PHOTO_WORDS = 0.34;
+/** Matches looked at by eye per thing, at most: each is a call to Claude. */
+const EYE_CHECKS = 3;
+/** Listings compared per item, at most: the busiest DNAs' first. */
+const SCAN_POOL = 120;
+
+/**
+ * The fingerprints of a thing: for a piece, the part of the lot's lead photo
+ * it sits in, cut out as image search cuts out a thing it was pointed at;
+ * for a whole listing, each of its stored photos and the items in them.
+ */
+const pieceScans = new Map<string, Promise<string[]>>();
+async function scanOf(listing: Listing, item: ListingItem): Promise<string[]> {
+  const known = hashesOf(listing, item);
+  if (known.length > 0) return known;
+  if (!item.piece) return listingHashes(listing);
+  const lead = listing.photos.find((photo) => photo.isPrimary) ?? listing.photos[0];
+  if (!lead?.blobName || item.boxes.length === 0) return [];
+  const key = `${lead.blobName}|${JSON.stringify(item.boxes)}`;
+  let scan = pieceScans.get(key);
+  if (!scan) {
+    scan = (async () => {
+      const photo = await (await getPhotoStore()).read(lead.blobName);
+      if (!photo || photo.contentType !== 'image/jpeg') return [];
+      const prints = printsOfPixels(decodeJpeg(photo.bytes), item.boxes);
+      return prints?.regions.map((region) => region.imageHash) ?? [];
+    })().catch(() => []);
+    if (pieceScans.size > 2_000) pieceScans.delete(pieceScans.keys().next().value!);
+    pieceScans.set(key, scan);
+  }
+  return scan;
+}
+
+type Picture = { bytes: Uint8Array; contentType: string };
+
+/** A thing's own picture: the listing's lead photo, or for a piece the part of it the piece sits in. */
+async function pictureOf(listing: Listing, item: ListingItem): Promise<Picture | null> {
+  const lead = listing.photos.find((photo) => photo.isPrimary) ?? listing.photos[0];
+  if (!lead?.blobName) return null;
+  const photo = await (await getPhotoStore()).read(lead.blobName);
+  if (!photo) return null;
+  if (!item.piece || item.boxes.length === 0) return { bytes: photo.bytes, contentType: photo.contentType };
+  if (photo.contentType !== 'image/jpeg') return null;
+  return { bytes: encodeJpeg(cropPixels(decodeJpeg(photo.bytes), item.boxes[0]!), 85), contentType: 'image/jpeg' };
+}
+
+/** Who looks at two pictures and says whether they are one product: Claude, unless a test says otherwise. */
+let compareByEye: (a: Picture, b: Picture, titles: [string, string]) => Promise<boolean | null> = sameProductInPhotos;
+/** For tests: look at pictures some other way (null puts Claude back). */
+export function useEyeCheck(check: typeof compareByEye | null): void {
+  compareByEye = check ?? sameProductInPhotos;
+  verdicts.clear();
+}
+
+const verdicts = new Map<string, Promise<boolean | null>>();
+
+/**
+ * Whether a thing and a DNA, matched by name alone, look like one product:
+ * the thing's picture beside the DNA's best one - a listing of the product
+ * alone if it has one. Null when either has no picture, or nobody could say.
+ */
+async function sameByEye(listing: Listing, item: ListingItem, dna: ProductDna, catalogue: Listing[]): Promise<boolean | null> {
+  if (compareByEye === sameProductInPhotos && !visionAvailable()) return null;
+  const key = `${listing.id}#${item.piece ?? ''}|${dna.id}`;
+  let verdict = verdicts.get(key);
+  if (!verdict) {
+    verdict = (async () => {
+      const byId = new Map(catalogue.map((other) => [other.id, other]));
+      const theirs = linkedItems(dna, byId).filter((other) => other.listing.id !== listing.id && other.listing.photos.length > 0)
+        .sort((a, b) => Number(a.piece !== null) - Number(b.piece !== null))[0];
+      if (!theirs) return null;
+      const [mine, other] = await Promise.all([pictureOf(listing, item), pictureOf(theirs.listing, theirs)]);
+      if (!mine || !other) return null;
+      return compareByEye(mine, other, [item.title, theirs.title]);
+    })().catch(() => null);
+    if (verdicts.size > 5_000) verdicts.delete(verdicts.keys().next().value!);
+    verdicts.set(key, verdict);
+  }
+  return verdict;
+}
+
+/** How a thing's picture compares with each DNA's listings: the closest look per DNA. */
+async function scanAgainst(
+  listing: Listing, item: ListingItem, dnas: ProductDna[], catalogue: Listing[],
+): Promise<Map<string, PictureLook>> {
+  const byDna = new Map<string, PictureLook>();
+  if (dnas.length === 0) return byDna;
+  const hashes = await scanOf(listing, item);
+  if (hashes.length === 0) return byDna;
+  const onDna = new Map<string, string[]>();
+  for (const dna of [...dnas].sort((a, b) => b.links.length - a.links.length)) {
+    for (const entry of dna.links) {
+      if (entry.kind === 'listing' && entry.id !== listing.id) onDna.set(entry.id, [...(onDna.get(entry.id) ?? []), dna.id]);
+    }
+  }
+  const byId = new Map(catalogue.map((other) => [other.id, other]));
+  const pool = [...onDna.keys()].map((id) => byId.get(id)).filter((other): other is Listing => Boolean(other)).slice(0, SCAN_POOL);
+  const looks = await pictureLooks(pool, hashes);
+  // Per DNA: the same picture or the same thing if any of its listings shows it, and the closest look.
+  for (const [listingId, look] of looks) {
+    for (const dnaId of onDna.get(listingId) ?? []) {
+      const held = byDna.get(dnaId);
+      byDna.set(dnaId, held ? {
+        ...held,
+        same: held.same || look.same,
+        sameItem: held.sameItem || look.sameItem,
+        variant: held.variant || look.variant,
+        visual: Math.max(held.visual, look.visual),
+        look: Math.max(held.look, look.look),
+      } : look);
+    }
+  }
+  return byDna;
 }
 
 /** Whether every thing a listing sells is on a DNA. */

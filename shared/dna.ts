@@ -95,16 +95,51 @@ const NOISE = new Set([
   'worn', 'women', 'woman', 'womens', 'wmns', 'men', 'man', 'mens', 'kid', 'kids', 'unisex', 'boy', 'boys', 'girl', 'girls',
 ]);
 
-/** The words that identify a product in a title: no noise, no sizes, no bare numbers under three digits. */
+/**
+ * Numbers in a title that say how a copy is sized, counted or scaled rather
+ * than which product it is: "UK 9", "size 10", "EU 42.5", "9.5", "2 pcs",
+ * "x2", "30 cm", "1/6". Taken out before the words are read, so the numbers
+ * left - "Mark 85", "Jordan 1", "RX-78-2", "Gen 3" - name the product.
+ */
+const SIZED = [
+  /\b(?:uk|us|eu|euro|size|sz|fr|it|jp)\s*:?\s*\d{1,2}(?:[.,]\d)?\b/gi,
+  /\b\d{1,2}[.,]5\b/g,
+  /\b\d+(?:[.,]\d+)?\s*(?:pcs|pc|pieces|piece|pack|packs|cm|mm|ml|inch|inches|in|kg|g)\b/gi,
+  /\b(?:x\s*\d{1,3}|\d{1,3}\s*x)\b/gi,
+  /\b\d{1,2}\s*\/\s*\d{1,3}\b/g,
+];
+
+/** Roman numerals a model is numbered with: Mark III, Final Fantasy VII. */
+const ROMAN = new Set(['ii', 'iii', 'iv', 'vi', 'vii', 'viii', 'ix', 'xi', 'xii', 'xiii', 'xiv', 'xv', 'xvi']);
+
+/** Whether a word numbers a model: it has a digit in it, or it is a roman numeral. */
+export const isModelWord = (word: string) => /\d/.test(word) || ROMAN.has(word);
+
+/**
+ * The words that identify a product in a title: no noise, no sizes, counts or
+ * scales. Numbers that number a model are kept: Mark 85 is not Mark III.
+ */
 export function productWords(title: string): string[] {
   const seen = new Set<string>();
-  for (const word of wordKeys(title)) {
-    if (word.length < 2 || NOISE.has(word)) continue;
-    if (/^(uk|us|eu|size|sz)?\d{1,2}(\.\d)?$/.test(word)) continue;
-    if (/^\d+(cm|mm|ml|gb|tb)$/.test(word) && !/gb|tb/.test(word)) continue;
+  const unsized = SIZED.reduce((text, pattern) => text.replace(pattern, ' '), title);
+  for (const word of wordKeys(unsized)) {
+    if ((word.length < 2 && !/^\d$/.test(word)) || NOISE.has(word)) continue;
+    if (/^(uk|us|eu|size|sz)\d{1,2}$/.test(word)) continue;
+    if (/^\d+(cm|mm|ml)$/.test(word)) continue;
     seen.add(word);
   }
   return [...seen];
+}
+
+/**
+ * Whether two sets of words number their model differently: each has a
+ * model number the other lacks. "Iron Man Mark 85" and "Iron Man Mark III",
+ * "Jordan 1" and "Jordan 4" - however many other words they share.
+ */
+export function otherModel(a: readonly string[], b: readonly string[]): boolean {
+  const left = new Set(a);
+  const right = new Set(b);
+  return a.some((word) => isModelWord(word) && !right.has(word)) && b.some((word) => isModelWord(word) && !left.has(word));
 }
 
 /**
@@ -126,8 +161,10 @@ export const SAME_PRODUCT = 0.75;
  * `SAME_PRODUCT`, or just at it with one taking in every word of the other.
  * "McFarlane DC Multiverse Scarecrow" and "…Superman" share three words of
  * four, but each has one the other lacks: two figures in one line, not one.
+ * Never when each numbers its model differently (`otherModel`).
  */
 export function sameProductWords(a: readonly string[], b: readonly string[]): boolean {
+  if (otherModel(a, b)) return false;
   const like = wordLikeness(a, b);
   if (like < SAME_PRODUCT) return false;
   if (like > SAME_PRODUCT + 1e-9) return true;
