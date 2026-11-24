@@ -166,8 +166,8 @@ await check('the week starts today, puts the drop on the busiest day and the tea
   assert.equal(week.length, 7);
   assert.equal(week[0].isToday, true);
   assert.equal(week[0].dayName, 'Monday');
-  assert.equal(week.find((day) => day.day === 0).title, 'Drop day');
-  assert.equal(week.find((day) => day.day === 6).title, 'Tease tomorrow');
+  assert.equal(week.find((day) => day.day === 0).title, 'Big sale day');
+  assert.equal(week.find((day) => day.day === 6).title, 'Tell people about tomorrow');
   assert.ok(week.every((day) => coach.isCoachTool(day.tool)));
 });
 
@@ -267,6 +267,28 @@ await check('slang, Hinglish, typos and other wordings still find the right answ
 await check('Figgy knows its own name, and so is the AI told', () => {
   assert.match(coach.answerOffline("What's your name?", plan).text, /I'm Figgy, the Figmark Coach/);
   assert.match(coach.coachBrief(healthy(), plan), /You are Figgy, the Figmark Coach/);
+});
+
+await check('every answer and tip is in plain English: short sentences, none over 24 words', () => {
+  const texts = [...coach.GUIDES.map((guide) => guide.steps), ...coach.DID_YOU_KNOW.map((tip) => tip.text),
+    ...coach.coachTips(healthy({
+      orders: { ...healthy().orders, toAnswer: 2, noLot: 1, cancelled30: 4, delivered30: 3 },
+      activity: { posts7: 0, shares7: 0, lastPostAt: null },
+      listings: { ...healthy().listings, importsNoLot: 1, drafts: 2, noCommission: 6, lastListedAt: null,
+        browsedNotBought: [item({ id: 'b', views30: 40 })], unseen: [item({ id: 'u' })], thin: [item({ id: 't' })],
+        endingSoon: [item({ id: 'e' })], lowStock: [item({ id: 's' })], best: item({ id: 'x', sold30: 4 }) },
+    })).map((tip) => tip.why)];
+  let words = 0;
+  let sentences = 0;
+  for (const text of texts) {
+    for (const sentence of text.split(/(?<=[.!?:])\s+|\n+/).map((part) => part.replace(/^[-\d.\s]+/, '').trim()).filter(Boolean)) {
+      const length = sentence.split(/\s+/).length;
+      assert.ok(length <= 24, `${length} words: ${sentence}`);
+      words += length;
+      sentences += 1;
+    }
+  }
+  assert.ok(words / sentences <= 12, `average ${words / sentences}`);
 });
 
 await check('every "Did you know?" tip is a plain fact with a real button', () => {

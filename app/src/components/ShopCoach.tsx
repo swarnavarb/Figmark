@@ -282,7 +282,7 @@ function CoachCard({ store }: { store: StoreAccess }) {
           <div className="shopcoach__head">
             <span className="shopcoach__mark" aria-hidden="true"><Icon name="spark" size={16} /></span>
             <div className="shopcoach__headtext">
-              <h2 className="shopcoach__title">Shop coach</h2>
+              <h2 className="shopcoach__title">Shop coach <ProBadge title="Part of Pro" /></h2>
               <p>{plan.headline}</p>
             </div>
             <button type="button" className="iconbtn shopcoach__fold" aria-label="Fold the coach" title="Fold" onClick={() => fold(true)}>
@@ -336,8 +336,10 @@ function DidYouKnowStrip({ pro, run }: { pro: boolean; run: (tool: CoachTool) =>
   const step = (by: number) => setAt((now) => (now + by + total) % total);
   return (
     <section className="shopcoach__dyk" aria-label="Did you know?" aria-roledescription="carousel">
+      <span className="shopcoach__dykmark" aria-hidden="true"><Icon name="spark" size={15} /></span>
       <div className="shopcoach__dyktext" aria-live="polite">
-        <p><b>Did you know?</b> {tip.text}</p>
+        <b>Did you know?</b>
+        <p>{tip.text}</p>
         {tip.tool && (
           <button type="button" className="shopcoach__dyklink" onClick={() => run(tip.tool!)}>
             {TOOL_LABELS[tip.tool]}{!pro && PRO_TOOLS.includes(tip.tool) && <span className="probadge">PRO</span>}
@@ -400,7 +402,7 @@ function CoachPanel({ store, signals, plan, results, guides, view, onView, run, 
             <ul className="shopcoach__tips">
               {plan.tips.map((tip) => <TipRow key={tip.id} tip={tip} pro={pro} onRun={() => press(tip)} />)}
             </ul>
-          ) : <p className="shopcoach__empty">Nothing needs fixing. Keep to the weekly plan.</p>}
+          ) : <p className="shopcoach__empty">Nothing to fix. Follow the weekly plan.</p>}
           {results && <Results results={results} />}
         </>
       )}
@@ -410,7 +412,7 @@ function CoachPanel({ store, signals, plan, results, guides, view, onView, run, 
           <div className="shopcoach__when">
             <span className="shopcoach__whenmark" aria-hidden="true"><Icon name="bell" size={18} /></span>
             <div>
-              <b>{plan.bestTime.fromShop ? 'Your buyers\' rush' : 'The usual rush'}: {plan.bestTime.window}, {plan.bestTime.dayName}s</b>
+              <b>{plan.bestTime.fromShop ? 'Your busy time' : 'Usual busy time'}: {plan.bestTime.window}, {plan.bestTime.dayName}s</b>
               <p>{plan.bestTime.advice}</p>
             </div>
           </div>
@@ -448,8 +450,8 @@ function Results({ results }: { results: OwnResults }) {
       <section className="shopcoach__results" aria-label="Did the tips help?">
         <h3>Did the tips help?</h3>
         <p className="shopcoach__muted">
-          Act on a tip, then check back in a week: you will see what changed in your views, orders and sales.
-          {results.watching > 0 && ` ${results.watching} tip${results.watching === 1 ? ' is' : 's are'} being measured now.`}
+          Use a tip. After one week, you will see here what changed: views, orders and sales.
+          {results.watching > 0 && ` ${results.watching} tip${results.watching === 1 ? ' is' : 's are'} being checked now.`}
         </p>
       </section>
     );
@@ -459,16 +461,16 @@ function Results({ results }: { results: OwnResults }) {
     <section className="shopcoach__results" aria-label="Did the tips help?">
       <h3>Did the tips help? <span>last 90 days</span></h3>
       <p className="shopcoach__muted">
-        You acted on <b>{acted}</b> of {results.settled} tips.
-        {acted > 0 && <> In the week after those, your shop took <b>{after}</b> order{after === 1 ? '' : 's'}, against {before} the week before.</>}
+        You used <b>{acted}</b> of {results.settled} tips.
+        {acted > 0 && <> One week after, you had <b>{after}</b> order{after === 1 ? '' : 's'} ({before} the week before).</>}
       </p>
       <ul className="shopcoach__outcomes">
         {results.recent.map((entry) => (
           <li key={`${entry.firstSeen}:${entry.title}`}>
-            <span className={`shopcoach__badge${entry.pressed ? ' is-acted' : ''}`}>{entry.pressed ? 'Acted' : 'Skipped'}</span>
+            <span className={`shopcoach__badge${entry.pressed ? ' is-acted' : ''}`}>{entry.pressed ? 'Used' : 'Skipped'}</span>
             <div className="shopcoach__tiptext">
               <b>{entry.title}</b>
-              <p>{entry.summary}{entry.cleared ? ' Sorted.' : ''}</p>
+              <p>{entry.summary}{entry.cleared ? ' Fixed.' : ''}</p>
             </div>
           </li>
         ))}
@@ -602,7 +604,7 @@ function CoachChat({ store, signals, plan, guides, run }: {
   function stop() {
     turn.current += 1;
     setBusy(false);
-    setSaid((now) => [...now, { role: 'assistant', text: 'Stopped. Ask again, or switch to Figgy for an instant answer.', by: 'figgy' }]);
+    setSaid((now) => [...now, { role: 'assistant', text: 'Stopped. Ask again, or switch to Figgy for a quick answer.', by: 'figgy' }]);
   }
 
   function vote(index: number, helpful: boolean) {
@@ -641,7 +643,7 @@ function CoachChat({ store, signals, plan, guides, run }: {
                 <div className="shopcoach__by">
                   <span>{ASSISTANTS[entry.by].name}{entry.by === 'puter' ? ' · check before you act' : ''}</span>
                   {entry.source && entry.source !== 'private' && (entry.vote ? (
-                    <span className="shopcoach__thanks">{entry.vote === 'up' ? 'Thanks!' : 'Thanks - this helps answers get better.'}</span>
+                    <span className="shopcoach__thanks">{entry.vote === 'up' ? 'Thanks!' : 'Thanks. This helps Figgy get better.'}</span>
                   ) : (
                     <span className="shopcoach__votes">
                       <button type="button" aria-label="Helpful" title="Helpful" onClick={() => vote(index, true)}><Thumb /></button>
