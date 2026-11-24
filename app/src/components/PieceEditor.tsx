@@ -399,6 +399,14 @@ export function PhotoGroupBox({ photoUrl, group, onChange, title = '', onStock, 
   const priceMinor = rupeesToMinor(group.setPrice);
   const count = feeCount(group);
   const setFee = terms && setMode && priceMinor >= 100 ? saleFee(terms, { amountMinor: priceMinor, units: count }) : null;
+  // Sold individually, each row's own share of the fee, as the server counts it (the rows add up to the total).
+  const rowUnits = spreadUnits(group.pieces.map(() => 1), count);
+  const rowFees = !setMode && terms
+    ? group.pieces.map((piece, index) => {
+        const minor = rupeesToMinor(piece.price);
+        return minor >= 100 ? saleFee(terms, { amountMinor: 0, pieces: [{ priceMinor: minor, units: rowUnits[index] ?? 1 }] }).totalMinor : null;
+      })
+    : undefined;
 
   return (
     <div className="pcs-edit">
@@ -425,7 +433,7 @@ export function PhotoGroupBox({ photoUrl, group, onChange, title = '', onStock, 
       {status}
       {scanButton}
       <PieceList photoUrl={photoUrl} mode={setMode ? 'set' : 'each'} pieces={group.pieces}
-        setPriceMinor={priceMinor} mixed={mixed} bulk={bulk} onBulk={onBulk}
+        setPriceMinor={priceMinor} mixed={mixed} bulk={bulk} onBulk={onBulk} fees={rowFees}
         onPieces={(update) => onChange((now) => ({ ...now, pieces: update(now.pieces), confirmed: false }))} />
 
       <div className="pcs-confirm">
@@ -481,7 +489,7 @@ function FeeSummary({ terms, setMode, pieces, count, setPriceMinor, setFee }: {
  * The photo to mark things on, and a row for each: what the sell form shows
  * for both ways of selling, and what a published listing's edit shows.
  */
-export function PieceList({ photoUrl, mode, pieces, onPieces, setPriceMinor = 0, mixed = [], bulk = [], onBulk }: {
+export function PieceList({ photoUrl, mode, pieces, onPieces, setPriceMinor = 0, mixed = [], bulk = [], onBulk, fees }: {
   photoUrl: string;
   mode: 'each' | 'set';
   pieces: DraftPiece[];
@@ -492,6 +500,8 @@ export function PieceList({ photoUrl, mode, pieces, onPieces, setPriceMinor = 0,
   /** Condition and original-or-copy for every item at once, under the tools. */
   bulk?: readonly BulkFact[];
   onBulk?: (key: BulkFact['key'], value: string) => void;
+  /** Sold individually: the Figmark fee on each row, null until it has a price. */
+  fees?: readonly (number | null)[];
 }) {
   /** Drawing a new box: for a new row, or for the row being marked (`placing`). */
   const [adding, setAdding] = useState(false);
@@ -758,6 +768,11 @@ export function PieceList({ photoUrl, mode, pieces, onPieces, setPriceMinor = 0,
               <span className="pcs-erow__share">{shares[index] ? formatMoney(shares[index]!) : '—'}</span>
             )}
             {piece.sold ? <span /> : moreMenu(piece, index)}
+            {fees && !piece.sold && (
+              <span className="pcs-erow__fee">
+                Figmark fee <b>{fees[index] != null ? formatMoney(fees[index]!) : '₹—'}</b>
+              </span>
+            )}
             {mixed.length > 0 && (
               // Not picking the row on the photo: that moves the list under the finger and the menu never opens.
               <span className="pcs-erow__facts" onFocus={(event) => event.stopPropagation()}>
