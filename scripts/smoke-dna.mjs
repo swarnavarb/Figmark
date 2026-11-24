@@ -64,6 +64,13 @@ await check('the next colourway is the same model, another product', () => {
   assert.ok(dna.wordLikeness(panda, fog) < dna.SAME_PRODUCT);
 });
 
+await check('two figures in one line are two products, though most of their words are shared', () => {
+  const scarecrow = dna.productWords('McFarlane DC Multiverse Scarecrow');
+  assert.equal(dna.sameProductWords(scarecrow, dna.productWords('McFarlane DC Multiverse Superman')), false);
+  assert.equal(dna.sameProductWords(scarecrow, dna.productWords('McFarlane DC Multiverse Scarecrow figure')), true);
+  assert.equal(dna.nameFrom('Hot Toys Iron Man Mark III'), 'Hot Toys Iron Man Mark III');
+});
+
 await check('the line is what the seller said, and nothing said is an original', () => {
   assert.equal(dna.lineOf('Sneakers', { authenticity: 'First copy' }), 'copy');
   assert.equal(dna.lineOf('Sneakers', { authenticity: 'Original' }), 'original');

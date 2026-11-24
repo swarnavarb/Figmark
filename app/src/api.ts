@@ -2409,6 +2409,12 @@ export type PhotoSuggestion = FeedListing & { because: 'name' | 'colour' };
 export interface PhotoSalesItem {
   /** What the item was read as, or null for listings found by the picture alone. */
   label: string | null;
+  /** Where it is in the photo; empty for listings the words with the photo found. */
+  boxes?: PhotoBox[];
+  /** Which of `things` it is; null for listings the words with the photo found. */
+  thing?: number | null;
+  /** Its Product DNA, when asked for (`photoDna`). */
+  dna?: DnaSummary | null;
   /** On sale first, then those sold out or taken down. */
   listings: (FeedListing & { onSale: boolean })[];
 }
@@ -2433,6 +2439,8 @@ export interface PhotoSalesResponse {
    * `items`. `chance` is 0 to 1.
    */
   probable: (FeedListing & { onSale: boolean; chance: number })[];
+  /** Every thing the photo was read to hold, in reading order, whether or not anything matched it. */
+  things?: { label: string | null; boxes: PhotoBox[]; dna?: DnaSummary | null }[];
   vision: boolean;
 }
 
@@ -3106,6 +3114,9 @@ export const api = {
   /** Where the items in a photo already on Figmark are, or were, for sale. */
   photoSales: (url: string, about?: string, by?: string) =>
     ask<PhotoSalesResponse>('/search/photo/sales', { url, about, by }),
+  /** The same, with the Product DNA of each thing in it: the photo's own Product DNA page. */
+  photoDna: (url: string, about?: string, by?: string) =>
+    ask<PhotoSalesResponse>('/search/photo/sales', { url, about, by, dna: true }),
   /** The same for several photos at once, answered in order: up to ten. */
   photoSalesMany: (photos: { url: string; about?: string; by?: string }[]) =>
     ask<{ answers: PhotoSalesResponse[] }>('/search/photo/sales', { photos }),

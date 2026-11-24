@@ -73,7 +73,8 @@ import { refreshIfStale } from '../seller-stats.js';
 import { isViewSource, searchTerm } from '../../../shared/seller-data.js';
 import { recordSearch } from '../search-log.js';
 import { alertWantsListed } from './want-routes.js';
-import { dnasForListing } from '../dna.js';
+import { dnasForListing, holds, itemsOf, summaryOf, thingsNamed } from '../dna.js';
+import type { DnaSummary } from '../../../shared/dna.js';
 import { alertForListing } from '../dna-follow.js';
 
 /** Public seller summary attached to feed cards and listing pages. */
@@ -695,6 +696,8 @@ async function storeLearned(repository: Awaited<ReturnType<typeof getRepository>
   }));
 }
 
+type SalesGroupKey = PhotoSales['items'][number];
+
 /** Photos answered per request, at most: a screenful of the feed. */
 const PHOTOS_PER_ASK = 10;
 
@@ -734,13 +737,15 @@ const OWN_TAGS = 4;
  */
 async function photoSales(request: HttpRequest, _context: InvocationContext) {
   const [repository, auth] = await Promise.all([getRepository(), getAuthService()]);
-  let body: { url?: string; about?: string; by?: string; photos?: unknown };
+  let body: { url?: string; about?: string; by?: string; photos?: unknown; dna?: boolean };
   try {
     body = (await request.json()) as typeof body;
   } catch {
     return error(400, 'invalid_body', 'Request body must be JSON.');
   }
   const several = Array.isArray(body.photos);
+  // The Product DNA of each thing in the photo: asked for by the photo's own page, one photo at a time.
+  const withDna = body.dna === true && !several;
   if (several && ((body.photos as unknown[]).length === 0 || (body.photos as unknown[]).length > PHOTOS_PER_ASK)) {
     return error(400, 'invalid_photo', `Send between 1 and ${PHOTOS_PER_ASK} photos.`);
   }
@@ -798,9 +803,49 @@ async function photoSales(request: HttpRequest, _context: InvocationContext) {
       .slice(0, OWN_TAGS)
       .map(card);
   };
-  const reply = (entry: PhotoSales | null, by: string | null) => (!entry ? { items: [], sellers: [], likely: [], probable: [], own: [], vision } : {
+  // Each thing's product: the DNA of the listing it best matched - for a lot, the thing in it the label names.
+  const dnaOf = new Map<SalesGroupKey, DnaSummary>();
+  if (withDna && answered[0]) {
+    const byId = new Map(catalogue.map((listing) => [listing.id, listing]));
+    for (const group of answered[0].items) {
+      const best = group.listings.find(everListed);
+      if (!best) continue;
+      const dnas = await dnasForListing(repository, best, catalogue).catch(() => []);
+      const dna = thingsNamed(dnas, group.label ?? '')[0];
+      if (dna) dnaOf.set(group, summaryOf(dna, byId));
+    }
+  }
+  // The things in the photo, each with its product. A listing's own lead photo
+  // is the seller's: the things they named in it, where they put them, come
+  // first; anything else the photo was read to hold follows.
+  let photoThings: { label: string | null; boxes: RegionBox[]; dna?: DnaSummary | null }[] | null = null;
+  if (withDna && answered[0] && asks[0]!.name) {
+    const byId = new Map(catalogue.map((listing) => [listing.id, listing]));
+    const scanned = answered[0].things.map((thing, at) => ({
+      ...thing, dna: dnaOf.get(answered[0]!.items.find((item) => item.thing === at)!) ?? null,
+    }));
+    const owner = catalogue.find((listing) => everListed(listing) && itemsOf(listing)[0]!.piece !== null
+      && (listing.photos.find((photo) => photo.isPrimary) ?? listing.photos[0])?.blobName === asks[0]!.name);
+    if (owner) {
+      const dnas = await dnasForListing(repository, owner, catalogue).catch(() => []);
+      const named = itemsOf(owner).filter((item) => item.boxes.length > 0).map((item) => {
+        const dna = dnas.find((entry) => holds(entry, owner.id, item.piece));
+        return { label: item.title, boxes: item.boxes, dna: dna ? summaryOf(dna, byId) : null };
+      });
+      const rest = scanned.filter((thing) => !named.some((piece) => piece.boxes
+        .some((box) => thing.boxes.some((other) => overlapOfBoxes(box, other) >= 0.5))));
+      photoThings = [...named, ...rest];
+    } else {
+      photoThings = scanned;
+    }
+  }
+  const reply = (entry: PhotoSales | null, by: string | null) => (!entry ? { things: [], items: [], sellers: [], likely: [], probable: [], own: [], vision } : {
     own: ownOf(entry, by),
-    items: entry.items.map((item) => ({ label: item.label, listings: item.listings.map(card) })),
+    things: photoThings ?? entry.things,
+    items: entry.items.map((item) => ({
+      label: item.label, boxes: item.boxes, thing: item.thing, listings: item.listings.map(card),
+      ...(withDna ? { dna: dnaOf.get(item) ?? null } : {}),
+    })),
     probable: entry.probable.map((guess) => ({ ...card(guess.listing), chance: Math.round(guess.chance * 100) / 100 })),
     sellers: entry.sellers.flatMap((seller) => {
       const shop = sellerById.get(seller.sellerId);

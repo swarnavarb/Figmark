@@ -1,4 +1,5 @@
 import { canonicalCategory, specFor } from './category-specs.js';
+import type { RegionBox } from './models.js';
 import { wordKeys } from './shop-tags.js';
 
 /**
@@ -120,6 +121,20 @@ export function wordLikeness(a: readonly string[], b: readonly string[]): number
 
 /** Over this, two titles name the same product on words alone. */
 export const SAME_PRODUCT = 0.75;
+/**
+ * Whether two sets of words name the same product on words alone: alike past
+ * `SAME_PRODUCT`, or just at it with one taking in every word of the other.
+ * "McFarlane DC Multiverse Scarecrow" and "…Superman" share three words of
+ * four, but each has one the other lacks: two figures in one line, not one.
+ */
+export function sameProductWords(a: readonly string[], b: readonly string[]): boolean {
+  const like = wordLikeness(a, b);
+  if (like < SAME_PRODUCT) return false;
+  if (like > SAME_PRODUCT + 1e-9) return true;
+  const [short, long] = a.length <= b.length ? [a, new Set(b)] : [b, new Set(a)];
+  return short.every((word) => long.has(word));
+}
+
 /** Over this, with a photo of the same thing, they do. */
 export const SAME_WITH_PHOTO = 0.5;
 /** A hunt's title is short and loose: over this share of its own words, it is asking for this. */
@@ -152,6 +167,9 @@ const LEAD_NOISE = new Set([
   'import', 'imported', 'preorder', 'pre', 'order', 'instock', 'ready', 'stock', 'deal', 'offer', 'limited',
 ]);
 
+/** Brands whose first word is also a selling word, by that word and the one after it. */
+const BRAND_HALVES = new Map([['hot', 'toy']]);
+
 /**
  * A product's name, from the title that started it: the part before a dash or
  * a bar, where shops put the size and the state of their copy ("— UK 8,
@@ -167,12 +185,14 @@ export function nameFrom(title: string): string {
     const keys = keysOf(token);
     return keys.length === 0 || keys.every((key) => NOISE.has(key) || /^(uk|us|eu)?\d{1,2}(\.\d)?$/.test(key));
   };
-  const leading = (token: string) => {
+  const leading = (token: string, next: string | undefined) => {
     const keys = keysOf(token);
+    // Half of a brand's name, not a selling word: "Hot Toys".
+    if (keys.length === 1 && next && BRAND_HALVES.get(keys[0]!) === keysOf(next)[0]) return false;
     return keys.length === 0 || keys.every((key) => LEAD_NOISE.has(key));
   };
   while (tokens.length > 1 && trailing(tokens[tokens.length - 1]!)) tokens.pop();
-  while (tokens.length > 1 && leading(tokens[0]!)) tokens.shift();
+  while (tokens.length > 1 && leading(tokens[0]!, tokens[1])) tokens.shift();
   const name = tokens.join(' ').replace(/[\s,|/-]+$/, '');
   return name.length > 70 ? `${name.slice(0, 67).trimEnd()}…` : name;
 }
@@ -222,6 +242,8 @@ export interface DnaListingCard {
   currency: string;
   shippingMinor: number | null;
   photoUrl: string | null;
+  /** For a piece of a lot: where it sits in `photoUrl`, so it is shown cut out of the lot's photo. */
+  photoBox: RegionBox | null;
   onSale: boolean;
   condition: string;
   shop: DnaShop | null;
@@ -235,6 +257,11 @@ export interface DnaSummary {
   name: string;
   category: string;
   cover: string | null;
+  /**
+   * Set when the only photo of it is a lot's: where it sits in `cover`, so it
+   * is shown cut out. Gone once a listing of the thing alone gives a photo of its own.
+   */
+  coverBox: RegionBox | null;
   lowMinor: number | null;
   highMinor: number | null;
   currency: string;
@@ -294,7 +321,7 @@ export interface DnaTimelineEntry {
 }
 
 export interface DnaView {
-  dna: { id: string; name: string; category: string; cover: string | null; createdAt: string };
+  dna: { id: string; name: string; category: string; cover: string | null; coverBox: RegionBox | null; createdAt: string };
   price: {
     currency: string;
     lowMinor: number;

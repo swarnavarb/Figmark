@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Listing, Post, RegionBox, SiteContent, Want } from '../../shared/models.js';
 import {
-  DNA_PREFIX, DNA_TAGS_PER_POST, HUNT_COVERED, SAME_PRODUCT, SAME_WITH_PHOTO, covered, dnaDocId, heatOf, lineOf,
+  DNA_PREFIX, DNA_TAGS_PER_POST, HUNT_COVERED, SAME_WITH_PHOTO, sameProductWords, covered, dnaDocId, heatOf, lineOf,
   linkKey, nameFrom, pieceKey, productWords, sameCategory, wordLikeness,
   type DnaLine, type DnaLink, type DnaLinkKind, type DnaSummary, type ProductDna,
 } from '../../shared/dna.js';
@@ -269,7 +269,7 @@ export const listingsOf = (items: readonly LinkedItem[]): Listing[] =>
   [...new Map(items.map((item) => [item.listing.id, item.listing])).values()];
 
 /** Whether a DNA has a link to this thing of this listing. */
-const holds = (dna: ProductDna, listingId: string, piece: string | null) =>
+export const holds = (dna: ProductDna, listingId: string, piece: string | null) =>
   dna.links.some((entry) => sameThing(entry, 'listing', listingId, piece));
 
 /** The fingerprints of the part of the lead photo a piece sits in; every photo's, for the listing as a whole. */
@@ -368,7 +368,7 @@ export async function dnaForItem(
     const photo = pictured.get(dna.id) ?? 0;
     const score = photo === 2 && like >= 0.34 ? 2 + like
       : photo === 1 && like >= SAME_WITH_PHOTO ? 1 + like
-        : like >= SAME_PRODUCT ? like : 0;
+        : sameProductWords(words, dna.words) ? like : 0;
     if (score > 0 && (!best || score > best.score
       || (score === best.score && dna.links.length > best.dna.links.length))) best = { dna, score };
   }
@@ -390,7 +390,7 @@ export async function dnaForItem(
   const siblings = fresh ? [] : catalogue.filter((other) => other.id !== listing.id && everListed(other)
     && !index.byLink.has(linkKey('listing', other.id)) && sameCategory(other.category, listing.category)
     && itemsOf(other)[0]!.piece === null
-    && lineOf(other.category, other.attributes) === item.line && wordLikeness(words, productWords(other.title)) >= SAME_PRODUCT)
+    && lineOf(other.category, other.attributes) === item.line && sameProductWords(words, productWords(other.title)))
     .slice(0, 60)
     .map((other) => link('listing', other.id, other.sellerId, 'auto'));
   return saveDna(repository, started.id, () => ({ ...started, links: [entry, ...siblings] }));
@@ -519,7 +519,7 @@ export async function dnasForPost(repository: Repo, post: Post, catalogue: Listi
  * Of a listing's DNAs - one per thing, for a lot - those the words name; all
  * of them when the words name none, or the listing is one thing.
  */
-function thingsNamed(dnas: ProductDna[], words: string): ProductDna[] {
+export function thingsNamed(dnas: ProductDna[], words: string): ProductDna[] {
   if (dnas.length < 2) return dnas;
   const said = productWords(words);
   const named = dnas.filter((dna) => covered(dna.words, said) >= HUNT_COVERED);
@@ -585,14 +585,13 @@ export function summaryOf(dna: ProductDna, byId: Map<string, Listing>): DnaSumma
     pledged: listings.reduce((sum, listing) => sum + (listing.preOrder?.pledgedCount ?? 0), 0),
     waiting: listings.reduce((sum, listing) => sum + (listing.restockWatch?.length ?? 0), 0),
   });
-  // A listing of this thing alone shows it better than a lot's photo of several.
-  const shownBy = items.find((item) => !item.piece) ?? items[0];
-  const cover = dna.cover ?? (shownBy ? photoOf(shownBy.listing) : null);
+  const { cover, coverBox } = coverOf(dna, items);
   return {
     id: dna.id,
     name: dna.name,
     category: dna.category,
     cover,
+    coverBox,
     lowMinor: prices.length ? Math.min(...prices) : null,
     highMinor: prices.length ? Math.max(...prices) : null,
     currency: selling[0]?.listing.currency ?? listings[0]?.currency ?? 'INR',
@@ -603,6 +602,22 @@ export function summaryOf(dna: ProductDna, byId: Map<string, Listing>): DnaSumma
     ratings: dna.score?.count ?? 0,
     mentions: dna.links.filter((entry) => entry.kind !== 'listing').length,
   };
+}
+
+/**
+ * The photo a DNA is shown by. A listing of the thing alone shows it best -
+ * one on sale now first - so as soon as the matcher finds one, its photo is
+ * used; until then the thing is cut out of a lot's photo, by where it sits.
+ */
+export function coverOf(dna: ProductDna, items: readonly LinkedItem[]): { cover: string | null; coverBox: RegionBox | null } {
+  if (dna.cover) return { cover: dna.cover, coverBox: null };
+  const alone = items.filter((item) => !item.piece && photoOf(item.listing));
+  const best = alone.find(itemOnSale) ?? alone[0];
+  if (best) return { cover: photoOf(best.listing), coverBox: null };
+  const piece = items.find((item) => item.piece && item.boxes.length > 0 && photoOf(item.listing))
+    ?? items.find((item) => photoOf(item.listing));
+  if (!piece) return { cover: null, coverBox: null };
+  return { cover: photoOf(piece.listing), coverBox: piece.piece ? piece.boxes[0] ?? null : null };
 }
 
 /** Whether a DNA has anything the public can see: a listing ever listed. */

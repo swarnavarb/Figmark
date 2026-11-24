@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import type { DnaSummary } from '@shared/dna';
+import type { RegionBox } from '@shared/models';
 import { ApiRequestError, api } from '../api';
 import { formatMoney } from '../format';
 import { useToast } from './Feedback';
@@ -21,6 +22,69 @@ import '../styles/DnaKit.css';
  */
 
 export const dnaHref = (id: string) => `/dna/${encodeURIComponent(id)}`;
+
+/**
+ * A photo, or one thing cut out of it. With `box` - left, top, width, height
+ * as fractions of the photo - the thing fills the frame, a little room round
+ * it, never past the photo's edge: a piece of a lot shown by itself until a
+ * photo of it alone turns up. The frame takes its size from where it sits.
+ */
+export function CropPic({ src, box, alt = '', className = '' }: {
+  src: string;
+  box?: RegionBox | null;
+  alt?: string;
+  className?: string;
+}) {
+  if (!box) return <img src={src} alt={alt} loading="lazy" decoding="async" className={className || undefined} />;
+  return <Cropped src={src} box={box} alt={alt} className={className} />;
+}
+
+function Cropped({ src, box, alt, className }: { src: string; box: RegionBox; alt: string; className: string }) {
+  const frame = useRef<HTMLSpanElement>(null);
+  const pic = useRef<HTMLImageElement>(null);
+  const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
+  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+
+  useEffect(() => {
+    const el = frame.current;
+    if (!el) return undefined;
+    const measure = () => setSize({ w: el.clientWidth, h: el.clientHeight });
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const watch = new ResizeObserver(measure);
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, []);
+  useEffect(() => {
+    const el = pic.current;
+    // Already loaded from the cache before React listened.
+    if (el?.complete && el.naturalWidth) setNatural({ w: el.naturalWidth, h: el.naturalHeight });
+  }, [src]);
+
+  let style: CSSProperties = { opacity: 0 };
+  if (natural && size && size.w > 0 && size.h > 0) {
+    const room = 0.08;
+    const left = Math.max(0, box[0] - box[2] * room);
+    const top = Math.max(0, box[1] - box[3] * room);
+    const width = Math.min(1 - left, box[2] * (1 + 2 * room));
+    const height = Math.min(1 - top, box[3] * (1 + 2 * room));
+    const scale = Math.max(size.w / (width * natural.w), size.h / (height * natural.h));
+    const w = natural.w * scale;
+    const h = natural.h * scale;
+    const x = Math.min(0, Math.max(size.w - w, size.w / 2 - (left + width / 2) * w));
+    const y = Math.min(0, Math.max(size.h - h, size.h / 2 - (top + height / 2) * h));
+    style = {
+      position: 'absolute', left: x, top: y, width: w, height: h, maxWidth: 'none', maxHeight: 'none',
+      objectFit: 'fill', borderRadius: 0, opacity: 1,
+    };
+  }
+  return (
+    <span ref={frame} className={`cropic ${className}`.trim()}>
+      <img ref={pic} src={src} alt={alt} loading="lazy" decoding="async" style={style}
+        onLoad={(event) => setNatural({ w: event.currentTarget.naturalWidth, h: event.currentTarget.naturalHeight })} />
+    </span>
+  );
+}
 
 /** A short code from the id, drawn like a gene name: FGM·P3A9·K2. Decoration, not an identifier anybody types. */
 export function sequenceOf(id: string): string {
@@ -133,13 +197,57 @@ export function ListingDna({ listingId, onFound }: {
     return () => { live = false; };
   }, [listingId]);
   if (items.length === 0) return null;
-  // Two things in one photo can be one product: one card each product.
-  const shown = items.filter((item, at) => items.findIndex((other) => other.dna.id === item.dna.id) === at);
-  const many = items.some((item) => item.piece !== null);
+  // Two things in one photo can be one product: one each.
+  const products = items.filter((item, at) => items.findIndex((other) => other.dna.id === item.dna.id) === at).map((item) => item.dna);
+  if (!items.some((item) => item.piece !== null) || products.length === 1) {
+    return <div className="dnak__slot"><DnaCard summary={products[0]!} /></div>;
+  }
+  return <div className="dnak__slot"><DnaShelf products={products} /></div>;
+}
+
+/** Things on a shelf before "All": one row's worth on a phone. */
+const SHELF_FIRST = 8;
+
+/**
+ * Every product in one photo, as a shelf: each thing cut out of the photo (or
+ * shown by a better photo of it alone, once there is one), its name and what
+ * it goes for, in one swipeable row - or all of them as a grid.
+ */
+export function DnaShelf({ products, title = 'In this photo' }: { products: DnaSummary[]; title?: string }) {
+  const [all, setAll] = useState(false);
+  const shown = all ? products : products.slice(0, SHELF_FIRST);
   return (
-    <div className="dnak__slot" aria-label={many ? 'Products in this photo' : undefined}>
-      {shown.map((item) => <DnaCard key={item.dna.id} summary={item.dna} lead={many ? 'In this photo' : undefined} />)}
-    </div>
+    <section className="dnak__shelf" aria-label={`Product DNA: ${title.toLowerCase()}`}>
+      <header className="dnak__shelfhead">
+        <DnaHelix rungs={5} still />
+        <span className="dnak__shelftitle">
+          <span className="dnak__eyebrow">Product DNA</span>
+          <b>{products.length} products {title.toLowerCase()}</b>
+        </span>
+        {products.length > SHELF_FIRST && (
+          <button type="button" className="dnak__shelfall" onClick={() => setAll(!all)} aria-expanded={all}>
+            {all ? 'Fewer' : `All ${products.length}`}
+          </button>
+        )}
+      </header>
+      <ol className={`dnak__shelfrow${all ? ' is-all' : ''}`}>
+        {shown.map((dna, at) => (
+          <li key={dna.id} style={{ ['--i' as string]: Math.min(at, 8) } as CSSProperties}>
+            <Link to={dnaHref(dna.id)} className="dnak__thing">
+              <span className="dnak__thingpic">
+                {dna.cover ? <CropPic src={dna.cover} box={dna.coverBox} /> : <DnaHelix rungs={6} still />}
+                <span className="dnak__thingheat" data-heat={dna.heatLabel} title={dna.heatLabel} />
+              </span>
+              <span className="dnak__thingname">{dna.name}</span>
+              <span className="dnak__thingmeta">
+                {dna.lowMinor !== null ? <b>{formatMoney(dna.lowMinor, dna.currency)}</b> : <span>Not on sale</span>}
+                <span>{dna.sellers === 1 ? '1 shop' : `${dna.sellers} shops`}</span>
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }
 
@@ -191,7 +299,7 @@ export function PostDna({ channelId, postId, about }: { channelId: string; postI
       <div className="dnak__chips">
         {state.dnas.map((dna, at) => (
           <Link key={dna.id} to={dnaHref(dna.id)} className="dnak__pchip" style={{ ['--i' as string]: at } as CSSProperties}>
-            {dna.cover ? <img src={dna.cover} alt="" loading="lazy" decoding="async" /> : <Icon name="dna" size={14} />}
+            {dna.cover ? <CropPic src={dna.cover} box={dna.coverBox} /> : <Icon name="dna" size={14} />}
             <span className="dnak__pchipname">{dna.name}</span>
             {dna.lowMinor !== null && <span className="dnak__pchipprice">{formatMoney(dna.lowMinor, dna.currency)}</span>}
           </Link>
@@ -291,7 +399,7 @@ export function DnaPicker({ title, seed, current, many = false, listingId, piece
             <li key={dna.id}>
               <button type="button" className="dnak__result" disabled={busy !== null || (on.has(dna.id) && !many) || on.has(dna.id)}
                 onClick={() => void run(dna.id, () => onPick(dna), many ? 'Tagged' : 'Done')}>
-                {dna.cover ? <img src={dna.cover} alt="" loading="lazy" decoding="async" /> : <span className="dnak__resultblank"><Icon name="dna" size={16} /></span>}
+                {dna.cover ? <CropPic src={dna.cover} box={dna.coverBox} /> : <span className="dnak__resultblank"><Icon name="dna" size={16} /></span>}
                 <span className="dnak__resulttext">
                   <b>{dna.name}</b>
                   <small>{[priceSpan(dna), `${dna.sellers} shop${dna.sellers === 1 ? '' : 's'}`, dna.category].filter(Boolean).join(' · ')}</small>
@@ -337,7 +445,7 @@ export function DnaTile({ summary, index = 0 }: { summary: DnaSummary; index?: n
     <Link to={dnaHref(summary.id)} className="dnak__tile" data-theme={theme.key} style={{ ['--i' as string]: index } as CSSProperties}>
       <span className="dnak__tilepic">
         <span className="dnak__tilepattern" aria-hidden="true" />
-        {summary.cover ? <img src={summary.cover} alt="" loading="lazy" decoding="async" /> : <DnaHelix rungs={10} />}
+        {summary.cover ? <CropPic src={summary.cover} box={summary.coverBox} /> : <DnaHelix rungs={10} />}
         <span className="dnak__tilescan" aria-hidden="true" />
         <span className="dnak__tileseq">{sequenceOf(summary.id)}</span>
         <span className="dnak__tileglyph" aria-hidden="true">{theme.glyph}</span>
@@ -396,7 +504,7 @@ function DnaJar({ summary, index }: { summary: DnaSummary; index: number }) {
       <span className="dnak__jarglass">
         <span className="dnak__jarliquid" aria-hidden="true"><i /></span>
         <span className="dnak__jarspecimen">
-          {summary.cover ? <img src={summary.cover} alt="" loading="lazy" decoding="async" /> : <DnaHelix rungs={10} />}
+          {summary.cover ? <CropPic src={summary.cover} box={summary.coverBox} /> : <DnaHelix rungs={10} />}
         </span>
         <span className="dnak__jarbubbles" aria-hidden="true">{[0, 1, 2, 3].map((n) => <i key={n} />)}</span>
         <span className="dnak__jarticks" aria-hidden="true"><i>250</i><i>150</i><i>50</i></span>
