@@ -73,7 +73,7 @@ import { refreshIfStale } from '../seller-stats.js';
 import { isViewSource, searchTerm } from '../../../shared/seller-data.js';
 import { recordSearch } from '../search-log.js';
 import { alertWantsListed } from './want-routes.js';
-import { dnaForListing } from '../dna.js';
+import { dnasForListing } from '../dna.js';
 import { alertForListing } from '../dna-follow.js';
 
 /** Public seller summary attached to feed cards and listing pages. */
@@ -1184,7 +1184,7 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
   // Its Product DNA: joined to the same product's, or started. Never the reason a listing fails.
   if (!privateFor) {
     await everyListing(repository).then(async (all) => {
-      await dnaForListing(repository, created, all);
+      await dnasForListing(repository, created, all);
       // Whoever follows the product hears a shop started selling it.
       await alertForListing(repository, created, all);
     }).catch(() => null);

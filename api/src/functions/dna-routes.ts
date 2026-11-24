@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { factsOf } from '../../../shared/category-specs.js';
 import {
-  DNA_TAGS_PER_POST, dnaDocId, heatOf, lineOf, linkKey, productWords,
+  DNA_TAGS_PER_POST, dnaDocId, heatOf, linkKey, productWords,
   type DnaHuntCard, type DnaLinkKind, type DnaListingCard, type DnaPhoto, type DnaPostCard, type DnaReviewCard,
   type DnaShop, type DnaSummary, type DnaTimelineEntry, type DnaView, type ProductDna,
 } from '../../../shared/dna.js';
@@ -11,11 +11,11 @@ import { reviewRevealed } from '../../../shared/orders.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import {
-  addLink, dnaForListing, dnaForWant, dnaIndex, dnasForPost, dnasLinked, findBackground, getDna, isShown, photoOf,
-  removeLink, saveDna, summaryOf, sweepListings,
+  addLink, dnaForItem, dnaForWant, dnaIndex, dnasForListing, dnasForPost, dnasLinked, findBackground, getDna, isShown,
+  itemOnSale, itemsOf, linkedItems, listingsOf, photoOf, removeLink, saveDna, summaryOf, sweepListings, type LinkedItem,
 } from '../dna.js';
 import { moderation } from '../moderation.js';
-import { everListed, onSale } from '../photo-sales.js';
+import { everListed } from '../photo-sales.js';
 import { ownPhotos } from '../storage/index.js';
 import { claimPhotos } from '../storage/release.js';
 import { everyListing } from './catalog-routes.js';
@@ -83,10 +83,9 @@ async function reviewsOf(repository: Repo, dna: ProductDna): Promise<StoreReview
 async function buildView(repository: Repo, dna: ProductDna, viewerId: string | null, staff: boolean): Promise<DnaView> {
   const catalogue = await everyListing(repository);
   const byId = new Map(catalogue.map((listing) => [listing.id, listing]));
-  const listings = dna.links.filter((entry) => entry.kind === 'listing')
-    .map((entry) => byId.get(entry.id))
-    .filter((listing): listing is Listing => Boolean(listing && everListed(listing)))
-    .slice(0, LISTINGS_READ);
+  // Each thing on it: a listing of it alone, or one of the things in a lot or a set, at its own name and price.
+  const items = linkedItems(dna, byId).slice(0, LISTINGS_READ);
+  const listings = listingsOf(items);
   const listingIds = new Set(listings.map((listing) => listing.id));
 
   const postLinks = dna.links.filter((entry) => entry.kind === 'post').slice(-POSTS_READ);
@@ -99,7 +98,15 @@ async function buildView(repository: Repo, dna: ProductDna, viewerId: string | n
     moderation(repository),
   ]);
   const now = new Date().toISOString();
-  const sales = orderLists.flat().filter((order) => BOUGHT.has(order.status));
+  // What sold of each thing: a piece bought out of a lot at the piece's price; a set at this thing's share of it.
+  const ordersBy = new Map(listings.map((listing, at) => [listing.id, orderLists[at] ?? []]));
+  const sales: Order[] = items.flatMap((item) => (ordersBy.get(item.listing.id) ?? []).flatMap((order): Order[] => {
+    if (!BOUGHT.has(order.status)) return [];
+    if (!item.piece) return [order];
+    if (item.set) return [{ ...order, unitPriceMinor: item.priceMinor }];
+    const bought = order.pieces?.find((piece) => piece.id === item.piece);
+    return bought ? [{ ...order, unitPriceMinor: bought.priceMinor, quantity: 1 }] : [];
+  }));
   const posts = postsRead.filter((post): post is Post => Boolean(post
     && (!post.visibleAt || post.visibleAt <= now) && !moderated.isRemoved('post', post.id)));
   const wants = wantsRead.filter((want): want is Want => Boolean(want));
@@ -116,22 +123,22 @@ async function buildView(repository: Repo, dna: ProductDna, viewerId: string | n
   const userById = new Map(users.map((user) => [user.id, user]));
 
   // ---- price -------------------------------------------------------------
-  const selling = listings.filter(onSale);
-  const asks = selling.map((listing) => listing.priceMinor);
+  const selling = items.filter(itemOnSale);
+  const asks = selling.map((item) => item.priceMinor);
   const typical = asks.length ? median(asks) : null;
-  const shipping = selling.map((listing) => listing.shippingMinor).filter((value): value is number => typeof value === 'number');
+  const shipping = listingsOf(selling).map((listing) => listing.shippingMinor).filter((value): value is number => typeof value === 'number');
   const price = typical === null ? null : {
-    currency: selling[0]!.currency,
+    currency: selling[0]!.listing.currency,
     lowMinor: Math.min(...asks),
     typicalMinor: typical,
     highMinor: Math.max(...asks),
     onSale: selling.length,
     shippingMinor: shipping.length ? median(shipping) : null,
   };
-  const dealOf = (listing: Listing): DnaListingCard['deal'] => {
-    if (typical === null || selling.length < 2 || !onSale(listing)) return null;
-    if (listing.priceMinor <= typical * 0.92) return 'low';
-    if (listing.priceMinor >= typical * 1.08) return 'high';
+  const dealOf = (item: LinkedItem): DnaListingCard['deal'] => {
+    if (typical === null || selling.length < 2 || !itemOnSale(item)) return null;
+    if (item.priceMinor <= typical * 0.92) return 'low';
+    if (item.priceMinor >= typical * 1.08) return 'high';
     return 'fair';
   };
 
@@ -159,24 +166,33 @@ async function buildView(repository: Repo, dna: ProductDna, viewerId: string | n
   const demand = { ...counts, ...heatOf(counts) };
 
   // ---- shops -------------------------------------------------------------
-  const card = (listing: Listing): DnaListingCard => ({
-    id: listing.id,
-    title: listing.title,
-    priceMinor: listing.priceMinor,
-    currency: listing.currency,
-    shippingMinor: typeof listing.shippingMinor === 'number' ? listing.shippingMinor : null,
-    photoUrl: photoOf(listing),
-    onSale: onSale(listing),
-    condition: factsOf(listing).condition,
-    shop: shopOf(userById.get(listing.sellerId)),
-    deal: dealOf(listing),
-  });
+  const card = (item: LinkedItem): DnaListingCard => {
+    const { listing } = item;
+    return {
+      id: listing.id,
+      title: item.title,
+      piece: item.piece ? { id: item.piece, listingTitle: listing.title, set: item.set } : null,
+      priceMinor: item.priceMinor,
+      currency: listing.currency,
+      shippingMinor: typeof listing.shippingMinor === 'number' ? listing.shippingMinor : null,
+      photoUrl: photoOf(listing),
+      onSale: itemOnSale(item),
+      condition: factsOf(listing).condition,
+      shop: shopOf(userById.get(listing.sellerId)),
+      deal: dealOf(item),
+    };
+  };
   const sellingNow = selling.sort((a, b) => a.priceMinor - b.priceMinor).map(card);
 
   const unitsBy = new Map<string, number>();
   for (const order of sales) unitsBy.set(order.sellerId, (unitsBy.get(order.sellerId) ?? 0) + order.quantity);
-  for (const listing of listings) {
-    if (!unitsBy.has(listing.sellerId) && ((listing.soldCount ?? 0) > 0 || listing.status === 'sold_out')) {
+  for (const item of items) {
+    const { listing } = item;
+    if (unitsBy.has(listing.sellerId)) continue;
+    // A piece is sold when it is; a whole listing or a set by its count, or by being sold out.
+    if (item.piece && !item.set) {
+      if (item.sold) unitsBy.set(listing.sellerId, 1);
+    } else if ((listing.soldCount ?? 0) > 0 || listing.status === 'sold_out') {
       unitsBy.set(listing.sellerId, listing.soldCount ?? 1);
     }
   }
@@ -335,7 +351,11 @@ async function buildView(repository: Repo, dna: ProductDna, viewerId: string | n
   // ---- what this reader may fix -----------------------------------------
   const yourLinks: DnaView['yourLinks'] = [];
   if (viewerId) {
-    for (const listing of listings) if (listing.sellerId === viewerId) yourLinks.push({ kind: 'listing', id: listing.id, partition: listing.sellerId, title: listing.title });
+    for (const item of items) {
+      if (item.listing.sellerId === viewerId) {
+        yourLinks.push({ kind: 'listing', id: item.listing.id, partition: item.listing.sellerId, title: item.title, piece: item.piece });
+      }
+    }
     for (const post of posts) if (post.authorId === viewerId) yourLinks.push({ kind: 'post', id: post.id, partition: post.channelId, title: post.body.slice(0, 60) || 'Your post' });
     for (const want of wants) if (want.buyerId === viewerId) yourLinks.push({ kind: 'want', id: want.id, partition: want.buyerId, title: want.title });
   }
@@ -477,17 +497,27 @@ async function wantIt(request: HttpRequest, _context: InvocationContext) {
   return json(201, { want: { id: made.want.id, buyerId: made.want.buyerId, expiresAt: made.want.expiresAt }, existing: false });
 }
 
-/** GET /api/dna/of/listing/{id} - the DNA a listing belongs to, linking it if it is not yet. */
+/**
+ * GET /api/dna/of/listing/{id} - the DNAs a listing is on, linking it if it
+ * is not yet: one, or one per thing for a lot or a set of named things, each
+ * with the piece it is for. `dna` is the first, for callers that want one.
+ */
 async function ofListing(request: HttpRequest, _context: InvocationContext) {
   const repository = await getRepository();
   const catalogue = await everyListing(repository);
   const listing = catalogue.find((entry) => entry.id === request.params.id)
     ?? await repository.getListing(request.params.id ?? '');
   if (!listing) return error(404, 'not_found', 'No such item.');
-  const dna = await dnaForListing(repository, listing, catalogue);
+  const dnas = await dnasForListing(repository, listing, catalogue);
   const byId = new Map(catalogue.map((entry) => [entry.id, entry]));
   byId.set(listing.id, listing);
-  return json(200, { dna: dna ? summaryOf(dna, byId) : null });
+  const items = itemsOf(listing);
+  const things = items.flatMap((item) => {
+    const dna = dnas.find((entry) => entry.links.some((link) => link.kind === 'listing' && link.id === listing.id
+      && (link.piece ?? null) === item.piece));
+    return dna ? [{ piece: item.piece, title: item.title, dna: summaryOf(dna, byId) }] : [];
+  });
+  return json(200, { dna: things[0]?.dna ?? null, items: things });
 }
 
 /** GET /api/dna/of/post/{channel}/{id} - the products a post is about. */
@@ -533,7 +563,7 @@ async function trending(request: HttpRequest, _context: InvocationContext) {
   return json(200, { products });
 }
 
-/** GET /api/dna/search?q=&line=of-listing:{id} - products by name, for tagging a post or moving a listing. */
+/** GET /api/dna/search?q=&listing={id}&piece={piece} - products by name, for tagging a post or moving a listing. */
 async function search(request: HttpRequest, _context: InvocationContext) {
   const repository = await getRepository();
   const words = productWords(request.query.get('q') ?? '');
@@ -543,7 +573,9 @@ async function search(request: HttpRequest, _context: InvocationContext) {
   // Moving a listing keeps it on the line its seller said it is on.
   const forListing = request.query.get('listing');
   const listing = forListing ? byId.get(forListing) : undefined;
-  const line = listing ? lineOf(listing.category, listing.attributes) : null;
+  // One thing of a lot keeps to its own line, which may not be the listing's.
+  const piece = request.query.get('piece');
+  const line = listing ? (itemsOf(listing).find((item) => item.piece === piece) ?? itemsOf(listing)[0]!).line : null;
   const index = await dnaIndex(repository);
   const products = [...index.byId.values()]
     .filter((dna) => isShown(dna, byId) && (!line || dna.line === line))
@@ -616,6 +648,8 @@ interface FixBody {
   action?: 'remove' | 'move' | 'tag' | 'new';
   from?: string;
   to?: string;
+  /** For a listing of several things: which of them. */
+  piece?: string | null;
 }
 
 /**
@@ -637,6 +671,7 @@ async function fix(request: HttpRequest, _context: InvocationContext) {
     return error(400, 'invalid_body', 'Request body must be JSON.');
   }
   const { kind, id = '', partition = '', action } = body;
+  const piece = typeof body.piece === 'string' && body.piece ? body.piece : null;
   if (!kind || !['listing', 'post', 'want'].includes(kind) || !id || !action) {
     return error(400, 'invalid_body', 'Say what to change.');
   }
@@ -655,13 +690,20 @@ async function fix(request: HttpRequest, _context: InvocationContext) {
     if (!want || want.buyerId !== user.id) return error(403, 'not_yours', 'Only whoever is hunting it can change this.');
   }
   const linkPartition = listing?.sellerId ?? partition;
-  const current = await dnasLinked(repository, kind, id);
+  // A listing of several things is on one product per thing: say which thing.
+  const item = listing ? itemsOf(listing).find((each) => each.piece === piece) : null;
+  if (listing && !item) return error(400, 'which_item', piece ? 'That item is not in this listing.' : 'Say which item in the photo.');
+  const current = (await dnasLinked(repository, kind, id)).filter((dna) => kind !== 'listing'
+    || dna.links.some((link) => link.kind === 'listing' && link.id === id && (link.piece ?? null) === piece));
   const target = body.to ? await getDna(repository, body.to) : null;
   if ((action === 'move' || action === 'tag') && !target) return error(404, 'not_found', 'No such product.');
-  if (target && listing && target.line !== lineOf(listing.category, listing.attributes)) {
+  if (target && item && target.line !== item.line) {
     return error(400, 'other_line', 'That product is listed as something else. Check what your listing says it is.');
   }
-  const entry = { kind, id, partition: linkPartition, by: 'owner' as const, at: new Date().toISOString() };
+  const entry = {
+    kind, id, partition: linkPartition, by: 'owner' as const, at: new Date().toISOString(), ...(piece ? { piece } : {}),
+  };
+  const only = kind === 'listing' ? piece : undefined;
 
   if (action === 'remove') {
     const from = current.find((dna) => dna.id === body.from);
@@ -675,15 +717,17 @@ async function fix(request: HttpRequest, _context: InvocationContext) {
     }
     await addLink(repository, target!.id, entry);
   } else if (action === 'move') {
-    for (const dna of current) if (dna.id !== target!.id) await removeLink(repository, dna.id, kind, id, true);
+    for (const dna of current) if (dna.id !== target!.id) await removeLink(repository, dna.id, kind, id, true, only);
     await addLink(repository, target!.id, entry);
   } else {
-    if (!listing) return error(400, 'invalid_action', 'Only a listing starts a product of its own.');
-    for (const dna of current) await removeLink(repository, dna.id, kind, id, true);
+    if (!listing || !item) return error(400, 'invalid_action', 'Only a listing starts a product of its own.');
+    for (const dna of current) await removeLink(repository, dna.id, kind, id, true, only);
     // Blocked everywhere it was, so the matcher starts it a DNA of its own.
-    const made = await dnaForListing(repository, listing, catalogue, true);
+    const made = await dnaForItem(repository, listing, item, catalogue, true);
     if (made) await saveDna(repository, made.id, (dna) => (dna ? {
-      ...dna, links: dna.links.map((link) => (link.kind === 'listing' && link.id === id ? { ...link, by: 'owner' } : link)),
+      ...dna,
+      links: dna.links.map((link) => (link.kind === 'listing' && link.id === id && (link.piece ?? null) === piece
+        ? { ...link, by: 'owner' } : link)),
     } : null));
     return json(200, { dna: made?.id ?? null });
   }
@@ -707,8 +751,10 @@ async function merge(request: HttpRequest, _context: InvocationContext) {
   if (from.id === into.id) return error(400, 'same', 'That is the same product.');
   await saveDna(repository, into.id, (current) => {
     if (!current) return null;
-    const have = new Set(current.links.map((link) => linkKey(link.kind, link.id)));
-    const moved = from.links.filter((link) => !have.has(linkKey(link.kind, link.id))).map((link) => ({ ...link, by: 'staff' as const }));
+    // Two things of one lot are two links: kept apart by their piece.
+    const keyOf = (link: ProductDna['links'][number]) => `${linkKey(link.kind, link.id)}#${link.piece ?? ''}`;
+    const have = new Set(current.links.map(keyOf));
+    const moved = from.links.filter((link) => !have.has(keyOf(link))).map((link) => ({ ...link, by: 'staff' as const }));
     const total = (current.score?.total ?? 0) + (from.score?.total ?? 0);
     const count = (current.score?.count ?? 0) + (from.score?.count ?? 0);
     return { ...current, links: [...current.links, ...moved], cover: current.cover ?? from.cover, score: { total, count } };

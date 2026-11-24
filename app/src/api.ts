@@ -3808,21 +3808,24 @@ export const api = {
   weeklyBest: () => request<Leaderboard>('/social/leaderboard'),
   /** Product DNA: the whole page, or where a folded-in one went. */
   dna: (id: string) => request<DnaView | { moved: string }>(`/dna/view/${encodeURIComponent(id)}`),
-  dnaOfListing: (id: string) => request<{ dna: DnaSummary | null }>(`/dna/of/listing/${encodeURIComponent(id)}`),
+  /** The products a listing is on: one, or one per named thing in the photo of a lot or a set. */
+  dnaOfListing: (id: string) => request<{ dna: DnaSummary | null; items: { piece: string | null; title: string; dna: DnaSummary }[] }>(
+    `/dna/of/listing/${encodeURIComponent(id)}`),
   dnaOfPost: (channelId: string, id: string) =>
     request<{ dnas: DnaSummary[]; yours: boolean }>(`/dna/of/post/${encodeURIComponent(channelId)}/${encodeURIComponent(id)}`),
   dnaOfWant: (buyerId: string, id: string) =>
     request<{ dna: DnaSummary | null; yours: boolean }>(`/dna/of/want/${encodeURIComponent(buyerId)}/${encodeURIComponent(id)}`),
   dnaTrending: (category?: string | null) =>
     request<{ products: DnaSummary[] }>(`/dna/trending${category ? `?category=${encodeURIComponent(category)}` : ''}`),
-  dnaSearch: (q: string, listingId?: string) => {
+  dnaSearch: (q: string, listingId?: string, piece?: string | null) => {
     const query = new URLSearchParams({ q });
     if (listingId) query.set('listing', listingId);
+    if (listingId && piece) query.set('piece', piece);
     return request<{ products: DnaSummary[] }>(`/dna/search?${query.toString()}`);
   },
   reviewDna: (id: string, body: { rating: number; body: string; photoUrls: string[] }) =>
     post<{ ok: true }>(`/dna/view/${encodeURIComponent(id)}/reviews`, body),
-  fixDna: (body: { kind: DnaLinkKind; id: string; partition: string; action: 'remove' | 'move' | 'tag' | 'new'; from?: string; to?: string }) =>
+  fixDna: (body: { kind: DnaLinkKind; id: string; partition: string; action: 'remove' | 'move' | 'tag' | 'new'; from?: string; to?: string; piece?: string | null }) =>
     post<{ dna: string | null }>('/dna/fix', body),
   mergeDna: (id: string, into: string) => post<{ dna: string }>(`/dna/view/${encodeURIComponent(id)}/merge`, { into }),
   /** Follow a product for `days` (up to 90), or stop with null. */
