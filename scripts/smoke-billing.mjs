@@ -568,4 +568,42 @@ await check('a percentage can be capped: "10% off up to ₹120" stops at ₹120,
   assert.equal(loyal.rewardWords(card.card.rewards[0], (m) => `₹${m / 100}`), '10% off up to ₹120');
 });
 
+await check('two items paid in full with shipping, filed into one lot later: free shipping on 2+ owes the shipping back', async () => {
+  const { repriceBasket } = await import(new URL('api/src/offers.js', dist));
+  const { orderTotalMinor } = await import(new URL('shared/service-stores.js', dist));
+  const buyer = await newPerson('Lot Shipping Buyer');
+  const base = await repository.getListing(anyOrder.listingId);
+  const offer = { id: 'fs2', kind: 'free_shipping', minItems: 2, scope: 'lot' };
+  const listing = { ...structuredClone(base), id: `lst_ship_${buyer.id.slice(-4)}`, sellerId: shop.id, quantityAvailable: 50, status: 'active', shippingMinor: 5_000, offers: [offer] };
+  await repository.createListing(listing);
+  const at = new Date().toISOString();
+  const paid = async (tag) => {
+    const order = {
+      ...structuredClone(anyOrder), id: `ord_ship_${tag}_${buyer.id.slice(-4)}`, sellerId: shop.id, buyerId: buyer.id, listingId: listing.id,
+      status: 'confirmed', placedAt: at, createdAt: at, updatedAt: at, completedAt: null, quantity: 1, unitPriceMinor: 1_00_000,
+      shippingMinor: 5_000, shipPerItemMinor: 5_000, offerRules: [offer], appliedOffers: [], offerDiscountMinor: 0, loyaltyOffMinor: 0,
+      paymentStatus: 'paid', paidInFull: true, lotId: 'awaiting_lot', hold: { state: 'none' }, credits: [], closure: null,
+      payments: [{ id: `pay_${tag}`, at, kind: 'full', method: 'upi', amountMinor: 1_05_000, batchId: null, batchTotalMinor: null, reference: null, recordedBy: buyer.id }],
+    };
+    await repository.createOrder(order);
+    return order.id;
+  };
+  // Bought one at a time, each paid in full with its ₹50 shipping: no lot yet, so no offer.
+  const first = await paid('a');
+  await repriceBasket(repository, shop.id, buyer.id, 'ordered', { quiet: true });
+  const second = await paid('b');
+  await repriceBasket(repository, shop.id, buyer.id, 'ordered', { quiet: true });
+  for (const id of [first, second]) assert.equal((await repository.getOrder(id)).shippingMinor, 5_000, 'shipping charged while apart');
+  // The shop files both into one lot, as the lot screen does, and the basket is priced again.
+  for (const id of [first, second]) await repository.updateOrder({ ...(await repository.getOrder(id)), lotId: 'lot_ship_test' });
+  await repriceBasket(repository, shop.id, buyer.id, 'lot', { quiet: true });
+  for (const id of [first, second]) {
+    const order = await repository.getOrder(id);
+    assert.equal(order.shippingMinor, 0, 'shipping is free once they share a lot');
+    assert.equal(orderTotalMinor(order), 1_00_000);
+    assert.equal(order.offerRefundDueMinor, 5_000, 'the ₹50 shipping each paid is owed back');
+    assert.equal(order.paymentStatus, 'paid');
+  }
+});
+
 console.log(`\n${passed} billing checks passed`);

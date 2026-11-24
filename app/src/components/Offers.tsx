@@ -3,7 +3,7 @@ import {
   OFFER_KIND_INFO, OFFER_KINDS, MAX_OFFERS_PER_ITEM, MAX_WHOLESALE_TIERS, cleanOffers, nextStepFor, offerLabel,
   offerSummary, offerTerms, wholesaleHint,
   type AppliedOffer, type ListingOffer, type OfferKind, type OfferScope, type OfferValue, type WholesaleTier,
-  FREE_SHIPPING_TAKEN, givesFreeShipping, shippingOfferClash,
+  FREE_SHIPPING_TAKEN, freeShipShort, offersInOrder, givesFreeShipping, shippingOfferClash,
 } from '@shared/offers';
 import { formatMoney } from '../format';
 import { InfoTip } from './InfoTip';
@@ -19,11 +19,17 @@ import '../styles/Offers.css';
 
 /* ── Buyer side ─────────────────────────────────────────────────────────── */
 
-/** "Free shipping" or "Shipping extra": the small tag on a card. Nothing when the shop said nothing. */
-export function ShippingChip({ shippingMinor }: { shippingMinor?: number | null }) {
+/**
+ * "Free shipping" or "Shipping extra": the small tag on a card. When an offer
+ * makes paid shipping free, that is said instead: "Free ship on 2+".
+ * Nothing when the shop said nothing.
+ */
+export function ShippingChip({ shippingMinor, offers }: { shippingMinor?: number | null; offers?: ListingOffer[] }) {
   if (shippingMinor === null || shippingMinor === undefined) return null;
-  return shippingMinor === 0
-    ? <span className="offr-chip offr-chip--free">Free shipping</span>
+  if (shippingMinor === 0) return <span className="offr-chip offr-chip--free">Free shipping</span>;
+  const way = freeShipShort(offers);
+  return way
+    ? <span className="offr-chip offr-chip--free" title="Shipping is extra on one item">{way}</span>
     : <span className="offr-chip">Shipping extra</span>;
 }
 
@@ -56,7 +62,7 @@ export function ShippingLine({ shippingMinor, offers, currency }: {
   shippingMinor?: number | null; offers?: ListingOffer[]; currency: string;
 }) {
   if (shippingMinor === null || shippingMinor === undefined) return null;
-  const ways = (offers ?? []).map(groupLine).filter((line): line is string => Boolean(line));
+  const ways = offersInOrder(offers ?? []).map(groupLine).filter((line): line is string => Boolean(line));
   return (
     <div className="offr-ship">
       <span className={`offr-ship__fee${shippingMinor === 0 ? ' is-free' : ''}`}>
@@ -347,7 +353,8 @@ export function OfferEditor({ offers, onChange, priceMinor, shippingMinor }: {
             // The item ships free already: say so rather than add an offer that gives nothing.
             if (shipsFree && givesFreeShipping(offer)) { setRefused(true); return; }
             setRefused(false);
-            onChange([...offers, offer]);
+            // Free shipping always first, as buyers will see it.
+            onChange(givesFreeShipping(offer) ? [offer, ...offers] : [...offers, offer]);
           }}>
             <option value="">Choose an offer to add…</option>
             {available.map((kind) => <option key={kind} value={kind}>{OFFER_KIND_INFO[kind].name}</option>)}

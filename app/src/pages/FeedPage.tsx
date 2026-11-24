@@ -980,7 +980,7 @@ export const LootCard = memo(function LootCard({ listing, priority = false }: { 
         {/* Shipping is beside the price, never in it; wholesale is the one offer worth a flag. */}
         {(listing.shippingMinor != null || wholesaleHint(listing.offers, listing.priceMinor)) && (
           <span className="offr-chips">
-            <ShippingChip shippingMinor={listing.shippingMinor} />
+            <ShippingChip shippingMinor={listing.shippingMinor} offers={listing.offers} />
             <WholesaleChip offers={listing.offers} priceMinor={listing.priceMinor} currency={listing.currency} />
           </span>
         )}
