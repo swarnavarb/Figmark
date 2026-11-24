@@ -116,39 +116,39 @@ export interface ProPlan {
 /** Every tool Pro unlocks, as the subscribe page lists it and a locked box names it. */
 export const PRO_FEATURES = [
   {
-    id: 'insights', icon: '✨', title: 'Insights', punch: 'See what sells before it sells out',
-    line: 'This week against last, retention, customer value, price changes and the next-lot forecast.',
-    benefit: 'Know which items are heating up, which customers are drifting away and what your next lot should hold - so you buy what sells and stop guessing.',
+    id: 'insights', icon: '✨', title: 'Insights', punch: 'See what sells best',
+    line: 'See which items sell most, and what to buy next.',
+    benefit: 'See which items sell the most. See which buyers stopped coming back. Know what to buy next time.',
   },
   {
-    id: 'coach', icon: '🧭', title: 'Shop coach & Figgy', punch: 'AI-powered shop assistance',
-    line: 'AI-powered shop assistance that helps you market and grow your shop, with simple plans and clear actions to take.',
-    benefit: 'The coach reads your listings, orders and timing, and tells you what to do today and when to post - outside Figmark first. Figgy answers fifty everyday selling questions, and it all gets sharper as sellers use it.',
+    id: 'coach', icon: '🧭', title: 'Shop coach & Figgy', punch: 'Get tips to grow your shop',
+    line: 'A smart helper that tells you what to do next to sell more.',
+    benefit: 'The coach looks at your shop and tells you what to do today, and the best time to post. Ask Figgy any selling question.',
   },
   {
-    id: 'calculator', icon: '🧮', title: 'Profit calculator', punch: 'Price it right in seconds',
-    line: 'Price abroad in, profit out - with your own rates, saved calculators and the floating calculator.',
-    benefit: 'Type the price abroad and see your landed cost, margin and a selling price at once - with your own freight and exchange rates, everywhere in the app.',
+    id: 'calculator', icon: '🧮', title: 'Profit calculator', punch: 'Set the right price fast',
+    line: 'Type what you paid. See your cost, your profit and a good price.',
+    benefit: 'Type the price you paid. See your total cost, your profit and a good selling price. It uses your own shipping and exchange rates.',
   },
   {
-    id: 'costs', icon: '🧾', title: 'Item cost sheets', punch: 'Real profit, not a guess',
-    line: 'What each item really cost you, step by step, so the profit book shows real profit.',
-    benefit: 'Freight, customs, packing and fees, item by item. Your profit book then shows what you actually made - and which items quietly lose you money.',
+    id: 'costs', icon: '🧾', title: 'Item cost sheets', punch: 'Know your real profit',
+    line: 'Add all the costs of each item to see your real profit.',
+    benefit: 'Add shipping, customs, packing and fees for each item. Then see how much you really made, and which items lose money.',
   },
   {
-    id: 'customers', icon: '🎯', title: 'Customer signals & messaging', punch: 'Reach buyers who already want it',
-    line: 'Who saved, pledged or wants what, what they might buy next, and messaging the ones you pick.',
-    benefit: 'See who saved, pledged or asked for an item and message just them when it lands - the warmest buyers you have, one tap away.',
+    id: 'customers', icon: '🎯', title: 'Customer signals & messaging', punch: 'Message buyers who want it',
+    line: 'See who wants an item, and send them a message.',
+    benefit: 'See who saved or asked for an item. When it arrives, send a message to just those people.',
   },
   {
-    id: 'powerSale', icon: '⚡', title: 'Power sales & exclusive drops', punch: 'Sell out in minutes',
-    line: 'Timed drops for your followers, with quick fill and power templates.',
-    benefit: 'Run a timed drop for your followers. Everybody gets told at once, and the rush fills your orders before the timer runs out.',
+    id: 'powerSale', icon: '⚡', title: 'Power sales & exclusive drops', punch: 'Run a quick sale',
+    line: 'A short sale with a timer, just for your followers.',
+    benefit: 'Start a sale with a timer. All your followers hear about it at once, so items sell fast.',
   },
   {
-    id: 'loyalty', icon: '🎟️', title: 'Loyalty cards', punch: 'Turn buyers into regulars',
-    line: 'Eight-stamp cards with cashback, free items and money off on the stamps you pick.',
-    benefit: 'Every delivered order stamps the buyer\'s card. Put cashback or a free item on the stamps you choose - buyers see how close they are on every item you list, and come back to fill it.',
+    id: 'loyalty', icon: '🎟️', title: 'Loyalty cards', punch: 'Bring buyers back',
+    line: 'Buyers collect stamps and win rewards you choose.',
+    benefit: 'Buyers get a stamp for every order. You choose the rewards: cashback, a free item or money off.',
   },
 ] as const;
 export type ProFeatureId = (typeof PRO_FEATURES)[number]['id'];
