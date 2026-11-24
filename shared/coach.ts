@@ -508,7 +508,7 @@ export function coachPlan(
   const headline = urgent > 0
     ? `Do ${urgent === 1 ? 'this' : `these ${urgent}`} first. Then follow today's plan.`
     : tips.length > 0
-      ? `All good. Here is how to grow ${signals.shop.name} today.`
+      ? `Nothing urgent. Here is how to grow ${signals.shop.name} today.`
       : `${signals.shop.name} is doing well. Follow the weekly plan.`;
   return { tips, bestTime: best, week: weekPlan(signals, best), health, headline };
 }

@@ -866,6 +866,7 @@ code, kbd, samp, pre {
   padding: var(--s4) 18px; border-bottom: 1px solid var(--border);
 }
 .modal__head h2 { font-size: var(--t-md); }
+.modal__badged { display: inline-flex; align-items: center; gap: var(--s2); }
 .modal__body { padding: 18px; overflow-y: auto; }
 .btn--block { width: 100%; }
 .btn--lg { padding: var(--s3) 20px; font-size: var(--t-base); }
