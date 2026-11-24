@@ -1,7 +1,8 @@
+import { LOCK_AFTER_SALE_NOTE } from '@shared/listing-lock';
 import { FeeHint } from '../components/Billing';
 import { ServiceNudge } from '../components/ServiceCards';
 import { haptic } from '../haptics';
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { TagInput } from '../components/PageFields';
 import { PageLoading } from '../components/Feedback';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
@@ -10,22 +11,27 @@ import { tagKey } from '@shared/shop-tags';
 import { SOURCING_LABELS, type Sourcing } from '@shared/enums';
 import { currentStepOf, lotOffset, renderStepText, routeOf } from '@shared/routes';
 import {
-  CATEGORIES, MAX_PRICE_MINOR, MIN_PRICE_MINOR, canonicalCategory, conditionTagFor, conditionValueForTag, factsOf,
-  missingFields, pruneAttributes, specFor, type Attributes,
+  CATEGORIES, MAX_PRICE_MINOR, MIN_PRICE_MINOR, MIXED, canonicalCategory, conditionTagFor, conditionValueForTag, factsOf,
+  MIXABLE_FIELDS, missingFields, mixedFields, optionsOf, visibleFields, pruneAttributes, specFor, type Attributes,
 } from '@shared/catalog';
 import type { SavedCalc } from '@shared/profit';
 import type { RouteStep } from '@shared/routes';
 import type { Lot, PreOrderFullRule, PreOrderShortRule } from '@shared/models';
 import { fillFrom, type PostTemplate } from '@shared/templates';
 import { PhotoManager } from '../components/PhotoManager';
-import { PhotoGroupBox, emptyGroup, groupBody, groupPriceMinor, groupProblems, type PhotoGroup } from '../components/PieceEditor';
+import {
+  PhotoGroupBox, emptyGroup, groupBody, groupPriceMinor, groupProblems, mixedProblems, type BulkFact, type MixedFact, type PhotoGroup,
+} from '../components/PieceEditor';
 import { CategoryFields } from '../components/CategoryFields';
 import { ApiRequestError, api, type LotSummary, type PhotoDraft } from '../api';
 import { ErrorNotice, Icon, Modal, Thumb, leadPhoto } from '../components/ui';
 import { formatDate, formatMoney } from '../format';
 import { useSession } from '../session';
 import { useShopDays } from '../components/StepDays';
-import { AdvanceStrip, DealClock, EtaFields, TermsFields, etaOf, termsBody, termsDraft, termsFromTemplate, termsProblem } from '../components/Buy';
+import {
+  AdvanceStrip, DealClock, EtaFields, TermsFields, etaOf, shippingMinorOf, termsBody, termsDraft, termsFromTemplate, termsProblem,
+} from '../components/Buy';
+import { shippingOfferClash } from '@shared/offers';
 import { DEAL_DEFAULT_HOURS } from '@shared/deals';
 import {
   LBox, OptionTiles, PreOrderBox, ToggleRow, isoInDays, type Shape,
@@ -418,6 +424,56 @@ function SellForm({ serverDraft, draftMissing }: {
     if (!published.current && latest.current) writeDraft(draftKey, latest.current);
   }, [draftKey]);
 
+  /* Auto save: a moment after typing stops, the form is kept with the shop
+     too - on the Drafts shelf, on every device - without pressing Save. One
+     save at a time; a change made while one is on its way is saved after it.
+     A private deal is never a draft, and a published form has nothing to keep. */
+  const [autoSave, setAutoSave] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
+  const autoRef = useRef<{ running: boolean; again: boolean; last: string | null; id: string | null }>({
+    running: false, again: false, last: null, id: restored?.serverDraftId ?? serverDraft?.id ?? null,
+  });
+  const busyRef = useRef(false);
+  busyRef.current = busy;
+  if (serverDraftId) autoRef.current.id = serverDraftId;
+  const autoSaveNow = useCallback(() => {
+    const auto = autoRef.current;
+    if (deal || published.current || busyRef.current || !latest.current) return;
+    const form = latest.current;
+    if (!form.title.trim() && form.photos.length === 0) return;
+    const snapshot = JSON.stringify({ ...form, serverDraftId: null });
+    if (snapshot === auto.last) return;
+    if (auto.running) { auto.again = true; return; }
+    auto.running = true;
+    setAutoSave('saving');
+    void api.saveDraft(form, auto.id, storeId)
+      .then((result) => {
+        // Published while this was on its way: it is no longer a draft anywhere.
+        if (published.current) {
+          if (result.draft.id !== auto.id) void api.deleteDraft(result.draft.id, storeId).catch(() => undefined);
+          return;
+        }
+        auto.id = result.draft.id;
+        auto.last = snapshot;
+        setServerDraftId(result.draft.id);
+        setAutoSave('saved');
+      })
+      .catch(() => { if (!published.current) setAutoSave('failed'); })
+      .finally(() => {
+        auto.running = false;
+        if (auto.again) { auto.again = false; autoSaveNow(); }
+      });
+  }, [deal, storeId]);
+  useEffect(() => {
+    // The form as it came back from the shop is already saved there.
+    if (autoRef.current.last === null && serverDraft && latest.current) {
+      autoRef.current.last = JSON.stringify({ ...latest.current, serverDraftId: null });
+    }
+    setAutoSave((now) => (now === 'saved' ? 'idle' : now));
+    const timer = window.setTimeout(autoSaveNow, 2500);
+    return () => window.clearTimeout(timer);
+  }, [autoSaveNow, title, description, category, attributes, price, costSheet, terms, shareToChannel, shareToFeed,
+    preOrderMode, fillThreshold, preOrderDays, whenShort, whenFull, tags, calc, templateId, photos, preLot, shape, lotId, group]);
+
   // Saved calculations, lots and templates are a verified seller's: an
   // unverified one is not allowed to read them, so the form does not ask.
   const canSell = Boolean(user?.capabilities.canSell);
@@ -556,13 +612,40 @@ function SellForm({ serverDraft, draftMissing }: {
   const separately = group.mode === 'pieces' && !deal && !preOrderMode;
   const asLot = group.mode === 'lot' && !deal && !preOrderMode;
   const priceMinor = separately || asLot ? groupPriceMinor(group) : Math.round(Number(price || 0) * 100);
-  const groupNeeded = separately || asLot ? groupProblems(group) : [];
+  // Several items in the photo may be "Mixed" in condition or original-or-copy,
+  // each item then saying its own. One item never is: the answer is asked again.
+  const several = separately || asLot;
+  const answers: Attributes = several ? attributes
+    : Object.fromEntries(Object.entries(attributes).filter(([, answer]) => answer !== MIXED));
+  const mixed: MixedFact[] = several
+    ? mixedFields(category, attributes).map((field) => ({
+        key: field.key as MixedFact['key'], label: field.label, options: optionsOf(field, attributes),
+      }))
+    : [];
+  // Asked once for all the items, in the photo's editor rather than further down.
+  const bulk: BulkFact[] = several
+    ? visibleFields(category, attributes)
+        .filter((field) => (MIXABLE_FIELDS as readonly string[]).includes(field.key))
+        .map((field) => ({
+          key: field.key as BulkFact['key'], label: field.label, required: Boolean(field.required),
+          value: attributes[field.key] ?? '', options: optionsOf(field, attributes),
+          missing: triedPublish && Boolean(field.required) && !attributes[field.key],
+        }))
+    : [];
+  const setBulk = (key: BulkFact['key'], answer: string) => setAttributes((current) => {
+    const next = { ...current };
+    if (answer) next[key] = answer; else delete next[key];
+    return pruneAttributes(category, next);
+  });
+  const groupNeeded = several ? [...groupProblems(group), ...mixedProblems(group.pieces, mixed)] : [];
   // A lot listing needs a lot; there is nothing to publish into otherwise.
   // A lot is bookkeeping the shop does when the lot is packed, which is
   // usually long after the item goes up. Nothing waits on it.
   const etaIssue = termsProblem(terms);
+  // Free shipping on the item and a free-shipping offer: the offer would give nothing.
+  const shippingClash = shippingOfferClash(terms.offers, shippingMinorOf(terms));
   const canPublish = title.trim().length > 2 && priceMinor >= MIN_PRICE_MINOR && priceMinor <= MAX_PRICE_MINOR && !etaIssue
-    && groupNeeded.length === 0;
+    && !shippingClash && groupNeeded.length === 0;
   // Everything still standing between this form and a listing, said at once
   // and from the start - not one line at a time beside a button that will not press.
   const basicsNeeded = [
@@ -570,16 +653,17 @@ function SellForm({ serverDraft, draftMissing }: {
     priceMinor < MIN_PRICE_MINOR ? (price ? `a price of at least ${formatMoney(MIN_PRICE_MINOR)}` : 'a price')
       : priceMinor > MAX_PRICE_MINOR ? `a price of at most ${formatMoney(MAX_PRICE_MINOR)}` : null,
     etaIssue ? 'a delivery time' : null,
+    shippingClash ? 'free shipping taken off the offers (the item already ships free)' : null,
     ...groupNeeded,
   ].filter((text): text is string => Boolean(text));
   // The category's required questions are asked after the first press of
   // Publish, with the unanswered ones marked, rather than leaving a button
   // that will not press.
-  const missing = missingFields(category, attributes);
+  const missing = missingFields(category, answers);
   // The grade the rest of the app understands, derived from the category's own
   // wording ("Deadstock", "New with tags") rather than asked for twice.
-  const condition = conditionTagFor(category, attributes) ?? 'LOOSE';
-  const facts = factsOf({ category, condition, attributes });
+  const condition = conditionTagFor(category, answers) ?? 'LOOSE';
+  const facts = factsOf({ category, condition, attributes: answers });
   // The lot is the answer: in one means import, out of one means in hand.
   const effectiveSourcing: Sourcing = shape === 'single' ? 'in_hand' : 'import';
   const chosenTemplate = templates.find((row) => row.id === templateId) ?? null;
@@ -622,6 +706,8 @@ function SellForm({ serverDraft, draftMissing }: {
     try {
       const result = await api.saveDraft(latest.current, serverDraftId, storeId);
       setServerDraftId(result.draft.id);
+      autoRef.current.id = result.draft.id;
+      autoRef.current.last = JSON.stringify({ ...latest.current, serverDraftId: null });
       setSavedNote('Draft saved. It is on your Drafts shelf, on any device.');
       return true;
     } catch (err) {
@@ -654,6 +740,12 @@ function SellForm({ serverDraft, draftMissing }: {
     if (!canPublish) {
       setTriedPublish(true);
       haptic('error');
+      if (shippingClash && groupNeeded.length === 0 && title.trim().length > 2 && !etaIssue
+        && priceMinor >= MIN_PRICE_MINOR && priceMinor <= MAX_PRICE_MINOR) {
+        setMore(true);
+        requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-offer-editor]')?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+        return;
+      }
       if (groupNeeded.length > 0 && title.trim().length > 2) {
         document.querySelector<HTMLElement>('.pcs-edit, .pcs-pick')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
@@ -688,7 +780,7 @@ function SellForm({ serverDraft, draftMissing }: {
         description: description.trim(),
         category,
         condition,
-        attributes,
+        attributes: answers,
         priceMinor,
         // A pre-order has no fixed count, and its bookings-close date is
         // the date it comes down.
@@ -798,7 +890,7 @@ function SellForm({ serverDraft, draftMissing }: {
       <Thumb seed={title || 'preview'} label={title || 'Your listing'} photo={leadPhoto({ photos })}
         className="thumb qloot__art">
         <RarityRibbon tier="new" />
-        <span className="qgrade">{attributes['condition'] ? facts.condition : 'Pick a condition'}</span>
+        <span className="qgrade">{answers['condition'] ? facts.condition : 'Pick a condition'}</span>
         {preOrderMode && !deal && <span className="qsticker-tag">Pre-order</span>}
       </Thumb>
       {terms.advance && <AdvanceStrip percent={Number(terms.advancePercent) || 20} />}
@@ -915,7 +1007,7 @@ function SellForm({ serverDraft, draftMissing }: {
               <PhotoGroupBox photoUrl={(photos.find((photo) => photo.isPrimary) ?? photos[0])?.url ?? null}
                 group={group} onChange={setGroup} title={title}
                 onStock={(count) => setTerms((current) => ({ ...current, quantityMode: 'fixed', quantity: String(count) }))}
-                onContinue={() => setStarted(true)} />
+                onContinue={() => setStarted(true)} mixed={mixed} bulk={bulk} onBulk={setBulk} />
             )}
           </LBox>
 
@@ -974,7 +1066,7 @@ function SellForm({ serverDraft, draftMissing }: {
             {/* The questions this category asks. A shirt has a size and a figure
                 has a box grade; one shared form asked everybody the wrong things. */}
             <CategoryFields category={category} value={attributes} onChange={setAttributes}
-              showMissing={triedPublish} />
+              showMissing={triedPublish} hide={several ? MIXABLE_FIELDS : []} />
             <label className="field">
               <span>Description</span>
               <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3}
@@ -1066,6 +1158,9 @@ function SellForm({ serverDraft, draftMissing }: {
 
           {savedNote && !error && <p className="notice notice--ok" role="status">{savedNote}</p>}
 
+          {/* Said before it goes live: once bought, it stays the item that was bought. */}
+          {showRest && verified && <p className="sellform__lock">🔒 {LOCK_AFTER_SALE_NOTE}</p>}
+
           {/* Pinned to the bottom of a phone screen, so it is never a scroll away. */}
           {showRest && (<>
           <div className="sellform__bar">
@@ -1079,7 +1174,7 @@ function SellForm({ serverDraft, draftMissing }: {
               {!deal && (
                 <button type="button" className="btn btn--ghost" disabled={savingDraft || busy}
                   onClick={() => void saveServerDraft()}>
-                  {savingDraft ? 'Saving…' : serverDraftId ? 'Save' : 'Save draft'}
+                  {savingDraft || autoSave === 'saving' ? 'Saving…' : autoSave === 'saved' ? 'Saved ✓' : serverDraftId ? 'Save' : 'Save draft'}
                 </button>
               )}
               {verified ? (

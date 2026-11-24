@@ -24,7 +24,12 @@ import '../styles/Buy.css';
 import type { DayRange } from '@shared/step-days';
 import type { Sourcing } from '@shared/enums';
 import { isPieceSold } from '@shared/pieces';
-import { PieceList, groupProblems, type DraftPiece } from './PieceEditor';
+import { mixedFields, optionsOf } from '@shared/catalog';
+import { PieceList, groupProblems, type DraftPiece, type MixedFact } from './PieceEditor';
+import { CategoryFields } from './CategoryFields';
+import { TagInput } from './PageFields';
+import { visibleFields, type Attributes } from '@shared/catalog';
+import { LOCK_AFTER_SALE_NOTE, hasBeenBought } from '@shared/listing-lock';
 
 /**
  * The small, loud pieces the Buy, Sell and Purchases screens share: stock and
@@ -367,7 +372,6 @@ export function TermsFields({ value, onChange, preOrder = false, publicLater = f
           options={[
             { id: 'free', icon: '🎁', title: 'Free shipping' },
             { id: 'paid', icon: '📮', title: 'Shipping extra', note: 'Per item' },
-            { id: 'unset', icon: '💬', title: 'Not said' },
           ]} />
         {value.shipping === 'paid' && (
           <label className="field">
@@ -376,7 +380,8 @@ export function TermsFields({ value, onChange, preOrder = false, publicLater = f
             <span className="field__hint">Charged on each item. Offers below can make it free when buyers take more.</span>
           </label>
         )}
-        <OfferEditor offers={value.offers} onChange={(offers) => set({ offers })} priceMinor={priceMinor ?? 0} />
+        <OfferEditor offers={value.offers} onChange={(offers) => set({ offers })} priceMinor={priceMinor ?? 0}
+          shippingMinor={shippingMinorOf(value)} />
         {value.offers.length > 0 && (
           <span className="field__hint">
             Offers apply on their own at checkout.{' '}
@@ -568,6 +573,13 @@ export function EditListingDialog({ listing, onClose, onSaved }: {
   listing: Listing; onClose: () => void; onSaved: (listing: Listing | null) => void;
 }) {
   const [title, setTitle] = useState(listing.title);
+  const [description, setDescription] = useState(listing.description ?? '');
+  const [attributes, setAttributes] = useState<Attributes>(() => ({ ...(listing.attributes ?? {}) }));
+  const [tags, setTags] = useState<string[]>(listing.tags ?? []);
+  // Bought once, it stays the item that was bought: the answers already given are fixed, photos can't go.
+  const bought = hasBeenBought(listing);
+  const fixed = bought ? Object.keys(listing.attributes ?? {}) : [];
+  const several = Boolean(listing.pieces?.length || listing.bundle);
   const [price, setPrice] = useState(String(listing.priceMinor / 100));
   const [terms, setTerms] = useState(() => termsDraft({
     ...listing, expiresAt: isExpired(listing) ? null : listing.expiresAt,
@@ -584,7 +596,15 @@ export function EditListingDialog({ listing, onClose, onSaved }: {
   const pieceMode: 'each' | 'set' | null = listing.pieces?.length ? 'each' : listing.setItems?.length ? 'set' : null;
   const [items, setItems] = useState<DraftPiece[]>(() => (listing.pieces?.length ? listing.pieces : listing.setItems ?? []).map((piece) => ({
     key: piece.id, id: piece.id, title: piece.title, price: String(piece.priceMinor / 100), boxes: piece.boxes, sold: isPieceSold(piece),
+    condition: piece.condition, authenticity: piece.authenticity,
   })));
+  // Condition or original-or-copy answered "Mixed": each item keeps its own, changeable here.
+  const mixed: MixedFact[] = mixedFields(listing.category, listing.attributes ?? {}).map((field) => ({
+    key: field.key as MixedFact['key'], label: field.label, options: optionsOf(field, listing.attributes ?? {}),
+  }));
+  const pieceFacts = (piece: DraftPiece) => ({
+    ...(piece.condition ? { condition: piece.condition } : {}), ...(piece.authenticity ? { authenticity: piece.authenticity } : {}),
+  });
   const leadUrl = (listing.photos.find((photo) => photo.isPrimary) ?? listing.photos[0])?.url ?? null;
   const privateDeal = Boolean(listing.privateFor);
   /** A private deal's new clock; null keeps the one it has, unless that ran out. */
@@ -612,9 +632,12 @@ export function EditListingDialog({ listing, onClose, onSaved }: {
       if (issue.length) { setError(`Still needs ${issue.join(', ')}.`); return; }
     }
     void run(async () => (await api.editListing(listing.id, {
-      title: title.trim(), ...(pieceMode === 'each' ? {} : { priceMinor: Math.round(Number(price) * 100) }), photos, ...termsBody(terms),
-      ...(pieceMode === 'each' ? { pieces: items.map((piece) => ({ ...(piece.id ? { id: piece.id } : {}), title: piece.title.trim(), priceMinor: Math.round(Number(piece.price) * 100), boxes: piece.boxes })) } : {}),
-      ...(pieceMode === 'set' ? { setItems: items.map((piece) => ({ title: piece.title.trim(), boxes: piece.boxes })) } : {}),
+      title: title.trim(), description: description.trim(), tags,
+      // Only when the category asks anything; an older listing with no answers keeps none.
+      ...(visibleFields(listing.category, attributes).length > 0 ? { attributes } : {}),
+      ...(pieceMode === 'each' ? {} : { priceMinor: Math.round(Number(price) * 100) }), photos, ...termsBody(terms),
+      ...(pieceMode === 'each' ? { pieces: items.map((piece) => ({ ...(piece.id ? { id: piece.id } : {}), title: piece.title.trim(), priceMinor: Math.round(Number(piece.price) * 100), boxes: piece.boxes, ...pieceFacts(piece) })) } : {}),
+      ...(pieceMode === 'set' ? { setItems: items.map((piece) => ({ title: piece.title.trim(), boxes: piece.boxes, ...pieceFacts(piece) })) } : {}),
       // Sales made while this was open have already taken their units; only the change here is applied.
       quantityWas: listing.quantityAvailable,
       // A deal keeps its clock unless a new one was picked.
@@ -635,10 +658,17 @@ export function EditListingDialog({ listing, onClose, onSaved }: {
               : 'This expired, so buyers cannot purchase it. Clear the expiry or set a new one to put it back on sale.'}
           </p>
         )}
+        {bought && <p className="notice notice--warn editlock">🔒 {LOCK_AFTER_SALE_NOTE}</p>}
         <LBox icon="🏷️" title="The item">
           <label className="field">
             <span>Title</span>
             <input value={title} onChange={(e) => setTitle(e.target.value)} required />
+            {bought && <span className="field__hint">Fix a typo or add a detail - it can&apos;t become a different item.</span>}
+          </label>
+          <label className="field">
+            <span>Description</span>
+            <textarea rows={4} value={description} onChange={(e) => setDescription(e.target.value)}
+              placeholder="What it is, what's in the box, any marks or wear." />
           </label>
           {pieceMode !== 'each' && (
             <label className="field">
@@ -646,13 +676,31 @@ export function EditListingDialog({ listing, onClose, onSaved }: {
               <input type="number" inputMode="decimal" min="1" value={price} onChange={(e) => setPrice(e.target.value)} required />
             </label>
           )}
-          <PhotoManager photos={photos} onChange={setPhotos} />
+          <PhotoManager photos={photos} onChange={setPhotos} keep={bought ? listing.photos.map((photo) => photo.url ?? '') : []} />
+        </LBox>
+        {/* Condition, original or copy, and the rest of what the category asks. Once
+            bought, the answers already given are shown, fixed; blanks can be filled. */}
+        {visibleFields(listing.category, attributes).length > 0 && (
+          <LBox icon="📋" title="Condition & details" hint={bought ? 'Already answered when it sold - these stay as they are.' : undefined}>
+            {fixed.length > 0 && (
+              <dl className="editlock__facts">
+                {visibleFields(listing.category, attributes).filter((field) => fixed.includes(field.key)).map((field) => (
+                  <div key={field.key}><dt>{field.label}</dt><dd>🔒 {optionsOf(field, attributes).find((option) => option.value === attributes[field.key])?.label ?? attributes[field.key]}</dd></div>
+                ))}
+              </dl>
+            )}
+            <CategoryFields category={listing.category} value={attributes} allowMixed={several}
+              hide={fixed} onChange={(next) => setAttributes({ ...next, ...Object.fromEntries(fixed.map((key) => [key, listing.attributes![key]!])) })} />
+          </LBox>
+        )}
+        <LBox icon="#️⃣" title="Tags">
+          <TagInput value={tags} onChange={setTags} hint="Words buyers search for: resin, sealed, 1/7 scale." fullHint="Six tags is the most a listing carries." />
         </LBox>
         {pieceMode && leadUrl && (
           <LBox icon={pieceMode === 'each' ? '🏷️' : '📦'} title={pieceMode === 'each' ? 'Items in this photo' : 'What the set holds'}
             hint={pieceMode === 'each' ? 'Rename, reprice, add or take off items. Sold items stay as they sold.' : 'The set price is shared out over these items.'}>
             <PieceList photoUrl={leadUrl} mode={pieceMode} pieces={items} onPieces={(update) => setItems(update)}
-              setPriceMinor={Math.round(Number(price) * 100)} />
+              setPriceMinor={Math.round(Number(price) * 100)} mixed={mixed} />
           </LBox>
         )}
         <TermsFields value={terms} onChange={setTerms} preOrder={Boolean(listing.preOrder)} privateDeal={privateDeal}

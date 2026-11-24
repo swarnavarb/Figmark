@@ -73,7 +73,6 @@
   box-shadow: inset 0 0 0 1px var(--border);
 }
 .buybox__buy:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 12px 28px var(--acid-glow); background: var(--acid); }
-.buybox__save { flex: 0 0 48px; padding: 0; justify-content: center; }
 .buybox__opening::after { content: '…'; display: inline-block; width: 1em; text-align: left; animation: lp-dots 1s steps(4) infinite; }
 .pocard__head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--s3); align-items: center; }
 .pocard__what { display: grid; gap: 2px; min-width: 0; }
@@ -83,7 +82,23 @@
 .gallery__badges { position: absolute; top: 12px; left: 12px; display: flex; flex-wrap: wrap; gap: 6px; }
 .hashtags { display: flex; flex-wrap: wrap; gap: var(--s2); }
 .hashtag:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(168, 85, 247, 0.25); color: var(--text); }
-.posts__head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
+.posts__head { display: flex; align-items: center; gap: 10px; }
+.posts__icon { flex: none; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 12px; font-size: calc(18px * var(--text-scale)); background: linear-gradient(135deg, rgba(6, 214, 231, 0.18), rgba(168, 85, 247, 0.22)); box-shadow: inset 0 0 0 1px rgba(168, 85, 247, 0.35); }
+.posts__titles { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.posts__titles small { font-size: var(--t-xs); color: var(--text-faint); }
+/* Common questions, one tap each: a row that slides on a phone. */
+.posts__starters { display: flex; gap: 6px; overflow-x: auto; margin: 0 calc(var(--s4) * -1); padding: 2px var(--s4); scrollbar-width: none; }
+.posts__starters::-webkit-scrollbar { display: none; }
+.posts__starter {
+  flex: none; padding: 7px 12px; border: 0; border-radius: var(--r-pill); font: inherit; font-size: var(--t-xs); font-weight: var(--w-semi);
+  color: var(--text); background: var(--surface-2); box-shadow: inset 0 0 0 1px rgba(168, 85, 247, 0.35); cursor: pointer;
+  transition: background var(--dur-1) var(--ease), transform 160ms var(--ease-out);
+}
+.posts__starter:hover { background: rgba(168, 85, 247, 0.16); }
+.posts__starter:active { transform: scale(0.96); }
+/* Whether the shop has answered a question yet. */
+.posts__state { justify-self: start; padding: 2px 8px; border-radius: var(--r-pill); font-size: var(--t-2xs); font-weight: var(--w-bold); color: var(--warn); background: rgba(251, 191, 36, 0.12); }
+.posts__state.is-answered { color: var(--ok); background: rgba(52, 211, 153, 0.12); }
 .posts__count {
   min-width: 26px; padding: 2px var(--s2); border-radius: var(--r-pill); text-align: center; font-size: var(--t-xs); font-weight: var(--w-semi);
   background: var(--surface-2); color: var(--text-dim);
@@ -97,9 +112,10 @@
   box-shadow: inset 0 -30px 34px -20px rgba(0, 0, 0, 0.45);
 }
 .sellercard__awning { position: absolute; inset: 0 0 auto; height: 40px; z-index: 1; }
-.sellercard__sign { position: relative; z-index: 2; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: end; }
+.sellercard__sign { position: relative; z-index: 2; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: end; }
 .sellercard__who { display: grid; gap: 0; min-width: 0; color: #fff; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.45); }
 .sellercard__who .dtile__label, .sellercard__who .sellercard__where, .sellercard__who .sellercard__name { color: #fff; }
+.sellercard__who .sellercard__name { font-size: var(--t-md); line-height: 1.25; overflow-wrap: anywhere; }
 .sellercard__stat dd small { font-size: var(--t-xs); color: var(--text-faint); font-weight: var(--w-semi); }
 .sellercard__acts .btn:not(.btn--ghost) { background: var(--acid); color: var(--ink-black); border: 0; }
 .lshare__text { display: grid; gap: 2px; flex: 1; min-width: 0; }
@@ -173,22 +189,19 @@
 }
 .sellercard__awning .canopy { height: 40px; }
 .sellercard__sign .sellercard__who { padding-bottom: var(--s2); }
-.sellercard__sign .sellercard__tier { align-self: center; }
 .sellercard__avatar {
   display: grid; padding: 3px; border-radius: 50%; margin-bottom: -1px;
   background: var(--sf-grad, var(--grad-hero)); box-shadow: 0 0 0 3px var(--surface), 0 8px 18px rgba(0, 0, 0, 0.4);
 }
 .sellercard__who .dtile__label { opacity: 0.8; }
-.sellercard__tier {
-  display: inline-flex; align-items: center; gap: var(--s1); padding: 3px 9px; border-radius: var(--r-pill); text-transform: capitalize;
-  font-size: var(--t-xs); font-weight: var(--w-bold); color: #fff; background: rgba(0, 0, 0, 0.28); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.6);
-}
 .sellercard__where { display: inline-flex; align-items: center; gap: var(--s1); font-size: var(--t-xs); color: var(--text-dim); }
 .sellercard__stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s2); margin: 0; }
+.sellercard__stats > .sellercard__stat:last-child:nth-child(odd) { grid-column: 1 / -1; }
 .sellercard__stat { display: grid; gap: 1px; padding: var(--s2) 10px; border-radius: var(--r-md); background: var(--surface-2); box-shadow: inset 3px 0 0 var(--sf-hue, var(--pink)); }
 .sellercard__stat--ok dd { color: var(--ok); }
 .sellercard__stat--warn dd { color: var(--warn); }
 .sellercard__stat--low dd { color: #F87171; }
+.sellercard__stat dd:not(.sellercard__note) { font-size: var(--t-md); line-height: 1.25; overflow-wrap: anywhere; }
 .sellercard__acts { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
 .lp__about .hashtags { margin-top: 2px; }
 .posts__compose--locked {
@@ -196,8 +209,32 @@
   font: inherit; font-size: var(--t-sm); text-align: left; color: var(--text-faint); background: var(--surface-2); cursor: pointer;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
-/* Bump on an item's own page, with its ⓘ. */
-.buybox__bump { display: inline-flex; align-items: center; gap: 6px; }
+/* The shop's own item: Edit across the top, then Bump and List another side by side. */
+.buybox__acts--own { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s2); }
+.buybox__acts--own .buybox__buy { grid-column: 1 / -1; }
+/* Bump on an item's own page, with its ⓘ in the corner. */
+.buybox__bump { position: relative; display: flex; min-width: 0; }
+.buybox__bumpbtn {
+  flex: 1; min-width: 0; min-height: 52px; display: flex; align-items: center; gap: 10px; padding: 8px 30px 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--acid) 38%, transparent); border-radius: var(--r-md);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--acid) 16%, var(--surface-2)), var(--surface-2));
+  color: var(--text); font: inherit; text-align: left; cursor: pointer;
+  transition: transform var(--dur-1) ease, border-color var(--dur-1) ease, box-shadow var(--dur-1) ease;
+}
+.buybox__bumpbtn:hover:not(:disabled) { transform: translateY(-1px); border-color: var(--acid); box-shadow: 0 8px 22px var(--acid-glow); }
+.buybox__bumpbtn:active:not(:disabled) { transform: scale(0.98); }
+.buybox__bumpbtn:disabled { opacity: 0.6; cursor: default; }
+.buybox__bumpicon {
+  flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%;
+  background: var(--acid); color: var(--ink-black);
+}
+.buybox__bumptext { display: grid; min-width: 0; line-height: 1.2; }
+.buybox__bumptext b { font-size: var(--t-sm); }
+.buybox__bumptext small { color: var(--text-dim); font-size: var(--t-2xs); }
+.buybox__bump > :last-child:not(.buybox__bumpbtn) { position: absolute; top: 6px; right: 6px; }
+.buybox__bumpbtn--plain { padding-right: 10px; border-color: var(--border-strong); background: var(--surface-2); }
+.buybox__bumpbtn--plain:hover:not(:disabled) { border-color: var(--text-dim); box-shadow: none; }
+.buybox__bumpbtn--plain .buybox__bumpicon { background: var(--surface); color: var(--text); box-shadow: inset 0 0 0 1px var(--border-strong); }
 .lshare {
   display: flex; align-items: center; gap: var(--s3); width: 100%; margin: var(--s3) 0; padding: var(--s3) 14px;
   border-radius: var(--r-md); border: 1px solid var(--border-strong); background: var(--surface);
@@ -259,10 +296,16 @@
 .buybar__buy { flex: none; height: 44px; padding: 0 var(--s4); background: var(--acid); color: var(--ink-black); }
 @keyframes buybar-in { from { opacity: 0; transform: translate(-50%, 16px); } to { opacity: 1; transform: translate(-50%, 0); } }
 @media (prefers-reduced-motion: reduce) { .buybar { animation: none; } }
-/* Room under the page for the bar, so it never sits on the last of it. */
-.buybar__room { height: 76px; }
+
 
 /* The level and Shop tags sit on the shop's own colour: keep them readable on any hue. */
 .sellercard__who .lvtag__title { background: none; color: rgba(255, 255, 255, 0.92); text-shadow: 0 1px 4px rgba(0, 0, 0, 0.55); }
 .sellercard__who .lvtag__shop { color: #fff; background: rgba(0, 0, 0, 0.35); border-color: rgba(255, 255, 255, 0.55); }
 .sellercard__pending { margin: 0; font-size: var(--t-xs); color: var(--text-faint); line-height: 1.45; }
+
+/* The shop's See the listings, and a visitor's See the items when nothing can be bought. */
+.buybox__see { width: 100%; justify-content: center; }
+.buybox__acts--own .buybox__see { grid-column: 1 / -1; }
+
+/* The shop's own answers stand out from the questions. */
+.post--seller .post__bubble { background: rgba(168, 85, 247, 0.12); box-shadow: inset 2px 0 0 var(--violet-text); }

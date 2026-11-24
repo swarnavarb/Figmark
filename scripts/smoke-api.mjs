@@ -602,6 +602,24 @@ await check('nothing is listed for nothing', async () => {
   assert.equal(zeroed.status, 400, 'an edit cannot take the price to nothing either');
 });
 
+await check('an edit can change the description, tags and condition - until somebody buys it', async () => {
+  const item = (await createListing(req({ headers: auth, body: { title: 'Hot Toys Iron Man Mark 85', priceMinor: 9_000 } }), ctx)).jsonBody.listing;
+  const edited = await editListing(req({ headers: auth, params: { id: item.id }, body: { description: 'Boxed, all parts.', tags: ['marvel', '#hottoys'] } }), ctx);
+  assert.equal(edited.status, 200, JSON.stringify(edited.jsonBody));
+  assert.equal(edited.jsonBody.listing.description, 'Boxed, all parts.');
+  assert.deepEqual(edited.jsonBody.listing.tags, ['marvel', 'hottoys']);
+  // Somebody buys it: it stays the item they bought.
+  const repo = await getRepository();
+  await repo.updateListing({ ...(await repo.getListing(item.id)), soldCount: 1 });
+  const typo = await editListing(req({ headers: auth, params: { id: item.id }, body: { title: 'Hot Toys Iron Man Mark 85 (1/6)' } }), ctx);
+  assert.equal(typo.status, 200, 'a detail added to the title is fine');
+  const swapped = await editListing(req({ headers: auth, params: { id: item.id }, body: { title: 'Nendoroid Frieren' } }), ctx);
+  assert.equal(swapped.status, 409, 'a different item is refused');
+  assert.equal(swapped.jsonBody.error, 'locked_after_sale');
+  const priced = await editListing(req({ headers: auth, params: { id: item.id }, body: { priceMinor: 8_000, description: 'Still boxed.' } }), ctx);
+  assert.equal(priced.status, 200, 'price and description still change');
+});
+
 await check('search finds a word in any of title, description, category or tags', async () => {
   const made = (await createListing(req({
     headers: auth,

@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { ListingPiece } from '@shared/pieces';
+import type { ListingOffer } from '@shared/offers';
 import { isPieceSold, piecesLeft } from '@shared/pieces';
 import type { PhotoBox } from '../api';
 import { formatMoney } from '../format';
 import { haptic } from '../haptics';
 import { Modal } from './ui';
+import { Svg } from './ListingBlocks';
 
 /*
  * One photo, many things for sale: what a buyer and a seller both look at.
@@ -124,12 +126,33 @@ export function piecesCount(pieces: readonly ListingPiece[]): string {
  * with crosses on what has gone, and every piece listed with its price. A
  * tap on either picks a piece; Buy opens the picker with what was picked.
  */
-export function PieceBoard({ src, pieces, title, onBuy, disabled }: {
+/** An item's name, with its own condition under it when the listing's is "Mixed". */
+function PieceName({ title, facts }: { title: string; facts?: string }) {
+  if (!facts) return <span className="pcs-row__title">{title}</span>;
+  return (
+    <span className="pcs-row__title pcs-row__title--facts">
+      <span>{title}</span>
+      <small>{facts}</small>
+    </span>
+  );
+}
+
+export function PieceBoard({ src, pieces, title, onBuy, onCart, shippingMinor, offers = [], disabled, describe, bare = false }: {
   src: string;
   pieces: ListingPiece[];
   title: string;
   onBuy: (picked: string[]) => void;
+  /** Puts what is picked in the cart instead of checking out. */
+  onCart?: (picked: string[]) => void;
+  /** Said beside the total, never added to it. */
+  shippingMinor?: number | null;
+  /** The item's offers: free shipping on 2 or more counts the items picked here, lot or no lot. */
+  offers?: readonly ListingOffer[];
   disabled?: boolean;
+  /** Each item's own condition or original-or-copy, when the listing's is "Mixed". */
+  describe?: (piece: ListingPiece) => string;
+  /** Inside a popup that already has the heading and its own frame. */
+  bare?: boolean;
 }) {
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
   const toggle = (id: string) => {
@@ -141,13 +164,21 @@ export function PieceBoard({ src, pieces, title, onBuy, disabled }: {
     });
   };
   const total = pieces.filter((piece) => picked.has(piece.id)).reduce((sum, piece) => sum + piece.priceMinor, 0);
+  // Picked together they ship together, so "free shipping on 2 or more" is met here and now.
+  const shipFree = offers.find((offer) => offer.kind === 'free_shipping' && picked.size >= (offer.minItems ?? 2));
+  const nextFree = shipFree ? null : offers.find((offer) => offer.kind === 'free_shipping' && (offer.minItems ?? 2) > picked.size);
   return (
-    <section className="pcs-board" aria-label="Items in this photo">
-      <header className="pcs-board__head">
-        <h2>Pick from the photo</h2>
-        <span className="pcs-board__count">{piecesCount(pieces)}</span>
-      </header>
-      <p className="pcs-board__hint">Each item has its own price. Tap the ones you want, then check out once.</p>
+    <section className={`pcs-board${bare ? ' pcs-board--bare' : ''}`} aria-label="Items in this photo">
+      {!bare && (
+        <header className="pcs-board__head">
+          <h2>Pick from the photo</h2>
+          <span className="pcs-board__count">{piecesCount(pieces)}</span>
+        </header>
+      )}
+      <p className="pcs-board__hint">
+        {bare && <b className="pcs-board__count">{piecesCount(pieces)} · </b>}
+        {disabled ? 'Each item has its own price.' : 'Each item has its own price. Tap the ones you want, then check out once.'}
+      </p>
       <PiecePhoto src={src} pieces={pieces} picked={picked} onPick={disabled ? undefined : toggle} alt={title} />
       <ol className="pcs-list">
         {pieces.map((piece, index) => {
@@ -159,7 +190,7 @@ export function PieceBoard({ src, pieces, title, onBuy, disabled }: {
                 disabled={sold || disabled} aria-pressed={sold ? undefined : on} onClick={() => toggle(piece.id)}>
                 <span className="pcs-row__n">{index + 1}</span>
                 <PieceThumb src={src} box={piece.boxes[0] ?? null} sold={sold} />
-                <span className="pcs-row__title">{piece.title}</span>
+                <PieceName title={piece.title} facts={describe?.(piece)} />
                 <span className="pcs-row__price">{sold ? 'Sold' : formatMoney(piece.priceMinor)}</span>
                 <span className="pcs-row__tick" aria-hidden="true">{on ? '✓' : ''}</span>
               </button>
@@ -169,10 +200,24 @@ export function PieceBoard({ src, pieces, title, onBuy, disabled }: {
       </ol>
       {picked.size > 0 && (
         <div className="pcs-board__bar">
-          <span><b>{picked.size}</b> picked · <b>{formatMoney(total)}</b></span>
-          <button type="button" className="btn" onClick={() => onBuy([...picked])} disabled={disabled}>
-            Buy {picked.size === 1 ? 'this' : `these ${picked.size}`} →
-          </button>
+          <span className="pcs-board__sum">
+            <span><b>{picked.size}</b> picked · <b>{formatMoney(total)}</b></span>
+            {shippingMinor && shipFree ? <small className="pcs-board__free">🎁 Free shipping · offer</small>
+              : shippingMinor ? (
+                <small>+ {formatMoney(shippingMinor)} shipping{nextFree ? ` · pick ${(nextFree.minItems ?? 2) - picked.size} more for free shipping` : ''}</small>
+              ) : null}
+          </span>
+          <span className="pcs-board__go">
+            {onCart && (
+              <button type="button" className="btn btn--ghost pcs-board__cart" aria-label="Add to cart" title="Add to cart"
+                onClick={() => onCart([...picked])} disabled={disabled}>
+                <Svg name="cart" size={17} />
+              </button>
+            )}
+            <button type="button" className="btn" onClick={() => onBuy([...picked])} disabled={disabled}>
+              Buy {picked.size === 1 ? 'this' : `these ${picked.size}`} →
+            </button>
+          </span>
         </div>
       )}
     </section>
@@ -184,7 +229,7 @@ export function PieceBoard({ src, pieces, title, onBuy, disabled }: {
  * photo, title and price; sold ones crossed out. The total, and the advance
  * when the shop takes one, follow what is ticked.
  */
-export function PiecePicker({ src, pieces, initial, advancePercent, shippingMinor, busy, onClose, onCheckout, cartLabel }: {
+export function PiecePicker({ src, pieces, initial, advancePercent, shippingMinor, busy, onClose, onCheckout, cartLabel, describe }: {
   src: string;
   pieces: ListingPiece[];
   initial?: readonly string[];
@@ -195,6 +240,8 @@ export function PiecePicker({ src, pieces, initial, advancePercent, shippingMino
   onCheckout: (ids: string[], to: 'checkout' | 'cart') => void;
   /** Shown as a second button when the item can go in the cart. */
   cartLabel?: string;
+  /** Each item's own condition or original-or-copy, when the listing's is "Mixed". */
+  describe?: (piece: ListingPiece) => string;
 }) {
   const left = useMemo(() => piecesLeft(pieces), [pieces]);
   const [picked, setPicked] = useState<Set<string>>(() =>
@@ -236,7 +283,7 @@ export function PiecePicker({ src, pieces, initial, advancePercent, shippingMino
                   <input type="checkbox" checked={on} disabled={sold} onChange={() => toggle(piece.id)} />
                   <span className="pcs-row__n">{index + 1}</span>
                   <PieceThumb src={src} box={piece.boxes[0] ?? null} sold={sold} />
-                  <span className="pcs-row__title">{piece.title}</span>
+                  <PieceName title={piece.title} facts={describe?.(piece)} />
                   <span className="pcs-row__price">{sold ? 'Sold' : formatMoney(piece.priceMinor)}</span>
                 </label>
               </li>

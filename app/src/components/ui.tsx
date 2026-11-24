@@ -388,7 +388,7 @@ export function useConfirm() {
  */
 type Tag = { level: number; title: string; shop?: boolean };
 
-export function PersonLink({ party, className, children, bare, levelFrom = 0, after }: {
+export function PersonLink({ party, className, children, bare, levelFrom = 0, after, shopMark = true }: {
   party: { name: string; handle: string | null; level?: Tag; id?: string | null; href?: string } | null | undefined;
   className?: string;
   children?: ReactNode;
@@ -402,6 +402,8 @@ export function PersonLink({ party, className, children, bare, levelFrom = 0, af
   levelFrom?: number;
   /** Sits on the name's own line, after it - such as a Follow button - never on the tagline under it. */
   after?: ReactNode;
+  /** Leave the "Shop" mark off, where it is plain the name is a shop's. */
+  shopMark?: boolean;
 }) {
   if (!party) return null;
   const label = children ?? party.name;
@@ -415,12 +417,12 @@ export function PersonLink({ party, className, children, bare, levelFrom = 0, af
   const mark = party.level?.shop ? null : <ManagerMark id={party.id} handle={party.handle} />;
   if (bare || !party.level) return after ? <span className="pname__line">{name}{mark}{after}</span> : <>{name}{mark}</>;
   if (party.level.level < levelFrom) {
-    return party.level.shop
+    return party.level.shop && shopMark
       ? <span className="pname"><span className="pname__line">{name}{after}</span><span className="lvtag"><span className="lvtag__shop">Shop</span></span></span>
       : <span className="pname__line">{name}{mark}{after}</span>;
   }
   // The level reads as a tagline under the name.
-  return <span className="pname"><span className="pname__line">{name}{mark}{after}</span><LevelChip tag={party.level} /></span>;
+  return <span className="pname"><span className="pname__line">{name}{mark}{after}</span><LevelChip tag={shopMark ? party.level : { ...party.level, shop: false }} /></span>;
 }
 
 /**

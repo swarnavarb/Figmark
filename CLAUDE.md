@@ -12,3 +12,8 @@ Rules:
 - For review impact on changed files, use `graphify review-delta --graph .graphify/graph.json` instead of generic traversal
 - Read `.graphify/GRAPH_REPORT.md` only for broad architecture review or when `query` / `path` / `explain` do not surface enough context
 - After modifying code files in this session, run `npx graphify hook-rebuild` to keep the graph current
+
+## Deploying
+
+- Deploy to the `preview` branch by default: after pushing your working branch, merge it into `preview` (`git fetch origin preview && git checkout -B preview FETCH_HEAD && git merge --no-ff --no-edit <branch> -m "Merge <what changed> into preview"`), push `preview`, and switch back to your branch. The `deploy_preview` job publishes it to the preview environment.
+- Never push to `main` or `development` without explicit permission.

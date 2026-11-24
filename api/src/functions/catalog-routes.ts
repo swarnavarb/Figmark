@@ -1,3 +1,4 @@
+import { lockedChange } from '../../../shared/listing-lock.js';
 import {
   MAX_BUNDLE_COUNT, cleanBox, cleanPieces, cleanSetItems, fromPriceMinor, hasPieces, isPieceSold, mergePieces, piecesLeft, piecesName, publicPieces, spreadUnits,
   type BundleCount, type ListingPiece, type OrderPiece,
@@ -8,13 +9,13 @@ import { MAX_THINGS } from '../../../shared/photo-things.js';
 import { listedInShop, shopRefusal, shopStatusOf } from '../../../shared/shop-status.js';
 import { isProActive } from '../../../shared/billing.js';
 import { lockTimedOffers, repriceBasket, snapshotFromListing } from '../offers.js';
-import { cleanOffers } from '../../../shared/offers.js';
+import { cleanOffers, shippingOfferClash } from '../../../shared/offers.js';
 import { randomUUID } from 'node:crypto';
 import { forgetFollowerCount, realFollowerCount } from '../follower-count.js';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import type { Sourcing } from '../../../shared/enums.js';
 import {
-  authenticityValues, canonicalCategory, categoriesIn, cleanAttributes, conditionTagFor,
+  authenticityValues, canonicalCategory, categoriesIn, cleanAttributes, cleanPieceFacts, conditionTagFor,
   PRICE_RANGE_MESSAGE, listablePrice, priceCeiling,
 } from '../../../shared/catalog.js';
 import { PERSON_FOLLOW, isPersonFollow, storeTag } from '../../../shared/storefront.js';
@@ -1094,9 +1095,18 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
   // behaviour: just a category and a grade.
   let attributes: Record<string, string> | undefined;
   if (body.attributes !== undefined && body.attributes !== null) {
-    const cleaned = cleanAttributes(category, body.attributes);
+    // "Mixed" condition or original-or-copy is for a photo of several items only.
+    const cleaned = cleanAttributes(category, body.attributes, { allowMixed: Boolean(pieces || setItems) });
     if (cleaned.error) return error(400, 'invalid_listing', cleaned.error);
     attributes = cleaned.attributes;
+  }
+  // Each item's own answer to what was "Mixed", in the order the rows were sent.
+  if (attributes && (pieces || setItems)) {
+    const sent: unknown = pieces ? body.pieces : body.setItems;
+    const sentRows = (Array.isArray(sent) ? sent : []) as Record<string, unknown>[];
+    const withFacts = (rows: ListingPiece[]) => rows.map((row, index) => ({ ...row, ...cleanPieceFacts(category, attributes!, sentRows[index] ?? {}) }));
+    if (pieces) pieces = withFacts(pieces);
+    if (setItems) setItems = withFacts(setItems);
   }
 
   const offerProblem = offerRefusal(body, priceMinor);
@@ -1833,7 +1843,12 @@ async function myListings(request: HttpRequest, _context: InvocationContext) {
 }
 
 /** Why this shipping fee or these offers cannot be saved, or null when they can. */
-function offerRefusal(body: { shippingMinor?: number | null; offers?: unknown }, priceMinor: number): ReturnType<typeof error> | null {
+function offerRefusal(
+  body: { shippingMinor?: number | null; offers?: unknown },
+  priceMinor: number,
+  /** On an edit, what the listing has now, for whichever of the two the edit leaves alone. */
+  current?: Pick<Listing, 'shippingMinor' | 'offers'>,
+): ReturnType<typeof error> | null {
   if (body.shippingMinor !== undefined && body.shippingMinor !== null) {
     const fee = Number(body.shippingMinor);
     if (!Number.isFinite(fee) || fee < 0 || fee > 10_000_000) {
@@ -1843,6 +1858,13 @@ function offerRefusal(body: { shippingMinor?: number | null; offers?: unknown },
   if (body.offers !== undefined) {
     const { error: problem } = cleanOffers(body.offers, priceMinor);
     if (problem) return error(400, 'invalid_offer', problem);
+  }
+  // Free shipping on the item already: a free-shipping offer would give nothing.
+  if (body.shippingMinor !== undefined || body.offers !== undefined) {
+    const shipping = body.shippingMinor !== undefined ? body.shippingMinor : current?.shippingMinor;
+    const offers = body.offers !== undefined ? cleanOffers(body.offers, priceMinor).offers : current?.offers;
+    const clash = shippingOfferClash(offers, shipping === null || shipping === undefined ? shipping : Math.round(Number(shipping)));
+    if (clash) return error(400, 'invalid_offer', clash);
   }
   return null;
 }
@@ -2001,6 +2023,9 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
     pieces?: unknown;
     /** What a set holds, as the seller left it. */
     setItems?: unknown;
+    /** The category's questions - condition, original or copy, type, size… */
+    attributes?: unknown;
+    tags?: unknown;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -2009,6 +2034,23 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
   }
 
   if (body.title !== undefined && !body.title.trim()) return error(400, 'invalid_listing', 'A title is required.');
+  // The category's answers, checked as on the way in; "Mixed" only for several items in one photo.
+  let attributes: Record<string, string> | undefined;
+  if (body.attributes !== undefined && body.attributes !== null) {
+    const cleaned = cleanAttributes(listing.category, body.attributes, { allowMixed: hasPieces(listing) || Boolean(listing.bundle) });
+    if (cleaned.error) return error(400, 'invalid_listing', cleaned.error);
+    attributes = cleaned.attributes;
+  }
+  const tags = Array.isArray(body.tags)
+    ? [...new Set(body.tags.filter((tag): tag is string => typeof tag === 'string').map((tag) => tag.trim().replace(/^#/, '')).filter(Boolean))].slice(0, 20)
+    : undefined;
+  // Bought once, it stays the item that was bought (shared/listing-lock.ts).
+  const locked = lockedChange(listing, {
+    ...(body.title !== undefined ? { title: body.title.trim() } : {}),
+    attributes: attributes ?? null,
+    photos: Array.isArray(body.photos) ? body.photos : null,
+  });
+  if (locked) return error(409, 'locked_after_sale', locked);
   // The items in the photo, edited after publishing. Sold pieces stay as they
   // sold; the fee count is worked out from the photo again, and never drops
   // below what the photo showed when it was listed.
@@ -2022,7 +2064,10 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
     const counted = await countThings(leadBlob, cleaned.pieces.map((piece) => piece.boxes), listing.foundBoxes ?? []).catch(() => null);
     const units = spreadUnits(cleaned.pieces.map((_, index) => counted?.perRow[index] ?? 1), counted?.charged ?? 0);
     editedPieces = {
-      pieces: cleaned.pieces.map((piece, index) => ({ ...piece, units: units[index] ?? 1 })),
+      pieces: cleaned.pieces.map((piece, index) => ({
+        ...piece, units: units[index] ?? 1,
+        ...cleanPieceFacts(listing.category, listing.attributes ?? {}, (sent[index] ?? {}) as Record<string, unknown>),
+      })),
       ids: sent.map((entry) => (typeof entry?.id === 'string' ? entry.id : null)),
     };
   }
@@ -2046,7 +2091,7 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
   }
   const newPrice = body.priceMinor === undefined ? undefined : listablePrice(body.priceMinor);
   if (newPrice === null) return error(400, 'invalid_listing', PRICE_RANGE_MESSAGE);
-  const offerProblem = offerRefusal(body, newPrice ?? listing.priceMinor);
+  const offerProblem = offerRefusal(body, newPrice ?? listing.priceMinor, listing);
   if (offerProblem) return offerProblem;
   // Stock is a change, not a count. The form was drawn minutes ago; a sale
   // since then has already taken its unit, and writing the old number back
@@ -2089,6 +2134,11 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
     }
     if (body.title !== undefined) next.title = body.title.trim();
     if (body.description !== undefined) next.description = body.description.trim();
+    if (tags) next.tags = tags;
+    if (attributes) {
+      next.attributes = attributes;
+      next.condition = conditionTagFor(current.category, attributes) || current.condition;
+    }
     if (photos) next.photos = photos;
     if (editedPieces && hasPieces(current)) {
       const merged = mergePieces(current.pieces!, editedPieces.pieces, editedPieces.ids);
@@ -2111,9 +2161,14 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
     if (stockDelta !== 0 && !hasPieces(current)) next.quantityAvailable = Math.max(0, current.quantityAvailable + stockDelta);
     // A set's items share its price as it is now, whichever of the two changed.
     if (current.bundle && (editedSet || (body.priceMinor !== undefined && current.setItems?.length))) {
-      const items = cleanSetItems(editedSet?.items ?? current.setItems, next.priceMinor);
+      const source: unknown = editedSet?.items ?? current.setItems;
+      const items = cleanSetItems(source, next.priceMinor);
       if (!('error' in items)) {
-        next.setItems = items.items.map((item, index) => ({ ...item, id: current.setItems?.[index]?.id ?? item.id }));
+        const rows = (Array.isArray(source) ? source : []) as Record<string, unknown>[];
+        next.setItems = items.items.map((item, index) => ({
+          ...item, id: current.setItems?.[index]?.id ?? item.id,
+          ...cleanPieceFacts(current.category, current.attributes ?? {}, rows[index] ?? {}),
+        }));
         if (editedSet) {
           next.bundleCount = { declared: editedSet.rows, detected: editedSet.found, charged: editedSet.charged };
         }

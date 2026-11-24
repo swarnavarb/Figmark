@@ -240,6 +240,22 @@ export function DetailBlocks({ listing }: { listing: Listing }) {
     });
   }
 
+  // Two to a row, always: an odd count is topped up with what is worth
+  // knowing next - how much attention it has had, then when it was listed.
+  const extras: Omit<Parameters<typeof Tile>[0], 'i'>[] = [];
+  if (listing.likeCount > 0 || listing.viewCount > 0) {
+    extras.push({
+      tone: 'cool', icon: 'views', label: 'Interest',
+      value: listing.viewCount > 0 ? `${listing.viewCount.toLocaleString('en-IN')} view${listing.viewCount === 1 ? '' : 's'}` : `${listing.likeCount} saved`,
+      note: listing.viewCount > 0 && listing.likeCount > 0 ? `${listing.likeCount} saved it` : undefined,
+    });
+  }
+  extras.push({
+    tone: 'sea', icon: 'clock', label: 'Listed', value: new Date(listing.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+    note: listing.category || undefined,
+  });
+  while (tiles.length % 2 === 1 && extras.length > 0) tiles.push(extras.shift()!);
+
   return (
     <div className="dtiles">
       {tiles.map((tile, i) => <Tile key={tile.label} {...tile} i={i} />)}
@@ -252,18 +268,21 @@ export function DetailBlocks({ listing }: { listing: Listing }) {
  * thumbnails under it, and a tap on the stage opens it full screen, growing
  * out of the frame it was in.
  */
-export function Gallery({ photos, title, fallback, children }: {
+export function Gallery({ photos, title, fallback, children, overlay }: {
   photos: string[];
   title: string;
   /** What stands in when there are no photos at all. */
   fallback: ReactNode;
   /** Badges laid over the stage. */
   children?: ReactNode;
+  /** A control over the stage's top-right corner - the save heart. Beside the stage, not in it: the stage is a button. */
+  overlay?: ReactNode;
 }) {
   const [at, setAt] = useState(0);
   const [open, setOpen] = useState<DOMRect | null>(null);
 
-  if (photos.length === 0) return <div className="gallery"><div className="gallery__stage">{fallback}{children}</div></div>;
+  const over = overlay ? <span className="gallery__over">{overlay}</span> : null;
+  if (photos.length === 0) return <div className="gallery"><div className="gallery__stage">{fallback}{children}</div>{over}</div>;
 
   return (
     <div className="gallery">
@@ -282,6 +301,7 @@ export function Gallery({ photos, title, fallback, children }: {
         {children}
       </button>
 
+      {over}
       {photos.length > 1 && (
         <div className="gallery__strip" role="tablist" aria-label="Photos">
           {photos.map((url, index) => (

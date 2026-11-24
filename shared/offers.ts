@@ -226,6 +226,33 @@ function cleanValue(raw: unknown): OfferValue | null {
  * Strict on purpose: an offer with a missing number is a promise nobody can
  * price, so it is refused rather than guessed at.
  */
+/** What the buyer is told when an item already ships free. */
+export const FREE_SHIPPING_TAKEN = "Free shipping is already selected for this item, so free shipping can't be an offer.";
+
+/** An offer whose reward is free shipping. */
+export function givesFreeShipping(offer: Pick<ListingOffer, 'kind' | 'freeShipping'>): boolean {
+  return offer.kind === 'free_shipping' || offer.kind === 'spend_free_shipping' || (offer.kind === 'group_fill' && offer.freeShipping === true);
+}
+
+/** Offers as a buyer reads them: free shipping always first, the rest in the shop's order. */
+export function offersInOrder<T extends Pick<ListingOffer, 'kind' | 'freeShipping'>>(offers: readonly T[]): T[] {
+  return [...offers.filter(givesFreeShipping), ...offers.filter((offer) => !givesFreeShipping(offer))];
+}
+
+/** The way an item's paid shipping becomes free, in a card's few words: "Free ship on 2+". Null when there is none. */
+export function freeShipShort(offers: readonly ListingOffer[] | null | undefined): string | null {
+  const ship = (offers ?? []).filter((offer) => offer.kind === 'free_shipping')
+    .sort((a, b) => (a.minItems ?? 2) - (b.minItems ?? 2))[0];
+  if (ship) return `Free ship on ${ship.minItems ?? 2}+`;
+  const spend = (offers ?? []).find((offer) => offer.kind === 'spend_free_shipping');
+  return spend ? `Free ship over ${rupees(spend.minSpendMinor ?? 0)}` : null;
+}
+
+/** Free shipping on the item and free shipping as an offer: the offer gives nothing. Null when there is no clash. */
+export function shippingOfferClash(offers: readonly Pick<ListingOffer, 'kind' | 'freeShipping'>[] | null | undefined, shippingMinor: number | null | undefined): string | null {
+  return shippingMinor === 0 && (offers ?? []).some(givesFreeShipping) ? FREE_SHIPPING_TAKEN : null;
+}
+
 export function cleanOffers(raw: unknown, unitPriceMinor?: number): { offers: ListingOffer[]; error: string | null } {
   if (raw === undefined || raw === null) return { offers: [], error: null };
   if (!Array.isArray(raw)) return { offers: [], error: 'Offers must be a list.' };
@@ -322,7 +349,8 @@ export function cleanOffers(raw: unknown, unitPriceMinor?: number): { offers: Li
     }
     offers.push(offer);
   }
-  return { offers, error: null };
+  // Stored with free shipping first, so every place that lists them shows it first.
+  return { offers: offersInOrder(offers), error: null };
 }
 
 /** The headline for a card: the lowest wholesale price, when the item has one. */
@@ -358,6 +386,13 @@ export interface OfferLine {
   /** The real lot it is travelling in, or null while it waits for one. */
   lotId: string | null;
   quantity: number;
+  /**
+   * How many things the line holds, for offers that count items ("2 or more"):
+   * the quantity, or - for several items picked from one photo, which is one
+   * line of quantity 1 - how many were picked. They ship together in one
+   * parcel, so they count together whether or not a lot holds them yet.
+   */
+  items?: number;
   unitPriceMinor: number;
   /** What the shop charges to ship one of it, before any offer. */
   shippingPerItemMinor: number;
@@ -434,7 +469,7 @@ function groupCount(line: OfferLine, lines: readonly OfferLine[], scope: OfferSc
     : line.lotId
       ? lines.filter((other) => other.active && other.lotId === line.lotId)
       : [line];
-  return inGroup.reduce((sum, other) => sum + other.quantity, 0);
+  return inGroup.reduce((sum, other) => sum + (other.items ?? other.quantity), 0);
 }
 
 /**

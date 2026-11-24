@@ -57,6 +57,14 @@ check('an order not yet in any lot does not count toward a lot offer, and gets i
   assert.equal(filed.get('a').shippingMinor, 0);
 });
 
+check('several items picked from one photo count together, with no lot at all', () => {
+  // One order of 3 pieces is one line of quantity 1 holding 3 items: they ship together.
+  const picked = price([line({ id: 'a', lotId: null, items: 3, offers: [freeShip] })]);
+  assert.equal(picked.get('a').shippingMinor, 0);
+  const one = price([line({ id: 'a', lotId: null, items: 1, offers: [freeShip] })]);
+  assert.equal(one.get('a').shippingMinor, 5_000, 'one item alone still pays shipping');
+});
+
 check('a shop-wide offer counts items across different lots', () => {
   const shopShip = { ...freeShip, scope: 'shop' };
   const out = price([
@@ -215,6 +223,30 @@ check('card hint: the lowest wholesale price, worked out from the unit price', (
 check('progress message stays generic about lots', () => {
   assert.match(nextStepFor(freeShip, { items: 1, spendMinor: 0 }), /to the same lot/);
   assert.equal(nextStepFor(freeShip, { items: 2, spendMinor: 0 }), null);
+});
+
+check('an item that ships free cannot also offer free shipping', () => {
+  const { shippingOfferClash, FREE_SHIPPING_TAKEN } = offers;
+  const ship = [{ id: 'a', kind: 'free_shipping', minItems: 2, scope: 'lot' }];
+  assert.equal(shippingOfferClash(ship, 0), FREE_SHIPPING_TAKEN);
+  assert.equal(shippingOfferClash([{ id: 'b', kind: 'spend_free_shipping', minSpendMinor: 100_000 }], 0), FREE_SHIPPING_TAKEN);
+  assert.equal(shippingOfferClash([{ id: 'c', kind: 'group_fill', freeShipping: true }], 0), FREE_SHIPPING_TAKEN);
+  assert.equal(shippingOfferClash([{ id: 'd', kind: 'group_fill', freeShipping: false }], 0), null, 'money off when it fills is fine');
+  assert.equal(shippingOfferClash(ship, 5_000), null, 'paid shipping can be made free by an offer');
+  assert.equal(shippingOfferClash(ship, null), null);
+});
+
+check('free shipping is listed first, and a card says it in a few words', () => {
+  const { offersInOrder, freeShipShort, cleanOffers: clean } = offers;
+  const list = [
+    { id: 'd', kind: 'discount', minItems: 3, scope: 'lot', discount: { type: 'percent', value: 10 } },
+    { id: 'f', kind: 'free_shipping', minItems: 2, scope: 'lot' },
+  ];
+  assert.deepEqual(offersInOrder(list).map((offer) => offer.id), ['f', 'd']);
+  assert.deepEqual(clean(list, 100_000).offers.map((offer) => offer.id), ['f', 'd'], 'saved in that order');
+  assert.equal(freeShipShort(list), 'Free ship on 2+');
+  assert.match(freeShipShort([{ id: 's', kind: 'spend_free_shipping', minSpendMinor: 200_000 }]), /^Free ship over ₹2,?000$/);
+  assert.equal(freeShipShort([list[0]]), null);
 });
 
 console.log(`\n${passed} checks passed`);

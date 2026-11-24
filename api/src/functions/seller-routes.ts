@@ -552,7 +552,7 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
    * buyer to confirm a return stays, so it is not forgotten either.
    */
   const credits = orders.flatMap((order) => (order.credits ?? [])
-    .filter((credit) => creditIsLive(credit) || credit.status === 'refund_pending')
+    .filter((credit) => creditIsLive(credit) || credit.status === 'refund_pending' || credit.status === 'choosing')
     .map((credit) => ({
       orderId: order.id,
       itemName: order.itemName,
@@ -567,6 +567,8 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
       leftMinor: creditLeft(credit),
       status: credit.status,
       pendingRefund: credit.pendingRefund ?? null,
+      storeCreditOfferMinor: credit.storeCreditOfferMinor ?? null,
+      chosen: credit.chosen ?? null,
       refundDenials: credit.refundDenials?.length ?? 0,
       buyerDetails: payouts.get(order.buyerId) ?? null,
       detailsCheck: order.detailsCheck ?? null,
@@ -594,11 +596,11 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
       ...(credit.refundLog ?? []).map((entry) => ({
         ...common, id: entry.id, kind: 'refund' as const, amountMinor: entry.amountMinor, at: entry.sentAt,
         reference: entry.reference, screenshotUrl: entry.screenshotUrl ?? null,
-        status: entry.status, answeredAt: entry.answeredAt, movedTo: null,
+        status: entry.status, answeredAt: entry.answeredAt, movedTo: null, storeCreditMinor: entry.storeCreditMinor ?? null,
       })),
       ...(credit.applications ?? []).map((moved, at) => ({
         ...common, id: `${credit.id}-mv${at}`, kind: 'moved' as const, amountMinor: moved.amountMinor, at: moved.at,
-        reference: null, screenshotUrl: null, status: 'received' as const, answeredAt: moved.at, movedTo: moved.itemName,
+        reference: null, screenshotUrl: null, status: 'received' as const, answeredAt: moved.at, movedTo: moved.itemName, storeCreditMinor: null,
       })),
     ];
   })).sort((a, b) => b.at.localeCompare(a.at));
@@ -608,7 +610,7 @@ async function sales(request: HttpRequest, _context: InvocationContext) {
   const refundable = orders
     .map((order) => {
       const reserved = (order.credits ?? [])
-        .filter((credit) => credit.origin === 'cancelled' || credit.origin === 'manual')
+        .filter((credit) => credit.origin === 'cancelled' || credit.origin === 'manual' || credit.origin === 'offer')
         .reduce((sum, credit) => sum + credit.amountMinor, 0);
       return {
         orderId: order.id, itemName: order.itemName, currency: order.currency, createdAt: order.createdAt,

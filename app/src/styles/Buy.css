@@ -132,3 +132,11 @@
   background: color-mix(in srgb, var(--aqua) 18%, transparent); color: var(--aqua);
 }
 .etasuggest--market .etasuggest__src { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+
+/* An item somebody has bought: what stays as it sold. */
+.editlock { margin: 0; font-size: var(--t-xs); line-height: 1.45; }
+.editlock__facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin: 0 0 var(--s2); }
+.editlock__facts > div:last-child:nth-child(odd) { grid-column: 1 / -1; }
+.editlock__facts > div { display: grid; gap: 1px; padding: 8px 10px; border-radius: var(--r-md); background: var(--surface-2); }
+.editlock__facts dt { font-size: var(--t-2xs); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.05em; }
+.editlock__facts dd { margin: 0; font-size: var(--t-sm); font-weight: var(--w-semi); overflow-wrap: anywhere; }

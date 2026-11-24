@@ -568,4 +568,106 @@ await check('a percentage can be capped: "10% off up to ₹120" stops at ₹120,
   assert.equal(loyal.rewardWords(card.card.rewards[0], (m) => `₹${m / 100}`), '10% off up to ₹120');
 });
 
+await check('two items paid in full with shipping, filed into one lot later: free shipping on 2+ owes the shipping back', async () => {
+  const { repriceBasket } = await import(new URL('api/src/offers.js', dist));
+  const { orderTotalMinor } = await import(new URL('shared/service-stores.js', dist));
+  const buyer = await newPerson('Lot Shipping Buyer');
+  const base = await repository.getListing(anyOrder.listingId);
+  const offer = { id: 'fs2', kind: 'free_shipping', minItems: 2, scope: 'lot' };
+  const listing = { ...structuredClone(base), id: `lst_ship_${buyer.id.slice(-4)}`, sellerId: shop.id, quantityAvailable: 50, status: 'active', shippingMinor: 5_000, offers: [offer] };
+  await repository.createListing(listing);
+  const at = new Date().toISOString();
+  const paid = async (tag) => {
+    const order = {
+      ...structuredClone(anyOrder), id: `ord_ship_${tag}_${buyer.id.slice(-4)}`, sellerId: shop.id, buyerId: buyer.id, listingId: listing.id,
+      status: 'confirmed', placedAt: at, createdAt: at, updatedAt: at, completedAt: null, quantity: 1, unitPriceMinor: 1_00_000,
+      shippingMinor: 5_000, shipPerItemMinor: 5_000, offerRules: [offer], appliedOffers: [], offerDiscountMinor: 0, loyaltyOffMinor: 0,
+      paymentStatus: 'paid', paidInFull: true, lotId: 'awaiting_lot', hold: { state: 'none' }, credits: [], closure: null,
+      payments: [{ id: `pay_${tag}`, at, kind: 'full', method: 'upi', amountMinor: 1_05_000, batchId: null, batchTotalMinor: null, reference: null, recordedBy: buyer.id }],
+    };
+    await repository.createOrder(order);
+    return order.id;
+  };
+  // Bought one at a time, each paid in full with its ₹50 shipping: no lot yet, so no offer.
+  const first = await paid('a');
+  await repriceBasket(repository, shop.id, buyer.id, 'ordered', { quiet: true });
+  const second = await paid('b');
+  await repriceBasket(repository, shop.id, buyer.id, 'ordered', { quiet: true });
+  for (const id of [first, second]) assert.equal((await repository.getOrder(id)).shippingMinor, 5_000, 'shipping charged while apart');
+  // The shop files both into one lot, as the lot screen does, and the basket is priced again.
+  for (const id of [first, second]) await repository.updateOrder({ ...(await repository.getOrder(id)), lotId: 'lot_ship_test' });
+  await repriceBasket(repository, shop.id, buyer.id, 'lot', { quiet: true });
+  for (const id of [first, second]) {
+    const order = await repository.getOrder(id);
+    assert.equal(order.shippingMinor, 0, 'shipping is free once they share a lot');
+    assert.equal(orderTotalMinor(order), 1_00_000);
+    assert.equal(order.offerRefundDueMinor, 5_000, 'the ₹50 shipping each paid is owed back');
+    assert.equal(order.paymentStatus, 'paid');
+    const choice = order.credits.find((credit) => credit.origin === 'offer');
+    assert.equal(choice?.status, 'choosing', 'the buyer chooses how it comes back');
+    assert.equal(choice.amountMinor, 5_000);
+    assert.equal(choice.storeCreditOfferMinor, 5_000, 'credit offered starts at what is owed');
+  }
+  // Priced again with nothing new: still one choice each, not a second.
+  await repriceBasket(repository, shop.id, buyer.id, 'lot', { quiet: true });
+  for (const id of [first, second]) {
+    assert.equal((await repository.getOrder(id)).credits.filter((credit) => credit.origin === 'offer').length, 1);
+  }
+
+  const orders = await import(new URL('order-routes.js', fns));
+  const creditOf = async (id) => (await repository.getOrder(id)).credits.find((credit) => credit.origin === 'offer');
+  // The shop offers more store credit on the first; never less, never by the buyer.
+  const c1 = await creditOf(first);
+  const less = await orders.offerMoreCreditRoute(req({ headers: shop.headers, params: { id: first }, body: { creditId: c1.id, amountMinor: 4_000 } }), ctx);
+  assert.equal(less.status, 400, 'an offer below what is owed is refused');
+  const byBuyer = await orders.offerMoreCreditRoute(req({ headers: buyer.headers, params: { id: first }, body: { creditId: c1.id, amountMinor: 8_000 } }), ctx);
+  assert.equal(byBuyer.status, 403);
+  const more = await orders.offerMoreCreditRoute(req({ headers: shop.headers, params: { id: first }, body: { creditId: c1.id, amountMinor: 8_000 } }), ctx);
+  assert.equal(more.status, 200, JSON.stringify(more.jsonBody));
+  assert.equal((await creditOf(first)).storeCreditOfferMinor, 8_000);
+  // While the buyer is choosing, the shop cannot refund or keep it.
+  assert.ok(!(await repository.getOrder(first)).credits.some((credit) => credit.status === 'open'));
+
+  // The buyer takes the store credit on the first: ₹80 in their wallet, the refund settled.
+  const took = await orders.chooseOfferRefundRoute(req({ headers: buyer.headers, params: { id: first }, body: { creditId: c1.id, choice: 'store_credit' } }), ctx);
+  assert.equal(took.status, 200, JSON.stringify(took.jsonBody));
+  const afterCredit = await repository.getOrder(first);
+  const settled = afterCredit.credits.find((credit) => credit.id === c1.id);
+  assert.equal(settled.status, 'refunded');
+  assert.equal(settled.chosen, 'store_credit');
+  assert.equal(settled.refundLog.at(-1).storeCreditMinor, 8_000);
+  assert.equal(afterCredit.offerRefundDueMinor, 0);
+  const wallet = (await repository.getUserById(buyer.id)).storeCredits.find((credit) => credit.id === `ofr_${c1.id}`);
+  assert.equal(wallet?.amountMinor, 8_000);
+  assert.equal(wallet.refund, true, 'never lapses');
+  const again = await orders.chooseOfferRefundRoute(req({ headers: buyer.headers, params: { id: first }, body: { creditId: c1.id, choice: 'refund' } }), ctx);
+  assert.equal(again.status, 409, 'chosen once');
+
+  // The second, a refund: an ordinary refund the shop sends and the buyer confirms.
+  const c2 = await creditOf(second);
+  const refund = await orders.chooseOfferRefundRoute(req({ headers: buyer.headers, params: { id: second }, body: { creditId: c2.id, choice: 'refund' } }), ctx);
+  assert.equal(refund.status, 200);
+  const open = (await creditOf(second));
+  assert.equal(open.status, 'open');
+  assert.equal(open.chosen, 'refund');
+  const sent = await orders.refundCreditRoute(req({ headers: shop.headers, params: { id: second }, body: { creditId: c2.id, reference: 'UTR123456', inPerson: true } }), ctx);
+  assert.equal(sent.status, 200, JSON.stringify(sent.jsonBody));
+  assert.equal((await creditOf(second)).status, 'refund_pending');
+
+  // Priced again later: what was chosen is not owed a second time.
+  await repriceBasket(repository, shop.id, buyer.id, 'lot', { quiet: true });
+  for (const id of [first, second]) {
+    const order = await repository.getOrder(id);
+    assert.equal(order.offerRefundDueMinor, 0, 'nothing owed twice');
+    assert.equal(order.credits.filter((credit) => credit.origin === 'offer').length, 1);
+    assert.equal(order.paymentStatus, 'paid');
+  }
+
+  // Both refunds are on the buyer's Refunds screen.
+  const mine = await orders.myRefundsRoute(req({ headers: buyer.headers }), ctx);
+  const rows = mine.jsonBody.refunds.filter((row) => row.origin === 'offer');
+  assert.equal(rows.length, 2);
+  assert.ok(rows.some((row) => row.chosen === 'store_credit' && row.leftMinor === 0));
+});
+
 console.log(`\n${passed} billing checks passed`);

@@ -49,6 +49,10 @@ export interface ListingPiece {
    * picture when the listing is saved; absent means one.
    */
   units?: number;
+  /** Its own condition, when the listing's is "Mixed" (shared/category-specs.ts). */
+  condition?: string;
+  /** Original or copy, its own, when the listing's is "Mixed". */
+  authenticity?: string;
 }
 
 /** A piece as an order remembers it: what was bought, at what price, and where it was in the photo. */
