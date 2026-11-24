@@ -27,7 +27,10 @@ import { ErrorNotice, Icon, Modal, Thumb, leadPhoto } from '../components/ui';
 import { formatDate, formatMoney } from '../format';
 import { useSession } from '../session';
 import { useShopDays } from '../components/StepDays';
-import { AdvanceStrip, DealClock, EtaFields, TermsFields, etaOf, termsBody, termsDraft, termsFromTemplate, termsProblem } from '../components/Buy';
+import {
+  AdvanceStrip, DealClock, EtaFields, TermsFields, etaOf, shippingMinorOf, termsBody, termsDraft, termsFromTemplate, termsProblem,
+} from '../components/Buy';
+import { shippingOfferClash } from '@shared/offers';
 import { DEAL_DEFAULT_HOURS } from '@shared/deals';
 import {
   LBox, OptionTiles, PreOrderBox, ToggleRow, isoInDays, type Shape,
@@ -638,8 +641,10 @@ function SellForm({ serverDraft, draftMissing }: {
   // A lot is bookkeeping the shop does when the lot is packed, which is
   // usually long after the item goes up. Nothing waits on it.
   const etaIssue = termsProblem(terms);
+  // Free shipping on the item and a free-shipping offer: the offer would give nothing.
+  const shippingClash = shippingOfferClash(terms.offers, shippingMinorOf(terms));
   const canPublish = title.trim().length > 2 && priceMinor >= MIN_PRICE_MINOR && priceMinor <= MAX_PRICE_MINOR && !etaIssue
-    && groupNeeded.length === 0;
+    && !shippingClash && groupNeeded.length === 0;
   // Everything still standing between this form and a listing, said at once
   // and from the start - not one line at a time beside a button that will not press.
   const basicsNeeded = [
@@ -647,6 +652,7 @@ function SellForm({ serverDraft, draftMissing }: {
     priceMinor < MIN_PRICE_MINOR ? (price ? `a price of at least ${formatMoney(MIN_PRICE_MINOR)}` : 'a price')
       : priceMinor > MAX_PRICE_MINOR ? `a price of at most ${formatMoney(MAX_PRICE_MINOR)}` : null,
     etaIssue ? 'a delivery time' : null,
+    shippingClash ? 'free shipping taken off the offers (the item already ships free)' : null,
     ...groupNeeded,
   ].filter((text): text is string => Boolean(text));
   // The category's required questions are asked after the first press of
@@ -733,6 +739,12 @@ function SellForm({ serverDraft, draftMissing }: {
     if (!canPublish) {
       setTriedPublish(true);
       haptic('error');
+      if (shippingClash && groupNeeded.length === 0 && title.trim().length > 2 && !etaIssue
+        && priceMinor >= MIN_PRICE_MINOR && priceMinor <= MAX_PRICE_MINOR) {
+        setMore(true);
+        requestAnimationFrame(() => document.querySelector<HTMLElement>('.offr-edit')?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+        return;
+      }
       if (groupNeeded.length > 0 && title.trim().length > 2) {
         document.querySelector<HTMLElement>('.pcs-edit, .pcs-pick')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;

@@ -226,6 +226,19 @@ function cleanValue(raw: unknown): OfferValue | null {
  * Strict on purpose: an offer with a missing number is a promise nobody can
  * price, so it is refused rather than guessed at.
  */
+/** What the buyer is told when an item already ships free. */
+export const FREE_SHIPPING_TAKEN = "Free shipping is already selected for this item, so free shipping can't be an offer.";
+
+/** An offer whose reward is free shipping. */
+export function givesFreeShipping(offer: Pick<ListingOffer, 'kind' | 'freeShipping'>): boolean {
+  return offer.kind === 'free_shipping' || offer.kind === 'spend_free_shipping' || (offer.kind === 'group_fill' && offer.freeShipping === true);
+}
+
+/** Free shipping on the item and free shipping as an offer: the offer gives nothing. Null when there is no clash. */
+export function shippingOfferClash(offers: readonly Pick<ListingOffer, 'kind' | 'freeShipping'>[] | null | undefined, shippingMinor: number | null | undefined): string | null {
+  return shippingMinor === 0 && (offers ?? []).some(givesFreeShipping) ? FREE_SHIPPING_TAKEN : null;
+}
+
 export function cleanOffers(raw: unknown, unitPriceMinor?: number): { offers: ListingOffer[]; error: string | null } {
   if (raw === undefined || raw === null) return { offers: [], error: null };
   if (!Array.isArray(raw)) return { offers: [], error: 'Offers must be a list.' };

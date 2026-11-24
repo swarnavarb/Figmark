@@ -217,4 +217,15 @@ check('progress message stays generic about lots', () => {
   assert.equal(nextStepFor(freeShip, { items: 2, spendMinor: 0 }), null);
 });
 
+check('an item that ships free cannot also offer free shipping', () => {
+  const { shippingOfferClash, FREE_SHIPPING_TAKEN } = offers;
+  const ship = [{ id: 'a', kind: 'free_shipping', minItems: 2, scope: 'lot' }];
+  assert.equal(shippingOfferClash(ship, 0), FREE_SHIPPING_TAKEN);
+  assert.equal(shippingOfferClash([{ id: 'b', kind: 'spend_free_shipping', minSpendMinor: 100_000 }], 0), FREE_SHIPPING_TAKEN);
+  assert.equal(shippingOfferClash([{ id: 'c', kind: 'group_fill', freeShipping: true }], 0), FREE_SHIPPING_TAKEN);
+  assert.equal(shippingOfferClash([{ id: 'd', kind: 'group_fill', freeShipping: false }], 0), null, 'money off when it fills is fine');
+  assert.equal(shippingOfferClash(ship, 5_000), null, 'paid shipping can be made free by an offer');
+  assert.equal(shippingOfferClash(ship, null), null);
+});
+
 console.log(`\n${passed} checks passed`);
