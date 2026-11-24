@@ -197,12 +197,11 @@ export function ListingDna({ listingId, onFound }: {
     return () => { live = false; };
   }, [listingId]);
   if (items.length === 0) return null;
-  // Two things in one photo can be one product: one each.
-  const products = items.filter((item, at) => items.findIndex((other) => other.dna.id === item.dna.id) === at).map((item) => item.dna);
-  if (!items.some((item) => item.piece !== null) || products.length === 1) {
-    return <div className="dnak__slot"><DnaCard summary={products[0]!} /></div>;
+  // One tile for every thing the listing sells, as many as its photo holds.
+  if (!items.some((item) => item.piece !== null) || items.length === 1) {
+    return <div className="dnak__slot"><DnaCard summary={items[0]!.dna} /></div>;
   }
-  return <div className="dnak__slot"><DnaShelf products={products} /></div>;
+  return <div className="dnak__slot"><DnaShelf products={items.map((item) => item.dna)} /></div>;
 }
 
 /** Things on a shelf before "All": one row's worth on a phone. */
@@ -222,7 +221,7 @@ export function DnaShelf({ products, title = 'In this photo' }: { products: DnaS
         <DnaHelix rungs={5} still />
         <span className="dnak__shelftitle">
           <span className="dnak__eyebrow">Product DNA</span>
-          <b>{products.length} products {title.toLowerCase()}</b>
+          <b>{products.length} {products.length === 1 ? 'thing' : 'things'} {title.toLowerCase()}</b>
         </span>
         {products.length > SHELF_FIRST && (
           <button type="button" className="dnak__shelfall" onClick={() => setAll(!all)} aria-expanded={all}>
@@ -232,7 +231,7 @@ export function DnaShelf({ products, title = 'In this photo' }: { products: DnaS
       </header>
       <ol className={`dnak__shelfrow${all ? ' is-all' : ''}`}>
         {shown.map((dna, at) => (
-          <li key={dna.id} style={{ ['--i' as string]: Math.min(at, 8) } as CSSProperties}>
+          <li key={`${dna.id}:${at}`} style={{ ['--i' as string]: Math.min(at, 8) } as CSSProperties}>
             <Link to={dnaHref(dna.id)} className="dnak__thing">
               <span className="dnak__thingpic">
                 {dna.cover ? <CropPic src={dna.cover} box={dna.coverBox} /> : <DnaHelix rungs={6} still />}
