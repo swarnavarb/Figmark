@@ -581,4 +581,29 @@ await check('the same picture needs no second look, and a look that agrees joins
   useEyeCheck(null);
 });
 
+await check('every thing in a lot is a product of its own, even named alike; ones put together are taken apart', async () => {
+  const opts = { authenticity: 'Original' };
+  const shelf = await list(otherSeller, 'Action figures mixed', opts, 250000, {
+    category: 'Figures',
+    pieces: [
+      piece('df_a', 'DC Gold Label boxed figure', 90000),
+      piece('df_b', 'DC Gold Label boxed figure', 90000),
+      piece('df_c', 'camo soldier action figure', 40000),
+      piece('df_d', 'soldier action figure with cap', 40000),
+    ],
+  });
+  const answer = await routes.dnaOfListingRoute(req({ params: { id: shelf.id } }), ctx);
+  const ids = answer.jsonBody.items.map((item) => item.dna.id);
+  assert.equal(ids.length, 4);
+  assert.equal(new Set(ids).size, 4, 'four things, four products');
+  // As the old matcher had it: the second soldier on the first one's product.
+  await addLink(repository, ids[2], { kind: 'listing', id: shelf.id, piece: 'df_d', partition: otherSeller, by: 'auto', at: new Date().toISOString() });
+  forgetCatalogue();
+  const again = await routes.dnaOfListingRoute(req({ params: { id: shelf.id } }), ctx);
+  const after = again.jsonBody.items.map((item) => item.dna.id);
+  assert.equal(new Set(after).size, 4, 'taken apart again');
+  assert.equal(after[2], ids[2], 'the first stays where it was');
+  assert.deepEqual((await getDna(repository, ids[2])).links.filter((entry) => entry.id === shelf.id).map((entry) => entry.piece), ['df_c']);
+});
+
 console.log(`\n${passed} DNA checks passed`);

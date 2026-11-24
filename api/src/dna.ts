@@ -323,6 +323,23 @@ export async function dnasForListing(repository: Repo, listing: Listing, catalog
       }
     }
   }
+  // Two things in one photo the matcher put on one product: the seller listed
+  // them as separate things, so each is a product of its own. The one whose
+  // name the product's is closest to stays; the others are matched again.
+  for (const dna of await dnasLinked(repository, 'listing', listing.id)) {
+    const mine = dna.links.filter((entry) => entry.kind === 'listing' && entry.id === listing.id && entry.piece);
+    if (mine.length < 2) continue;
+    const likeness = (piece: string) => {
+      const item = items.find((each) => each.piece === piece);
+      return item ? wordLikeness(productWords(item.title), dna.words) : -1;
+    };
+    const keep = mine.find((entry) => entry.by !== 'auto')
+      ?? [...mine].sort((a, b) => likeness(b.piece!) - likeness(a.piece!))[0]!;
+    for (const entry of mine) {
+      if (entry === keep || entry.by !== 'auto') continue;
+      await removeLink(repository, dna.id, 'listing', listing.id, false, entry.piece ?? null);
+    }
+  }
   const found: ProductDna[] = [];
   for (const item of items) {
     const dna = await dnaForItem(repository, listing, item, catalogue, false).catch(() => null);
@@ -359,7 +376,9 @@ export async function dnaForItem(
   const words = productWords(item.title);
   const keys = blockKeys('listing', listing.id, item.piece);
   const candidates = fresh ? [] : [...index.byId.values()].filter((dna) => !dna.mergedInto && dna.line === item.line
-    && sameCategory(dna.category, listing.category) && !keys.some((key) => dna.blocked.includes(key)));
+    && sameCategory(dna.category, listing.category) && !keys.some((key) => dna.blocked.includes(key))
+    // Another thing in the same photo is on it: the seller listed them apart, so this is another product.
+    && !(item.piece && dna.links.some((entry) => entry.kind === 'listing' && entry.id === listing.id && (entry.piece ?? null) !== item.piece)));
 
   // The image scan: the thing's own picture against the pictures of the
   // listings already on each DNA its name could be. The same picture, or the
