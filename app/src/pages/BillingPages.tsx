@@ -24,18 +24,25 @@ const message = (err: unknown, fallback: string) => (err instanceof ApiRequestEr
 
 /* ── Pro ─────────────────────────────────────────────────────────────────── */
 
-interface Benefit { id: string; icon: string; title: string; say: string; more: string }
+interface Benefit { id: string; icon: string; title: string; say: string; more: string; points?: readonly string[] }
 
 /**
  * Shorter names for the tools, for the Pro list. What each one does, in
  * simple words, is in `PRO_FEATURES`, so the 🔒 boxes across the app say the same.
  */
 const SHORT_NAMES: Partial<Record<ProFeatureId, string>> = {
+  insights: 'Pro insights',
   coach: 'Shop coach (AI)',
   costs: 'Cost sheets',
   customers: 'Buyer messages',
   powerSale: 'Limited drops',
 };
+
+/** Some of the reports inside Pro insights, named as the Insights tab names them. */
+const INSIGHT_REPORTS = [
+  '💰 Real profit', '🔥 Trending', '🌐 Market trends', '❤️ Saved', '🛒 Stopped at Buy', '👥 Customers',
+  '⏰ Best time to post', '🔮 Next lot forecast', '🏷️ Price changes', '🧺 Bought together', '↩️ Returns',
+] as const;
 
 /**
  * A hand-drawn underline under a word: one rough stroke, drawn in as the
@@ -147,6 +154,7 @@ export function ProPage() {
   const benefits: Benefit[] = [
     ...view.features.filter((feature) => feature.pro).map((feature) => ({
       id: feature.id, icon: feature.icon, title: SHORT_NAMES[feature.id] ?? feature.title, say: feature.punch, more: feature.benefit,
+      points: feature.id === 'insights' ? INSIGHT_REPORTS : undefined,
     })),
     {
       id: 'bumps', icon: '🚀', title: 'Bump points', say: 'Put your items on top',
@@ -223,6 +231,11 @@ export function ProPage() {
             <span className="gopop__icon" aria-hidden="true">{open.icon}</span>
             <p className="gopop__punch"><Hand>{open.say}</Hand></p>
             <p className="gopop__body">{open.more}</p>
+            {open.points && (
+              <ul className="gopop__points" aria-label="What is inside">
+                {open.points.map((point) => <li key={point}>{point}</li>)}
+              </ul>
+            )}
             {view.enabled && !view.active && view.plans.length > 0 && (
               <a className="btn gopop__cta" href="#plans" onClick={() => setOpenBenefit(null)}>Get it with Pro</a>
             )}
@@ -245,8 +258,11 @@ export function ProPage() {
                   {top && <span className="goplan__flag">Best value</span>}
                   <span className="goplan__months" aria-hidden="true">{plan.months}</span>
                   <h3 className="goplan__label">{plan.months} months</h3>
-                  <p className="goplan__price">{top ? <Ring>{formatMoney(plan.totalMinor)}</Ring> : formatMoney(plan.totalMinor)}</p>
-                  <p className="goplan__per">{formatMoney(perMonth(plan))} a month{saving > 0 && <> · <b>you save {saving}%</b></>}</p>
+                  <p className="goplan__price">
+                    <span className="goplan__amount">{top ? <Ring>{formatMoney(perMonth(plan))}</Ring> : formatMoney(perMonth(plan))}</span>
+                    <span className="goplan__unit">a month</span>
+                  </p>
+                  {saving > 0 && <p className="goplan__per">You save {saving}%</p>}
                   <ul className="goplan__list">
                     <li>All Pro tools</li>
                     <li>PRO badge</li>
@@ -254,7 +270,7 @@ export function ProPage() {
                   </ul>
                   {view.gst && plan.gstMinor > 0 && (
                     <p className="faint goplan__tax">
-                      {view.gst.mode === 'inclusive' ? 'Includes' : 'Plus'} {view.gst.rateBp / 100}% GST ({formatMoney(plan.gstMinor)})
+                      {view.gst.mode === 'inclusive' ? 'Includes' : 'Plus'} {view.gst.rateBp / 100}% GST
                     </p>
                   )}
                   <button type="button" className="goplan__buy" disabled={busy !== null}
