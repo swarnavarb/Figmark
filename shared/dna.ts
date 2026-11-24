@@ -1,4 +1,5 @@
 import { canonicalCategory, specFor } from './category-specs.js';
+import type { RegionBox } from './models.js';
 import { wordKeys } from './shop-tags.js';
 
 /**
@@ -31,6 +32,13 @@ export interface DnaLink {
   /** Linked by the matcher, by its owner, or by staff. An owner's choice is never undone by the matcher. */
   by: 'auto' | 'owner' | 'staff';
   at: string;
+  /**
+   * For a listing whose photo holds several things - sold piece by piece, or
+   * as a set with each thing named - which of them this DNA is about. Each
+   * thing is its own product, on its own DNA, under the name its seller gave
+   * it; absent when the DNA is about the listing as a whole.
+   */
+  piece?: string | null;
 }
 
 /** What is stored, in `siteContent` under `dna:<id>`. */
@@ -61,6 +69,8 @@ export interface ProductDna {
 export const DNA_PREFIX = 'dna:';
 export const dnaDocId = (id: string) => `${DNA_PREFIX}${id}`;
 export const linkKey = (kind: DnaLinkKind, id: string) => `${kind}:${id}`;
+/** One thing in a listing of several, as `blocked` remembers it: `listing:<id>#<piece>`. */
+export const pieceKey = (id: string, piece: string) => `${linkKey('listing', id)}#${piece}`;
 
 /** The most products one post or photo is tagged with. */
 export const DNA_TAGS_PER_POST = 5;
@@ -85,16 +95,51 @@ const NOISE = new Set([
   'worn', 'women', 'woman', 'womens', 'wmns', 'men', 'man', 'mens', 'kid', 'kids', 'unisex', 'boy', 'boys', 'girl', 'girls',
 ]);
 
-/** The words that identify a product in a title: no noise, no sizes, no bare numbers under three digits. */
+/**
+ * Numbers in a title that say how a copy is sized, counted or scaled rather
+ * than which product it is: "UK 9", "size 10", "EU 42.5", "9.5", "2 pcs",
+ * "x2", "30 cm", "1/6". Taken out before the words are read, so the numbers
+ * left - "Mark 85", "Jordan 1", "RX-78-2", "Gen 3" - name the product.
+ */
+const SIZED = [
+  /\b(?:uk|us|eu|euro|size|sz|fr|it|jp)\s*:?\s*\d{1,2}(?:[.,]\d)?\b/gi,
+  /\b\d{1,2}[.,]5\b/g,
+  /\b\d+(?:[.,]\d+)?\s*(?:pcs|pc|pieces|piece|pack|packs|cm|mm|ml|inch|inches|in|kg|g)\b/gi,
+  /\b(?:x\s*\d{1,3}|\d{1,3}\s*x)\b/gi,
+  /\b\d{1,2}\s*\/\s*\d{1,3}\b/g,
+];
+
+/** Roman numerals a model is numbered with: Mark III, Final Fantasy VII. */
+const ROMAN = new Set(['ii', 'iii', 'iv', 'vi', 'vii', 'viii', 'ix', 'xi', 'xii', 'xiii', 'xiv', 'xv', 'xvi']);
+
+/** Whether a word numbers a model: it has a digit in it, or it is a roman numeral. */
+export const isModelWord = (word: string) => /\d/.test(word) || ROMAN.has(word);
+
+/**
+ * The words that identify a product in a title: no noise, no sizes, counts or
+ * scales. Numbers that number a model are kept: Mark 85 is not Mark III.
+ */
 export function productWords(title: string): string[] {
   const seen = new Set<string>();
-  for (const word of wordKeys(title)) {
-    if (word.length < 2 || NOISE.has(word)) continue;
-    if (/^(uk|us|eu|size|sz)?\d{1,2}(\.\d)?$/.test(word)) continue;
-    if (/^\d+(cm|mm|ml|gb|tb)$/.test(word) && !/gb|tb/.test(word)) continue;
+  const unsized = SIZED.reduce((text, pattern) => text.replace(pattern, ' '), title);
+  for (const word of wordKeys(unsized)) {
+    if ((word.length < 2 && !/^\d$/.test(word)) || NOISE.has(word)) continue;
+    if (/^(uk|us|eu|size|sz)\d{1,2}$/.test(word)) continue;
+    if (/^\d+(cm|mm|ml)$/.test(word)) continue;
     seen.add(word);
   }
   return [...seen];
+}
+
+/**
+ * Whether two sets of words number their model differently: each has a
+ * model number the other lacks. "Iron Man Mark 85" and "Iron Man Mark III",
+ * "Jordan 1" and "Jordan 4" - however many other words they share.
+ */
+export function otherModel(a: readonly string[], b: readonly string[]): boolean {
+  const left = new Set(a);
+  const right = new Set(b);
+  return a.some((word) => isModelWord(word) && !right.has(word)) && b.some((word) => isModelWord(word) && !left.has(word));
 }
 
 /**
@@ -111,6 +156,22 @@ export function wordLikeness(a: readonly string[], b: readonly string[]): number
 
 /** Over this, two titles name the same product on words alone. */
 export const SAME_PRODUCT = 0.75;
+/**
+ * Whether two sets of words name the same product on words alone: alike past
+ * `SAME_PRODUCT`, or just at it with one taking in every word of the other.
+ * "McFarlane DC Multiverse Scarecrow" and "…Superman" share three words of
+ * four, but each has one the other lacks: two figures in one line, not one.
+ * Never when each numbers its model differently (`otherModel`).
+ */
+export function sameProductWords(a: readonly string[], b: readonly string[]): boolean {
+  if (otherModel(a, b)) return false;
+  const like = wordLikeness(a, b);
+  if (like < SAME_PRODUCT) return false;
+  if (like > SAME_PRODUCT + 1e-9) return true;
+  const [short, long] = a.length <= b.length ? [a, new Set(b)] : [b, new Set(a)];
+  return short.every((word) => long.has(word));
+}
+
 /** Over this, with a photo of the same thing, they do. */
 export const SAME_WITH_PHOTO = 0.5;
 /** A hunt's title is short and loose: over this share of its own words, it is asking for this. */
@@ -143,6 +204,9 @@ const LEAD_NOISE = new Set([
   'import', 'imported', 'preorder', 'pre', 'order', 'instock', 'ready', 'stock', 'deal', 'offer', 'limited',
 ]);
 
+/** Brands whose first word is also a selling word, by that word and the one after it. */
+const BRAND_HALVES = new Map([['hot', 'toy']]);
+
 /**
  * A product's name, from the title that started it: the part before a dash or
  * a bar, where shops put the size and the state of their copy ("— UK 8,
@@ -158,12 +222,14 @@ export function nameFrom(title: string): string {
     const keys = keysOf(token);
     return keys.length === 0 || keys.every((key) => NOISE.has(key) || /^(uk|us|eu)?\d{1,2}(\.\d)?$/.test(key));
   };
-  const leading = (token: string) => {
+  const leading = (token: string, next: string | undefined) => {
     const keys = keysOf(token);
+    // Half of a brand's name, not a selling word: "Hot Toys".
+    if (keys.length === 1 && next && BRAND_HALVES.get(keys[0]!) === keysOf(next)[0]) return false;
     return keys.length === 0 || keys.every((key) => LEAD_NOISE.has(key));
   };
   while (tokens.length > 1 && trailing(tokens[tokens.length - 1]!)) tokens.pop();
-  while (tokens.length > 1 && leading(tokens[0]!)) tokens.shift();
+  while (tokens.length > 1 && leading(tokens[0]!, tokens[1])) tokens.shift();
   const name = tokens.join(' ').replace(/[\s,|/-]+$/, '');
   return name.length > 70 ? `${name.slice(0, 67).trimEnd()}…` : name;
 }
@@ -205,11 +271,16 @@ export interface DnaShop {
 
 export interface DnaListingCard {
   id: string;
+  /** The thing's own name: a piece of a lot or set goes by the name its seller gave it. */
   title: string;
+  /** Set when it is one of several things in one listing: that piece, and the listing's own title. */
+  piece: { id: string; listingTitle: string; set: boolean } | null;
   priceMinor: number;
   currency: string;
   shippingMinor: number | null;
   photoUrl: string | null;
+  /** For a piece of a lot: where it sits in `photoUrl`, so it is shown cut out of the lot's photo. */
+  photoBox: RegionBox | null;
   onSale: boolean;
   condition: string;
   shop: DnaShop | null;
@@ -223,6 +294,11 @@ export interface DnaSummary {
   name: string;
   category: string;
   cover: string | null;
+  /**
+   * Set when the only photo of it is a lot's: where it sits in `cover`, so it
+   * is shown cut out. Gone once a listing of the thing alone gives a photo of its own.
+   */
+  coverBox: RegionBox | null;
   lowMinor: number | null;
   highMinor: number | null;
   currency: string;
@@ -282,7 +358,7 @@ export interface DnaTimelineEntry {
 }
 
 export interface DnaView {
-  dna: { id: string; name: string; category: string; cover: string | null; createdAt: string };
+  dna: { id: string; name: string; category: string; cover: string | null; coverBox: RegionBox | null; createdAt: string };
   price: {
     currency: string;
     lowMinor: number;
@@ -313,7 +389,7 @@ export interface DnaView {
   background: { text: string; source: string } | null;
   related: DnaSummary[];
   /** What this reader may fix: their own listings, posts and hunts on it; and whether they are staff. */
-  yourLinks: { kind: DnaLinkKind; id: string; partition: string; title: string }[];
+  yourLinks: { kind: DnaLinkKind; id: string; partition: string; title: string; piece?: string | null }[];
   staff: boolean;
   /** The reader's follow, while it runs. */
   follow: { until: string } | null;

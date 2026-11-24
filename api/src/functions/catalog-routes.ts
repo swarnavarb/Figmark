@@ -58,11 +58,13 @@ import { ALLOWED_TYPES, MAX_PHOTO_BYTES } from './template-routes.js';
 import { thumbNameOf } from '../storage/types.js';
 import { sniffImageType } from '../storage/sanitize.js';
 import {
-  MAX_REGIONS, cropPixels, detectItems, overlapOfBoxes, isolatedFingerprints, itemColour, printsOfPixels, readBox, regionFingerprint, storedPrints, tiltedFingerprints,
+  MAX_REGIONS, coversNamed, cropPixels, detectItems, overlapOfBoxes, isolatedFingerprints, itemColour, printsOfPixels, readBox, regionFingerprint, storedPrints,
+  storedPrintsAt, tiltedFingerprints,
 } from '../image-hash.js';
 import { decodeJpeg, encodeJpeg, type Raw } from '../storage/compress.js';
 import {
-  PHOTO_RESULTS, looksBesideMatches, onlyAlike, pictureLooksEach, rankMatches, relatedItems, suggestionsFor, type LearnedHash,
+  PHOTO_RESULTS, leadPhotoName, looksBesideMatches, namedBoxes, onlyAlike, pictureLooksEach, rankMatches, relatedItems, suggestionsFor,
+  type LearnedHash,
 } from '../photo-search.js';
 import { alreadyRead, everListed, findSales, onSale, type PhotoSales } from '../photo-sales.js';
 import { announceFirstDibs, firstDibsView, restockView, startFirstDibs, tellPriceDropped, tellRestocked } from './stock-alert-routes.js';
@@ -73,7 +75,8 @@ import { refreshIfStale } from '../seller-stats.js';
 import { isViewSource, searchTerm } from '../../../shared/seller-data.js';
 import { recordSearch } from '../search-log.js';
 import { alertWantsListed } from './want-routes.js';
-import { dnaForListing } from '../dna.js';
+import { dnasForListing, holds, itemsOf, summaryOf, thingsNamed } from '../dna.js';
+import type { DnaSummary } from '../../../shared/dna.js';
 import { alertForListing } from '../dna-follow.js';
 
 /** Public seller summary attached to feed cards and listing pages. */
@@ -278,6 +281,8 @@ function publicListing(listing: Listing): Listing {
   if (rest.pieces?.length) (rest as Listing).pieces = publicPieces(rest.pieces);
   // What the fee was counted from is the shop's and Figmark's business.
   delete (rest as Listing).foundBoxes;
+  // Each item's fingerprint is for matching here; a lot can carry dozens, and no reader uses them.
+  (rest as Listing).photos = rest.photos.map(({ regions: _regions, ...photo }) => photo);
   const highest = Math.max(0, ...(priceHistory ?? []).map((entry) => entry.priceMinor));
   return highest > listing.priceMinor
     ? { ...rest, priceHistory: [{ priceMinor: highest, at: listing.createdAt }] }
@@ -695,6 +700,8 @@ async function storeLearned(repository: Awaited<ReturnType<typeof getRepository>
   }));
 }
 
+type SalesGroupKey = PhotoSales['items'][number];
+
 /** Photos answered per request, at most: a screenful of the feed. */
 const PHOTOS_PER_ASK = 10;
 
@@ -734,13 +741,15 @@ const OWN_TAGS = 4;
  */
 async function photoSales(request: HttpRequest, _context: InvocationContext) {
   const [repository, auth] = await Promise.all([getRepository(), getAuthService()]);
-  let body: { url?: string; about?: string; by?: string; photos?: unknown };
+  let body: { url?: string; about?: string; by?: string; photos?: unknown; dna?: boolean };
   try {
     body = (await request.json()) as typeof body;
   } catch {
     return error(400, 'invalid_body', 'Request body must be JSON.');
   }
   const several = Array.isArray(body.photos);
+  // The Product DNA of each thing in the photo: asked for by the photo's own page, one photo at a time.
+  const withDna = body.dna === true && !several;
   if (several && ((body.photos as unknown[]).length === 0 || (body.photos as unknown[]).length > PHOTOS_PER_ASK)) {
     return error(400, 'invalid_photo', `Send between 1 and ${PHOTOS_PER_ASK} photos.`);
   }
@@ -798,9 +807,49 @@ async function photoSales(request: HttpRequest, _context: InvocationContext) {
       .slice(0, OWN_TAGS)
       .map(card);
   };
-  const reply = (entry: PhotoSales | null, by: string | null) => (!entry ? { items: [], sellers: [], likely: [], probable: [], own: [], vision } : {
+  // Each thing's product: the DNA of the listing it best matched - for a lot, the thing in it the label names.
+  const dnaOf = new Map<SalesGroupKey, DnaSummary>();
+  if (withDna && answered[0]) {
+    const byId = new Map(catalogue.map((listing) => [listing.id, listing]));
+    for (const group of answered[0].items) {
+      const best = group.listings.find(everListed);
+      if (!best) continue;
+      const dnas = await dnasForListing(repository, best, catalogue).catch(() => []);
+      const dna = thingsNamed(dnas, group.label ?? '')[0];
+      if (dna) dnaOf.set(group, summaryOf(dna, byId));
+    }
+  }
+  // The things in the photo, each with its product. A listing's own lead photo
+  // is the seller's: the things they named in it, where they put them, come
+  // first; anything else the photo was read to hold follows.
+  let photoThings: { label: string | null; boxes: RegionBox[]; dna?: DnaSummary | null }[] | null = null;
+  if (withDna && answered[0] && asks[0]!.name) {
+    const byId = new Map(catalogue.map((listing) => [listing.id, listing]));
+    const scanned = answered[0].things.map((thing, at) => ({
+      ...thing, dna: dnaOf.get(answered[0]!.items.find((item) => item.thing === at)!) ?? null,
+    }));
+    const owner = catalogue.find((listing) => everListed(listing) && itemsOf(listing)[0]!.piece !== null
+      && (listing.photos.find((photo) => photo.isPrimary) ?? listing.photos[0])?.blobName === asks[0]!.name);
+    if (owner) {
+      const dnas = await dnasForListing(repository, owner, catalogue).catch(() => []);
+      const named = itemsOf(owner).filter((item) => item.boxes.length > 0).map((item) => {
+        const dna = dnas.find((entry) => holds(entry, owner.id, item.piece));
+        return { label: item.title, boxes: item.boxes, dna: dna ? summaryOf(dna, byId) : null };
+      });
+      const rest = scanned.filter((thing) => !named.some((piece) => piece.boxes
+        .some((box) => thing.boxes.some((other) => overlapOfBoxes(box, other) >= 0.5))));
+      photoThings = [...named, ...rest];
+    } else {
+      photoThings = scanned;
+    }
+  }
+  const reply = (entry: PhotoSales | null, by: string | null) => (!entry ? { things: [], items: [], sellers: [], likely: [], probable: [], own: [], vision } : {
     own: ownOf(entry, by),
-    items: entry.items.map((item) => ({ label: item.label, listings: item.listings.map(card) })),
+    things: photoThings ?? entry.things,
+    items: entry.items.map((item) => ({
+      label: item.label, boxes: item.boxes, thing: item.thing, listings: item.listings.map(card),
+      ...(withDna ? { dna: dnaOf.get(item) ?? null } : {}),
+    })),
     probable: entry.probable.map((guess) => ({ ...card(guess.listing), chance: Math.round(guess.chance * 100) / 100 })),
     sellers: entry.sellers.flatMap((seller) => {
       const shop = sellerById.get(seller.sellerId);
@@ -1176,6 +1225,8 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     updatedAt: now,
   };
 
+  // Each thing the photo holds, findable on its own from the start.
+  listing.photos = (await photosWithNamedItems(listing)) ?? listing.photos;
   const created = await repository.createListing(listing);
   await claimPhotos(created.photos.map((photo) => photo.blobName || photo.url), `listing:${created.id}`);
   if (dibs) await announceFirstDibs(repository, created, dibs.optionId).catch(() => undefined);
@@ -1184,7 +1235,7 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
   // Its Product DNA: joined to the same product's, or started. Never the reason a listing fails.
   if (!privateFor) {
     await everyListing(repository).then(async (all) => {
-      await dnaForListing(repository, created, all);
+      await dnasForListing(repository, created, all);
       // Whoever follows the product hears a shop started selling it.
       await alertForListing(repository, created, all);
     }).catch(() => null);
@@ -1944,6 +1995,24 @@ async function manageable(request: HttpRequest): Promise<
 }
 
 /**
+ * The listing's photos with its lead photo fingerprinted at every place the
+ * listing names a thing - each piece, each item of a set, each thing the
+ * seller's phone found - so a shopper's photo of any one of them finds this
+ * listing, and each piece's Product DNA has the fingerprint of its own place.
+ * Null when nothing needs doing: no places named, or the stored items already
+ * cover them. Never the reason a save fails.
+ */
+async function photosWithNamedItems(listing: Listing): Promise<Listing['photos'] | null> {
+  const named = namedBoxes(listing);
+  const lead = leadPhotoName(listing);
+  const photo = listing.photos.find((entry) => entry.blobName === lead);
+  if (named.length === 0 || !lead || !photo || coversNamed(photo.regions ?? [], named)) return null;
+  const prints = await storedPrintsAt(lead, named).catch(() => null);
+  if (!prints) return null;
+  return listing.photos.map((entry) => (entry.blobName === lead ? { ...entry, imageHash: prints.hash, regions: prints.regions } : entry));
+}
+
+/**
  * The photos a listing may carry: at most six, exactly one primary, and every
  * one of them this shop's.
  *
@@ -2187,9 +2256,19 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
     return next;
   };
 
-  const updated = await repository.changeListing(listing.id, listing.sellerId, change);
+  let updated = await repository.changeListing(listing.id, listing.sellerId, change);
   if (refusal) return refusal;
   if (!updated) return error(404, 'not_found', 'No such listing.');
+  // Pieces moved, or a new lead photo: its items are fingerprinted where the listing now says they are.
+  const reprinted = await photosWithNamedItems(updated);
+  if (reprinted) {
+    const lead = leadPhotoName(updated);
+    const fresh = reprinted.find((photo) => photo.blobName === lead);
+    updated = (await repository.changeListing(listing.id, listing.sellerId, (current) => ({
+      ...current,
+      photos: current.photos.map((photo) => (fresh && photo.blobName === fresh.blobName ? fresh : photo)),
+    })).catch(() => null)) ?? updated;
+  }
   await tellRestocked(repository, listing, updated);
   await tellPriceDropped(repository, listing, updated);
   if (!updated.privateFor) await everyListing(repository).then((all) => alertForListing(repository, updated, all)).catch(() => 0);

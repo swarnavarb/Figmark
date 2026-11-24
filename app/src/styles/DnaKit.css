@@ -676,3 +676,117 @@
     linear-gradient(90deg, transparent 6%, rgba(255, 255, 255, 0.16) 8% 12%, transparent 15%),
     linear-gradient(90deg, transparent 84%, rgba(255, 255, 255, 0.08) 86% 88%, transparent 90%);
 }
+
+/* ---- one thing cut out of a photo (CropPic) ------------------------------- */
+
+.cropic { position: relative; display: block; overflow: hidden; width: 100%; height: 100%; flex: none; background: #070C16; }
+.dnak__pchip .cropic { width: 26px; height: 26px; border-radius: 50%; }
+.dnak__result .cropic { width: 44px; height: 44px; border-radius: 10px; }
+.dnap__wantcard .cropic { width: 56px; height: 56px; border-radius: 10px; }
+
+/* ---- every product in one photo, as a shelf ------------------------------ */
+
+.dnak__shelf {
+  border-radius: 18px;
+  padding: 12px 0 14px;
+  color: var(--text);
+  background:
+    linear-gradient(rgba(6, 214, 231, 0.05) 1px, transparent 1px) 0 0 / 14px 14px,
+    linear-gradient(90deg, rgba(6, 214, 231, 0.05) 1px, transparent 1px) 0 0 / 14px 14px,
+    linear-gradient(135deg, #0B1626 0%, #120B24 100%);
+  border: 1px solid rgba(6, 214, 231, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(124, 58, 237, 0.12);
+  overflow: hidden;
+}
+.dnak__shelfhead { display: flex; align-items: center; gap: 10px; padding: 0 14px 10px; }
+.dnak__shelftitle { display: grid; gap: 1px; flex: 1; min-width: 0; }
+.dnak__shelftitle b {
+  font-family: 'Bricolage Grotesque', 'Archivo', sans-serif;
+  font-size: calc(15px * var(--text-scale));
+  font-weight: 700;
+}
+.dnak__shelfall {
+  flex: none;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font: inherit;
+  font-size: calc(12px * var(--text-scale));
+  font-weight: 700;
+  color: var(--aqua-pale);
+  background: var(--aqua-soft);
+  border: 1px solid var(--aqua-line);
+  cursor: pointer;
+  transition: transform 160ms var(--ease-out);
+}
+.dnak__shelfall:active { transform: scale(0.96); }
+.dnak__shelfrow {
+  list-style: none;
+  margin: 0;
+  padding: 2px 14px;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 124px;
+  gap: 10px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scroll-padding: 0 14px;
+  scrollbar-width: none;
+}
+.dnak__shelfrow::-webkit-scrollbar { display: none; }
+.dnak__shelfrow.is-all {
+  grid-auto-flow: row;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  grid-auto-columns: auto;
+  overflow: visible;
+}
+.dnak__shelfrow > li { scroll-snap-align: start; min-width: 0; animation: dnak-pop 380ms var(--ease-out) both; animation-delay: calc(var(--i, 0) * 40ms); }
+.dnak__thing {
+  display: grid;
+  gap: 6px;
+  color: var(--text);
+  text-decoration: none;
+  transition: transform 160ms var(--ease-out);
+}
+.dnak__thing:active { transform: scale(0.97); }
+.dnak__thingpic {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #070C16;
+  box-shadow: 0 0 0 1px rgba(6, 214, 231, 0.25);
+}
+.dnak__thingpic > img { width: 100%; height: 100%; object-fit: cover; }
+@media (hover: hover) {
+  .dnak__thing:hover .dnak__thingpic { box-shadow: 0 0 0 1px rgba(6, 214, 231, 0.6), 0 8px 24px rgba(6, 214, 231, 0.18); }
+}
+.dnak__thingheat {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--aqua);
+  box-shadow: 0 0 0 2px rgba(7, 12, 22, 0.8);
+}
+.dnak__thingheat[data-heat='Warm'] { background: #FFC24B; }
+.dnak__thingheat[data-heat='Hot'], .dnak__thingheat[data-heat='On fire'] { background: var(--coral); }
+.dnak__thingname {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: calc(13px * var(--text-scale));
+  font-weight: 600;
+  line-height: 1.25;
+  min-height: 2.5em;
+}
+.dnak__thingmeta { display: flex; flex-wrap: wrap; gap: 2px 6px; font-size: calc(11.5px * var(--text-scale)); color: var(--text-faint); }
+.dnak__thingmeta b { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-weight: 500; color: var(--aqua-pale); }
+@media (prefers-reduced-motion: reduce) {
+  .dnak__shelfrow > li { animation: none; }
+}

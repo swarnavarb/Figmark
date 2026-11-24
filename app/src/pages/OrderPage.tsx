@@ -2106,7 +2106,7 @@ function ReviewPanel({ state, onDone }: { state: OrderState; onDone: () => Promi
         )}
       </div>
       {/* The shop is reviewed above, as always; the item itself on its Product DNA, where you show as an owner. */}
-      {state.side === 'buyer' && <ReviewItemLink listingId={state.order.listingId} />}
+      {state.side === 'buyer' && <ReviewItemLink listingId={state.order.listingId} pieces={state.order.pieces?.map((piece) => piece.id)} />}
     </div>
   );
 }

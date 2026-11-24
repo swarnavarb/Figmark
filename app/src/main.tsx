@@ -91,6 +91,7 @@ const QuestsPage = page(loaders.quests, 'QuestsPage');
 const LearnPage = page(loaders.learn, 'LearnPage');
 const TagPage = page(loaders.tag, 'TagPage');
 const DnaPage = page(loaders.dna, 'DnaPage');
+const PhotoDnaPage = page(loaders.photoDna, 'PhotoDnaPage');
 const ProfileByHandlePage = page(loaders.profileByHandle, 'ProfileByHandlePage');
 const ShortLinkPage = page(loaders.shortLink, 'ShortLinkPage');
 const InvitePage = page(loaders.invite, 'InvitePage');
@@ -215,6 +216,8 @@ function App() {
         <Route path="/track/:token" element={<TrackPage />} />
         <Route path="/tags/:slug" element={<TagPage />} />
         {/* A product's shared page: every shop, post, hunt and review about it. Open to everybody. */}
+        {/* A photo's Product DNA: each thing in it, cut out and followed to its product, and where to get them. */}
+        <Route path="/dna/photo" element={<PhotoDnaPage />} />
         <Route path="/dna/:id" element={<DnaPage />} />
         {/* Last, so every screen above keeps its path: `/<username>` is the
             fallback reading of a single segment, not the first one. */}

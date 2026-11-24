@@ -2409,6 +2409,12 @@ export type PhotoSuggestion = FeedListing & { because: 'name' | 'colour' };
 export interface PhotoSalesItem {
   /** What the item was read as, or null for listings found by the picture alone. */
   label: string | null;
+  /** Where it is in the photo; empty for listings the words with the photo found. */
+  boxes?: PhotoBox[];
+  /** Which of `things` it is; null for listings the words with the photo found. */
+  thing?: number | null;
+  /** Its Product DNA, when asked for (`photoDna`). */
+  dna?: DnaSummary | null;
   /** On sale first, then those sold out or taken down. */
   listings: (FeedListing & { onSale: boolean })[];
 }
@@ -2433,6 +2439,8 @@ export interface PhotoSalesResponse {
    * `items`. `chance` is 0 to 1.
    */
   probable: (FeedListing & { onSale: boolean; chance: number })[];
+  /** Every thing the photo was read to hold, in reading order, whether or not anything matched it. */
+  things?: { label: string | null; boxes: PhotoBox[]; dna?: DnaSummary | null }[];
   vision: boolean;
 }
 
@@ -3106,6 +3114,9 @@ export const api = {
   /** Where the items in a photo already on Figmark are, or were, for sale. */
   photoSales: (url: string, about?: string, by?: string) =>
     ask<PhotoSalesResponse>('/search/photo/sales', { url, about, by }),
+  /** The same, with the Product DNA of each thing in it: the photo's own Product DNA page. */
+  photoDna: (url: string, about?: string, by?: string) =>
+    ask<PhotoSalesResponse>('/search/photo/sales', { url, about, by, dna: true }),
   /** The same for several photos at once, answered in order: up to ten. */
   photoSalesMany: (photos: { url: string; about?: string; by?: string }[]) =>
     ask<{ answers: PhotoSalesResponse[] }>('/search/photo/sales', { photos }),
@@ -3808,21 +3819,24 @@ export const api = {
   weeklyBest: () => request<Leaderboard>('/social/leaderboard'),
   /** Product DNA: the whole page, or where a folded-in one went. */
   dna: (id: string) => request<DnaView | { moved: string }>(`/dna/view/${encodeURIComponent(id)}`),
-  dnaOfListing: (id: string) => request<{ dna: DnaSummary | null }>(`/dna/of/listing/${encodeURIComponent(id)}`),
+  /** The products a listing is on: one, or one per named thing in the photo of a lot or a set. */
+  dnaOfListing: (id: string) => request<{ dna: DnaSummary | null; items: { piece: string | null; title: string; dna: DnaSummary }[] }>(
+    `/dna/of/listing/${encodeURIComponent(id)}`),
   dnaOfPost: (channelId: string, id: string) =>
     request<{ dnas: DnaSummary[]; yours: boolean }>(`/dna/of/post/${encodeURIComponent(channelId)}/${encodeURIComponent(id)}`),
   dnaOfWant: (buyerId: string, id: string) =>
     request<{ dna: DnaSummary | null; yours: boolean }>(`/dna/of/want/${encodeURIComponent(buyerId)}/${encodeURIComponent(id)}`),
   dnaTrending: (category?: string | null) =>
     request<{ products: DnaSummary[] }>(`/dna/trending${category ? `?category=${encodeURIComponent(category)}` : ''}`),
-  dnaSearch: (q: string, listingId?: string) => {
+  dnaSearch: (q: string, listingId?: string, piece?: string | null) => {
     const query = new URLSearchParams({ q });
     if (listingId) query.set('listing', listingId);
+    if (listingId && piece) query.set('piece', piece);
     return request<{ products: DnaSummary[] }>(`/dna/search?${query.toString()}`);
   },
   reviewDna: (id: string, body: { rating: number; body: string; photoUrls: string[] }) =>
     post<{ ok: true }>(`/dna/view/${encodeURIComponent(id)}/reviews`, body),
-  fixDna: (body: { kind: DnaLinkKind; id: string; partition: string; action: 'remove' | 'move' | 'tag' | 'new'; from?: string; to?: string }) =>
+  fixDna: (body: { kind: DnaLinkKind; id: string; partition: string; action: 'remove' | 'move' | 'tag' | 'new'; from?: string; to?: string; piece?: string | null }) =>
     post<{ dna: string | null }>('/dna/fix', body),
   mergeDna: (id: string, into: string) => post<{ dna: string }>(`/dna/view/${encodeURIComponent(id)}/merge`, { into }),
   /** Follow a product for `days` (up to 90), or stop with null. */

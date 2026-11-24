@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import type { DnaSummary } from '@shared/dna';
+import type { RegionBox } from '@shared/models';
 import { ApiRequestError, api } from '../api';
 import { formatMoney } from '../format';
 import { useToast } from './Feedback';
@@ -21,6 +22,69 @@ import '../styles/DnaKit.css';
  */
 
 export const dnaHref = (id: string) => `/dna/${encodeURIComponent(id)}`;
+
+/**
+ * A photo, or one thing cut out of it. With `box` - left, top, width, height
+ * as fractions of the photo - the thing fills the frame, a little room round
+ * it, never past the photo's edge: a piece of a lot shown by itself until a
+ * photo of it alone turns up. The frame takes its size from where it sits.
+ */
+export function CropPic({ src, box, alt = '', className = '' }: {
+  src: string;
+  box?: RegionBox | null;
+  alt?: string;
+  className?: string;
+}) {
+  if (!box) return <img src={src} alt={alt} loading="lazy" decoding="async" className={className || undefined} />;
+  return <Cropped src={src} box={box} alt={alt} className={className} />;
+}
+
+function Cropped({ src, box, alt, className }: { src: string; box: RegionBox; alt: string; className: string }) {
+  const frame = useRef<HTMLSpanElement>(null);
+  const pic = useRef<HTMLImageElement>(null);
+  const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
+  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+
+  useEffect(() => {
+    const el = frame.current;
+    if (!el) return undefined;
+    const measure = () => setSize({ w: el.clientWidth, h: el.clientHeight });
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const watch = new ResizeObserver(measure);
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, []);
+  useEffect(() => {
+    const el = pic.current;
+    // Already loaded from the cache before React listened.
+    if (el?.complete && el.naturalWidth) setNatural({ w: el.naturalWidth, h: el.naturalHeight });
+  }, [src]);
+
+  let style: CSSProperties = { opacity: 0 };
+  if (natural && size && size.w > 0 && size.h > 0) {
+    const room = 0.08;
+    const left = Math.max(0, box[0] - box[2] * room);
+    const top = Math.max(0, box[1] - box[3] * room);
+    const width = Math.min(1 - left, box[2] * (1 + 2 * room));
+    const height = Math.min(1 - top, box[3] * (1 + 2 * room));
+    const scale = Math.max(size.w / (width * natural.w), size.h / (height * natural.h));
+    const w = natural.w * scale;
+    const h = natural.h * scale;
+    const x = Math.min(0, Math.max(size.w - w, size.w / 2 - (left + width / 2) * w));
+    const y = Math.min(0, Math.max(size.h - h, size.h / 2 - (top + height / 2) * h));
+    style = {
+      position: 'absolute', left: x, top: y, width: w, height: h, maxWidth: 'none', maxHeight: 'none',
+      objectFit: 'fill', borderRadius: 0, opacity: 1,
+    };
+  }
+  return (
+    <span ref={frame} className={`cropic ${className}`.trim()}>
+      <img ref={pic} src={src} alt={alt} loading="lazy" decoding="async" style={style}
+        onLoad={(event) => setNatural({ w: event.currentTarget.naturalWidth, h: event.currentTarget.naturalHeight })} />
+    </span>
+  );
+}
 
 /** A short code from the id, drawn like a gene name: FGM·P3A9·K2. Decoration, not an identifier anybody types. */
 export function sequenceOf(id: string): string {
@@ -108,28 +172,82 @@ export function DnaCard({ summary, lead = 'Product DNA' }: { summary: DnaSummary
   );
 }
 
-/** The DNA under a listing. Nothing at all for a listing that has none (a private deal). */
+/**
+ * The DNA under a listing: one card, or one per named thing when its photo
+ * holds several - a lot sold piece by piece, a set - each that thing's own
+ * product page. Nothing at all for a listing that has none (a private deal).
+ */
 export function ListingDna({ listingId, onFound }: {
   listingId: string;
-  /** Told which DNA the listing is part of, so the page can point at it elsewhere. */
+  /** Told which DNA the listing is part of (the first, for a lot), so the page can point at it elsewhere. */
   onFound?: (dna: DnaSummary | null) => void;
 }) {
-  const [summary, setSummary] = useState<DnaSummary | null>(null);
+  const [items, setItems] = useState<{ piece: string | null; title: string; dna: DnaSummary }[]>([]);
   const tell = useRef(onFound);
   tell.current = onFound;
   useEffect(() => {
     let live = true;
-    setSummary(null);
+    setItems([]);
     tell.current?.(null);
     void api.dnaOfListing(listingId).then((found) => {
       if (!live) return;
-      setSummary(found.dna);
+      setItems(found.items ?? (found.dna ? [{ piece: null, title: found.dna.name, dna: found.dna }] : []));
       tell.current?.(found.dna);
     }).catch(() => undefined);
     return () => { live = false; };
   }, [listingId]);
-  if (!summary) return null;
-  return <div className="dnak__slot"><DnaCard summary={summary} /></div>;
+  if (items.length === 0) return null;
+  // One tile for every thing the listing sells, as many as its photo holds.
+  if (!items.some((item) => item.piece !== null) || items.length === 1) {
+    return <div className="dnak__slot"><DnaCard summary={items[0]!.dna} /></div>;
+  }
+  return <div className="dnak__slot"><DnaShelf products={items.map((item) => item.dna)} /></div>;
+}
+
+/** Things on a shelf before "All": one row's worth on a phone. */
+const SHELF_FIRST = 8;
+
+/**
+ * Every product in one photo, as a shelf: each thing cut out of the photo (or
+ * shown by a better photo of it alone, once there is one), its name and what
+ * it goes for, in one swipeable row - or all of them as a grid.
+ */
+export function DnaShelf({ products, title = 'In this photo' }: { products: DnaSummary[]; title?: string }) {
+  const [all, setAll] = useState(false);
+  const shown = all ? products : products.slice(0, SHELF_FIRST);
+  return (
+    <section className="dnak__shelf" aria-label={`Product DNA: ${title.toLowerCase()}`}>
+      <header className="dnak__shelfhead">
+        <DnaHelix rungs={5} still />
+        <span className="dnak__shelftitle">
+          <span className="dnak__eyebrow">Product DNA</span>
+          <b>{products.length} {products.length === 1 ? 'thing' : 'things'} {title.toLowerCase()}</b>
+        </span>
+        {products.length > SHELF_FIRST && (
+          <button type="button" className="dnak__shelfall" onClick={() => setAll(!all)} aria-expanded={all}>
+            {all ? 'Fewer' : `All ${products.length}`}
+          </button>
+        )}
+      </header>
+      <ol className={`dnak__shelfrow${all ? ' is-all' : ''}`}>
+        {shown.map((dna, at) => (
+          <li key={`${dna.id}:${at}`} style={{ ['--i' as string]: Math.min(at, 8) } as CSSProperties}>
+            <Link to={dnaHref(dna.id)} className="dnak__thing">
+              <span className="dnak__thingpic">
+                {dna.cover ? <CropPic src={dna.cover} box={dna.coverBox} /> : <DnaHelix rungs={6} still />}
+                <span className="dnak__thingheat" data-heat={dna.heatLabel} title={dna.heatLabel} />
+              </span>
+              <span className="dnak__thingname">{dna.name}</span>
+              <span className="dnak__thingmeta">
+                {dna.lowMinor !== null ? <b>{formatMoney(dna.lowMinor, dna.currency)}</b> : <span>Not on sale</span>}
+                <span>{dna.sellers === 1 ? '1 shop' : `${dna.sellers} shops`}</span>
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
 }
 
 /** The DNA a hunt is for, when one stands out. Its hunter can point it at another. */
@@ -180,7 +298,7 @@ export function PostDna({ channelId, postId, about }: { channelId: string; postI
       <div className="dnak__chips">
         {state.dnas.map((dna, at) => (
           <Link key={dna.id} to={dnaHref(dna.id)} className="dnak__pchip" style={{ ['--i' as string]: at } as CSSProperties}>
-            {dna.cover ? <img src={dna.cover} alt="" loading="lazy" decoding="async" /> : <Icon name="dna" size={14} />}
+            {dna.cover ? <CropPic src={dna.cover} box={dna.coverBox} /> : <Icon name="dna" size={14} />}
             <span className="dnak__pchipname">{dna.name}</span>
             {dna.lowMinor !== null && <span className="dnak__pchipprice">{formatMoney(dna.lowMinor, dna.currency)}</span>}
           </Link>
@@ -212,13 +330,15 @@ export function PostDna({ channelId, postId, about }: { channelId: string; postI
  * seller moving their listing. What it is on now is listed first, with a way
  * off where that is allowed.
  */
-export function DnaPicker({ title, seed, current, many = false, listingId, onPick, onRemove, onClose, extra }: {
+export function DnaPicker({ title, seed, current, many = false, listingId, piece, onPick, onRemove, onClose, extra }: {
   title: string;
   seed: string;
   current: DnaSummary[];
   many?: boolean;
   /** Moving a listing: only products on the line its seller gave it. */
   listingId?: string;
+  /** Moving one thing in a listing of several: the line that thing is on. */
+  piece?: string | null;
   onPick: (dna: DnaSummary) => Promise<void>;
   onRemove?: (dna: DnaSummary) => Promise<void>;
   onClose: () => void;
@@ -233,10 +353,10 @@ export function DnaPicker({ title, seed, current, many = false, listingId, onPic
     const words = query.trim();
     if (!words) { setFound([]); return undefined; }
     const timer = window.setTimeout(() => {
-      void api.dnaSearch(words, listingId).then((answer) => setFound(answer.products)).catch(() => setFound([]));
+      void api.dnaSearch(words, listingId, piece).then((answer) => setFound(answer.products)).catch(() => setFound([]));
     }, 220);
     return () => window.clearTimeout(timer);
-  }, [query, listingId]);
+  }, [query, listingId, piece]);
 
   const run = async (id: string, work: () => Promise<void>, said: string) => {
     setBusy(id);
@@ -278,7 +398,7 @@ export function DnaPicker({ title, seed, current, many = false, listingId, onPic
             <li key={dna.id}>
               <button type="button" className="dnak__result" disabled={busy !== null || (on.has(dna.id) && !many) || on.has(dna.id)}
                 onClick={() => void run(dna.id, () => onPick(dna), many ? 'Tagged' : 'Done')}>
-                {dna.cover ? <img src={dna.cover} alt="" loading="lazy" decoding="async" /> : <span className="dnak__resultblank"><Icon name="dna" size={16} /></span>}
+                {dna.cover ? <CropPic src={dna.cover} box={dna.coverBox} /> : <span className="dnak__resultblank"><Icon name="dna" size={16} /></span>}
                 <span className="dnak__resulttext">
                   <b>{dna.name}</b>
                   <small>{[priceSpan(dna), `${dna.sellers} shop${dna.sellers === 1 ? '' : 's'}`, dna.category].filter(Boolean).join(' · ')}</small>
@@ -324,7 +444,7 @@ export function DnaTile({ summary, index = 0 }: { summary: DnaSummary; index?: n
     <Link to={dnaHref(summary.id)} className="dnak__tile" data-theme={theme.key} style={{ ['--i' as string]: index } as CSSProperties}>
       <span className="dnak__tilepic">
         <span className="dnak__tilepattern" aria-hidden="true" />
-        {summary.cover ? <img src={summary.cover} alt="" loading="lazy" decoding="async" /> : <DnaHelix rungs={10} />}
+        {summary.cover ? <CropPic src={summary.cover} box={summary.coverBox} /> : <DnaHelix rungs={10} />}
         <span className="dnak__tilescan" aria-hidden="true" />
         <span className="dnak__tileseq">{sequenceOf(summary.id)}</span>
         <span className="dnak__tileglyph" aria-hidden="true">{theme.glyph}</span>
@@ -383,7 +503,7 @@ function DnaJar({ summary, index }: { summary: DnaSummary; index: number }) {
       <span className="dnak__jarglass">
         <span className="dnak__jarliquid" aria-hidden="true"><i /></span>
         <span className="dnak__jarspecimen">
-          {summary.cover ? <img src={summary.cover} alt="" loading="lazy" decoding="async" /> : <DnaHelix rungs={10} />}
+          {summary.cover ? <CropPic src={summary.cover} box={summary.coverBox} /> : <DnaHelix rungs={10} />}
         </span>
         <span className="dnak__jarbubbles" aria-hidden="true">{[0, 1, 2, 3].map((n) => <i key={n} />)}</span>
         <span className="dnak__jarticks" aria-hidden="true"><i>250</i><i>150</i><i>50</i></span>
@@ -441,17 +561,34 @@ export function DnaProductsView({ category }: { category?: string | null }) {
  * "Review this item" beside an order: the shop is reviewed where it always
  * was; the product itself is reviewed on its DNA.
  */
-export function ReviewItemLink({ listingId }: { listingId: string }) {
-  const [id, setId] = useState<string | null>(null);
+export function ReviewItemLink({ listingId, pieces }: {
+  listingId: string;
+  /** The things bought out of a lot: each is reviewed on its own product. */
+  pieces?: string[] | null;
+}) {
+  const [found, setFound] = useState<{ id: string; title: string }[]>([]);
+  const key = (pieces ?? []).join(',');
   useEffect(() => {
-    void api.dnaOfListing(listingId).then((found) => setId(found.dna?.id ?? null)).catch(() => undefined);
-  }, [listingId]);
-  if (!id) return null;
+    void api.dnaOfListing(listingId).then((answer) => {
+      const bought = new Set(key ? key.split(',') : []);
+      const things = (answer.items ?? []).filter((item) => bought.size === 0 || (item.piece !== null && bought.has(item.piece)));
+      const unique = new Map<string, string>();
+      for (const item of things) if (!unique.has(item.dna.id)) unique.set(item.dna.id, item.title);
+      // A set bought whole, or nothing said: each thing in it, else the listing's one.
+      if (unique.size === 0 && answer.dna) unique.set(answer.dna.id, answer.dna.name);
+      setFound([...unique].map(([id, title]) => ({ id, title })));
+    }).catch(() => undefined);
+  }, [listingId, key]);
+  if (found.length === 0) return null;
   return (
-    <Link to={`${dnaHref(id)}?review=1`} className="dnak__reviewlink">
-      <DnaHelix rungs={5} still /> Review this item
-      <small>on its Product DNA, for everyone who has one</small>
-      <Icon name="right" size={14} />
-    </Link>
+    <>
+      {found.map((thing) => (
+        <Link key={thing.id} to={`${dnaHref(thing.id)}?review=1`} className="dnak__reviewlink">
+          <DnaHelix rungs={5} still /> {found.length > 1 ? `Review ${thing.title}` : 'Review this item'}
+          <small>on its Product DNA, for everyone who has one</small>
+          <Icon name="right" size={14} />
+        </Link>
+      ))}
+    </>
   );
 }

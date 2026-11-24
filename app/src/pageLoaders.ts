@@ -44,6 +44,7 @@ export const loaders = {
   learn: () => import('./pages/LearnPage'),
   tag: () => import('./pages/TagPage'),
   dna: () => import('./pages/DnaPage'),
+  photoDna: () => import('./pages/PhotoDnaPage'),
   profileByHandle: () => import('./pages/ProfileByHandlePage'),
   shortLink: () => import('./pages/ShortLinkPage'),
   invite: () => import('./pages/InvitePage'),

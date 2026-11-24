@@ -3924,6 +3924,7 @@ a.ocard__buyer:hover { color: var(--accent-text); }
 @keyframes psheet-up { from { transform: translateY(40px); opacity: 0; } }
 .psheet__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .psheet__title { margin: 0; font-size: var(--t-md); }
+.psheet__details { display: grid; gap: 18px; }
 .psheet__item { display: grid; gap: var(--s1); }
 .psheet__label {
   display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
@@ -3956,8 +3957,68 @@ a.psheet__row:hover { background: var(--surface-hover); }
 }
 .psheet__ended { color: var(--text-faint); font-family: inherit; font-size: var(--t-2xs); text-transform: uppercase; letter-spacing: 0.04em; }
 @media (prefers-reduced-motion: reduce) {
-  .psales, .psales__dot, .psheet, .psheet__box { animation: none; }
+  .psales, .psales__dot, .psheet, .psheet__box, .pdna, .pdna__strand { animation: none; }
 }
+
+/* ── Product DNA: the button every photo carries ─────────────────────── */
+
+.pdna {
+  --pdna-aqua: var(--aqua); --pdna-coral: var(--coral); --pdna-violet: var(--violet-lit);
+  position: relative; isolation: isolate; overflow: hidden;
+  display: inline-flex; align-items: center; gap: 10px;
+  max-width: calc(100vw - 32px); min-height: 48px; padding: 6px 14px 6px 6px;
+  border-radius: var(--r-pill);
+  color: #EAFBFF; text-decoration: none;
+  background:
+    linear-gradient(rgba(6, 214, 231, 0.07) 1px, transparent 1px) 0 0 / 10px 10px,
+    linear-gradient(90deg, rgba(6, 214, 231, 0.07) 1px, transparent 1px) 0 0 / 10px 10px,
+    linear-gradient(120deg, #0B1626 0%, #160D2C 100%);
+  border: 1px solid rgba(6, 214, 231, 0.45);
+  box-shadow: 0 0 0 1px rgba(139, 92, 246, 0.18) inset, 0 10px 28px rgba(6, 214, 231, 0.22);
+  animation: fade-in var(--dur-2) var(--ease) both;
+  transition: transform 160ms var(--ease), box-shadow 200ms var(--ease), border-color 200ms var(--ease);
+}
+.pdna::after {
+  content: ''; position: absolute; inset: 0; z-index: -1;
+  background: linear-gradient(100deg, transparent 30%, rgba(6, 214, 231, 0.16) 50%, transparent 70%);
+  transform: translateX(-100%);
+  animation: pdna-sheen 3.6s var(--ease) 0.6s infinite;
+}
+@keyframes pdna-sheen { 0%, 55% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+.pdna:active { transform: scale(0.97); }
+@media (hover: hover) {
+  .pdna:hover { border-color: rgba(6, 214, 231, 0.8); box-shadow: 0 0 0 1px rgba(139, 92, 246, 0.3) inset, 0 12px 34px rgba(6, 214, 231, 0.34); }
+}
+.pdna__mark {
+  position: relative; flex: none; display: grid; place-items: center;
+  width: 36px; height: 36px; border-radius: 50%;
+  color: var(--pdna-aqua);
+  background: radial-gradient(circle at 50% 40%, rgba(6, 214, 231, 0.3), rgba(6, 214, 231, 0.06) 70%);
+  box-shadow: 0 0 0 1px rgba(6, 214, 231, 0.4) inset;
+}
+.pdna__strand {
+  position: absolute; inset: 3px; border-radius: 50%;
+  border: 1.5px solid transparent; border-top-color: var(--pdna-aqua); border-bottom-color: var(--pdna-coral);
+  animation: pdna-turn 2.8s linear infinite;
+}
+.pdna__strand--b { inset: 7px; border-top-color: var(--pdna-violet); border-bottom-color: var(--pdna-aqua); animation-direction: reverse; animation-duration: 2.2s; }
+@keyframes pdna-turn { to { transform: rotate(360deg); } }
+.pdna__text { display: grid; gap: 0; min-width: 0; text-align: left; }
+.pdna__text b {
+  font-family: 'Bricolage Grotesque', 'Archivo', sans-serif; font-size: var(--t-sm); font-weight: 800;
+  letter-spacing: 0.01em;
+  background: linear-gradient(90deg, #8EF3FB, #FFFFFF 60%, #FFB3B5); -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.pdna__text small { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: rgba(234, 251, 255, 0.72); font-size: var(--t-2xs); }
+.pdna > svg:last-child { flex: none; color: var(--pdna-aqua); }
+/* Over the photo viewer: pinned to the bottom, where the photo count moves up to make room. */
+.pdna--dark { position: absolute; z-index: 3; bottom: max(16px, env(safe-area-inset-bottom)); left: 50%; translate: -50% 0; }
+.lightbox:has(.pdna--dark) .lightbox__count { bottom: calc(max(16px, env(safe-area-inset-bottom)) + 58px); }
+.pdna--light { justify-self: center; }
+/* Under a photo in the feed: the whole width. */
+.pdna--inline { display: flex; width: 100%; max-width: none; margin-top: var(--s2); border-radius: var(--r-md); }
+.pdna--inline .pdna__text { flex: 1; }
+.pdna--tagged { border-color: rgba(200, 255, 60, 0.6); }
 
 /* ── Vibes: a line set on a brand gradient ────────────────────────────── */
 

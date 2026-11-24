@@ -918,18 +918,26 @@ export interface Prints {
 }
 
 /**
+ * Items fingerprinted in one listing photo at most when the listing itself
+ * says where they are - pieces, a set's items, what the seller's phone found.
+ * A shelf sold piece by piece holds dozens, and every one a shopper could
+ * photograph on its own has to be findable, not only the first twelve.
+ */
+export const MAX_LISTED_REGIONS = 60;
+
+/**
  * The whole picture's fingerprint and each item's. `boxes` names the items
  * when something else already found them (Claude, or the shopper); otherwise
- * they are found here.
+ * they are found here. At most `max` items.
  */
-export function printsOfPixels(raw: Raw, boxes?: RegionBox[]): Prints | null {
+export function printsOfPixels(raw: Raw, boxes?: RegionBox[], max = MAX_REGIONS): Prints | null {
   if (raw.width < 2 || raw.height < 2) return null;
   const work = workingCopy(raw);
   const view = ownView(work);
   const hash = hashWorking(work, view);
   if (!hash) return null;
   const regions: PhotoRegion[] = [];
-  for (const box of (boxes ?? segment(work).items).slice(0, MAX_REGIONS)) {
+  for (const box of (boxes ?? segment(work).items).slice(0, max)) {
     const imageHash = hashWorking(cropPixels(work, box), within(view, box));
     if (imageHash) regions.push({ box, imageHash });
   }
@@ -1114,6 +1122,12 @@ function closest(a: Bits, b: Bits, bMirror: Bits | null): number {
 
 /** Bits apart at or under which two shapes are the same picture. */
 export const SAME_PHOTO_BITS = 10;
+/**
+ * Bits apart at or under which the whole picture, and the thing cut out of it,
+ * are the same almost bit for bit: the same photo, whatever the outlines say.
+ */
+const NEAR_EXACT_BITS = 4;
+const NEAR_EXACT_SUBJECT_BITS = 8;
 /** Under this much of the subject's colours in common, the same picture is a recoloured copy. */
 export const RECOLOURED = 0.3;
 /** Subject colours and colour adjacency at or over which a thing is the same thing posed another way. */
@@ -1203,8 +1217,14 @@ export function likenessOf(left: Fingerprint, right: Fingerprint): Likeness {
     form = 0.55 * outline + 0.3 * edges + 0.15 * subject;
     sameForm = form >= VARIANT_FORM;
     // The frame alike is not enough when what is in it is not: two product shots
-    // on the same white sweep share almost all their shape.
-    samePhoto &&= outlineBits <= SAME_OUTLINE_BITS;
+    // on the same white sweep share almost all their shape. But when the thing
+    // cut out of each is alike too, almost bit for bit, it is the same photo and
+    // the outlines are what is wrong: telling a thing from its backdrop is the
+    // fragile part, and a smaller, darker or recompressed copy - a box that
+    // fills the frame, at half size - can find backdrop where the original found
+    // none, and lose its silhouette.
+    const nearlyExact = bits <= NEAR_EXACT_BITS && subjectBits <= NEAR_EXACT_SUBJECT_BITS;
+    samePhoto &&= outlineBits <= SAME_OUTLINE_BITS || nearlyExact;
     if (!samePhoto) score = Math.min(score, 0.5 * score + 0.5 * outline);
     // The shading inside counts for little: on a plain-coloured thing it is
     // mostly noise and which way the light fell.
@@ -1317,6 +1337,49 @@ export function storedPrints(blobName: string): Promise<Prints | null> {
   })().finally(() => working.delete(blobName));
   working.set(blobName, work);
   return work;
+}
+
+/**
+ * The items of a listing photo: every place the listing says a thing is, in
+ * its order, then any other thing standing off the backdrop that none of them
+ * already covers. Two places the listing names are both kept even when they
+ * overlap - a figure and the box beside it are two pieces.
+ */
+export function listedItemBoxes(raw: Raw, named: readonly RegionBox[]): RegionBox[] {
+  const boxes: RegionBox[] = [];
+  const seen = new Set<string>();
+  for (const box of named) {
+    const key = box.map((part) => part.toFixed(3)).join(',');
+    if (!seen.has(key)) { seen.add(key); boxes.push(box); }
+  }
+  for (const box of detectItems(raw)) {
+    if (!boxes.some((kept) => overlapOfBoxes(kept, box) >= 0.5)) boxes.push(box);
+  }
+  return boxes.slice(0, MAX_LISTED_REGIONS);
+}
+
+/** Whether a photo's stored items cover every place the listing names: if not, they are worked out again. */
+export function coversNamed(regions: readonly PhotoRegion[], named: readonly RegionBox[]): boolean {
+  return named.slice(0, MAX_LISTED_REGIONS).every((box) => regions.some((region) => overlapOfBoxes(region.box, box) >= 0.5));
+}
+
+/**
+ * A stored listing photo's fingerprints with its items where the listing says
+ * they are (`listedItemBoxes`). Not remembered by name like `storedPrints`:
+ * the same photo can be read with other boxes, and this runs when a listing is
+ * saved or its stored items are found short, not on every search.
+ */
+export async function storedPrintsAt(blobName: string, named: readonly RegionBox[]): Promise<Prints | null> {
+  if (named.length === 0) return storedPrints(blobName);
+  const store = await getPhotoStore();
+  const found = await store.read(blobName);
+  if (!found || found.contentType !== 'image/jpeg') return null;
+  try {
+    const raw = decodeJpeg(found.bytes);
+    return printsOfPixels(raw, listedItemBoxes(raw, named), MAX_LISTED_REGIONS);
+  } catch {
+    return null;
+  }
 }
 
 /** The fingerprint of one of our stored photos, read and computed on first ask. */
