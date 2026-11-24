@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import type { DnaListingCard, DnaSummary, DnaView } from '@shared/dna';
 import { ApiRequestError, api } from '../api';
 import { BackLink } from '../components/ScrollManager';
-import { DnaHelix, DnaPicker, DnaTile, HeatBand, Stars, dnaHref, sequenceOf } from '../components/DnaKit';
+import { CropPic, DnaHelix, DnaPicker, DnaTile, HeatBand, Stars, dnaHref, sequenceOf } from '../components/DnaKit';
 import { useToast } from '../components/Feedback';
 import { Icon } from '../components/Icon';
 import { ReviewPhotoPicker, ReviewPhotoStrip } from '../components/ReviewPhotos';
@@ -214,7 +214,7 @@ function Hero({ view, onChanged }: { view: DnaView; onChanged: () => Promise<voi
         <span className="dnap__orb dnap__orb--b" />
       </div>
       <div className="dnap__specimen">
-        {dna.cover ? <img src={dna.cover} alt="" decoding="async" /> : <DnaHelix rungs={14} className="dnap__specimenhelix" />}
+        {dna.cover ? <CropPic src={dna.cover} box={dna.coverBox} /> : <DnaHelix rungs={14} className="dnap__specimenhelix" />}
         <span className="dnap__scanline" aria-hidden="true" />
         <span className="dnap__corner dnap__corner--tl" aria-hidden="true" />
         <span className="dnap__corner dnap__corner--br" aria-hidden="true" />
@@ -360,7 +360,7 @@ function WantSheet({ view, onClose, onDone }: { view: DnaView; onClose: () => vo
   return (
     <Modal title="I want this" onClose={onClose}>
       <div className="dnap__wantcard">
-        {view.dna.cover && <img src={view.dna.cover} alt="" decoding="async" />}
+        {view.dna.cover && <CropPic src={view.dna.cover} box={view.dna.coverBox} />}
         <div>
           <strong>{view.dna.name}</strong>
           <span className="dnap__dim">{view.dna.category} · goes on the Wanted board</span>
@@ -424,7 +424,7 @@ function PriceStrand({ view }: { view: DnaView }) {
         aria-label={`From ${formatMoney(price.lowMinor, price.currency)} to ${formatMoney(price.highMinor, price.currency)}, typically ${formatMoney(price.typicalMinor, price.currency)}`}>
         <div className="dnap__rangetrack">
           {sellingNow.map((listing, n) => (
-            <span key={listing.id} className="dnap__rangedot" data-deal={listing.deal ?? 'fair'}
+            <span key={`${listing.id}${listing.piece?.id ?? ''}`} className="dnap__rangedot" data-deal={listing.deal ?? 'fair'}
               style={{ left: price.highMinor === price.lowMinor ? '50%' : at(listing.priceMinor), ['--i' as string]: n } as CSSProperties} />
           ))}
           <span className="dnap__rangetypical" style={{ left: price.highMinor === price.lowMinor ? '50%' : at(price.typicalMinor) }}>
@@ -520,11 +520,16 @@ function ShopsStrand({ view }: { view: DnaView }) {
       {sellingNow.length > 0 ? (
         <ol className="dnap__offers">
           {sellingNow.map((listing, at) => (
-            <li key={listing.id} style={{ ['--i' as string]: at } as CSSProperties}>
+            <li key={`${listing.id}${listing.piece?.id ?? ''}`} style={{ ['--i' as string]: at } as CSSProperties}>
               <Link to={`/listing/${encodeURIComponent(listing.id)}`} className="dnap__offer">
-                <span className="dnap__offerpic">{listing.photoUrl ? <img src={listing.photoUrl} alt="" loading="lazy" decoding="async" /> : <Icon name="box" size={20} />}</span>
+                <span className="dnap__offerpic">{listing.photoUrl ? <CropPic src={listing.photoUrl} box={listing.photoBox} /> : <Icon name="box" size={20} />}</span>
                 <span className="dnap__offertext">
                   <b>{listing.shop?.name ?? 'A shop'}</b>
+                  {listing.piece && (
+                    <small>
+                      {listing.piece.set ? 'Sold as part of a set' : 'One of several in'} “{listing.piece.listingTitle}”
+                    </small>
+                  )}
                   <small>{listing.condition}{listing.shippingMinor !== null ? ` · ${listing.shippingMinor === 0 ? 'free shipping' : `+${formatMoney(listing.shippingMinor, listing.currency)} shipping`}` : ''}</small>
                 </span>
                 <span className="dnap__offerprice">
@@ -849,7 +854,7 @@ function FixPanel({ view, onChanged }: { view: DnaView; onChanged: () => Promise
   const [merging, setMerging] = useState(false);
   if (view.yourLinks.length === 0 && !view.staff) return null;
   const here: DnaSummary = {
-    id: view.dna.id, name: view.dna.name, category: view.dna.category, cover: view.dna.cover,
+    id: view.dna.id, name: view.dna.name, category: view.dna.category, cover: view.dna.cover, coverBox: view.dna.coverBox,
     lowMinor: view.price?.lowMinor ?? null, highMinor: view.price?.highMinor ?? null, currency: view.price?.currency ?? 'INR',
     sellers: view.sellingNow.length, heat: view.demand.heat, heatLabel: view.demand.label,
     rating: view.rating.average, ratings: view.rating.count, mentions: view.posts.length + view.hunts.length,
@@ -859,7 +864,7 @@ function FixPanel({ view, onChanged }: { view: DnaView; onChanged: () => Promise
     <section className="dnap__fix" data-reveal>
       <h2 className="dnap__fixtitle"><Icon name="settings" size={15} /> Is this right?</h2>
       {view.yourLinks.map((own) => (
-        <div key={`${own.kind}${own.id}`} className="dnap__fixrow">
+        <div key={`${own.kind}${own.id}${own.piece ?? ''}`} className="dnap__fixrow">
           <span><b>{words[own.kind]}</b> “{own.title}” is on this product.</span>
           <button type="button" className="btn btn--quiet btn--sm" onClick={() => setMoving(own)}>
             {own.kind === 'listing' ? 'Wrong product?' : 'Change'}
@@ -874,7 +879,7 @@ function FixPanel({ view, onChanged }: { view: DnaView; onChanged: () => Promise
       )}
       {moving && (
         <DnaPicker title={moving.kind === 'listing' ? 'Which product is your listing?' : 'Which product is it?'}
-          seed={moving.title} current={[here]} listingId={moving.kind === 'listing' ? moving.id : undefined}
+          seed={moving.title} current={[here]} listingId={moving.kind === 'listing' ? moving.id : undefined} piece={moving.piece}
           onClose={() => setMoving(null)}
           onRemove={moving.kind === 'listing' ? undefined : async (from) => {
             await api.fixDna({ kind: moving.kind, id: moving.id, partition: moving.partition, action: 'remove', from: from.id });
@@ -883,14 +888,14 @@ function FixPanel({ view, onChanged }: { view: DnaView; onChanged: () => Promise
           }}
           onPick={async (to) => {
             if (to.id === view.dna.id) return;
-            await api.fixDna({ kind: moving.kind, id: moving.id, partition: moving.partition, action: 'move', to: to.id });
+            await api.fixDna({ kind: moving.kind, id: moving.id, partition: moving.partition, action: 'move', to: to.id, piece: moving.piece });
             setMoving(null);
             await onChanged();
           }}
           extra={moving.kind === 'listing' ? (
             <button type="button" className="dnap__newdna" onClick={async () => {
               try {
-                const made = await api.fixDna({ kind: 'listing', id: moving.id, partition: moving.partition, action: 'new' });
+                const made = await api.fixDna({ kind: 'listing', id: moving.id, partition: moving.partition, action: 'new', piece: moving.piece });
                 setMoving(null);
                 toast('Your listing has its own Product DNA now');
                 if (made.dna) navigate(dnaHref(made.dna));

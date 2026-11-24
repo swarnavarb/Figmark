@@ -133,8 +133,16 @@ export async function describeItems(bytes: Uint8Array, contentType: string): Pro
 
 /** One structured look at a photo; the parsed answer, or null for any failure. */
 async function ask(bytes: Uint8Array, contentType: string, system: string, schema: object, question: string): Promise<unknown> {
+  return askAbout([{ bytes, contentType }], system, schema, question);
+}
+
+type Picture = { bytes: Uint8Array; contentType: string };
+const READABLE = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+
+/** One structured look at one or more photos; the parsed answer, or null for any failure. */
+async function askAbout(pictures: Picture[], system: string, schema: object, question: string): Promise<unknown> {
   if (!config.vision) return null;
-  if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(contentType)) return null;
+  if (pictures.length === 0 || pictures.some((picture) => !READABLE.includes(picture.contentType))) return null;
   client ??= new Anthropic({ apiKey: config.vision.apiKey, maxRetries: 1, timeout: 25_000 });
 
   try {
@@ -152,15 +160,15 @@ async function ask(bytes: Uint8Array, contentType: string, system: string, schem
       messages: [{
         role: 'user',
         content: [
-          {
-            type: 'image',
+          ...pictures.map((picture) => ({
+            type: 'image' as const,
             source: {
-              type: 'base64',
-              media_type: contentType as 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif',
-              data: Buffer.from(bytes).toString('base64'),
+              type: 'base64' as const,
+              media_type: picture.contentType as 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif',
+              data: Buffer.from(picture.bytes).toString('base64'),
             },
-          },
-          { type: 'text', text: question },
+          })),
+          { type: 'text' as const, text: question },
         ],
       }],
     });
@@ -174,6 +182,34 @@ async function ask(bytes: Uint8Array, contentType: string, system: string, schem
     console.warn(`photo search: Claude could not describe the photo: ${error instanceof Error ? error.message : String(error)}`);
     return null;
   }
+}
+
+const SAME_SCHEMA = {
+  type: 'object',
+  properties: { same: { type: 'boolean' }, reason: { type: 'string' } },
+  required: ['same', 'reason'],
+  additionalProperties: false,
+} as const;
+
+const SAME_SYSTEM = [
+  'You check product pages on Figmark, a marketplace for imported collectibles - action figures, scale figures, model',
+  'kits, trading cards, sneakers and the like. Two listings were matched to one product page by their titles, and you',
+  'see one photo from each. Say whether they show the same product: the same character or model, the same version,',
+  'mark, edition, release and colourway. Different photos, angles, lighting, boxed or loose, or one photo showing other',
+  'things beside it, are still the same product. A different mark or model number, another version of the character,',
+  'another colourway, another scale or another release is a different product. When the photos cannot tell, say same.',
+].join(' ');
+
+/**
+ * Whether two photos show the same product, as the matcher's last check on
+ * two listings whose titles say so. Null when vision is off or the answer
+ * could not be had: the titles then decide alone.
+ */
+export async function sameProductInPhotos(a: Picture, b: Picture, titles: [string, string]): Promise<boolean | null> {
+  const raw = await askAbout([a, b], SAME_SYSTEM, SAME_SCHEMA,
+    `First photo: "${titles[0].slice(0, 120)}". Second photo: "${titles[1].slice(0, 120)}". Is it the same product?`);
+  const same = (raw as { same?: unknown } | null)?.same;
+  return typeof same === 'boolean' ? same : null;
 }
 
 /** Claude's [left, top, right, bottom] as a box; null for anything that is not one. */
