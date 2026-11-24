@@ -22,7 +22,7 @@ import { ListingDna } from '../components/DnaKit';
 import { Glyph, RarityRibbon } from '../components/Quest';
 import { BumpHelp, InfoTip, useBump } from '../components/QuestKit';
 import { listingRarity } from '@shared/quest';
-import { factsOf } from '@shared/catalog';
+import { factsOf, pieceFactsLine } from '@shared/catalog';
 import { etaLabel } from '@shared/delivery-eta';
 import { confirmLabel } from '@shared/customers';
 import { FillBlock } from '../components/FillMeter';
@@ -177,6 +177,7 @@ export function ListingPage() {
   // looking like a completed one.
   const pieces = listing.pieces ?? [];
   const byPiece = pieces.length > 0;
+  const describePiece = (piece: { condition?: string; authenticity?: string }) => pieceFactsLine(listing.category, listing.attributes, piece);
   const buy = (initial: string[] = []) =>
     byPiece ? setPicking({ initial }) : run('', async () => {
       haptic();
@@ -412,13 +413,14 @@ export function ListingPage() {
           {/* Several things in one photo, each with its price: pick from the photo itself. */}
           {byPiece && photos[0] && (
             <PieceBoard src={photos[0]} pieces={pieces} title={listing.title}
-              disabled={data.isOwn || !buyable || busy || Boolean(shut)}
+              disabled={data.isOwn || !buyable || busy || Boolean(shut)} describe={describePiece}
               onBuy={(ids) => gate(() => buy(ids), 'Sign in to buy these.')()} />
           )}
           {picking && photos[0] && (
             <PiecePicker src={photos[0]} pieces={pieces} initial={picking.initial} busy={busy}
               advancePercent={listing.advancePercent} shippingMinor={listing.shippingMinor}
-              onClose={() => setPicking(null)} onCheckout={(ids, to) => void buyPieces(ids, to)} cartLabel="Add to cart" />
+              onClose={() => setPicking(null)} onCheckout={(ids, to) => void buyPieces(ids, to)} cartLabel="Add to cart"
+              describe={describePiece} />
           )}
 
           <div className="detail__section rise" style={{ marginTop: 18, ['--i' as string]: 1 }}>

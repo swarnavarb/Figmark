@@ -550,6 +550,53 @@ export function visibleFields(category: string | undefined | null, attributes: A
 export const splitMulti = (value: string | undefined): string[] =>
   value ? value.split(',').map((part) => part.trim()).filter(Boolean) : [];
 
+/**
+ * A photo of several things can hold some sealed and some loose, some
+ * originals and some copies. Those two questions then take "Mixed" for the
+ * listing, and each item says its own (`ListingPiece.condition` and
+ * `.authenticity`, shared/pieces.ts). Only a listing of several items may
+ * say it: one thing is never both.
+ */
+export const MIXED = 'Mixed';
+export const MIXABLE_FIELDS = ['condition', 'authenticity'] as const;
+export type MixableField = (typeof MIXABLE_FIELDS)[number];
+const mixable = (key: string): key is MixableField => (MIXABLE_FIELDS as readonly string[]).includes(key);
+
+/** The questions answered "Mixed", which each item then answers on its own. */
+export function mixedFields(category: string | undefined | null, attributes: Attributes): CategoryField[] {
+  return visibleFields(category, attributes).filter((field) => mixable(field.key) && attributes[field.key] === MIXED);
+}
+
+/** One item's own answers to the mixed questions, kept only when they are options. */
+export function cleanPieceFacts(
+  category: string | undefined | null,
+  attributes: Attributes,
+  raw: { condition?: unknown; authenticity?: unknown },
+): Partial<Record<MixableField, string>> {
+  const out: Partial<Record<MixableField, string>> = {};
+  for (const field of mixedFields(category, attributes)) {
+    const key = field.key as MixableField;
+    const sent = typeof raw[key] === 'string' ? (raw[key] as string).trim() : '';
+    if (sent && optionsOf(field, attributes).some((option) => option.value === sent)) out[key] = sent;
+  }
+  return out;
+}
+
+/** One item's own answers to the mixed questions, as a buyer reads them: "Loose · Bootleg". */
+export function pieceFactsLine(
+  category: string | undefined | null,
+  attributes: Attributes | null | undefined,
+  piece: { condition?: string; authenticity?: string },
+): string {
+  return mixedFields(category, attributes ?? {})
+    .map((field) => {
+      const value = piece[field.key as MixableField];
+      return value ? optionsOf(field, attributes ?? {}).find((option) => option.value === value)?.label ?? value : '';
+    })
+    .filter(Boolean)
+    .join(' · ');
+}
+
 export interface CleanedAttributes {
   attributes: Attributes;
   /** A sentence fit to show the seller, when something required is missing or wrong. */
@@ -565,7 +612,7 @@ export interface CleanedAttributes {
  * present. Done here and not in the browser because the browser is only one of
  * the things that can post a listing.
  */
-export function cleanAttributes(category: string, raw: unknown): CleanedAttributes {
+export function cleanAttributes(category: string, raw: unknown, options: { allowMixed?: boolean } = {}): CleanedAttributes {
   const spec = specFor(category);
   const input: Record<string, unknown> =
     raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
@@ -591,6 +638,10 @@ export function cleanAttributes(category: string, raw: unknown): CleanedAttribut
       continue;
     }
 
+    if (options.allowMixed && mixable(field.key) && sent === MIXED) {
+      attributes[field.key] = MIXED;
+      continue;
+    }
     const allowed = optionsOf(field, attributes).map((option) => option.value);
     if (field.kind === 'multi') {
       const picked = splitMulti(sent).filter((value) => allowed.includes(value));
@@ -750,7 +801,7 @@ export function pruneAttributes(category: string | undefined | null, attributes:
       if (current === undefined || !field.when.in.includes(current)) continue;
     }
     if (field.kind === 'choice') {
-      if (!optionsOf(field, next).some((option) => option.value === value)) continue;
+      if (!(mixable(field.key) && value === MIXED) && !optionsOf(field, next).some((option) => option.value === value)) continue;
     } else if (field.kind === 'multi') {
       const allowed = optionsOf(field, next).map((option) => option.value);
       const kept = splitMulti(value).filter((part) => allowed.includes(part));

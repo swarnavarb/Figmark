@@ -326,4 +326,23 @@ await check('trusted as one item unless the photo clearly shows several separate
   assert.equal(two.jsonBody.listing.bundleCount, undefined, 'one fee');
 });
 
+console.log('mixed condition and original-or-copy');
+await check('"Mixed" is for several items: each says its own, and a lone item may not say it', async () => {
+  const attributes = { type: 'Action figure', condition: 'Mixed', authenticity: 'Mixed' };
+  const items = found.slice(0, 3).map((box, index) => ({
+    title: `Figure ${index + 1}`, boxes: [box],
+    condition: ['MISB', 'LOOSE', 'Nonsense'][index], authenticity: ['Official', 'Bootleg', undefined][index],
+  }));
+  const made = await createListing(req({ headers: shop, body: setBody({ category: 'Figures', attributes, setItems: items, seen: found }) }), ctx);
+  assert.equal(made.status, 201, JSON.stringify(made.jsonBody));
+  const listing = made.jsonBody.listing;
+  assert.equal(listing.attributes.condition, 'Mixed');
+  assert.deepEqual(listing.setItems.map((item) => [item.condition, item.authenticity]),
+    [['MISB', 'Official'], ['LOOSE', 'Bootleg'], [undefined, undefined]], 'only real options are kept');
+  const lone = await createListing(req({ headers: shop, body: {
+    title: 'One figure', priceMinor: 3_00_000, deliveryEta: { minDays: 3, maxDays: 5 }, category: 'Figures', attributes,
+  } }), ctx);
+  assert.equal(lone.status, 400, 'one item is never "Mixed"');
+});
+
 console.log(`\n${passed} checks passed`);

@@ -124,12 +124,25 @@ export function piecesCount(pieces: readonly ListingPiece[]): string {
  * with crosses on what has gone, and every piece listed with its price. A
  * tap on either picks a piece; Buy opens the picker with what was picked.
  */
-export function PieceBoard({ src, pieces, title, onBuy, disabled }: {
+/** An item's name, with its own condition under it when the listing's is "Mixed". */
+function PieceName({ title, facts }: { title: string; facts?: string }) {
+  if (!facts) return <span className="pcs-row__title">{title}</span>;
+  return (
+    <span className="pcs-row__title pcs-row__title--facts">
+      <span>{title}</span>
+      <small>{facts}</small>
+    </span>
+  );
+}
+
+export function PieceBoard({ src, pieces, title, onBuy, disabled, describe }: {
   src: string;
   pieces: ListingPiece[];
   title: string;
   onBuy: (picked: string[]) => void;
   disabled?: boolean;
+  /** Each item's own condition or original-or-copy, when the listing's is "Mixed". */
+  describe?: (piece: ListingPiece) => string;
 }) {
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
   const toggle = (id: string) => {
@@ -159,7 +172,7 @@ export function PieceBoard({ src, pieces, title, onBuy, disabled }: {
                 disabled={sold || disabled} aria-pressed={sold ? undefined : on} onClick={() => toggle(piece.id)}>
                 <span className="pcs-row__n">{index + 1}</span>
                 <PieceThumb src={src} box={piece.boxes[0] ?? null} sold={sold} />
-                <span className="pcs-row__title">{piece.title}</span>
+                <PieceName title={piece.title} facts={describe?.(piece)} />
                 <span className="pcs-row__price">{sold ? 'Sold' : formatMoney(piece.priceMinor)}</span>
                 <span className="pcs-row__tick" aria-hidden="true">{on ? '✓' : ''}</span>
               </button>
@@ -184,7 +197,7 @@ export function PieceBoard({ src, pieces, title, onBuy, disabled }: {
  * photo, title and price; sold ones crossed out. The total, and the advance
  * when the shop takes one, follow what is ticked.
  */
-export function PiecePicker({ src, pieces, initial, advancePercent, shippingMinor, busy, onClose, onCheckout, cartLabel }: {
+export function PiecePicker({ src, pieces, initial, advancePercent, shippingMinor, busy, onClose, onCheckout, cartLabel, describe }: {
   src: string;
   pieces: ListingPiece[];
   initial?: readonly string[];
@@ -195,6 +208,8 @@ export function PiecePicker({ src, pieces, initial, advancePercent, shippingMino
   onCheckout: (ids: string[], to: 'checkout' | 'cart') => void;
   /** Shown as a second button when the item can go in the cart. */
   cartLabel?: string;
+  /** Each item's own condition or original-or-copy, when the listing's is "Mixed". */
+  describe?: (piece: ListingPiece) => string;
 }) {
   const left = useMemo(() => piecesLeft(pieces), [pieces]);
   const [picked, setPicked] = useState<Set<string>>(() =>
@@ -236,7 +251,7 @@ export function PiecePicker({ src, pieces, initial, advancePercent, shippingMino
                   <input type="checkbox" checked={on} disabled={sold} onChange={() => toggle(piece.id)} />
                   <span className="pcs-row__n">{index + 1}</span>
                   <PieceThumb src={src} box={piece.boxes[0] ?? null} sold={sold} />
-                  <span className="pcs-row__title">{piece.title}</span>
+                  <PieceName title={piece.title} facts={describe?.(piece)} />
                   <span className="pcs-row__price">{sold ? 'Sold' : formatMoney(piece.priceMinor)}</span>
                 </label>
               </li>

@@ -127,6 +127,8 @@ export function covered(asked: readonly string[], product: readonly string[]): n
 export function lineOf(category: string, attributes: Record<string, string> | undefined): DnaLine {
   const said = attributes?.authenticity;
   if (!said) return 'original';
+  // Some originals, some copies: never put with the originals.
+  if (said === 'Mixed') return 'copy';
   const field = specFor(category)?.fields.find((entry) => entry.key === 'authenticity');
   const option = field?.options?.find((entry) => entry.value === said);
   return option && option.genuine === false ? 'copy' : 'original';
