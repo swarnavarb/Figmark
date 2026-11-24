@@ -24,7 +24,8 @@ import '../styles/Buy.css';
 import type { DayRange } from '@shared/step-days';
 import type { Sourcing } from '@shared/enums';
 import { isPieceSold } from '@shared/pieces';
-import { PieceList, groupProblems, type DraftPiece } from './PieceEditor';
+import { mixedFields, optionsOf } from '@shared/catalog';
+import { PieceList, groupProblems, type DraftPiece, type MixedFact } from './PieceEditor';
 
 /**
  * The small, loud pieces the Buy, Sell and Purchases screens share: stock and
@@ -584,7 +585,15 @@ export function EditListingDialog({ listing, onClose, onSaved }: {
   const pieceMode: 'each' | 'set' | null = listing.pieces?.length ? 'each' : listing.setItems?.length ? 'set' : null;
   const [items, setItems] = useState<DraftPiece[]>(() => (listing.pieces?.length ? listing.pieces : listing.setItems ?? []).map((piece) => ({
     key: piece.id, id: piece.id, title: piece.title, price: String(piece.priceMinor / 100), boxes: piece.boxes, sold: isPieceSold(piece),
+    condition: piece.condition, authenticity: piece.authenticity,
   })));
+  // Condition or original-or-copy answered "Mixed": each item keeps its own, changeable here.
+  const mixed: MixedFact[] = mixedFields(listing.category, listing.attributes ?? {}).map((field) => ({
+    key: field.key as MixedFact['key'], label: field.label, options: optionsOf(field, listing.attributes ?? {}),
+  }));
+  const pieceFacts = (piece: DraftPiece) => ({
+    ...(piece.condition ? { condition: piece.condition } : {}), ...(piece.authenticity ? { authenticity: piece.authenticity } : {}),
+  });
   const leadUrl = (listing.photos.find((photo) => photo.isPrimary) ?? listing.photos[0])?.url ?? null;
   const privateDeal = Boolean(listing.privateFor);
   /** A private deal's new clock; null keeps the one it has, unless that ran out. */
@@ -613,8 +622,8 @@ export function EditListingDialog({ listing, onClose, onSaved }: {
     }
     void run(async () => (await api.editListing(listing.id, {
       title: title.trim(), ...(pieceMode === 'each' ? {} : { priceMinor: Math.round(Number(price) * 100) }), photos, ...termsBody(terms),
-      ...(pieceMode === 'each' ? { pieces: items.map((piece) => ({ ...(piece.id ? { id: piece.id } : {}), title: piece.title.trim(), priceMinor: Math.round(Number(piece.price) * 100), boxes: piece.boxes })) } : {}),
-      ...(pieceMode === 'set' ? { setItems: items.map((piece) => ({ title: piece.title.trim(), boxes: piece.boxes })) } : {}),
+      ...(pieceMode === 'each' ? { pieces: items.map((piece) => ({ ...(piece.id ? { id: piece.id } : {}), title: piece.title.trim(), priceMinor: Math.round(Number(piece.price) * 100), boxes: piece.boxes, ...pieceFacts(piece) })) } : {}),
+      ...(pieceMode === 'set' ? { setItems: items.map((piece) => ({ title: piece.title.trim(), boxes: piece.boxes, ...pieceFacts(piece) })) } : {}),
       // Sales made while this was open have already taken their units; only the change here is applied.
       quantityWas: listing.quantityAvailable,
       // A deal keeps its clock unless a new one was picked.
@@ -652,7 +661,7 @@ export function EditListingDialog({ listing, onClose, onSaved }: {
           <LBox icon={pieceMode === 'each' ? '🏷️' : '📦'} title={pieceMode === 'each' ? 'Items in this photo' : 'What the set holds'}
             hint={pieceMode === 'each' ? 'Rename, reprice, add or take off items. Sold items stay as they sold.' : 'The set price is shared out over these items.'}>
             <PieceList photoUrl={leadUrl} mode={pieceMode} pieces={items} onPieces={(update) => setItems(update)}
-              setPriceMinor={Math.round(Number(price) * 100)} />
+              setPriceMinor={Math.round(Number(price) * 100)} mixed={mixed} />
           </LBox>
         )}
         <TermsFields value={terms} onChange={setTerms} preOrder={Boolean(listing.preOrder)} privateDeal={privateDeal}

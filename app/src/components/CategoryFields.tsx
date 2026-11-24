@@ -11,7 +11,7 @@
  * edit there and this file does not change.
  */
 import {
-  optionsOf, pruneAttributes, splitMulti, visibleFields,
+  MIXABLE_FIELDS, MIXED, optionsOf, pruneAttributes, splitMulti, visibleFields,
   type Attributes, type CategoryField,
 } from '@shared/catalog';
 import { Select } from './Select';
@@ -19,12 +19,14 @@ import { Select } from './Select';
 /** More options than this and a row of tags stops being a row. */
 const MENU_ABOVE = 9;
 
-export function CategoryFields({ category, value, onChange, showMissing }: {
+export function CategoryFields({ category, value, onChange, showMissing, allowMixed }: {
   category: string;
   value: Attributes;
   onChange: (next: Attributes) => void;
   /** After a first publish attempt: highlight what is still unanswered. */
   showMissing?: boolean;
+  /** Several items in one photo: condition and original-or-copy may be "Mixed", each item then saying its own. */
+  allowMixed?: boolean;
 }) {
   const fields = visibleFields(category, value);
 
@@ -40,21 +42,26 @@ export function CategoryFields({ category, value, onChange, showMissing }: {
     <div className="attrs">
       {fields.map((field) => (
         <FieldInput key={field.key} field={field} attributes={value}
-          missing={Boolean(showMissing && field.required && !value[field.key]?.trim())}
+          mixable={Boolean(allowMixed) && (MIXABLE_FIELDS as readonly string[]).includes(field.key)}
+          missing={Boolean(showMissing && field.required && (!value[field.key]?.trim() || (!allowMixed && value[field.key] === MIXED)))}
           onSet={(answer) => set(field.key, answer)} />
       ))}
     </div>
   );
 }
 
-function FieldInput({ field, attributes, missing, onSet }: {
+function FieldInput({ field, attributes, missing, onSet, mixable = false }: {
   field: CategoryField;
   attributes: Attributes;
   missing: boolean;
   onSet: (answer: string) => void;
+  mixable?: boolean;
 }) {
   const current = attributes[field.key] ?? '';
-  const options = optionsOf(field, attributes);
+  const own = optionsOf(field, attributes);
+  const options = mixable && own.length > 0
+    ? [...own, { value: MIXED, label: MIXED, hint: 'Pick it for each item in the list above.' }]
+    : own;
   const chosen = options.find((option) => option.value === current);
   // Say why a choice list is empty instead of rendering nothing: card
   // conditions depend on the card type, and "pick a type first" is the answer.

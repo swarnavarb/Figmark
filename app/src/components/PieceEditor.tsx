@@ -11,6 +11,7 @@ import { usePricing } from './Billing';
 import { PieceThumb } from './Pieces';
 import { AiScan } from './AiScan';
 import { PhotoMarker } from './PhotoMarker';
+import { Select } from './Select';
 
 /*
  * The sell form's answer to a photo of several things.
@@ -44,7 +45,32 @@ export interface DraftPiece {
   label?: string | null;
   /** Sold already: shown, never changed. */
   sold?: boolean;
+  /** Its own condition, when the listing's is "Mixed". */
+  condition?: string;
+  /** Original or copy, its own, when the listing's is "Mixed". */
+  authenticity?: string;
 }
+
+/** A question the listing answered "Mixed": each row picks its own answer from these. */
+export interface MixedFact {
+  key: 'condition' | 'authenticity';
+  label: string;
+  options: readonly { value: string; label: string }[];
+}
+
+/** The mixed questions some rows still have to answer, in words; empty when none. */
+export function mixedProblems(pieces: readonly DraftPiece[], facts: readonly MixedFact[]): string[] {
+  return facts.flatMap((fact) => {
+    const open = pieces.filter((piece) => !piece.sold && !piece[fact.key]).length;
+    return open ? [`${fact.label.replace(/\?$/, '').toLowerCase()} for ${open} ${open === 1 ? 'item' : 'items'}`] : [];
+  });
+}
+
+/** A row's own answers to the mixed questions, for publishing. */
+const factsBody = (piece: DraftPiece) => ({
+  ...(piece.condition ? { condition: piece.condition } : {}),
+  ...(piece.authenticity ? { authenticity: piece.authenticity } : {}),
+});
 
 export type GroupMode = 'ask' | 'single' | 'pieces' | 'lot';
 
@@ -124,18 +150,18 @@ export function groupProblems(group: PhotoGroup): string[] {
 
 /** The body the listing is published with, for the group's choice. */
 export function groupBody(group: PhotoGroup): {
-  pieces?: { id?: string; title: string; priceMinor: number; boxes: PhotoBox[] }[];
-  bundle?: boolean; setItems?: { title: string; boxes: PhotoBox[] }[]; seen?: PhotoBox[];
+  pieces?: { id?: string; title: string; priceMinor: number; boxes: PhotoBox[]; condition?: string; authenticity?: string }[];
+  bundle?: boolean; setItems?: { title: string; boxes: PhotoBox[]; condition?: string; authenticity?: string }[]; seen?: PhotoBox[];
 } {
   const seen = group.seen ?? [];
   if (group.mode === 'pieces') {
     return {
-      pieces: group.pieces.map((piece) => ({ ...(piece.id ? { id: piece.id } : {}), title: piece.title.trim(), priceMinor: rupeesToMinor(piece.price), boxes: piece.boxes })),
+      pieces: group.pieces.map((piece) => ({ ...(piece.id ? { id: piece.id } : {}), title: piece.title.trim(), priceMinor: rupeesToMinor(piece.price), boxes: piece.boxes, ...factsBody(piece) })),
       seen,
     };
   }
   if (group.mode === 'lot') {
-    return { bundle: true, setItems: group.pieces.map((piece) => ({ title: piece.title.trim(), boxes: piece.boxes })), seen };
+    return { bundle: true, setItems: group.pieces.map((piece) => ({ title: piece.title.trim(), boxes: piece.boxes, ...factsBody(piece) })), seen };
   }
   // Sold as one item, the photo is still counted: what was found goes with it.
   return seen.length ? { seen } : {};
@@ -173,7 +199,7 @@ function switchMode(group: PhotoGroup, mode: 'pieces' | 'lot'): PhotoGroup {
  * Reads the lead photo when it changes, asks how its things are sold, and
  * lists them either way.
  */
-export function PhotoGroupBox({ photoUrl, group, onChange, title = '', onStock, onContinue }: {
+export function PhotoGroupBox({ photoUrl, group, onChange, title = '', onStock, onContinue, mixed = [] }: {
   photoUrl: string | null;
   group: PhotoGroup;
   onChange: Dispatch<SetStateAction<PhotoGroup>>;
@@ -183,6 +209,8 @@ export function PhotoGroupBox({ photoUrl, group, onChange, title = '', onStock, 
   onStock?: (count: number) => void;
   /** A way of selling was chosen: the rest of the form can follow. */
   onContinue?: () => void;
+  /** Questions the listing answered "Mixed": each row answers its own. */
+  mixed?: readonly MixedFact[];
 }) {
   const terms = useFeeTerms();
 
@@ -378,7 +406,7 @@ export function PhotoGroupBox({ photoUrl, group, onChange, title = '', onStock, 
       {status}
       {scanButton}
       <PieceList photoUrl={photoUrl} mode={setMode ? 'set' : 'each'} pieces={group.pieces}
-        setPriceMinor={priceMinor}
+        setPriceMinor={priceMinor} mixed={mixed}
         onPieces={(update) => onChange((now) => ({ ...now, pieces: update(now.pieces), confirmed: false }))} />
 
       <div className="pcs-confirm">
@@ -434,12 +462,14 @@ function FeeSummary({ terms, setMode, pieces, count, setPriceMinor, setFee }: {
  * The photo to mark things on, and a row for each: what the sell form shows
  * for both ways of selling, and what a published listing's edit shows.
  */
-export function PieceList({ photoUrl, mode, pieces, onPieces, setPriceMinor = 0 }: {
+export function PieceList({ photoUrl, mode, pieces, onPieces, setPriceMinor = 0, mixed = [] }: {
   photoUrl: string;
   mode: 'each' | 'set';
   pieces: DraftPiece[];
   onPieces: (update: (now: DraftPiece[]) => DraftPiece[]) => void;
   setPriceMinor?: number;
+  /** Questions the listing answered "Mixed": a small menu for each on every row. */
+  mixed?: readonly MixedFact[];
 }) {
   /** Drawing a new box: for a new row, or for the row being marked (`placing`). */
   const [adding, setAdding] = useState(false);
@@ -500,7 +530,7 @@ export function PieceList({ photoUrl, mode, pieces, onPieces, setPriceMinor = 0 
       const [first, ...rest] = piece.boxes;
       return [
         ...now.map((entry) => (entry.key === key ? { ...entry, boxes: [first!] } : entry)),
-        ...rest.map((box) => ({ key: newKey(), title: '', price: piece.price, boxes: [box], label: null })),
+        ...rest.map((box) => ({ key: newKey(), title: '', price: piece.price, boxes: [box], label: null, condition: piece.condition, authenticity: piece.authenticity })),
       ];
     });
   }
@@ -534,10 +564,19 @@ export function PieceList({ photoUrl, mode, pieces, onPieces, setPriceMinor = 0 
       : ' Check each one matches its number on the photo.'}`);
     setPasting(false);
   }
+  /** One price for every item still for sale, over whatever each had. */
   function priceAll() {
     if (rupeesToMinor(allPrice) < 100) return;
-    onPieces((now) => now.map((piece) => (piece.price || piece.sold ? piece : { ...piece, price: allPrice })));
+    haptic('tap');
+    onPieces((now) => now.map((piece) => (piece.sold ? piece : { ...piece, price: allPrice })));
   }
+  /** Every price cleared, to start the prices again. */
+  function resetPrices() {
+    haptic('tap');
+    setAllPrice('');
+    onPieces((now) => now.map((piece) => (piece.sold ? piece : { ...piece, price: '' })));
+  }
+  const anyPriced = pieces.some((piece) => !piece.sold && piece.price);
 
   const isDone = (piece: DraftPiece) => (each ? piece.title.trim().length >= 2 && rupeesToMinor(piece.price) >= 100 : true);
   const chosen = pieces.find((piece) => piece.key === selected) ?? null;
@@ -596,9 +635,15 @@ export function PieceList({ photoUrl, mode, pieces, onPieces, setPriceMinor = 0 
             <span className="pcs-pricebox pcs-pricebox--sm">
               <span aria-hidden="true">₹</span>
               <input type="number" inputMode="numeric" min="1" placeholder="Same price" value={allPrice}
-                onChange={(event) => setAllPrice(event.target.value)} aria-label="One price for every item without one" />
+                onChange={(event) => setAllPrice(event.target.value)} aria-label="One price for every item" />
             </span>
-            <button type="button" className="btn btn--ghost btn--sm" onClick={priceAll} disabled={rupeesToMinor(allPrice) < 100}>Fill empty</button>
+            <button type="button" className="btn btn--ghost btn--sm" onClick={priceAll} disabled={rupeesToMinor(allPrice) < 100}>Fill all</button>
+            <button type="button" className="pcs-reset" onClick={resetPrices} disabled={!anyPriced && !allPrice}
+              aria-label="Reset all prices" title="Reset all prices">
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 12a9 9 0 1 0 3-6.7" /><path d="M3 4v5h5" />
+              </svg>
+            </button>
           </span>
         )}
       </div>
@@ -644,6 +689,19 @@ export function PieceList({ photoUrl, mode, pieces, onPieces, setPriceMinor = 0 
               <span className="pcs-erow__share">{shares[index] ? formatMoney(shares[index]!) : '—'}</span>
             )}
             {piece.sold ? <span /> : moreMenu(piece, index)}
+            {mixed.length > 0 && (
+              // Not picking the row on the photo: that moves the list under the finger and the menu never opens.
+              <span className="pcs-erow__facts" onFocus={(event) => event.stopPropagation()}>
+                {mixed.map((fact) => (
+                  <Select key={fact.key} className="pcs-fact" value={piece[fact.key] ?? ''} disabled={piece.sold}
+                    aria-label={`${fact.label.replace(/\?$/, '')} of item ${index + 1}`}
+                    onChange={(event) => update(piece.key, { [fact.key]: event.target.value || undefined })}>
+                    <option value="">{fact.key === 'condition' ? 'Condition' : 'Original or copy'}</option>
+                    {fact.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </Select>
+                ))}
+              </span>
+            )}
           </li>
         ))}
       </ol>

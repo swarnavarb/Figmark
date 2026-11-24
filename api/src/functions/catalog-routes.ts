@@ -14,7 +14,7 @@ import { forgetFollowerCount, realFollowerCount } from '../follower-count.js';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import type { Sourcing } from '../../../shared/enums.js';
 import {
-  authenticityValues, canonicalCategory, categoriesIn, cleanAttributes, conditionTagFor,
+  authenticityValues, canonicalCategory, categoriesIn, cleanAttributes, cleanPieceFacts, conditionTagFor,
   PRICE_RANGE_MESSAGE, listablePrice, priceCeiling,
 } from '../../../shared/catalog.js';
 import { PERSON_FOLLOW, isPersonFollow, storeTag } from '../../../shared/storefront.js';
@@ -1094,9 +1094,18 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
   // behaviour: just a category and a grade.
   let attributes: Record<string, string> | undefined;
   if (body.attributes !== undefined && body.attributes !== null) {
-    const cleaned = cleanAttributes(category, body.attributes);
+    // "Mixed" condition or original-or-copy is for a photo of several items only.
+    const cleaned = cleanAttributes(category, body.attributes, { allowMixed: Boolean(pieces || setItems) });
     if (cleaned.error) return error(400, 'invalid_listing', cleaned.error);
     attributes = cleaned.attributes;
+  }
+  // Each item's own answer to what was "Mixed", in the order the rows were sent.
+  if (attributes && (pieces || setItems)) {
+    const sent: unknown = pieces ? body.pieces : body.setItems;
+    const sentRows = (Array.isArray(sent) ? sent : []) as Record<string, unknown>[];
+    const withFacts = (rows: ListingPiece[]) => rows.map((row, index) => ({ ...row, ...cleanPieceFacts(category, attributes!, sentRows[index] ?? {}) }));
+    if (pieces) pieces = withFacts(pieces);
+    if (setItems) setItems = withFacts(setItems);
   }
 
   const offerProblem = offerRefusal(body, priceMinor);
@@ -2022,7 +2031,10 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
     const counted = await countThings(leadBlob, cleaned.pieces.map((piece) => piece.boxes), listing.foundBoxes ?? []).catch(() => null);
     const units = spreadUnits(cleaned.pieces.map((_, index) => counted?.perRow[index] ?? 1), counted?.charged ?? 0);
     editedPieces = {
-      pieces: cleaned.pieces.map((piece, index) => ({ ...piece, units: units[index] ?? 1 })),
+      pieces: cleaned.pieces.map((piece, index) => ({
+        ...piece, units: units[index] ?? 1,
+        ...cleanPieceFacts(listing.category, listing.attributes ?? {}, (sent[index] ?? {}) as Record<string, unknown>),
+      })),
       ids: sent.map((entry) => (typeof entry?.id === 'string' ? entry.id : null)),
     };
   }
@@ -2111,9 +2123,14 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
     if (stockDelta !== 0 && !hasPieces(current)) next.quantityAvailable = Math.max(0, current.quantityAvailable + stockDelta);
     // A set's items share its price as it is now, whichever of the two changed.
     if (current.bundle && (editedSet || (body.priceMinor !== undefined && current.setItems?.length))) {
-      const items = cleanSetItems(editedSet?.items ?? current.setItems, next.priceMinor);
+      const source: unknown = editedSet?.items ?? current.setItems;
+      const items = cleanSetItems(source, next.priceMinor);
       if (!('error' in items)) {
-        next.setItems = items.items.map((item, index) => ({ ...item, id: current.setItems?.[index]?.id ?? item.id }));
+        const rows = (Array.isArray(source) ? source : []) as Record<string, unknown>[];
+        next.setItems = items.items.map((item, index) => ({
+          ...item, id: current.setItems?.[index]?.id ?? item.id,
+          ...cleanPieceFacts(current.category, current.attributes ?? {}, rows[index] ?? {}),
+        }));
         if (editedSet) {
           next.bundleCount = { declared: editedSet.rows, detected: editedSet.found, charged: editedSet.charged };
         }
