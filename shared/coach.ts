@@ -284,9 +284,9 @@ export function bestTime(timing: CoachSignals['timing']): BestTime {
   const dayName = DAY_NAMES[peakDay]!;
   const advice = fromShop
     ? night
-      ? `Your buyers order most late at night, around ${window}, and most on ${dayName}s. Post and share by ${hourName(postHour)} the evening before, so it is waiting at the top of their feed.`
-      : `Your buyers order most around ${window}, and most on ${dayName}s. Post and share at about ${hourName(postHour)}, so the post is fresh when they open the app.`
-    : `Not enough orders yet to read your own buyers' hours, so start from the usual rush: ${window}, busiest on Sundays. Post around ${hourName(postHour)}; the coach switches to your own hours after ${TIMING_SAMPLE} orders.`;
+      ? `Your buyers order most late at night, around ${window}, and most on ${dayName}s. Post by ${hourName(postHour)} the evening before. Then your post is waiting for them.`
+      : `Your buyers order most around ${window}, and most on ${dayName}s. Post at about ${hourName(postHour)}. Then your post is new when they open the app.`
+    : `You do not have enough orders yet to see your own busy time. Most buyers shop at ${window}, and most on Sundays. Post at about ${hourName(postHour)}. After ${TIMING_SAMPLE} orders, the coach uses your own busy time.`;
   return { fromShop, peakHour, postHour, peakDay, window, dayName, advice };
 }
 
@@ -310,117 +310,117 @@ export function coachTips(signals: CoachSignals): CoachTip[] {
   if (orders && orders.toAnswer > 0) {
     add({ id: 'answer', area: 'urgent', priority: 100, tool: 'orders', label: 'Answer now',
       title: `${count(orders.toAnswer, 'order')} waiting for you`,
-      why: 'A payment to confirm or an order to say yes to. Buyers who wait go quiet - answer within the hour where you can.' });
+      why: 'A buyer is waiting for you to confirm a payment or accept an order. Reply within an hour if you can.' });
   }
   if (!shop.setup.payment) {
     add({ id: 'payment', area: 'urgent', priority: 96, tool: 'storefront', label: 'Add payment details',
-      title: 'Add where buyers pay you',
-      why: 'Without a UPI ID or bank account on the shop, nobody can pay for an order.' });
+      title: 'Add how buyers can pay you',
+      why: 'Add your UPI ID or bank account. Without it, nobody can pay you.' });
   }
   if (listings.onSale === 0) {
     add({ id: 'first', area: 'urgent', priority: 92, tool: 'list',
       title: listings.drafts > 0 ? 'Nothing is on sale yet - publish a draft' : 'Put your first item on sale',
-      why: 'An empty shelf cannot be shared, found in search or bought from. One good item with clear photos is enough to start.' });
+      why: 'Buyers cannot find or buy from an empty shop. Start with one item and clear photos.' });
   }
   if (orders && orders.noLot > 0) {
     add({ id: 'nolot', area: 'urgent', priority: 78, tool: 'lots', label: 'File into a shipment',
       title: `${count(orders.noLot, 'import order')} not in a shipment yet`,
-      why: 'Buyers see tracking only once their order rides in a lot. File them so the stages start showing.' });
+      why: 'Buyers see tracking only after their order is in a lot. Add these orders to a shipment.' });
   }
 
   if (listings.importsNoLot > 0 && !(orders && orders.noLot > 0)) {
     add({ id: 'importsnolot', area: 'listing', priority: 48, tool: 'lots', label: 'File into a shipment',
       title: `${count(listings.importsNoLot, 'import')} on sale with no shipment`,
-      why: 'File each import into the lot it will travel in, so its buyers get tracking from the first order.' });
+      why: 'Add each import to its shipment. Then buyers get tracking from their first order.' });
   }
 
   /* Items that need a hand. */
   for (const item of listings.endingSoon.slice(0, 2)) {
     add({ id: `ending:${item.id}`, area: 'sales', priority: 76, tool: 'share_item', item, label: 'Share last call',
       title: `"${item.title}" ends soon`,
-      why: 'Closing in under two days. A last-call share to your groups now is the cheapest sale you will get - or extend it if it should stay up.' });
+      why: 'It closes in less than two days. Share it once more in your groups now, or give it more time.' });
   }
   const fullest = listings.browsedNotBought[0];
   if (fullest) {
     add({ id: `browsed:${fullest.id}`, area: 'sales', priority: 72, tool: 'offers', item: fullest, label: 'Add an offer',
       title: `${fullest.views30} looks at "${fullest.title}", no sale`,
-      why: 'People want it but are not pressing buy. A small offer, a bundle, or a pay-in-part advance usually tips them; check the price against similar items too.' });
+      why: 'Many people looked, but nobody bought. Try a small discount or allow part payment. Also check your price against similar items.' });
   }
   if (money && money.revenuePrev30Minor > 0 && money.revenue30Minor < money.revenuePrev30Minor * 0.75) {
     const drop = 100 - pct(money.revenue30Minor, money.revenuePrev30Minor);
     add({ id: 'slump', area: 'sales', priority: 70, tool: shop.pro ? 'live_drop' : 'offers',
       label: shop.pro ? 'Plan a live drop' : 'Run an offer',
-      title: `Sales down ${drop}% on the month before`,
+      title: `Sales down ${drop}% from last month`,
       why: shop.pro
-        ? 'A timed live drop at your busiest hour brings people back at once. Tease it in your channel the day before.'
-        : 'A short, timed offer gives followers a reason to come back this week. Announce it in your channel at your busiest hour.' });
+        ? 'Run a live drop at your busy time. Tell your followers about it the day before.'
+        : 'Run a short offer this week. Share it at your busy time so followers come back.' });
   }
   for (const item of listings.lowStock.slice(0, 1)) {
     add({ id: `low:${item.id}`, area: 'listing', priority: 60, tool: 'edit_item', item, label: 'Restock',
       title: `"${item.title}" is nearly out`,
-      why: `${count(item.quantityAvailable, 'unit')} left. Top up the count, or open a pre-order for the next batch before it sells out.` });
+      why: `Only ${count(item.quantityAvailable, 'unit')} left. Add more stock, or take pre-orders for the next batch.` });
   }
   const unseen = listings.unseen[0];
   if (unseen) {
     add({ id: `unseen:${unseen.id}`, area: 'marketing', priority: 58, tool: 'share_item', item: unseen,
       title: `Nobody has opened "${unseen.title}" in two weeks`,
-      why: 'Buried items do not sell. Share it, bump it back to the top of the feed, or freshen the title with the words buyers search for.' });
+      why: 'If people cannot see an item, they cannot buy it. Share it, use a bump point, or add words buyers search for to the title.' });
   }
   if (listings.drafts > 0 && listings.onSale > 0) {
     add({ id: 'drafts', area: 'listing', priority: 56, tool: 'drafts',
-      title: `${count(listings.drafts, 'draft')} half-finished`,
-      why: 'Started and never published. Finishing one is the quickest new item you can put up today.' });
+      title: `${count(listings.drafts, 'draft')} not finished`,
+      why: 'You started these but did not publish them. Finishing one is the fastest way to add an item today.' });
   }
   const thin = listings.thin[0];
   if (thin) {
     add({ id: `thin:${thin.id}`, area: 'listing', priority: 52, tool: 'edit_item', item: thin, label: 'Improve listing',
       title: `Make "${thin.title}" easier to buy`,
-      why: 'Three or more photos - front, back, box and any flaw - and a description that says condition, size and when it ships answer the questions that otherwise stop a sale.' });
+      why: 'Add at least three photos: front, back and box. Say the condition, size and delivery time. Clear listings sell better.' });
   }
 
   /* Marketing rhythm. */
   if (listings.onSale > 0 && activity.posts7 === 0) {
     add({ id: 'post', area: 'marketing', priority: 64, tool: 'post',
       title: daysSince(activity.lastPostAt, now) === Infinity ? 'Start your Figmark channel' : 'Nothing in your channel this week',
-      why: 'Once people follow you here, your channel is how they hear from you. Two posts a week - a new arrival, an unboxing - and each one is something you can also share outside.' });
+      why: 'Your followers hear from you through your channel. Post twice a week - a new arrival or an unboxing.' });
   }
   if (listings.onSale > 0 && activity.shares7 === 0) {
     add({ id: 'share', area: 'marketing', priority: 69, tool: 'share_shop',
       title: 'Share the shop outside Figmark',
-      why: 'New buyers come from outside first: your WhatsApp status and groups, Instagram stories and reels, Facebook and Telegram collector groups. Share there, then let Figmark keep them - every share also counts toward your quests and bump points.' });
+      why: 'Most new buyers come from WhatsApp, Instagram and collector groups. Share your shop there. Each share also earns quest points.' });
   }
   if (listings.onSale > 0 && daysSince(listings.lastListedAt, now) >= 7) {
     add({ id: 'fresh', area: 'listing', priority: 54, tool: 'list', label: 'List something new',
       title: 'No new item in a week',
-      why: 'The feed favours what is new. One fresh item a few times a week keeps followers looking.' });
+      why: 'New items get seen first. Add a new item a few times a week.' });
   }
   if (listings.onSale >= 3 && listings.noCommission >= Math.max(3, Math.ceil(listings.onSale / 2))) {
     add({ id: 'affiliate', area: 'marketing', priority: 44, tool: 'affiliate',
       title: 'Let buyers earn by sharing you',
-      why: `${count(listings.noCommission, 'live item')} pay no commission. A small per-sale amount turns your buyers into a sales team that only costs you when it works.` });
+      why: `${count(listings.noCommission, 'item')} have no commission. Pay a small amount per sale, and your buyers will share your items. You pay only when it sells.` });
   }
   if (listings.best && listings.best.sold30 >= 2) {
     const best = listings.best;
     add({ id: `best:${best.id}`, area: 'marketing', priority: 40, tool: 'share_item', item: best, label: 'Share best seller',
       title: `"${best.title}" is your best seller`,
-      why: `${count(best.sold30, 'sale')} this month. Lean on what works: share it again, and list more like it.` });
+      why: `${count(best.sold30, 'sale')} this month. Share it again, and list more items like it.` });
   }
   if (shop.followers >= 15 && listings.onSale >= 3) {
     add({ id: 'engage', area: 'marketing', priority: 38, tool: 'engage',
-      title: 'Give followers something to do',
-      why: 'A poll on what to import next, or a guess-the-price game, gets people talking - and tells you what to stock.' });
+      title: 'Run a poll or a game',
+      why: 'Ask followers which item to import next, or run a guess-the-price game. It gets people talking.' });
   }
 
   /* After the sale. */
   if (orders && orders.delivered30 >= 3) {
     add({ id: 'repeat', area: 'sales', priority: 36, tool: 'loyalty', label: `Set up loyalty${proNote('loyalty')}`,
       title: `${orders.delivered30} buyers got their orders this month`,
-      why: 'Happy buyers are the easiest next sale. A stamp card brings them back, and a thank-you message is the right moment to ask for a review.' });
+      why: 'Happy buyers buy again. A loyalty card brings them back. Thank them and ask for a review.' });
   }
   if (orders && orders.cancelled30 >= 3 && orders.delivered30 < orders.cancelled30) {
     add({ id: 'cancels', area: 'sales', priority: 62, tool: 'orders',
-      title: `${orders.cancelled30} orders called off this month`,
-      why: 'More cancellations than deliveries. Check the reasons on the Orders tab: an unclear delivery time or price usually causes them.' });
+      title: `${orders.cancelled30} orders cancelled this month`,
+      why: 'You had more cancelled orders than delivered ones. Check why on the Orders tab. Unclear prices or delivery times are the usual reasons.' });
   }
 
   /* The shop's own page. */
@@ -428,7 +428,7 @@ export function coachTips(signals: CoachSignals): CoachTip[] {
   if (missing.length > 0) {
     add({ id: 'setup', area: 'shop', priority: 46, tool: 'storefront', label: 'Finish shop page',
       title: `Add your shop's ${missing.map((key) => (key === 'photo' ? 'logo' : key === 'cover' ? 'cover photo' : 'bio')).join(', ')}`,
-      why: 'A shop with a face and a line about what it sells is followed far more often than a blank one.' });
+      why: 'People follow shops that look real. Add a logo and one line about what you sell.' });
   }
 
   return tips.sort((a, b) => b.priority - a.priority);
@@ -468,19 +468,19 @@ export function weekPlan(signals: CoachSignals, best: BestTime): PlanDay[] {
   type Job = Omit<PlanDay, 'day' | 'dayName' | 'isToday' | 'at'> & { at?: string };
   // Outside first: that is where new buyers are. Figmark's own tools follow.
   const jobs: Job[] = [
-    { title: 'Reel or story of your best seller', detail: 'A 15-second video or story on Instagram and your WhatsApp status, with your Figmark link. Real hands, real box.', tool: 'share_item' },
-    { title: 'List new arrivals', detail: 'Put up what came in, three clear photos each - then share the newest one outside.', tool: 'list' },
-    { title: 'Post in collector groups', detail: 'Share the shop to one Facebook, Telegram or WhatsApp collector group you have not tried yet. Follow the group\'s rules.', tool: 'share_shop' },
-    { title: 'Behind the scenes', detail: 'Unboxing or the shipment arriving: post it in your Figmark channel and on your story. Buyers trust a shop they can see working.', tool: 'post' },
-    { title: 'Ask your followers', detail: 'Run a poll here - which of two items should you import next? - and put the same question on your story.', tool: 'engage' },
-    { title: 'Freshen a slow item', detail: 'Better photos, a sharper title, or a small offer on something nobody is opening.', tool: 'offers' },
-    { title: 'Restock and tidy', detail: 'Top up counts, renew items about to end, file import orders into shipments.', tool: 'items', at: 'Morning' },
+    { title: 'Post a reel of your best seller', detail: 'Make a short video for Instagram and your WhatsApp status. Show the real item and add your Figmark link.', tool: 'share_item' },
+    { title: 'List new items', detail: 'Add what arrived, with three clear photos each. Then share the newest one on WhatsApp.', tool: 'list' },
+    { title: 'Share in collector groups', detail: 'Share your shop in one new Facebook, Telegram or WhatsApp group. Follow the group rules.', tool: 'share_shop' },
+    { title: 'Show behind the scenes', detail: 'Post an unboxing or a shipment arriving, in your channel and on your story. Buyers trust what they can see.', tool: 'post' },
+    { title: 'Ask your followers', detail: 'Run a poll: which item should you import next? Ask the same on your story.', tool: 'engage' },
+    { title: 'Fix a slow item', detail: 'Add better photos, a clearer title, or a small offer to an item nobody opens.', tool: 'offers' },
+    { title: 'Restock and tidy up', detail: 'Update stock counts, renew items that are ending, and add import orders to shipments.', tool: 'items', at: 'Morning' },
   ];
   const big: Job = shop.pro
-    ? { title: 'Drop day', detail: `Your busiest day. Run a live drop or timed offer at ${hourName(best.peakHour)}; share it on WhatsApp, Instagram and your groups an hour before.`, tool: 'live_drop' }
-    : { title: 'Drop day', detail: `Your busiest day. Put up your best new item or a timed offer at ${hourName(best.peakHour)}; share it on WhatsApp, Instagram and your groups an hour before.`, tool: 'list' };
-  const tease: Job = { title: 'Tease tomorrow', detail: 'A sneak peek on your WhatsApp status and Instagram story, and in your Figmark channel, so people turn up for it.', tool: 'share_shop' };
-  const thank: Job = { title: 'Thank buyers, ask for reviews', detail: 'Message yesterday\'s buyers, confirm what has shipped, and ask the happy ones for a review.', tool: 'orders', at: 'Afternoon' };
+    ? { title: 'Big sale day', detail: `This is your busiest day. Run a live drop or offer at ${hourName(best.peakHour)}. Share it on WhatsApp, Instagram and your groups one hour before.`, tool: 'live_drop' }
+    : { title: 'Big sale day', detail: `This is your busiest day. Add your best new item or an offer at ${hourName(best.peakHour)}. Share it on WhatsApp, Instagram and your groups one hour before.`, tool: 'list' };
+  const tease: Job = { title: 'Tell people about tomorrow', detail: 'Show a sneak peek on your WhatsApp status, Instagram story and Figmark channel.', tool: 'share_shop' };
+  const thank: Job = { title: 'Thank buyers, ask for reviews', detail: 'Message yesterday\'s buyers. Tell them what has shipped. Ask happy buyers for a review.', tool: 'orders', at: 'Afternoon' };
 
   const plan: PlanDay[] = [];
   let next = 0;
@@ -506,10 +506,10 @@ export function coachPlan(
   const health = shopHealth(signals);
   const urgent = tips.filter((tip) => tip.area === 'urgent').length;
   const headline = urgent > 0
-    ? `${count(urgent, 'thing')} need${urgent === 1 ? 's' : ''} you first, then the rest of today's plan.`
+    ? `Do ${urgent === 1 ? 'this' : `these ${urgent}`} first. Then follow today's plan.`
     : tips.length > 0
-      ? `Nothing urgent. Here is what will grow ${signals.shop.name} most today.`
-      : `${signals.shop.name} is in good shape. Keep to the weekly plan below.`;
+      ? `All good. Here is how to grow ${signals.shop.name} today.`
+      : `${signals.shop.name} is doing well. Follow the weekly plan.`;
   return { tips, bestTime: best, week: weekPlan(signals, best), health, headline };
 }
 
@@ -538,30 +538,38 @@ export interface DidYouKnow { text: string; tool: CoachTool | null }
  * works inside.
  */
 export const DID_YOU_KNOW: readonly DidYouKnow[] = [
-  { text: 'Figmark runs on lots and routes. Every import item goes into a lot, and the lot follows a route - your own list of stages. Build your route once, and moving thirty items is one tap.', tool: 'routes' },
-  { text: 'Buyers never see your lot, only its tracking. Tick a stage on the lot and every buyer in it is updated at once.', tool: 'lots' },
-  { text: 'The profit calculator turns a price abroad into landed cost, margin and a selling price - with your own freight and exchange rates.', tool: 'calculator' },
-  { text: 'Turn on the floating calculator and it stays one tap away on every screen.', tool: 'calculator' },
-  { text: 'An item cost sheet records what each unit really cost - freight, customs, packing - so your profit book shows real profit, not a guess.', tool: 'calculator' },
-  { text: 'Your profit book downloads as a spreadsheet that opens in Excel or Google Sheets - handy for your accountant at month end.', tool: 'money' },
-  { text: 'You can list many items at once: Listings, then Import a spreadsheet.', tool: 'items' },
-  { text: 'Insights shows where each item\'s views come from - the feed, search or a shared link - so you can see which sharing works.', tool: 'insights' },
-  { text: 'Quick fills save what your listings have in common, so the next listing takes seconds.', tool: 'templates' },
-  { text: 'Sold out is not the end: buyers can ask to be told when it is back, and topping up the count tells them all.', tool: 'items' },
-  { text: 'Every share counts toward your shop quests, and quests pay bump points that put an item back at the top of the feed.', tool: 'quests' },
-  { text: 'An affiliate commission turns your buyers into a sales team - you pay only when their link brings a sale.', tool: 'affiliate' },
-  { text: 'The Share button makes a picture card with your link, sized for WhatsApp status and Instagram stories.', tool: 'share_shop' },
-  { text: 'Customers shows who saved or asked for an item, so you can message the warmest buyers the day it lands.', tool: 'customers' },
-  { text: 'Pre-orders let buyers fund the import: allow an advance, and order from the supplier once it fills.', tool: 'list' },
-  { text: 'Live drops tell all your followers at once - a timed window, members first.', tool: 'live_drop' },
-  { text: 'Your on-time rate is shown on your shop card. Promise a delivery time you can beat, and it climbs.', tool: null },
+  { text: 'Figmark runs on lots and routes. Each import item goes into a lot (a shipment). Each lot follows a route - your own list of stages. Build a route once, and you can move thirty items with one tap.', tool: 'routes' },
+  { text: 'Buyers do not see your lot, only its tracking. Tick a stage on the lot, and every buyer in it is updated at once.', tool: 'lots' },
+  { text: 'The profit calculator turns a price abroad into your full cost, your margin and a selling price. It uses your own freight and exchange rates.', tool: 'calculator' },
+  { text: 'Turn on the floating calculator, and it stays one tap away on every screen.', tool: 'calculator' },
+  { text: 'A cost sheet saves what each item really cost - freight, customs, packing. Then your profit book shows your real profit.', tool: 'calculator' },
+  { text: 'You can download your profit book as a spreadsheet. It opens in Excel or Google Sheets - useful for your accountant.', tool: 'money' },
+  { text: 'You can list many items at once. Go to Listings, then Import a spreadsheet.', tool: 'items' },
+  { text: 'Insights shows where each item\'s views come from: the feed, search or a shared link. So you know which sharing works.', tool: 'insights' },
+  { text: 'Quick fills save what your listings have in common. Your next listing takes seconds.', tool: 'templates' },
+  { text: 'When an item sells out, buyers can ask to be told when it is back. Add stock, and they are all told.', tool: 'items' },
+  { text: 'Every share counts toward your shop quests. Quests give bump points, which put an item back at the top of the feed.', tool: 'quests' },
+  { text: 'With an affiliate commission, your buyers share your items for you. You pay only when their link brings a sale.', tool: 'affiliate' },
+  { text: 'The Share button makes a picture with your link, ready for WhatsApp status and Instagram stories.', tool: 'share_shop' },
+  { text: 'Customers shows who saved or asked for an item. When it arrives, message them first.', tool: 'customers' },
+  { text: 'With pre-orders, buyers help pay for your import. Allow an advance, and order from the supplier when it is full.', tool: 'list' },
+  { text: 'A live drop tells all your followers at once. It runs for a set time, and members get first access.', tool: 'live_drop' },
+  { text: 'You can pause your shop for 1 to 3 days when you are away. Buyers see it, so nobody waits for a reply.', tool: 'storefront' },
+  { text: 'Every order has tracking the buyer can open any time. It saves you many "where is my order?" messages.', tool: 'orders' },
+  { text: 'You can add helpers to your shop, and choose what each one can do.', tool: 'storefront' },
+  { text: 'A bump point puts an item back at the top of the feed. Use it one hour before your busy time.', tool: 'quests' },
+  { text: 'Polls and guess-the-price games get followers talking - and show you what to stock next.', tool: 'engage' },
+  { text: 'Offers and loyalty cards do not add up. Buyers always get the better one.', tool: 'offers' },
+  { text: 'A booking is a promise to buy, not a sale yet. Accept it only if you can really get the item.', tool: 'orders' },
+  { text: 'Quick fills also work for live drops, so a whole drop can be set up fast.', tool: 'templates' },
+  { text: 'Your on-time rate shows on your shop card. Promise a delivery time you can beat, and it goes up.', tool: null },
 ];
 
 /** From simple to complex: the order Figgy lists its topics in. */
 export const GUIDE_LEVELS = ['basics', 'everyday', 'growing', 'advanced'] as const;
 export type GuideLevel = (typeof GUIDE_LEVELS)[number];
 export const LEVEL_NAMES: Record<GuideLevel, string> = {
-  basics: 'The basics', everyday: 'Everyday selling', growing: 'Growing your shop', advanced: 'Advanced',
+  basics: 'Getting started', everyday: 'Every day', growing: 'Growing your shop', advanced: 'Advanced',
 };
 
 interface Guide {
@@ -583,197 +591,224 @@ interface Guide {
 export const GUIDES: readonly Guide[] = [
   { id: 'list', level: 'basics', ask: 'How do I list an item?', title: 'Listing an item', tools: ['list', 'templates'],
     words: ['list', 'listing', 'add item', 'new item', 'upload', 'sell something', 'put up', 'post item', 'publish'],
-    steps: '1. Press "List an item" on the Sell tab.\n2. Add at least three photos: front, back, the box, and any flaw up close.\n3. Title it the way a buyer searches: brand, line, character, scale - "Hot Toys Iron Man Mark 85 1/6".\n4. Pick the category and answer its questions (condition, original or copy, size).\n5. Set the price, the count you have, shipping, and the delivery time in days - your on-time rate is measured against it.\n6. Publish. Save a Quick fill if you list similar items often, so the next one takes seconds.' },
+    steps: '1. Open Grow, then Engage.\n2. A poll like "which should I import next?" tells you what to stock.\n3. A guess-the-price game or a competition gets shared by people.\n4. Post the result in your channel. Followers come back to see it.' },
   { id: 'photos', level: 'everyday', ask: 'How do I take better photos and write a good title?', title: 'Photos and titles that sell', tools: ['items', 'edit_item'],
-    words: ['photo', 'picture', 'image', 'title', 'description', 'better listing', 'improve'],
-    steps: '- Daylight or a white sheet behind the item; no clutter.\n- First photo is the whole item, straight on. Then box, back, details, flaws.\n- Title: brand + line + name + scale/size + condition word ("sealed", "loose").\n- Description: condition honestly, what is included, when it ships, and how you pack it.\n- Items with many views and no sales usually need a clearer price, a flaw explained, or an offer.' },
+    words: ['photo', 'picture', 'image', 'title', 'better listing', 'improve'],
+    steps: '- Use daylight or a plain white sheet behind the item.\n- The first photo shows the whole item, from the front.\n- Then add the box, the back, close-ups and any damage.\n- Title: brand + series + name + size + condition ("sealed" or "loose").\n- Description: the condition, what is in the box, and when it ships.\n- Many views but no sales? Make the price clearer, explain any damage, or add an offer.' },
   { id: 'price', level: 'everyday', ask: 'How should I price my items?', title: 'Pricing', tools: ['calculator', 'insights', 'offers'],
     words: ['price', 'pricing', 'how much', 'what to charge', 'how much to charge', 'margin', 'profit', 'cost', 'cheap', 'expensive'],
-    steps: '1. Work out landed cost: item + forwarder + customs + domestic shipping + packing. The Profit calculator (Pro) does this on your own rates.\n2. Check Insights for what similar items sell for and what buyers search for.\n3. Price to the market, not just cost + margin. Round prices (₹2,499) read better than odd ones.\n4. Use Offers instead of cutting the price: a bundle deal or a timed discount moves stock without resetting what the item is worth.' },
+    steps: '1. Add up your full cost: item + freight + customs + shipping in India + packing. The profit calculator (Pro) does this for you.\n2. Check Insights to see what similar items sell for.\n3. Price for the market, not only your cost. Round prices like ₹2,499 look better.\n4. Need to sell faster? Use an offer instead of cutting the price for good.' },
   { id: 'preorder', level: 'growing', ask: 'How do I run a pre-order?', title: 'Pre-orders and group buys', tools: ['list', 'lots', 'share_item'],
     words: ['pre-order', 'preorder', 'pre order', 'group buy', 'groupbuy', 'fill', 'threshold'],
-    steps: '1. List the item and turn on Pre-order with the number of buyers you need before you import.\n2. Allow an advance (say 30%) so more people commit.\n3. Share the fill card - it shows "7 of 10 joined" and pulls people in as it fills.\n4. When it fills, open a shipment lot and file the orders into it, so every buyer sees tracking.' },
+    steps: '1. List the item and turn on Pre-order. Set how many buyers you need before you import.\n2. Allow an advance (for example 30%), so more people join.\n3. Share the pre-order card. It shows "7 of 10 joined", which brings in more people.\n4. When it is full, open a shipment and add the orders to it. Every buyer then sees tracking.' },
   { id: 'orders', level: 'basics', ask: 'How do I accept an order?', title: 'Managing orders', tools: ['orders'],
     words: ['order', 'orders', 'accept', 'payment', 'paid', 'claim', 'confirm', 'booking', 'reject', 'customer paid'],
-    steps: '1. Orders tab: anything waiting for you is at the top - a payment the buyer says they made, or a booking to say yes to.\n2. Check the money arrived, then confirm. Use "Accept all" when several are waiting.\n3. If you cannot fulfil, reject with a reason - the stock and the place go back.\n4. Mark each step as it happens (packed, dispatched, delivered) so the buyer sees it. Buyer Protection releases your money when delivery is confirmed.' },
+    steps: '1. Open the Orders tab. Orders waiting for you are at the top.\n2. Check that the money reached your bank or UPI. Then confirm it. Use "Accept all" when several are waiting.\n3. Cannot fulfil an order? Reject it and give a reason. The item goes back on sale.\n4. Mark each step - packed, dispatched, delivered - so the buyer can follow it.\n5. Buyer Protection releases your money when delivery is confirmed.' },
   { id: 'ship', level: 'everyday', ask: 'How does tracking work for my shipment?', title: 'Shipments, lots and tracking', tools: ['lots', 'routes'],
     words: ['ship', 'shipping', 'shipment', 'lot', 'lots', 'tracking', 'track', 'courier', 'dispatch', 'deliver'],
-    steps: '1. Shipments tab: open a lot for each consignment you import.\n2. File the import orders into it. Buyers never see the lot, only the tracking it gives them.\n3. Pick or build a Route - the stages it goes through (China warehouse, in transit, customs, in India, packed, dispatched).\n4. Tick each stage as it happens; every buyer in the lot is updated at once.\n5. In-hand items ship from your shelf: just mark them packed and dispatched.' },
+    steps: '1. Open a lot for each shipment you import (Shipments tab).\n2. Add the import orders to it. Buyers do not see the lot - only the tracking.\n3. Choose a route: the stages your shipment goes through, like "In transit" and "Customs".\n4. Tick each stage when it happens. Every buyer in the lot is updated at once.\n5. Items you already have at home: just mark them packed and dispatched.' },
   { id: 'refunds', level: 'everyday', ask: 'A buyer wants a refund, what do I do?', title: 'Refunds and cancellations', tools: ['refunds', 'orders'],
     words: ['refund', 'cancel', 'cancellation', 'return', 'money back', 'reversal'],
-    steps: '1. Refunds tab lists everything owed back - overpaid, cancelled, or a refund you start.\n2. Send the money, then record it with the reference so the buyer sees it.\n3. A dispute is handled by Figmark under Buyer Protection: reply with photos and the order history quickly; an open dispute holds the payment.\n4. Fewer cancellations come from clear delivery times and prices up front.' },
+    steps: '1. The Refunds tab shows all money you owe back.\n2. Send the money, then add the payment reference so the buyer can see it.\n3. Fewer cancellations happen when your price and delivery time are clear from the start.' },
   { id: 'market', level: 'growing', ask: 'How do I get more buyers?', title: 'Marketing your shop', tools: ['share_shop', 'share_item', 'affiliate'],
     words: ['market', 'marketing', 'promote', 'promotion', 'advertise', 'more buyers', 'more sales', 'grow', 'reach', 'followers', 'visibility', 'traffic', 'customers'],
-    steps: 'Outside Figmark first - that is where new buyers are:\n1. WhatsApp: put each new drop on your status, and share to the collector groups you are in. Use the Share button so the post carries a picture card and your link.\n2. Instagram: a short reel or story of the real item - unboxing, close-ups, the box - with your Figmark link in the story or bio.\n3. Collector groups on Facebook and Telegram: one helpful post per group, by its rules, never spam.\n4. YouTube Shorts or a reel for bigger pieces: people buy what they have seen in hand.\n5. Offline: a small card with your shop\'s QR code in every parcel, and at meetups and conventions.\n\nThen let Figmark multiply it:\n- Pay sharers a commission (Affiliate), so your buyers spread you for you.\n- Post in your channel twice a week, so the people who follow you keep coming back.\n- Offers and polls give followers a reason to return; bump points put an item back at the top of the feed; live drops (Pro) make a moment.\n\nDo the sharing about an hour before your buyers\' busiest time - the coach shows yours.' },
+    steps: 'Start outside Figmark. That is where new buyers are:\n1. WhatsApp: post each new item on your status, and share it in your collector groups. Use the Share button - it adds a picture and your link.\n2. Instagram: post a short reel or story of the real item, with your Figmark link.\n3. Facebook and Telegram groups: one useful post per group. Follow the group rules.\n4. YouTube Shorts: show big items in your hand. People buy what they can see.\n5. Offline: put a card with your shop\'s QR code in every parcel.\n\nThen use Figmark tools to grow more:\n- Affiliate commission: your buyers share your items, and you pay only when it sells.\n- Post in your channel twice a week, so followers keep coming back.\n- Offers, polls, bump points and live drops (Pro) bring buyers back.\n\nShare about one hour before your buyers\' busy time. The coach shows yours.' },
   { id: 'outside', level: 'growing', ask: 'How do I sell on WhatsApp and Instagram?', title: 'Selling on WhatsApp, Instagram and groups', tools: ['share_shop', 'share_item'],
     words: ['whatsapp', 'instagram', 'insta', 'facebook', 'telegram', 'youtube', 'reel', 'reels', 'story', 'stories', 'whatsapp status', 'social media', 'outside', 'external', 'groups', 'collector group', 'influencer', 'qr'],
-    steps: '1. Press Share on your shop or an item: it makes a picture card with your link, ready for WhatsApp, Instagram or any group.\n2. WhatsApp status: one item a day beats ten at once. Groups: answer questions quickly and point to the listing link - buyers then pay with Buyer Protection.\n3. Instagram: reels and stories of the real item in hand; put your shop link in your bio.\n4. Facebook and Telegram collector groups: read the rules, post the item with price and delivery time, link to Figmark.\n5. Ask a collector with a following to share an item with an affiliate commission - they earn per sale, you pay only when it sells.\n6. Every visit from a shared link shows up in Insights, so you can see which place brings buyers.' },
+    steps: '1. Press Share on your shop or an item. It makes a picture with your link for WhatsApp, Instagram or any group.\n2. WhatsApp status: share one item a day, not ten at once. In groups, reply fast and send the listing link.\n3. Instagram: post reels and stories of the real item. Add your shop link to your bio.\n4. Facebook and Telegram groups: read the rules first. Post the item with its price and delivery time.\n5. Ask a collector with many followers to share an item. Set an affiliate commission, so they earn per sale.\n6. Insights shows which place brings you visitors.' },
   { id: 'when', level: 'everyday', ask: 'What is the best time to post?', title: 'When to post', tools: ['post', 'share_shop'],
     words: ['when', 'time', 'timing', 'best time', 'what time', 'schedule', 'hour', 'day to post'],
     steps: '' },
   { id: 'offers', level: 'growing', ask: 'How do I run a discount?', title: 'Offers and discounts', tools: ['offers'],
-    words: ['offer', 'offers', 'discount', 'sale', 'coupon', 'a coupon', 'deal', 'bundle', 'promo code', 'free shipping'],
-    steps: '1. Grow → Offers shows every item\'s offers on one screen.\n2. Pick a kind: a timed discount, buy-more-save-more, or free shipping over an amount.\n3. Keep it short (two or three days) and announce it in your channel - urgency is what makes an offer work.\n4. Offers do not stack with loyalty cards, so buyers always get the better of the two.' },
-  { id: 'affiliate', level: 'growing', ask: 'How does affiliate commission work?', title: 'Affiliates: paying sharers', tools: ['affiliate'],
+    words: ['offer', 'offers', 'discount', 'sale', 'coupon', 'a coupon', 'deal', 'promo code', 'free shipping'],
+    steps: '1. Open Grow, then Offers. You can see all your offers in one place.\n2. Choose a type: a discount for a few days, buy-more-save-more, or free shipping above an amount.\n3. Keep it short - two or three days - and tell your followers. A deadline makes people buy.\n4. Offers and loyalty cards do not add up. Buyers always get the better one.' },
+  { id: 'affiliate', level: 'growing', ask: 'How does affiliate commission work?', title: 'Affiliate commission', tools: ['affiliate'],
     words: ['affiliate', 'commission', 'referral', 'sharer', 'influencer', 'earn by sharing'],
     steps: '1. Open an item from Listings and set a commission per unit sold.\n2. Optionally give the buyer something off for coming through a link - it makes the link worth sending.\n3. Anyone who shares the item gets their own link; you pay only when a sale comes through it.\n4. Pay what you owe from the Money section.' },
   { id: 'loyalty', level: 'growing', ask: 'How do loyalty cards work?', title: 'Loyalty cards', tools: ['loyalty'],
     words: ['loyalty', 'repeat', 'stamp', 'come back', 'retain', 'retention', 'regular'],
-    steps: '1. Grow → Loyalty cards (Pro).\n2. Choose how many orders earn the reward and what it is (an amount off, free shipping).\n3. Buyers collect a stamp with each order automatically.\n4. Mention the card in your thank-you message - repeat buyers are the cheapest sales you will make.' },
+    steps: '1. Open Grow, then Loyalty cards (Pro).\n2. Choose how many orders earn a reward, and what the reward is.\n3. Buyers get a stamp with each order, by themselves.\n4. Mention the card when you thank a buyer. Buyers who come back are your easiest sales.' },
   { id: 'drop', level: 'advanced', ask: 'How do I run a live drop?', title: 'Live drops', tools: ['live_drop', 'post'],
     words: ['live', 'drop', 'live drop', 'flash', 'launch', 'timed', 'power sale'],
-    steps: '1. Press "Live Drop" at the top of your shop (Pro).\n2. Pick the items, the start time and how long it runs.\n3. Followers in your channel get the members\' window first.\n4. Tease it the day before and share it an hour before your busiest time.' },
+    steps: '1. Press "Live Drop" at the top of your shop (Pro).\n2. Choose the items, the start time and how long it runs.\n3. Your channel followers get first access.\n4. Tell people the day before. Share it one hour before your busy time.' },
   { id: 'engage', level: 'growing', ask: 'How do I run a poll or giveaway?', title: 'Polls, games and competitions', tools: ['engage', 'post'],
     words: ['poll', 'game', 'competition', 'contest', 'giveaway', 'engage', 'engagement', 'guess', 'debate', 'quiz'],
     steps: '1. Grow → Engage.\n2. A poll ("which should I import next?") tells you what to stock.\n3. A guess-the-price game or a competition gets shared on its own.\n4. Post results back in the channel - followers come back to see them.' },
   { id: 'reviews', level: 'everyday', ask: 'How do I get more reviews?', title: 'Getting reviews', tools: ['orders', 'customers'],
     words: ['review', 'reviews', 'rating', 'stars', 'feedback', 'trust', 'reputation'],
-    steps: '1. Only buyers whose order completed can review, so deliver on the promised date first - your on-time rate is public.\n2. Mark orders delivered promptly.\n3. Message the buyer once it arrives: thank them and ask for a review.\n4. Answer any poor review calmly and say what you fixed.' },
+    steps: '1. Only buyers with a finished order can review. So deliver on time first - your on-time rate is public.\n2. Mark orders as delivered quickly.\n3. When the item arrives, thank the buyer and ask for a review.\n4. Got a bad review? Reply calmly and say what you fixed.' },
   { id: 'storefront', level: 'basics', ask: 'How do I set up my shop page?', title: 'Setting up the shop page', tools: ['storefront'],
     words: ['shop page', 'storefront', 'logo', 'cover', 'bio', 'setup', 'set up', 'profile', 'upi', 'bank', 'payment details', 'username', 'handle'],
-    steps: '1. Gear icon on your shop → Storefront.\n2. Add a logo, a cover photo and a one-line bio ("Sealed Hot Toys and Bandai imports, shipped in 40 days").\n3. Add your UPI ID or bank account - without it nobody can pay you.\n4. Pick a short username so your link is easy to share.' },
+    steps: '1. Press the gear icon on your shop, then Storefront.\n2. Add a logo, a cover photo and one line about what you sell.\n3. Add your UPI ID or bank account. Without it, nobody can pay you.\n4. Pick a short username, so your link is easy to share.' },
   { id: 'money', level: 'everyday', ask: 'How do payouts and held money work?', title: 'Payouts and money', tools: ['money'],
     words: ['payout', 'money', 'earnings', 'revenue', 'withdraw', 'held', 'release', 'fee', 'fees', 'commission fee'],
-    steps: '1. Insights → Money shows held and released money, the orders report and the profit book.\n2. Buyer Protection holds a payment until the buyer confirms delivery (or the auto-release time passes).\n3. Mark orders delivered promptly - it is what starts the release.' },
+    steps: '1. Open Insights, then Money. You see held money, released money and your profit book.\n2. Buyer Protection holds the money until the buyer confirms delivery, or until the auto-release time.\n3. Mark orders as delivered quickly. That starts the release.' },
   { id: 'team', level: 'advanced', ask: 'How do I add a helper to my shop?', title: 'Adding helpers', tools: ['storefront'],
     words: ['team', 'manager', 'helper', 'staff', 'employee', 'add someone', 'permission', 'access'],
-    steps: '1. Gear icon → People.\n2. Add someone by @username, email or phone.\n3. Give them only what they need: listings, lots, posts, analytics or admin.\n4. They open your shop from the workspace switcher on their own Sell tab.' },
+    steps: '1. Press the gear icon, then People.\n2. Add someone by @username, email or phone.\n3. Give them only what they need: listings, shipments, posts, numbers or admin.\n4. They open your shop from the switcher on their own Sell tab.' },
   { id: 'quests', level: 'growing', ask: 'What are bump points?', title: 'Shop quests and bump points', tools: ['quests'],
     words: ['quest', 'quests', 'xp', 'level', 'bump', 'bumps', 'points', 'boost', 'top of feed'],
-    steps: '1. Shop quests reward sharing, posting, sales and good reviews with XP and bump points.\n2. Collect finished quests to bank the points.\n3. Spend a bump on an item to put it back at the top of the feed - best used just before your busiest hour.' },
+    steps: '1. Shop quests reward you for sharing, posting, sales and good reviews.\n2. Collect finished quests to get bump points.\n3. A bump point puts an item back at the top of the feed. Use it just before your busy time.' },
   { id: 'data', level: 'growing', ask: 'How do I read my insights?', title: 'Reading your numbers', tools: ['insights', 'customers'],
     words: ['insight', 'insights', 'analytics', 'data', 'stats', 'numbers', 'views', 'conversion', 'report', 'performance'],
-    steps: '- Overview: takings, orders and how each tab is doing.\n- Items: views by source (feed, search, shared links) per item - shows where buyers find you.\n- Customers: who buys again, and who saved but did not buy.\n- Operations: how long each shipment stage really takes.\nItems with many views and no sales need a better price or listing; items with no views need sharing.' },
+    steps: '- Overview: your sales and orders.\n- Items: where each item\'s views come from - feed, search or shared links.\n- Customers: who buys again, and who saved an item but did not buy.\n- Operations: how long each shipping stage really takes.\nMany views and no sales? Fix the price or listing. No views? Share the item.' },
 
   /* ── More ready answers, simple to complex ─────────────────────────── */
 
   // The basics.
   { id: 'start', level: 'basics', ask: 'I am a new seller, how do I get started?', title: 'Getting started as a seller', tools: ['storefront', 'list', 'share_shop'],
     words: ['get started', 'getting started', 'new seller', 'first time', 'open a shop', 'open my shop', 'start selling', 'beginner'],
-    steps: '1. Set up your shop page: logo, a one-line bio, and your UPI ID or bank account so buyers can pay you.\n2. List one item you have in hand, with three clear photos and an honest delivery time.\n3. Share it on your WhatsApp status and in one group you are already in.\n4. When an order comes, confirm the payment, pack it well and mark each step.\n5. Ask that first buyer for a review. Five good reviews make the next fifty sales easier.' },
+    steps: '1. Set up your shop page: a logo, one line about what you sell, and your UPI ID or bank account.\n2. List one item you already have, with three clear photos and an honest delivery time.\n3. Share it on your WhatsApp status and in one group you are in.\n4. When an order comes, confirm the payment, pack it well and mark each step.\n5. Ask your first buyer for a review. Good reviews make the next sales easier.' },
   { id: 'edit', level: 'basics', ask: 'How do I edit or delete a listing?', title: 'Editing, ending or removing a listing', tools: ['items'],
     words: ['edit', 'delete my', 'edit or delete', 'edit a listing', 'delete a listing', 'change price', 'change the price', 'update listing', 'delete', 'remove listing', 'unlist', 'mark sold', 'make available again'],
-    steps: '1. Open the item (Listings, or the item page) and press "Edit, quantity or delete".\n2. Change the price, photos, words or the count you have - buyers see it at once.\n3. Delete removes it for good; setting the count to 0 shows it as sold out instead, which keeps its page and lets buyers ask for a restock alert.\n4. An item that has ended can be put back with "Make available again".\nOrders already placed keep the price they were placed at.' },
+    steps: '1. Open the item and press "Edit, quantity or delete".\n2. Change the price, photos, text or stock count. Buyers see the change at once.\n3. Delete removes it for good. Setting the count to 0 shows it as sold out instead - buyers can still ask for a restock alert.\n4. An item that has ended can come back with "Make available again".\nOrders already placed keep their old price.' },
   { id: 'stock', level: 'basics', ask: 'How do I manage stock and quantity?', title: 'Stock and quantities', tools: ['items', 'edit_item'],
     words: ['stock', 'sold out', 'quantity', 'restock', 'out of stock', 'how many left', 'inventory', 'count'],
-    steps: '- Each item has a count; it goes down by itself as orders come in, and shows sold out at 0.\n- Cannot put a number on it? Choose "multiple available" and the count is not tracked.\n- Low-stock items show under "Needs you" on your shop - top them up or open a pre-order for the next batch.\n- Buyers can ask to be told when a sold-out item is back; restocking it tells them.' },
+    steps: '- Each item has a stock count. It goes down by itself with each order, and shows "sold out" at 0.\n- Not sure how many you have? Choose "multiple available", and the count is not tracked.\n- Low-stock items show under "Needs you" on your shop. Add more, or take pre-orders for the next batch.\n- Buyers can ask to be told when a sold-out item is back. Restocking tells them.' },
   { id: 'shipcost', level: 'basics', ask: 'How much should I charge for shipping?', title: 'Shipping charges', tools: ['items'],
     words: ['shipping', 'shipping charge', 'charge for shipping', 'for shipping', 'shipping cost', 'delivery charge', 'delivery fee', 'courier charge', 'pincode'],
-    steps: '1. Set a shipping charge on each item: what it costs you to send one inside India, or 0 for free shipping.\n2. It is shown beside the price, never hidden inside it - buyers trust a clear total.\n3. Check two or three courier quotes for a typical parcel (weight and box size) before you set it.\n4. Free shipping over an amount (under Offers) nudges people to add one more item.' },
+    steps: '1. Set a shipping charge on each item: what it costs you to send one inside India. Use 0 for free shipping.\n2. It shows next to the price, not hidden in it. Buyers like a clear total.\n3. Check two or three courier prices for a normal parcel before you decide.\n4. Free shipping above an amount (in Offers) makes people add one more item.' },
   { id: 'eta', level: 'basics', ask: 'What delivery time should I promise?', title: 'Promising a delivery time', tools: ['items'],
     words: ['delivery time', 'how long', 'eta', 'days to deliver', 'delivery days', 'on time', 'on-time', 'running late', 'is late', 'arrive late', 'late delivery', 'delay'],
-    steps: '1. Every listing asks for the days from order to the buyer\'s hands - say "45-50 days" for an import.\n2. Promise what you can beat, not your best case: your on-time rate is public on your shop and buyers read it.\n3. In-hand items: count your packing day plus the courier\'s usual time.\n4. Running late? Tell the buyer before they ask, with the reason and the new date - and tick each tracking step so they can see it moving.' },
+    steps: '1. Each listing asks how many days until the buyer has the item - for example "45-50 days" for an import.\n2. Promise a time you can beat. Your on-time rate is public on your shop.\n3. Items you have at home: add your packing day to the courier\'s usual time.\n4. Running late? Tell the buyer before they ask, with the reason and a new date. Tick each tracking step so they see progress.' },
   { id: 'pay', level: 'basics', ask: 'How do buyers pay me?', title: 'How buyers pay you', tools: ['storefront', 'orders'],
     words: ['how do buyers pay', 'how buyers pay', 'payment method', 'gpay', 'google pay', 'phonepe', 'paytm', 'cash on delivery', 'buyer paid', 'payment proof', 'screenshot', 'pay me'],
-    steps: '1. Add your UPI ID or bank account under Storefront - it is shown to buyers at checkout.\n2. The buyer pays and says so in the order, with a reference or screenshot.\n3. You check that the money really arrived in your bank or UPI app, then confirm it. Never confirm from a screenshot alone.\n4. Payments made through Figmark are held under Buyer Protection and released once delivery is confirmed.' },
-  { id: 'protection', level: 'basics', ask: 'What is Buyer Protection?', title: 'Buyer Protection, from your side', tools: ['money'],
+    steps: '1. Add your UPI ID or bank account under Storefront. Buyers see it when they pay.\n2. The buyer pays and tells you in the order, with a reference or screenshot.\n3. Check that the money really reached your bank or UPI app. Then confirm it. Never trust a screenshot alone.\n4. Payments through Figmark are held under Buyer Protection, and released when delivery is confirmed.' },
+  { id: 'protection', level: 'basics', ask: 'What is Buyer Protection?', title: 'Buyer Protection', tools: ['money'],
     words: ['buyer protection', 'protection', 'held payment', 'escrow', 'is it safe', 'safe to'],
-    steps: '- Buyer Protection is why strangers dare to pay you: their money is held until the order arrives as described.\n- For you it means a dispute is decided on evidence, so keep it: photos of the item before packing, the packed box, the courier receipt.\n- Money is released when the buyer confirms delivery, or automatically after the set time if they do not.\n- Mark orders delivered promptly - it starts the release.' },
+    steps: '- Buyer Protection holds the buyer\'s money until the order arrives as described. That is why new buyers trust you.\n- If there is a problem, the decision uses evidence. So keep photos: the item before packing, the packed box, and the courier receipt.\n- Money is released when the buyer confirms delivery, or after the set time.\n- Mark orders as delivered quickly. That starts the release.' },
   { id: 'messages', level: 'basics', ask: 'How should I reply to buyer messages?', title: 'Talking to buyers', tools: ['orders'],
     words: ['message', 'reply', 'respond', 'customer question', 'enquiry', 'inquiry', 'chat with', 'talk to buyer'],
-    steps: '1. Answer within the hour where you can - a quick reply is the biggest difference between a question and a sale.\n2. Be exact: condition, what is in the box, the real delivery time, the total with shipping.\n3. Send the listing link, so they pay through Figmark with Buyer Protection.\n4. Keep everything about an order in its messages: it is your record if anything is ever disputed.\n5. Never share a buyer\'s number or address with anyone but the courier.' },
+    steps: '1. Reply within an hour if you can. A quick reply often turns a question into a sale.\n2. Be exact: the condition, what is in the box, the real delivery time, and the total with shipping.\n3. Send the listing link, so the buyer pays on Figmark with Buyer Protection.\n4. Keep order talk in the order\'s messages. It is your record if there is a problem.\n5. Never share a buyer\'s number or address with anyone except the courier.' },
 
   // Everyday selling.
   { id: 'category', level: 'everyday', ask: 'Which category and condition should I choose?', title: 'Category and condition', tools: ['list'],
     words: ['category', 'condition', 'misb', 'mib', 'loose', 'sealed', 'authentic', 'original or copy', 'bootleg', 'replica'],
-    steps: '- Pick the category buyers would browse for it; its questions (scale, size, line) then appear on their own.\n- Condition, honestly: sealed/MISB only if never opened; loose if out of the box; say what is missing.\n- Original or copy: always say. A copy sold as original ends in a dispute you will lose, and in your reviews.\n- Photograph anything you mention - a box dent, a paint mark - so nobody is surprised.' },
+    steps: '- Pick the category buyers would look in. Its questions, like size or series, then appear.\n- Be honest about condition. "Sealed" only if never opened. "Loose" if it is out of the box. Say what is missing.\n- Always say if an item is a copy. Selling a copy as original leads to a dispute you will lose.\n- Take a photo of anything you mention, like a dent in the box.' },
   { id: 'templates', level: 'everyday', ask: 'How can I list similar items faster?', title: 'Listing faster with Quick fills', tools: ['templates', 'list'],
     words: ['quick fill', 'template', 'templates', 'copy listing', 'duplicate', 'duplicate a listing', 'list faster', 'faster', 'similar items', 'many items'],
-    steps: '1. Shop settings → Quick fill: save what most of your listings share - category, condition, delivery time, shipping, description.\n2. On the sell form, pick the Quick fill and only add photos, title and price.\n3. One per kind of stock works best: "sealed Bandai kit", "loose figure", "pre-order import".\n4. The same Quick fills work on a live drop.' },
+    steps: '1. Open shop settings, then Quick fill. Save what most of your listings have in common: category, condition, delivery time, shipping and description.\n2. On the sell form, pick the Quick fill. Then add only photos, title and price.\n3. Make one for each kind of stock, like "sealed kit" or "pre-order import".\n4. Quick fills also work for live drops.' },
   { id: 'booking', level: 'everyday', ask: 'What is a booking and how do I accept it?', title: 'Bookings', tools: ['orders'],
     words: ['booking', 'a booking', 'bookings', 'book instead', 'reserve', 'reservation', 'pledge'],
-    steps: '1. A buyer can book an item instead of paying now - a promise to buy, not a sale yet.\n2. It waits for your yes on the Orders tab. Accept it only if you can really supply it.\n3. Once accepted, agree when they pay; remind them politely if it runs late.\n4. A booking you will not fill: turn it down with a reason, so the place goes back to someone else.' },
+    steps: '1. A buyer can book an item instead of paying now. It is a promise to buy, not a sale yet.\n2. It waits for you on the Orders tab. Accept it only if you can really get the item.\n3. After you accept, agree when they will pay. Remind them politely if they are late.\n4. Cannot fill a booking? Turn it down with a reason, so someone else can have it.' },
   { id: 'advance', level: 'everyday', ask: 'Can buyers pay an advance and the balance later?', title: 'Advances and balances', tools: ['items', 'orders'],
     words: ['advance', 'balance', 'part payment', 'partial', 'remaining amount', 'deposit', 'pay later', 'pay the rest'],
-    steps: '1. On a listing, allow an advance (say 30%) - buyers may then pay that now and the rest later.\n2. The order shows what is paid and what is owed, so neither side has to remember.\n3. Ask for the balance when the item lands in India, with a clear date.\n4. Advances help imports fill: more people commit when they only pay part up front. Keep them in a separate account until the goods are paid for.' },
+    steps: '1. On a listing, allow an advance, like 30%. Buyers can pay that now and the rest later.\n2. The order shows what is paid and what is still owed.\n3. Ask for the rest when the item reaches India. Give a clear date.\n4. Advances help imports fill up, because people pay less at first. Keep advance money aside until the supplier is paid.' },
   { id: 'unpaid', level: 'everyday', ask: 'A buyer has not paid yet, what should I do?', title: 'A buyer has not paid', tools: ['orders'],
     words: ['not paid', 'unpaid', 'has not paid', 'hasnt paid', 'payment pending', 'remind', 'reminder', 'chase', 'ghosted', 'buyer ghosted', 'no response'],
-    steps: '1. One friendly reminder, in the order\'s messages: the amount, how to pay, and a date.\n2. Still nothing two or three days later: a second reminder saying you will release the item after that date.\n3. Then cancel the order with a short reason - the stock goes back on sale.\n4. Next time: an advance on the listing filters out people who are not serious.' },
+    steps: '1. Send one friendly reminder in the order\'s messages: the amount, how to pay, and a date.\n2. No reply in two or three days? Send a second reminder. Say you will release the item after that date.\n3. Then cancel the order with a short reason. The item goes back on sale.\n4. Next time, ask for an advance. It filters out buyers who are not serious.' },
   { id: 'packing', level: 'everyday', ask: 'How should I pack and dispatch an order?', title: 'Packing and dispatch', tools: ['orders', 'lots'],
     words: ['pack', 'pack and dispatch', 'pack orders', 'tracking id', 'add tracking', 'packing', 'packaging', 'bubble wrap', 'box size', 'tracking number', 'awb', 'parcel'],
-    steps: '1. Photograph the item, then the packed parcel, before it goes - your proof if anything is questioned.\n2. Box inside a box for collector boxes: corners crushed in transit are the most common complaint.\n3. Bubble wrap, no rattling, the order number on the parcel.\n4. Mark the order packed, then dispatched with the courier\'s tracking number - the buyer is told at once.\n5. A small thank-you card with your shop\'s QR code turns a delivery into the next sale.' },
+    steps: '1. Take a photo of the item, then of the packed parcel. It is your proof if there is a problem.\n2. For boxed collectibles, use a box inside a box. Crushed corners are the most common complaint.\n3. Use bubble wrap so nothing moves. Write the order number on the parcel.\n4. Mark the order as packed, then dispatched with the tracking number. The buyer is told at once.\n5. Add a small thank-you card with your shop\'s QR code. It can bring the next sale.' },
   { id: 'damaged', level: 'everyday', ask: 'The buyer says the item arrived damaged, what now?', title: 'Damaged, wrong or missing items', tools: ['orders', 'refunds'],
     words: ['damaged', 'broken', 'wrong item', 'missing item', 'missing part', 'defect', 'not as described', 'arrived damaged'],
-    steps: '1. Ask for photos of the parcel and the item, calmly and quickly.\n2. Compare with your own packing photos.\n3. Offer the fix that fits: a part, a partial refund, a replacement or a full refund on return.\n4. Record any refund on the Refunds tab with its reference.\n5. Courier damage: raise it with the courier with your photos; do not make the buyer wait for that.' },
+    steps: '1. Ask calmly for photos of the parcel and the item.\n2. Compare them with your packing photos.\n3. Offer a fair fix: a missing part, a partial refund, a replacement, or a full refund when it is returned.\n4. Record any refund on the Refunds tab, with its reference.\n5. If the courier damaged it, claim from the courier with your photos. Do not make the buyer wait for that.' },
 
   // Growing your shop.
   { id: 'content', level: 'growing', ask: 'What should I post?', title: 'What to post', tools: ['post', 'share_item'],
     words: ['what to post', 'what should i post', 'post ideas', 'content ideas', 'content', 'caption', 'ideas', 'hashta'],
-    steps: 'Ideas that work for collectibles, outside and in your channel:\n- Unboxing: the box, then the figure in hand. 15 seconds is enough.\n- "Just landed": the shipment arriving, with what is still available.\n- Side by side: the item next to a hand or a coin, so people see its size.\n- A poll: "which should I bring next?"\n- Behind the scenes: packing an order (no buyer details).\nCaption: what it is, the price, when it ships, and the link. A few exact ones like #hottoys #gunpla #figurecollector beat thirty vague ones.' },
+    steps: 'Ideas that work, outside and in your channel:\n- Unboxing: show the box, then the figure in your hand. 15 seconds is enough.\n- "Just arrived": show the shipment and what is still available.\n- Size check: show the item next to your hand or a coin.\n- A poll: "Which should I bring next?"\n- Behind the scenes: packing an order (never show buyer details).\nCaption: what it is, the price, when it ships, and the link. Use a few exact # words like #hottoys and #gunpla, not many vague ones.' },
   { id: 'trending', level: 'growing', ask: 'How do I know what to import next?', title: 'Choosing what to stock', tools: ['insights', 'engage'],
     words: ['what to import', 'what should i import', 'import next', 'what sells', 'trending', 'demand', 'what to stock', 'which items', 'bring next'],
-    steps: '1. Your own numbers first: Insights shows what is viewed and saved but not bought (people want it - price or timing is off), and what sells again and again.\n2. Ask: a poll in your channel and on your story - "which of these two?" - before you spend.\n3. Pre-order it: if it does not fill, you have lost nothing.\n4. Watch release calendars and announcements in your line - new waves, re-issues.\n5. Start small, re-order what sells.' },
+    steps: '1. Check your own numbers first. Insights shows what people view and save but do not buy, and what sells again and again.\n2. Ask your followers with a poll before you spend money.\n3. Take pre-orders. If it does not fill, you lose nothing.\n4. Watch new releases and re-releases in your category.\n5. Start small. Order more of what sells.' },
   { id: 'slow', level: 'growing', ask: 'My items are not selling, what should I change?', title: 'When nothing is selling', tools: ['share_shop', 'items', 'offers'],
     words: ['not selling', 'no sales', 'nobody buy', 'no orders', 'slow sales', 'sales are slow', 'no views', 'nobody sees', 'no one buys'],
-    steps: 'Find which of three it is:\n1. Nobody sees it (few views): it is a reach problem. Share it outside - WhatsApp status, groups, a reel - and use a bump point.\n2. People look but do not buy (many views, no sales): price, photos or trust. Compare prices, add photos of the real item and any flaw, state the delivery time, offer a small timed discount or an advance.\n3. People save it but wait: they want a nudge - a "last few" post, or a short offer to everyone who saved it.\nThe coach\'s Today tab names the items in each group for your shop.' },
+    steps: 'First find which problem it is:\n1. Nobody sees it (few views): share it on WhatsApp, Instagram and groups, and use a bump point.\n2. People look but do not buy (many views, no sales): check the price, add real photos, show any damage, state the delivery time. Try a small offer or allow an advance.\n3. People save it but wait: give them a reason - a "last few left" post, or a short offer.\nThe coach\'s Today tab shows which of your items are in each group.' },
   { id: 'verified', level: 'growing', ask: 'How do I get verified and build trust?', title: 'Getting verified and building trust', tools: ['verify', 'storefront'],
     words: ['verify', 'get verified', 'build trust', 'verification', 'verified', 'blue tick', 'aadhaar', 'kyc', 'credibility', 'look legit', 'trustworthy'],
-    steps: '1. Finish verification (email, phone, Aadhaar) - selling opens up and your shop shows it.\n2. Fill the shop page: logo, cover, a line about what you sell and where you import from.\n3. Deliver on time: your on-time rate and repeat-buyer rate are shown on your shop card.\n4. Real photos, honest condition, quick replies - and ask happy buyers for a review.' },
+    steps: '1. Finish verification - email, phone and Aadhaar. This opens selling, and your shop shows it.\n2. Fill your shop page: logo, cover photo, and one line about what you sell.\n3. Deliver on time. Your on-time rate and repeat-buyer rate show on your shop card.\n4. Use real photos, be honest, reply fast, and ask happy buyers for reviews.' },
   { id: 'season', level: 'growing', ask: 'How do I plan for Diwali and sale seasons?', title: 'Planning for festivals and sale seasons', tools: ['offers', 'list', 'share_shop'],
     words: ['diwali', 'diwali sale', 'festival', 'festival sale', 'festive', 'season', 'seasonal', 'sale season', 'new year', 'christmas', 'black friday', 'gift', 'gifting'],
-    steps: '1. Imports take weeks: open pre-orders 8-10 weeks before the festival, so stock lands in time.\n2. Announce it outside first - WhatsApp, Instagram, groups - with the order-by date for delivery before the day.\n3. Gift-ready items (sealed, boxed) and bundles sell best; say "ships in time for Diwali" only if you are sure.\n4. Plan a short offer for the week before, and a live drop (Pro) on your busiest day.\n5. Afterwards: thank buyers, ask for reviews, and offer a loyalty reward for their next order.' },
+    steps: '1. Imports take weeks. Open pre-orders 8 to 10 weeks before the festival.\n2. Announce it on WhatsApp, Instagram and groups first. Give the last order date for delivery before the festival.\n3. Sealed, boxed items and sets sell best as gifts. Say "arrives before Diwali" only if you are sure.\n4. Plan a short offer for the week before. A live drop (Pro) on your busiest day helps too.\n5. After the festival, thank buyers, ask for reviews, and offer a loyalty reward.' },
 
   // Advanced.
   { id: 'importplan', level: 'advanced', ask: 'How do I plan a full import from a supplier?', title: 'Planning an import, start to finish', tools: ['list', 'lots', 'forwarders', 'calculator'],
     words: ['plan an import', 'full import', 'supplier', 'sourcing', 'order from china', 'order from japan', 'manifest', 'consignment', 'import process', 'start to finish'],
-    steps: '1. Demand: run a pre-order or a poll first, so you buy what is already wanted.\n2. Costs: item + supplier shipping + forwarder per kg + customs + domestic shipping + packing. The Profit calculator (Pro) works out landed cost on your own rates.\n3. Price with margin for the unexpected (damage, delays, exchange rate) - 10% is a common cushion.\n4. Pay the supplier; book a forwarder (the directory lists them with their routes and rates).\n5. Open a shipment lot, file every order into it, and tick each stage - every buyer sees it move.\n6. On arrival: check, photograph, pack and dispatch in one go, then ask for reviews.' },
+    steps: '1. Check demand first: take pre-orders or run a poll, so you buy what people want.\n2. Add up your costs: item, supplier shipping, freight per kg, customs, shipping in India and packing. The profit calculator (Pro) does this.\n3. Keep extra margin for problems like damage, delays or exchange rates. 10% is common.\n4. Pay the supplier. Book a forwarder - the directory lists them with routes and prices.\n5. Open a shipment, add every order to it, and tick each stage. Every buyer sees it move.\n6. When it arrives: check, take photos, pack and dispatch together. Then ask for reviews.' },
   { id: 'customs', level: 'advanced', ask: 'How do customs and import duty work?', title: 'Customs and import duty', tools: ['forwarders', 'calculator'],
     words: ['customs', 'duty', 'duties', 'import tax', 'clearance', 'hs code', 'held at customs', 'stuck at customs'],
-    steps: '- Duty depends on what the item is, its declared value and the route; rules and rates change, so get a written quote from your forwarder or a customs broker before you order.\n- Declare the real value: under-declaring risks the whole shipment being held or seized.\n- Build duty into your price from the start - the Profit calculator (Pro) has a line for it.\n- Add a stage for customs on your shipment route, so buyers see where it is if clearance takes longer.\n- This is general guidance, not legal or tax advice.' },
+    steps: '- Duty depends on what the item is, its declared value and the route. Rules change, so get a written quote from your forwarder or a customs agent before you order.\n- Always declare the real value. Under-declaring can get the whole shipment held or seized.\n- Add duty to your price from the start. The profit calculator (Pro) has a line for it.\n- Add a "Customs" stage to your route, so buyers see where the shipment is.\n- This is general guidance, not legal or tax advice.' },
   { id: 'forwarder', level: 'advanced', ask: 'How do I choose a freight forwarder?', title: 'Choosing a freight forwarder', tools: ['forwarders', 'lots'],
     words: ['forwarder', 'freight', 'cargo', 'cheapest cargo', 'cargo from', 'air shipping', 'sea shipping', 'per kg', 'kg rate', 'shipping agent'],
-    steps: '1. Compare at least three on the same parcel: rate per kg, minimum weight, how they count volume weight, and door-to-door days.\n2. Ask what is included: customs clearance, insurance, delivery to you.\n3. Check their record - the forwarder directory shows routes and reviews from other importers.\n4. Start with one small shipment before trusting a big one.\n5. Air is faster, sea cheaper for heavy or large pieces - match it to the delivery time you promised.' },
+    steps: '1. Compare at least three forwarders on the same parcel: price per kg, minimum weight, how they count size, and total days.\n2. Ask what is included: customs clearance, insurance, delivery to you.\n3. Check their reviews. The forwarder directory shows routes and reviews from other sellers.\n4. Start with one small shipment before a big one.\n5. Air is faster. Sea is cheaper for heavy or big items. Choose to match the delivery time you promised.' },
   { id: 'cashflow', level: 'advanced', ask: 'How do I manage cash flow on imports?', title: 'Cash flow on imports', tools: ['money', 'calculator'],
     words: ['cash flow', 'cashflow', 'working capital', 'money stuck', 'money is stuck', 'stuck in stock', 'pay supplier', 'pay the supplier', 'budget', 'funds'],
-    steps: '1. Know your cycle: you pay the supplier now, buyers\' money is released weeks later. Plan for that gap.\n2. Take advances on pre-orders, so buyers fund part of the stock.\n3. Never spend held money before it is released; keep a buffer for refunds.\n4. Money (under Insights) shows what is held, what is released and what each lot earned.\n5. Grow in steps: re-invest profit from one lot into a slightly bigger next one.' },
+    steps: '1. Know the gap: you pay the supplier now, but buyers\' money is released weeks later.\n2. Take advances on pre-orders, so buyers pay part of the stock cost.\n3. Do not spend held money before it is released. Keep some money aside for refunds.\n4. Money (in Insights) shows what is held, what is released, and what each shipment earned.\n5. Grow step by step. Put the profit from one shipment into a slightly bigger next one.' },
   { id: 'disputes', level: 'advanced', ask: 'How do I handle a dispute?', title: 'Handling a dispute', tools: ['orders', 'refunds'],
     words: ['dispute', 'handle a dispute', 'complaint', 'chargeback', 'claim against', 'buyer complained', 'escalat', 'opened a case'],
-    steps: '1. Reply quickly and calmly in the dispute - silence counts against you.\n2. Bring evidence: the listing as it was, your packing photos, the courier receipt and tracking, the messages.\n3. Offer a fair fix early; many disputes close with a partial refund both sides accept.\n4. Figmark decides on the evidence under Buyer Protection; the payment stays held until then.\n5. Afterwards, fix the cause - a clearer listing, better packing, an honest delivery time.' },
-  { id: 'shoprules', level: 'advanced', ask: 'What should my shop policies say?', title: 'Writing your shop\'s policies', tools: ['storefront'],
+    steps: '1. Reply quickly and calmly. Not replying counts against you.\n2. Share your evidence: the listing, your packing photos, the courier receipt and tracking, and your messages.\n3. Offer a fair fix early. Many disputes end with a partial refund that both sides accept.\n4. Figmark decides using the evidence, under Buyer Protection. The money stays held until then.\n5. Afterwards, fix the cause: a clearer listing, better packing, or an honest delivery time.' },
+  { id: 'shoprules', level: 'advanced', ask: 'What should my shop policies say?', title: 'Your shop rules', tools: ['storefront'],
     words: ['polic', 'shop polic', 'return polic', 'exchange polic', 'terms', 'warranty', 'a warranty', 'rules for buyers'],
-    steps: 'Put short policies in your shop bio or each listing:\n- Returns: whether you accept them, in what condition, within how many days, and who pays the courier.\n- Damage: "report within 48 hours with unboxing video or photos".\n- Pre-orders: what happens if it does not fill or the supplier cancels (full refund).\n- Delivery: your usual times, and that delays will be told, not hidden.\nKeep it fair - Buyer Protection still applies, and policies cannot take it away.' },
+    steps: 'Add short rules to your shop page or each listing:\n- Returns: do you accept them, in what condition, within how many days, and who pays the courier.\n- Damage: "Tell us within 48 hours, with an unboxing video or photos."\n- Pre-orders: what happens if it does not fill or the supplier cancels (a full refund).\n- Delivery: your usual times, and that you will tell buyers about any delay.\nKeep the rules fair. Buyer Protection still applies.' },
   { id: 'tax', level: 'advanced', ask: 'Do I need GST and invoices?', title: 'GST, invoices and records', tools: ['money'],
     words: ['gst', 'tax', 'invoice', 'invoices', 'bill', 'income tax', 'accounts', 'bookkeeping', 'records'],
-    steps: '- Whether you need GST registration depends on your turnover and how you sell; ask a chartered accountant early, it is cheaper than fixing it later.\n- Keep records from day one: supplier invoices, forwarder and customs bills, and your sales. The orders report and profit book under Money export what you sold.\n- Give buyers a bill when they ask; once registered, a proper GST invoice.\n- This is general guidance, not tax advice.' },
+    steps: '- Whether you need GST depends on your sales and how you sell. Ask a chartered accountant early.\n- Keep records from day one: supplier bills, forwarder and customs bills, and your sales. You can download your sales from Money.\n- Give buyers a bill when they ask. Once you are registered, give a proper GST invoice.\n- This is general guidance, not tax advice.' },
   { id: 'fraud', level: 'advanced', ask: 'How do I avoid fake payment scams?', title: 'Avoiding scams', tools: ['orders'],
     words: ['scam', 'scammer', 'fraud', 'fake payment', 'fake screenshot', 'suspicious', 'pay outside', 'too good to be true'],
-    steps: '- Confirm a payment only when it shows in your own bank or UPI app - edited screenshots are common.\n- Keep orders on Figmark: buyers asking to pay "outside" lose Buyer Protection, and so do you.\n- Never share OTPs, and never "receive money" by scanning a QR or entering a PIN - receiving needs no PIN.\n- Suppliers: pay new ones in small first orders; check reviews and references.\n- Something feels off? Pause the order and ask Figmark support before you ship.' },
-  { id: 'growbiz', level: 'advanced', ask: 'How do I grow my business and go full time?', title: 'From side hustle to a real business', tools: ['insights', 'storefront', 'pro'],
+    steps: '- Confirm a payment only when you see it in your own bank or UPI app. Fake screenshots are common.\n- Keep orders on Figmark. If a buyer pays "outside", you both lose Buyer Protection.\n- Never share an OTP. You never need a PIN or a QR scan to receive money.\n- New supplier? Start with a small order. Check reviews first.\n- Something feels wrong? Pause the order and ask Figmark support before you ship.' },
+  { id: 'growbiz', level: 'advanced', ask: 'How do I grow my business and go full time?', title: 'Growing into a full-time business', tools: ['insights', 'storefront', 'pro'],
     words: ['grow my business', 'full time', 'go full time', 'scale up', 'scaling up', 'hire', 'expand', 'next level', 'bigger business'],
-    steps: '1. Know your numbers monthly: takings, margin per lot, repeat-buyer rate, time spent.\n2. Systemise: Quick fills, routes for each import path, a packing checklist.\n3. Add helpers with only the rights they need (People) - packing and lots first, money last.\n4. Grow buyers outside first, keep them inside: affiliates, loyalty cards, a channel worth following.\n5. Pro adds live drops, the profit calculator and loyalty cards.\n6. Keep your promise rate high as you grow - it is the thing customers remember.' },
+    steps: '1. Check your numbers every month: sales, profit per shipment, repeat buyers, and time spent.\n2. Make work faster: Quick fills, routes for each import path, a packing checklist.\n3. Add helpers with only the access they need (People). Start with packing and shipments.\n4. Find new buyers outside Figmark. Keep them with affiliates, loyalty cards and a good channel.\n5. Pro adds live drops, the profit calculator and loyalty cards.\n6. Keep delivering on time as you grow. Buyers remember that most.' },
 
   /* ── Figgy itself, and Figmark's own tools ──────────────────────────── */
 
   { id: 'about', level: 'basics', ask: 'What is your name?', title: 'About Figgy', tools: [],
     words: ['your name', 'who are you', 'what are you', 'who made you', 'who built you', 'introduce yourself', 'are you a bot', 'are you human', 'are you ai', 'are you real', 'figgy', 'figmark coach', 'what can figgy'],
-    steps: 'I\'m Figgy, the Figmark Coach - the shop assistant built into Figmark. I know your shop\'s listings, orders and timing, and I help you list, price, ship, run pre-orders and bring in buyers - outside Figmark first, then inside it. Ask me anything about selling, or "what should I do today?".' },
+    steps: 'I\'m Figgy, the Figmark Coach - the shop assistant inside Figmark. I know your shop\'s listings, orders and timing. I help you list, price, ship, run pre-orders and find buyers - on WhatsApp and Instagram first, then on Figmark. Ask me anything about selling, or "What should I do today?".' },
   { id: 'sharecards', level: 'basics', ask: 'How do I share my shop link?', title: 'Share cards and links', tools: ['share_shop', 'share_item'],
     words: ['share card', 'share button', 'share link', 'shop link', 'my link', 'how to share', 'how do i share', 'qr code', 'send my shop'],
-    steps: '1. Press Share on your shop or on any item.\n2. Figmark makes a picture card with the photo, price and your link - sized for WhatsApp status and Instagram stories.\n3. Pick where to send it, or copy the link.\n4. Visits from shared links show up in Insights, and every share counts toward your shop quests.' },
+    steps: '1. Press Share on your shop or on any item.\n2. Figmark makes a picture with the photo, price and your link. It fits WhatsApp status and Instagram stories.\n3. Choose where to send it, or copy the link.\n4. Visits from shared links show in Insights. Every share also earns quest points.' },
   { id: 'channel', level: 'everyday', ask: 'How does my channel work?', title: 'Your Figmark channel', tools: ['post'],
     words: ['channel', 'my channel', 'channel post', 'post to followers', 'my followers see'],
-    steps: '- Your channel is where people who follow your shop hear from you: new arrivals, unboxings, shipment news, polls.\n- Two posts a week keeps you in their feed without tiring them.\n- Each post can carry items, so followers buy straight from it.\n- Share your best posts outside too - a channel grows from people who first found you on WhatsApp or Instagram.' },
+    steps: '- Your channel is where your followers hear from you: new items, unboxings, shipment news and polls.\n- Post twice a week. More can tire people.\n- Each post can show items, so followers can buy straight from it.\n- Share your best posts on WhatsApp and Instagram too. That brings new followers.' },
   { id: 'restock', level: 'everyday', ask: 'How do restock alerts work?', title: 'Restock alerts', tools: ['items'],
     words: ['restock alert', 'back in stock', 'notify me', 'notify buyers', 'waiting list', 'tell buyers when'],
-    steps: '1. When an item sells out, buyers can ask to be told when it is back.\n2. Top up the count (Edit, quantity or delete) and everyone who asked is told at once.\n3. A sold-out item with many requests is your clearest signal to re-order or open a pre-order.' },
-  { id: 'routes', level: 'growing', ask: 'How do I build a route?', title: 'Lots and routes: how tracking works', tools: ['routes', 'lots'],
+    steps: '1. When an item sells out, buyers can ask to be told when it is back.\n2. Add more stock (Edit, quantity or delete), and everyone who asked is told at once.\n3. Many requests for a sold-out item means you should order more, or take pre-orders.' },
+  { id: 'routes', level: 'growing', ask: 'How do I build a route?', title: 'Lots and routes', tools: ['routes', 'lots'],
     words: ['route', 'a route', 'make a route', 'build a route', 'route studio', 'stages', 'what is a lot', 'how lots work', 'lot and route', 'tracking steps'],
-    steps: 'Figmark tracks imports with two ideas:\n- A lot is one shipment. Every import item you sell goes into the lot it travels in.\n- A route is the list of stages that lot passes through - "China warehouse", "In transit", "Customs", "Out for delivery" - in your own words.\n\n1. Build a route once (Shipments → Routes) for each way you import: air through one city, sea through another.\n2. Open a lot on that route and file the orders into it.\n3. Tick a stage on the lot: every item and every buyer in it moves at once - thirty items, one tap.\n4. Buyers see the stages and dates; they never see the lot itself.' },
+    steps: 'Figmark tracks imports with two ideas:\n- A lot is one shipment. Every import item you sell goes into the lot it travels in.\n- A route is the list of stages that lot goes through. Write them in your own words, like "China warehouse", "In transit", "Customs", "Out for delivery".\n\n1. Build a route once (Shipments, then Routes) for each way you import.\n2. Open a lot on that route and add the orders to it.\n3. Tick a stage on the lot. Every item and every buyer in it moves at once - thirty items, one tap.\n4. Buyers see the stages and dates. They never see the lot itself.' },
   { id: 'calc', level: 'growing', ask: 'How does the profit calculator work?', title: 'The profit calculator', tools: ['calculator'],
     words: ['calculator', 'profit calculator', 'landed cost', 'calculate', 'exchange rate', 'floating calculator', 'work out my margin'],
-    steps: '1. Type the price abroad; the calculator adds your freight, customs, fees and exchange rate.\n2. It shows landed cost, margin and a selling price at once.\n3. Save your own rates once and every calculation uses them; save calculations you reuse.\n4. Turn on the floating calculator and it stays one tap away on every screen.' },
-  { id: 'costsheet', level: 'advanced', ask: 'What is an item cost sheet?', title: 'Item cost sheets and real profit', tools: ['calculator', 'money'],
+    steps: '1. Type the price abroad. The calculator adds your freight, customs, fees and exchange rate.\n2. It shows your full cost, your margin and a selling price.\n3. Save your own rates once, and every calculation uses them.\n4. Turn on the floating calculator, and it stays one tap away on every screen.' },
+  { id: 'costsheet', level: 'advanced', ask: 'What is an item cost sheet?', title: 'Item cost sheets', tools: ['calculator', 'money'],
     words: ['cost sheet', 'item cost', 'real profit', 'what it cost me', 'cost breakdown', 'actual profit'],
-    steps: '- A cost sheet records what one unit really cost you, step by step: item, freight, customs, packing, fees.\n- Save it from the profit calculator onto the item.\n- Your profit book then shows real profit per sale - and which items quietly lose you money.\n- Update it when a lot lands and the real freight bill arrives.' },
-  { id: 'profitbook', level: 'advanced', ask: 'How do I download my profit book as a spreadsheet?', title: 'The profit book and spreadsheet export', tools: ['money'],
+    steps: '- A cost sheet shows what one item really cost you: the item, freight, customs, packing and fees.\n- Save it from the profit calculator onto the item.\n- Your profit book then shows real profit for each sale - and which items lose you money.\n- Update it when the shipment arrives and you get the real freight bill.' },
+  { id: 'profitbook', level: 'advanced', ask: 'How do I download my profit book as a spreadsheet?', title: 'Downloading your profit book', tools: ['money'],
     words: ['profit book', 'spreadsheet', 'export', 'download', 'csv', 'excel', 'google sheets', 'sales report'],
-    steps: '1. Insights → Money → the profit book lists every sale with its takings, costs and profit.\n2. Choose the columns you want in view.\n3. Download it as a spreadsheet file (CSV) - it opens in Excel or Google Sheets.\n4. Send it to your accountant at month end, or use it to compare lots.' },
+    steps: '1. Open Insights, then Money, then the profit book. It lists every sale with its income, costs and profit.\n2. Choose the columns you want to see.\n3. Download it as a spreadsheet file (CSV). It opens in Excel or Google Sheets.\n4. Send it to your accountant every month, or use it to compare shipments.' },
   { id: 'bulk', level: 'everyday', ask: 'Can I import listings from a spreadsheet?', title: 'Listing many items at once', tools: ['items'],
     words: ['import a spreadsheet', 'from a spreadsheet', 'items at once', 'import listings', 'bulk', 'upload many', 'many listings at once', 'list many', 'csv import', 'mass upload'],
-    steps: '1. Listings → Import a spreadsheet.\n2. One row per item: title, price, count and the rest of your columns.\n3. Check the preview, then import - each row becomes a listing.\n4. Add photos to each afterwards; listings with real photos sell far better.' },
-  { id: 'signals', level: 'growing', ask: 'How do I see who wants my items?', title: 'Customer signals: who wants what', tools: ['customers'],
+    steps: '1. Open Listings, then "Import a spreadsheet".\n2. Use one row per item: title, price, stock and your other columns.\n3. Check the preview, then import. Each row becomes a listing.\n4. Add photos to each item afterwards. Items with real photos sell much better.' },
+  { id: 'signals', level: 'growing', ask: 'How do I see who wants my items?', title: 'Seeing who wants your items', tools: ['customers'],
     words: ['who wants', 'who saved', 'saved my', 'customer signals', 'interested buyers', 'warm buyers', 'message buyers who', 'who is interested'],
-    steps: '- Customers shows who saved an item, pledged to a pre-order or asked for it.\n- When it lands or drops in price, message just those people - the warmest buyers you have.\n- It also shows who has bought before and might buy again.\n- Keep messages useful and few; a buyer who mutes you is lost.' },
+    steps: '- Customers shows who saved an item, joined a pre-order or asked for it.\n- When it arrives or the price drops, message just those people. They are your most likely buyers.\n- It also shows who bought before and may buy again.\n- Send few, useful messages. Too many messages make people mute you.' },
+
+  /* ── More answers, in plain words ───────────────────────────────────── */
+
+  { id: 'firstsale', level: 'basics', ask: 'How do I get my first sale?', title: 'Getting your first sale', tools: ['share_shop', 'list'],
+    words: ['first sale', 'first order', 'no orders yet', 'zero sales', 'get my first'],
+    steps: '1. Make your shop look real: logo, one line about what you sell, and payment details.\n2. List three to five items you already have, with clear photos and fair prices.\n3. Share each one on your WhatsApp status, and in one or two groups you are in.\n4. Ask friends who collect to share your shop.\n5. Reply fast to every question. Your first buyers decide on trust.' },
+  { id: 'description', level: 'basics', ask: 'What should I write in the description?', title: 'Writing a good description', tools: ['list', 'items'],
+    words: ['description', 'write a description', 'what to write', 'describe my item', 'item details'],
+    steps: 'Answer what a buyer will ask:\n- What it is: brand, series, name and size.\n- Condition: sealed, opened or loose. Mention any damage.\n- What is in the box: all parts and accessories.\n- Original or copy: always say.\n- When it ships, and how you pack it.\nUse short lines. Buyers read on their phones.' },
+  { id: 'phonephotos', level: 'basics', ask: 'How do I take photos with my phone?', title: 'Taking photos with your phone', tools: ['list'],
+    words: ['phone camera', 'with my phone', 'with phone', 'mobile photo', 'lighting', 'white background', 'good light'],
+    steps: '1. Use daylight near a window. Turn off the flash.\n2. Put the item on a plain white or dark sheet.\n3. Clean the phone lens first.\n4. Hold the phone steady and tap the item to focus.\n5. Take the front, back, box, and close-ups of any damage.\n6. Do not use filters. Buyers want to see the real colour.' },
+  { id: 'tracklink', level: 'everyday', ask: 'How do I share tracking with a buyer?', title: 'Sharing tracking with buyers', tools: ['orders', 'lots'],
+    words: ['tracking link', 'share tracking', 'share tracking with', 'tracking with a buyer', 'where is my order', 'buyer asks where', 'order status link', 'track my order'],
+    steps: '1. Every order has tracking that the buyer can open any time.\n2. When you tick a stage on the shipment, every buyer in it is updated.\n3. If a buyer asks "where is my order?", send them the tracking link from the order.\n4. Keep the stages up to date. It saves you many messages.' },
+  { id: 'pause', level: 'everyday', ask: 'How do I pause my shop when I am away?', title: 'Pausing your shop', tools: ['storefront'],
+    words: ['pause', 'pause my shop', 'i am away', 'holiday', 'vacation', 'on a break', 'close my shop', 'stop orders', 'going away', 'out of town'],
+    steps: '1. Open your shop\'s status (Open, at the top of your shop).\n2. Pause for 1 to 3 days, or stop orders until you open again.\n3. Buyers see that your shop is paused, so nobody waits for an answer.\n4. Finish or update any open orders before you go.' },
+  { id: 'sets', level: 'everyday', ask: 'How do I sell a set or a bundle?', title: 'Selling sets and bundles', tools: ['list'],
+    words: ['bundle', 'a set', 'set of', 'combo', 'sell together', 'lot of figures', 'multiple items in one'],
+    steps: '1. List the set as one item, with one price.\n2. In the description, list every piece in the set.\n3. Add a photo of all the pieces together, and photos of each one.\n4. Selling pieces from a set separately? List each piece as its own item.\n5. A set with a small discount often sells faster than single pieces.' },
+  { id: 'sizes', level: 'everyday', ask: 'How do I list shoe or clothing sizes?', title: 'Sizes for sneakers and clothes', tools: ['list'],
+    words: ['size', 'sizes', 'size chart', 'shoe size', 'uk size', 'us size', 'fits', 'sneaker size'],
+    steps: '1. Choose the right category. Its questions ask for the size.\n2. Say which size system you use: UK, US or EU.\n3. Add the length in cm if you can. It helps buyers choose.\n4. Say if the item runs small or big.\n5. A photo of the size label helps buyers trust it.' },
+  { id: 'genuine', level: 'growing', ask: 'How do I prove my item is original?', title: 'Showing an item is original', tools: ['list', 'verify'],
+    words: ['genuine', 'legit', 'prove it is original', 'proof', 'original item', 'is original', 'not fake'],
+    steps: '1. Show proof in photos: the box, labels, item codes and holograms.\n2. Keep your purchase bill from the supplier, and mention it.\n3. Never call a copy "original". It will end in a dispute.\n4. Good reviews and a verified shop make buyers trust you more.' },
 ];
 
 const norm = (text: string) => ` ${text.toLowerCase().replace(/[^a-z0-9₹\- ]+/g, ' ').replace(/\s+/g, ' ')} `;
@@ -931,7 +966,7 @@ const INSIDE = /\b(algorithm|threshold|source\s*code|code\s*base|database|backen
 
 export const PRIVATE_ANSWER: CoachAnswer = {
   source: 'private',
-  text: 'I can only help with your own shop - I do not have, and cannot share, anything about other sellers or buyers, or how Figmark works behind the scenes. Ask me what to do next for your shop, or how to use any of its tools.',
+  text: 'I can only help with your own shop. I cannot share anything about other sellers, buyers, or how Figmark works inside. Ask me what to do next, or how to use a tool.',
   tools: [],
   follow: ['What should I do today?', 'How do I get more buyers?'],
 };
@@ -956,7 +991,7 @@ export function answerOffline(question: string, plan: CoachPlan, weights: Record
   if (top?.id === 'when' || (/\bwhen\b/.test(text) && /\b(post|share|market|drop|list)/.test(text))) {
     const day = plan.week.find((entry) => entry.isToday);
     return {
-      text: `${plan.bestTime.advice}\n\nToday's job: ${day ? `${day.title} - ${day.detail} (${day.at})` : 'see the weekly plan'}.`,
+      text: `${plan.bestTime.advice}\n\nToday: ${day ? `${day.title}. ${day.detail} (${day.at})` : 'see the weekly plan'}.`,
       tools: ['share_shop', 'post'],
       follow: ['How do I sell on WhatsApp and Instagram?', 'How do I market my shop?'],
       source: 'when',
@@ -969,7 +1004,7 @@ export function answerOffline(question: string, plan: CoachPlan, weights: Record
       return { text: `${plan.headline}\n\n${plan.bestTime.advice}`, tools: ['share_shop', 'list'], source: 'today' };
     }
     return {
-      text: `Here is where I would start:\n\n${tips.map((tip, index) => `${index + 1}. ${tip.title} - ${tip.why}`).join('\n')}`,
+      text: `Start here:\n\n${tips.map((tip, index) => `${index + 1}. ${tip.title} - ${tip.why}`).join('\n')}`,
       tools: [...new Set(tips.map((tip) => tip.tool))],
       follow: ['When should I post?', 'How do I get more buyers?'],
       source: 'today',
@@ -978,7 +1013,7 @@ export function answerOffline(question: string, plan: CoachPlan, weights: Record
 
   if (top) {
     const related = plan.tips.filter((tip) => top.tools.includes(tip.tool)).slice(0, 1);
-    const note = related.length ? `\n\nFor your shop right now: ${related[0]!.title}. ${related[0]!.why}` : '';
+    const note = related.length ? `\n\nFor your shop today: ${related[0]!.title}. ${related[0]!.why}` : '';
     const when = top.id === 'market' || top.id === 'outside' ? `\n\n${plan.bestTime.advice}` : '';
     // Marketing answers always point outside as well as in.
     // Next steps: the other close matches, then the next guide up in difficulty.
@@ -1008,7 +1043,7 @@ export function topicsAnswer(): CoachAnswer {
   const lines = GUIDE_LEVELS.map((level) =>
     `${LEVEL_NAMES[level]}: ${GUIDES.filter((guide) => guide.level === level && !UNLISTED.has(guide.id)).map((guide) => guide.title.toLowerCase()).join(', ')}.`);
   return {
-    text: `I have ready answers on all of these, from simple to advanced - or ask me what to do today:\n\n${lines.join('\n\n')}`,
+    text: `I can help with all of these, from easy to advanced. You can also ask what to do today.\n\n${lines.join('\n\n')}`,
     tools: [],
     // One question from each level, simplest first.
     follow: GUIDE_LEVELS.map((level) => GUIDES.find((guide) => guide.level === level && !UNLISTED.has(guide.id))!.ask),

@@ -197,7 +197,7 @@ function summaryOf(episode: CoachEpisode): string {
   }
   if (outcome.itemSoldAfter !== null) parts.push(`${plural(outcome.itemSoldAfter, 'unit')} sold`);
   parts.push(`shop orders ${outcome.salesBefore} → ${outcome.salesAfter}`);
-  return `The week after: ${parts.join(', ')}.`;
+  return `One week later: ${parts.join(', ')}.`;
 }
 
 /** What the coach's tips did for this shop, from its own log only. */
