@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import { STAMPS } from '@shared/loyalty';
 import {
-  nextStepFor, offerLabel, offerSummary, offerTerms, type ListingOffer, type OfferKind,
+  nextStepFor, offerLabel, offerSummary, offerTerms, offersInOrder, type ListingOffer, type OfferKind,
 } from '@shared/offers';
 import { api, type Checkout, type ShopLoyalty } from '../api';
 import type { Order } from '@shared/models';
@@ -52,9 +52,11 @@ function hintFor(offer: ListingOffer, quantity: number, priceMinor: number, shor
   return null;
 }
 
-export function OffersBlock({ offers = [], priceMinor, currency, quantity, sellerId, listingId }: {
+export function OffersBlock({ offers: given = [], priceMinor, currency, quantity, sellerId, listingId }: {
   offers?: ListingOffer[]; priceMinor: number; currency: string; quantity: number; sellerId: string; listingId: string;
 }) {
+  // Free shipping always first, whatever order an older listing saved them in.
+  const offers = offersInOrder(given);
   const { user } = useSession();
   const loyalty = useShopLoyalty(sellerId, listingId);
   const [open, setOpen] = useState<string | null>(null);
@@ -121,10 +123,11 @@ export function OffersBlock({ offers = [], priceMinor, currency, quantity, selle
  * Everything in one sheet: each offer with what it takes and its terms, then
  * the buyer's own loyalty card, stamped in as it opens.
  */
-export function DealsSheet({ offers, priceMinor, currency, quantity, loyalty, mine = false, focus, onClose }: {
+export function DealsSheet({ offers: given, priceMinor, currency, quantity, loyalty, mine = false, focus, onClose }: {
   offers: ListingOffer[]; priceMinor: number; currency: string; quantity: number;
   loyalty: ShopLoyalty | null; mine?: boolean; focus?: string; onClose: () => void;
 }) {
+  const offers = offersInOrder(given);
   const body = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!focus || focus === 'top') return;
