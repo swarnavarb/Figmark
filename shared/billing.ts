@@ -122,7 +122,7 @@ export const PRO_FEATURES = [
   },
   {
     id: 'coach', icon: '🧭', title: 'Shop coach & Figgy', punch: 'AI-powered shop assistance',
-    line: 'Helps you market and grow your shop with simple plans and the actions to take: marketing ideas, a weekly plan, and Figgy to answer your questions.',
+    line: 'AI-powered shop assistance that helps you market and grow your shop, with simple plans and clear actions to take.',
     benefit: 'The coach reads your listings, orders and timing, and tells you what to do today and when to post - outside Figmark first. Figgy answers fifty everyday selling questions, and it all gets sharper as sellers use it.',
   },
   {

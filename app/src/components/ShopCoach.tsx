@@ -182,7 +182,65 @@ function TipRow({ tip, pro, onRun }: { tip: CoachTip; pro: boolean; onRun: () =>
  * one line once the seller says so. A Pro tool: a shop without Pro sees what
  * it does and how to unlock it, and the server refuses the coach's data too.
  */
+type CoachData = Awaited<ReturnType<typeof api.coach>>;
+
+/*
+ * Fast to show. The last answer for each shop is kept for this tab (memory,
+ * then sessionStorage), so the card draws at once and refreshes behind it;
+ * and the read starts as the console opens, alongside the Pro check, rather
+ * than after it.
+ */
+const CACHE_KEY = 'figmark:coach-data';
+const remembered = new Map<string, CoachData>();
+const reading = new Map<string, Promise<CoachData>>();
+
+function cachedCoach(id: string): CoachData | null {
+  const held = remembered.get(id);
+  if (held) return held;
+  try {
+    const raw = sessionStorage.getItem(`${CACHE_KEY}:${id}`);
+    if (raw) {
+      const data = JSON.parse(raw) as CoachData;
+      remembered.set(id, data);
+      return data;
+    }
+  } catch {
+    /* Private window or a full store: just no head start. */
+  }
+  return null;
+}
+
+function keepCoach(id: string, data: CoachData) {
+  remembered.set(id, data);
+  try {
+    sessionStorage.setItem(`${CACHE_KEY}:${id}`, JSON.stringify(data));
+  } catch {
+    /* As above. */
+  }
+}
+
+/** One read per shop at a time, however many places ask. */
+function readCoach(id: string): Promise<CoachData> {
+  let read = reading.get(id);
+  if (!read) {
+    read = api.coach(id).then((data) => { keepCoach(id, data); return data; })
+      .finally(() => reading.delete(id));
+    reading.set(id, read);
+  }
+  return read;
+}
+
+const reducedMotion = () => {
+  try {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch {
+    return false;
+  }
+};
+
 export function ShopCoach({ store }: { store: StoreAccess }) {
+  // Start the read now; a shop without Pro is simply refused, and nothing shows it.
+  useEffect(() => { void readCoach(store.ownerId).catch(() => undefined); }, [store.ownerId]);
   const locked = useProLocked('coach', store.ownerId);
   if (locked === null) return null;
   return locked ? <CoachLocked store={store} /> : <CoachCard store={store} />;
@@ -207,7 +265,7 @@ function CoachLocked({ store }: { store: StoreAccess }) {
         <span className="shopcoach__mark" aria-hidden="true"><Icon name="spark" size={16} /></span>
         <div className="shopcoach__headtext">
           <h2 className="shopcoach__title">Shop coach <ProBadge title="Part of Pro" /></h2>
-          <p>AI-powered shop assistance. Helps you market and grow your shop with simple plans and the actions to take.</p>
+          <p>AI-powered shop assistance that helps you market and grow your shop, with simple plans and clear actions to take.</p>
         </div>
         <button type="button" className="iconbtn shopcoach__fold" aria-label="Fold the coach" title="Fold" onClick={() => fold(true)}>
           <Icon name="up" size={14} />
@@ -215,8 +273,8 @@ function CoachLocked({ store }: { store: StoreAccess }) {
       </div>
       <ul className="shopcoach__perks">
         <li><Icon name="check" size={14} /> Marketing ideas and a weekly plan</li>
-        <li><Icon name="check" size={14} /> An AI chatbot, {FIGGY}, to answer your questions</li>
-        <li><Icon name="check" size={14} /> Your next best step every day, from your own shop's data</li>
+        <li><Icon name="check" size={14} /> {FIGGY}, an AI chatbot that answers your questions</li>
+        <li><Icon name="check" size={14} /> A daily recommendation for your next best step, based on your shop's data</li>
       </ul>
       <button type="button" className="btn shopcoach__unlock" onClick={() => navigate('/pro')}>
         <Icon name="lock" size={14} /> Unlock with Pro
@@ -226,7 +284,7 @@ function CoachLocked({ store }: { store: StoreAccess }) {
 }
 
 function CoachCard({ store }: { store: StoreAccess }) {
-  const [data, setData] = useState<Awaited<ReturnType<typeof api.coach>> | null>(null);
+  const [data, setData] = useState<CoachData | null>(() => cachedCoach(store.ownerId));
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState<View | null>(null);
   const [folded, setFolded] = useState(() => readFlag(HIDE_KEY, store.ownerId));
@@ -234,9 +292,10 @@ function CoachCard({ store }: { store: StoreAccess }) {
   const scrollAt = useRef(0);
 
   const load = useCallback(() => {
-    void api.coach(store.ownerId)
+    void readCoach(store.ownerId)
       .then((next) => { setData(next); setFailed(false); })
-      .catch(() => setFailed(true));
+      // A refresh that fails keeps what is on screen; only a coach with nothing to show hides.
+      .catch(() => setFailed(!cachedCoach(store.ownerId)));
   }, [store.ownerId]);
   useEffect(load, [load]);
 
@@ -302,19 +361,19 @@ function CoachCard({ store }: { store: StoreAccess }) {
           <DidYouKnowStrip pro={signals.shop.pro} run={run} />
           <div className="shopcoach__acts">
             <button type="button" className="shopcoach__act" onClick={() => show('today')}>
-              <Icon name="check" size={14} /> {plan.tips.length > 1 ? `All ${plan.tips.length} tips` : 'Full plan'}
+              <Icon name="check" size={14} /><span>{plan.tips.length > 1 ? `All ${plan.tips.length} tips` : 'Full plan'}</span>
             </button>
             <button type="button" className="shopcoach__act" onClick={() => show('week')}>
-              <Icon name="bell" size={14} /> Post by {hourName(plan.bestTime.postHour)}
+              <Icon name="bell" size={14} /><span>Post by {hourName(plan.bestTime.postHour)}</span>
             </button>
             <button type="button" className="shopcoach__act" onClick={() => show('ask')}>
-              <Icon name="message" size={14} /> Ask {FIGGY}
+              <Icon name="message" size={14} /><span>Ask {FIGGY}</span>
             </button>
           </div>
         </section>
       )}
       {open && (
-        <Modal title="Shop coach" layout="panel" onClose={close}>
+        <Modal title="Shop coach" layout="panel" onClose={close} badge={<ProBadge title="Part of Pro" />}>
           <CoachPanel store={store} signals={signals} plan={plan} results={data.results} guides={data.learned?.guides ?? {}}
             view={open} onView={show} run={run} press={press} record={record} />
         </Modal>
@@ -332,12 +391,13 @@ function CoachCard({ store }: { store: StoreAccess }) {
 function DidYouKnowStrip({ pro, run }: { pro: boolean; run: (tool: CoachTool) => void }) {
   const total = DID_YOU_KNOW.length;
   const [at, setAt] = useState(() => Math.floor(Date.now() / 86_400_000) % total);
+  const [dir, setDir] = useState<'next' | 'prev' | null>(null);
   const tip = DID_YOU_KNOW[at]!;
-  const step = (by: number) => setAt((now) => (now + by + total) % total);
+  const step = (by: number) => { setDir(by > 0 ? 'next' : 'prev'); setAt((now) => (now + by + total) % total); };
   return (
     <section className="shopcoach__dyk" aria-label="Did you know?" aria-roledescription="carousel">
       <span className="shopcoach__dykmark" aria-hidden="true"><Icon name="spark" size={15} /></span>
-      <div className="shopcoach__dyktext" aria-live="polite">
+      <div key={at} className={`shopcoach__dyktext${dir ? ` shopcoach__dyktext--${dir}` : ''}`} aria-live="polite">
         <b>Did you know?</b>
         <p>{tip.text}</p>
         {tip.tool && (
@@ -353,6 +413,51 @@ function DidYouKnowStrip({ pro, run }: { pro: boolean; run: (tool: CoachTool) =>
         <button type="button" aria-label="Next tip" onClick={() => step(1)}><Icon name="right" size={14} /></button>
       </div>
     </section>
+  );
+}
+
+/**
+ * Shop health in colour: the number counts up and the marker slides along a
+ * red-to-green scale as the panel opens - the one moment of motion here.
+ */
+function HealthScore({ health, tone }: { health: number; tone: 'good' | 'fair' | 'low' }) {
+  const still = reducedMotion();
+  const [shown, setShown] = useState(still ? health : 0);
+  useEffect(() => {
+    if (still) { setShown(health); return; }
+    let frame = 0;
+    const start = performance.now();
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / 650);
+      // Ease out: quick at first, settling on the number.
+      setShown(Math.round(health * (1 - (1 - t) ** 3)));
+      if (t < 1) frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [health, still]);
+  const label = tone === 'good' ? 'Strong' : tone === 'fair' ? 'Getting there' : 'Needs work';
+  // Says what the score means - not the urgent-or-not headline, which can read
+  // "all good" beside a low score.
+  const meaning = tone === 'good'
+    ? 'Your shop is in great shape. Keep following the plan.'
+    : tone === 'fair'
+      ? 'A good start. The tips below will raise your score.'
+      : 'Some basics are missing. Do the tips below to raise your score.';
+  return (
+    <div className={`shopcoach__health shopcoach__health--${tone}`}>
+      <div className="shopcoach__score">
+        <span className="shopcoach__ring"><b className={`shopcoach__num shopcoach__num--${tone}`}>{shown}</b></span>
+        <span>shop health</span>
+      </div>
+      <div className="shopcoach__healthtext">
+        <span className={`shopcoach__tone shopcoach__tone--${tone}`}>{label}</span>
+        <div className="shopcoach__scale" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={health} aria-label="Shop health">
+          <i style={{ left: `${shown}%` }} />
+        </div>
+        <p>{meaning}</p>
+      </div>
+    </div>
   );
 }
 
@@ -385,19 +490,7 @@ function CoachPanel({ store, signals, plan, results, guides, view, onView, run, 
 
       {view === 'today' && (
         <>
-          <div className="shopcoach__health">
-            <div className="shopcoach__score">
-              <b className={`shopcoach__num shopcoach__num--${tone}`}>{plan.health}</b>
-              <span>shop health</span>
-            </div>
-            <div className="shopcoach__healthtext">
-              <div className="shopcoach__meter" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={plan.health}
-                aria-label="Shop health">
-                <span className={`shopcoach__fill shopcoach__fill--${tone}`} style={{ transform: `scaleX(${plan.health / 100})` }} />
-              </div>
-              <p>{plan.headline}</p>
-            </div>
-          </div>
+          <HealthScore health={plan.health} tone={tone} />
           {plan.tips.length > 0 ? (
             <ul className="shopcoach__tips">
               {plan.tips.map((tip) => <TipRow key={tip.id} tip={tip} pro={pro} onRun={() => press(tip)} />)}
