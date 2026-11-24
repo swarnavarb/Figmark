@@ -15,7 +15,7 @@ import { haptic } from '../haptics';
 import { BackLink } from '../components/ScrollManager';
 import { useSave } from '../components/useSave';
 import { Canopy, DetailBlocks, Gallery, Svg, Urgency } from '../components/ListingBlocks';
-import { PieceBoard, PiecePicker, piecesCount } from '../components/Pieces';
+import { PieceBoard, piecesCount } from '../components/Pieces';
 import { ProtectedNote, SellerTick } from '../components/Trust';
 import { ListingPosts } from '../components/ListingPosts';
 import { ListingDna } from '../components/DnaKit';
@@ -77,8 +77,12 @@ export function ListingPage() {
   const [quantity, setQuantity] = useState(1);
   /** The offer whose details and terms are open, from the row or the wholesale callout. */
   const [busy, setBusy] = useState(false);
-  /** Buy on a listing sold piece by piece: the picker, opened with whatever was already ticked on the photo. */
-  const [picking, setPicking] = useState<{ initial: string[] } | null>(null);
+  /** On a listing sold piece by piece, "Pick & buy" opens the photo to pick from. */
+  const [boardOpen, setBoardOpen] = useState(false);
+  const boardRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (boardOpen) boardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [boardOpen]);
   const [editing, setEditing] = useState(false);
   // Just published from the Sell screen: the moment it goes live gets marked.
   const location = useLocation();
@@ -178,18 +182,22 @@ export function ListingPage() {
   const pieces = listing.pieces ?? [];
   const byPiece = pieces.length > 0;
   const describePiece = (piece: { condition?: string; authenticity?: string }) => pieceFactsLine(listing.category, listing.attributes, piece);
-  const buy = (initial: string[] = []) =>
-    byPiece ? setPicking({ initial }) : run('', async () => {
+  const openBoard = () => {
+    haptic('tap');
+    if (boardOpen) boardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    else setBoardOpen(true);
+  };
+  const buy = () =>
+    byPiece ? openBoard() : run('', async () => {
       haptic();
       const placed = await api.order(listing.id, quantity, via, ref, fromPost);
       navigate(`/order/${placed.order.id}`);
     });
-  // Pieces ticked in the picker: one checkout for all of them, or the cart.
+  // Pieces ticked on the photo: one checkout for all of them, or the cart.
   const buyPieces = (ids: string[], to: 'checkout' | 'cart') =>
     run('', async () => {
       haptic();
       const placed = await api.order(listing.id, 1, via, ref, fromPost, ids);
-      setPicking(null);
       if (to === 'checkout') {
         navigate(`/order/${placed.order.id}`);
         return;
@@ -201,7 +209,7 @@ export function ListingPage() {
   // Into the cart and stay here: the order is made unpaid, exactly as Buy now
   // makes it, and waits in the cart until it is paid or booked.
   const addToCart = () =>
-    byPiece ? setPicking({ initial: [] }) : run('', async () => {
+    byPiece ? openBoard() : run('', async () => {
       haptic();
       await api.order(listing.id, quantity, via, ref, fromPost);
       window.dispatchEvent(new Event('figmark:cart'));
@@ -269,20 +277,21 @@ export function ListingPage() {
       {action && <p className={`notice ${action.ok ? 'notice--ok' : 'notice--error'}`}>{action.text}</p>}
 
       {data.isOwn ? (
-        <div className="buybox__acts">
+        <div className="buybox__acts buybox__acts--own">
           <button className="btn buybox__buy" onClick={() => setEditing(true)}>
             {isExpired(listing) ? 'Make available again' : 'Edit, quantity or delete'}
           </button>
           <span className="buybox__bump">
-            <button className="btn btn--ghost" onClick={() => void bump()} disabled={busy}>
-              <Glyph name="bolt" size={14} /> Bump
+            <button className="buybox__bumpbtn" onClick={() => void bump()} disabled={busy}>
+              <span className="buybox__bumpicon" aria-hidden="true"><Glyph name="bolt" size={14} /></span>
+              <span className="buybox__bumptext"><b>Bump</b><small>To the top of the feed</small></span>
             </button>
             <InfoTip label="What Bump does"><BumpHelp /></InfoTip>
           </span>
           {/* The next one of the same thing - another size, colour, or the next
               run - starts from this one instead of an empty form. This item is
               untouched; only a new listing is made. */}
-          <button type="button" className="btn btn--ghost" disabled={busy}
+          <button type="button" className="buybox__bumpbtn buybox__bumpbtn--plain" disabled={busy}
             onClick={() => navigate(`/sell?store=${encodeURIComponent(listing.sellerId)}`, {
               state: {
                 title: listing.title,
@@ -296,7 +305,8 @@ export function ListingPage() {
                 copyOf: { id: listing.id, title: listing.title },
               },
             })}>
-            <Icon name="plus" size={14} /> List another like this
+            <span className="buybox__bumpicon" aria-hidden="true"><Icon name="plus" size={14} /></span>
+            <span className="buybox__bumptext"><b>List another</b><small>Starts from this one</small></span>
           </button>
         </div>
       ) : listing.status === 'archived' ? (
@@ -316,17 +326,18 @@ export function ListingPage() {
             </span>
           )}
           {/* No purchase on an expired item. The server refuses it too. */}
+          {/* Sold piece by piece, Pick & buy floats at the bottom of the screen instead. */}
           {shut ? (
             <button className="btn btn--lg buybox__buy is-shut" disabled aria-describedby="buybox-shut">
               {shut.state === 'paused' ? 'Orders paused' : 'Shop closed'}
             </button>
-          ) : (
+          ) : byPiece ? null : (
             <button className={`btn btn--lg buybox__buy${lock}`} onClick={gate(() => buy(), 'Sign in to buy this item.')}
               disabled={busy || !inStock}>
-              {busy ? <span className="buybox__opening">Working on it</span> : <>{lockMark}{listing.preOrder ? 'Buy a place now' : byPiece ? 'Pick & buy' : 'Buy now'}</>}
+              {busy ? <span className="buybox__opening">Working on it</span> : <>{lockMark}{listing.preOrder ? 'Buy a place now' : 'Buy now'}</>}
             </button>
           )}
-          {!shut && (
+          {!shut && !byPiece && (
             <button type="button" className={`btn btn--ghost buybox__cart${lock}`} aria-label="Add to cart" title="Add to cart"
               onClick={gate(() => addToCart(), 'Sign in to add it to your cart.')} disabled={busy || !inStock}>
               <Svg name="cart" size={18} />
@@ -410,17 +421,17 @@ export function ListingPage() {
               {listing.bundle && listing.bundleCount && <span className="badge badge--accent">Lot of {listing.bundleCount.declared}</span>}
             </span>
           </Gallery>
-          {/* Several things in one photo, each with its price: pick from the photo itself. */}
-          {byPiece && photos[0] && (
-            <PieceBoard src={photos[0]} pieces={pieces} title={listing.title}
-              disabled={data.isOwn || !buyable || busy || Boolean(shut)} describe={describePiece}
-              onBuy={(ids) => gate(() => buy(ids), 'Sign in to buy these.')()} />
-          )}
-          {picking && photos[0] && (
-            <PiecePicker src={photos[0]} pieces={pieces} initial={picking.initial} busy={busy}
-              advancePercent={listing.advancePercent} shippingMinor={listing.shippingMinor}
-              onClose={() => setPicking(null)} onCheckout={(ids, to) => void buyPieces(ids, to)} cartLabel="Add to cart"
-              describe={describePiece} />
+          {/* Several things in one photo, each with its price: picked from the
+              photo itself, which opens once the buyer taps Pick & buy. The shop,
+              and anyone who cannot buy, sees it as it is. */}
+          {byPiece && photos[0] && (boardOpen || data.isOwn || !buyable || Boolean(shut)) && (
+            <div ref={boardRef} className="lp__board">
+              <PieceBoard src={photos[0]} pieces={pieces} title={listing.title}
+                disabled={data.isOwn || !buyable || busy || Boolean(shut)} describe={describePiece}
+                shippingMinor={listing.shippingMinor}
+                onBuy={(ids) => gate(() => void buyPieces(ids, 'checkout'), 'Sign in to buy these.')()}
+                onCart={(ids) => gate(() => void buyPieces(ids, 'cart'), 'Sign in to add these to your cart.')()} />
+            </div>
           )}
 
           <div className="detail__section rise" style={{ marginTop: 18, ['--i' as string]: 1 }}>
@@ -561,17 +572,12 @@ export function ListingPage() {
                   <span className="dtile__label">Posted by</span>
                   {/* The shop's name is its address: tapping it opens its page. */}
                   <span className="sellercard__nameline">
-                    <PersonLink party={{ name: seller.storefrontName, handle: seller.username, level: seller.level }} className="sellercard__name" levelFrom={3} after={<SellerTick tier={seller.tier} size={18} />} />
-                    {seller.pro && <ProBadge size="md" />}
+                    <PersonLink party={{ name: seller.storefrontName, handle: seller.username, level: seller.level }} className="sellercard__name"
+                      levelFrom={3} shopMark={false}
+                      after={<><SellerTick tier={seller.tier} size={18} />{seller.pro && <ProBadge size="md" />}</>} />
                   </span>
                   <span className="sellercard__where"><Svg name="pin" size={13} /> {seller.dispatchRegion ?? 'Location not set'}</span>
                 </div>
-                {/* A checked shop wears the blue tick beside its name; one that is not says so here. */}
-                {seller.tier === 'unverified' && (
-                  <span className="sellercard__tier" title={TIER_NOTES.unverified}>
-                    <Svg name="shield" size={13} /> Not verified
-                  </span>
-                )}
               </div>
               </div>
 
@@ -659,20 +665,24 @@ export function ListingPage() {
       </div>
       <SimilarItems listingId={listing.id} />
       {buyable && !shut && <div className="buybar__room" aria-hidden="true" />}
-      {/* The price and Buy, kept in reach once the buy box has scrolled away. */}
-      {buyable && !shut && boxGone && createPortal(
+      {/* The price and Buy, kept in reach once the buy box has scrolled away.
+          Sold piece by piece, Pick & buy floats from the start, until the photo
+          to pick from is open: its own bar takes over from there. */}
+      {buyable && !shut && (byPiece ? !boardOpen : boxGone) && createPortal(
         <div className="buybar" role="region" aria-label="Buy this item">
           <span className="buybar__what">
             <span className="buybar__title">{listing.title}</span>
-            <b className="buybar__price">{formatMoney(linkOff > 0 ? Math.max(100, listing.priceMinor - linkOff) : listing.priceMinor, listing.currency)}</b>
+            <b className="buybar__price">{byPiece && <small className="buybox__from">from </small>}{formatMoney(linkOff > 0 ? Math.max(100, listing.priceMinor - linkOff) : listing.priceMinor, listing.currency)}</b>
           </span>
-          <button type="button" className={`btn btn--ghost buybar__cart${lock}`} aria-label="Add to cart"
-            onClick={gate(() => addToCart(), 'Sign in to add it to your cart.')} disabled={busy || !inStock}>
-            <Svg name="cart" size={17} />
-          </button>
-          <button type="button" className={`btn buybar__buy${lock}`} onClick={gate(() => buy(), 'Sign in to buy this item.')}
+          {!byPiece && (
+            <button type="button" className={`btn btn--ghost buybar__cart${lock}`} aria-label="Add to cart"
+              onClick={gate(() => addToCart(), 'Sign in to add it to your cart.')} disabled={busy || !inStock}>
+              <Svg name="cart" size={17} />
+            </button>
+          )}
+          <button type="button" className={`btn buybar__buy${lock}`} onClick={byPiece ? openBoard : gate(() => buy(), 'Sign in to buy this item.')}
             disabled={busy || !inStock}>
-            {inStock ? (listing.preOrder ? 'Buy a place' : 'Buy now') : 'Sold out'}
+            {inStock ? (listing.preOrder ? 'Buy a place' : byPiece ? 'Pick & buy' : 'Buy now') : 'Sold out'}
           </button>
         </div>,
         document.body,

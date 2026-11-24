@@ -5,6 +5,7 @@ import type { PhotoBox } from '../api';
 import { formatMoney } from '../format';
 import { haptic } from '../haptics';
 import { Modal } from './ui';
+import { Svg } from './ListingBlocks';
 
 /*
  * One photo, many things for sale: what a buyer and a seller both look at.
@@ -135,11 +136,15 @@ function PieceName({ title, facts }: { title: string; facts?: string }) {
   );
 }
 
-export function PieceBoard({ src, pieces, title, onBuy, disabled, describe }: {
+export function PieceBoard({ src, pieces, title, onBuy, onCart, shippingMinor, disabled, describe }: {
   src: string;
   pieces: ListingPiece[];
   title: string;
   onBuy: (picked: string[]) => void;
+  /** Puts what is picked in the cart instead of checking out. */
+  onCart?: (picked: string[]) => void;
+  /** Said beside the total, never added to it. */
+  shippingMinor?: number | null;
   disabled?: boolean;
   /** Each item's own condition or original-or-copy, when the listing's is "Mixed". */
   describe?: (piece: ListingPiece) => string;
@@ -182,10 +187,21 @@ export function PieceBoard({ src, pieces, title, onBuy, disabled, describe }: {
       </ol>
       {picked.size > 0 && (
         <div className="pcs-board__bar">
-          <span><b>{picked.size}</b> picked · <b>{formatMoney(total)}</b></span>
-          <button type="button" className="btn" onClick={() => onBuy([...picked])} disabled={disabled}>
-            Buy {picked.size === 1 ? 'this' : `these ${picked.size}`} →
-          </button>
+          <span className="pcs-board__sum">
+            <span><b>{picked.size}</b> picked · <b>{formatMoney(total)}</b></span>
+            {shippingMinor ? <small>+ {formatMoney(shippingMinor)} shipping</small> : null}
+          </span>
+          <span className="pcs-board__go">
+            {onCart && (
+              <button type="button" className="btn btn--ghost pcs-board__cart" aria-label="Add to cart" title="Add to cart"
+                onClick={() => onCart([...picked])} disabled={disabled}>
+                <Svg name="cart" size={17} />
+              </button>
+            )}
+            <button type="button" className="btn" onClick={() => onBuy([...picked])} disabled={disabled}>
+              Buy {picked.size === 1 ? 'this' : `these ${picked.size}`} →
+            </button>
+          </span>
         </div>
       )}
     </section>
