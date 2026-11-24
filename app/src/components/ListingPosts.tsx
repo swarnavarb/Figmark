@@ -35,10 +35,25 @@ export function ListingPosts({ listingId, sellerId, shopName, dnaId, posts, onCh
 
   const threads = posts.filter((post) => !post.replyToId);
   const repliesTo = (id: string) => posts.filter((post) => post.replyToId === id);
+  const isSeller = user?.id === sellerId;
+  // A question is answered once the shop has replied under it; the shop's own posts are not questions.
+  const answered = (post: ListingPost) => repliesTo(post.id).some((reply) => reply.authorId === sellerId);
+  const waiting = threads.filter((post) => post.authorId !== sellerId && !answered(post)).length;
 
   function startReply(post: ListingPost) {
     setReplyTo(post);
     field.current?.focus();
+  }
+
+  /** A starter question: written into the box, ready to send or change. */
+  function ask(question: string) {
+    if (!user) {
+      promptAuth('Sign in to ask the seller.');
+      return;
+    }
+    setReplyTo(null);
+    setDraft(question);
+    requestAnimationFrame(() => field.current?.focus());
   }
 
   async function submit(event: FormEvent) {
@@ -79,21 +94,39 @@ export function ListingPosts({ listingId, sellerId, shopName, dnaId, posts, onCh
   return (
     <section className="lpcard posts rise" style={{ ['--i' as string]: 3 }}>
       <div className="posts__head">
-        <h2 className="lpcard__title">Ask the seller</h2>
-        <span className="posts__count">{posts.length}</span>
+        <span className="posts__icon" aria-hidden="true">💬</span>
+        <span className="posts__titles">
+          <h2 className="lpcard__title">{isSeller ? 'Questions from buyers' : 'Ask the seller'}</h2>
+          <small>{isSeller
+            ? (waiting > 0 ? `${waiting} waiting for your answer` : 'Answers here are public, so every buyer sees them.')
+            : `Public Q&A with ${shopName ?? 'the shop'} · everyone sees the answers`}</small>
+        </span>
+        {threads.length > 0 && <span className="posts__count">{threads.length}</span>}
       </div>
-      <p className="posts__hint">
-        Questions about this listing, public to everyone browsing. Hold a post to react or reply.
-        {dnaId && <> For reviews and photos of the product itself, see its <Link to={`/dna/${encodeURIComponent(dnaId)}`} className="posts__dnalink">Product DNA</Link>.</>}
-      </p>
+
+      {/* One tap writes a common question in the box, ready to send or change. */}
+      {!isSeller && (
+        <div className="posts__starters" role="group" aria-label="Quick questions">
+          {STARTERS.map((question) => (
+            <button key={question} type="button" className="posts__starter" onClick={() => ask(question)}>{question}</button>
+          ))}
+        </div>
+      )}
 
       {threads.length === 0 && (
-        <p className="posts__empty">No questions yet. Ask {shopName ?? 'the seller'} about condition, shipping or price.</p>
+        <p className="posts__empty">
+          {isSeller ? 'No questions yet. Buyers\u2019 questions and your answers show here.' : `No questions yet - be the first to ask ${shopName ?? 'the seller'}.`}
+        </p>
       )}
 
       <div className="posts__list">
         {threads.map((post, n) => (
           <div key={post.id} className="posts__thread" style={{ ['--i' as string]: n }}>
+            {post.authorId !== sellerId && (
+              <span className={`posts__state${answered(post) ? ' is-answered' : ''}`}>
+                {answered(post) ? '✓ Answered' : isSeller ? 'Needs your answer' : 'Waiting for an answer'}
+              </span>
+            )}
             <Post post={post} listingId={listingId} sellerId={sellerId} canAct={Boolean(user)}
               mine={post.authorId === user?.id} onReact={(kind) => void react(post, kind)} onReply={() => startReply(post)} />
             {repliesTo(post.id).map((reply) => (
@@ -123,8 +156,8 @@ export function ListingPosts({ listingId, sellerId, shopName, dnaId, posts, onCh
             </div>
           )}
           <div className="posts__field">
-            <textarea ref={field} rows={1} value={draft} onChange={(e) => setDraft(e.target.value)}
-              placeholder={replyTo ? 'Write a reply…' : 'Ask the seller…'} aria-label="Your post" />
+            <textarea ref={field} rows={1} value={draft} onChange={(e) => setDraft(e.target.value)} maxLength={1000}
+              placeholder={replyTo ? 'Write a reply…' : isSeller ? 'Post an update for buyers…' : 'Ask about condition, shipping or price…'} aria-label="Your post" />
             <button type="submit" className="posts__send" disabled={busy || !draft.trim()} aria-label="Post">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
                 strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 12 20 4l-6 16-3-7-7-1Z" /></svg>
@@ -132,9 +165,16 @@ export function ListingPosts({ listingId, sellerId, shopName, dnaId, posts, onCh
           </div>
         </form>
       )}
+      <p className="posts__hint">
+        Hold a post to react or reply.
+        {dnaId && <> Reviews and photos of the product itself are in its <Link to={`/dna/${encodeURIComponent(dnaId)}`} className="posts__dnalink">Product DNA</Link>.</>}
+      </p>
     </section>
   );
 }
+
+/** Questions buyers ask most, one tap each. */
+const STARTERS = ['Is it still available?', 'Any flaws or damage?', 'Can you share more photos?', 'When will it ship?', 'Is the box included?'];
 
 /** One post: hold it for React and Reply. */
 function Post({ post, listingId, sellerId, canAct, mine, reply, onReact, onReply }: {
@@ -177,7 +217,7 @@ function Post({ post, listingId, sellerId, canAct, mine, reply, onReact, onReply
   };
 
   return (
-    <div ref={box} className={`post post--menu${reply ? ' post--reply' : ''}${open ? ' is-open' : ''}`}>
+    <div ref={box} className={`post post--menu${reply ? ' post--reply' : ''}${post.authorId === sellerId ? ' post--seller' : ''}${open ? ' is-open' : ''}`}>
       <Avatar name={post.author.name} size={reply ? 28 : 34} />
       <div className="post__col">
         <div className="post__bubble" role="button" tabIndex={0} aria-expanded={open}

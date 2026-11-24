@@ -16,6 +16,7 @@ import { BackLink } from '../components/ScrollManager';
 import { useSave } from '../components/useSave';
 import { Canopy, DetailBlocks, Gallery, Svg, Urgency } from '../components/ListingBlocks';
 import { PieceBoard, piecesCount } from '../components/Pieces';
+import { HeartPop, PixelHeart } from '../components/PixelHeart';
 import { ProtectedNote, SellerTick } from '../components/Trust';
 import { ListingPosts } from '../components/ListingPosts';
 import { ListingDna } from '../components/DnaKit';
@@ -132,6 +133,8 @@ export function ListingPage() {
 
   const onSaved = useCallback((liked: boolean) => setData((prev) => (prev ? { ...prev, liked } : prev)), []);
   const [liked, toggleLike] = useSave(id, data?.liked ?? false, onSaved);
+  // A save throws a burst of pixel hearts, as on the shop's cards; taking one back drops a grey one.
+  const [heartPop, setHeartPop] = useState<{ id: number; gain: boolean } | null>(null);
   const shareSheet = useShareSheet();
   // Spread the word, started from the moment an item goes live.
   const [spreading, setSpreading] = useState(false);
@@ -314,7 +317,7 @@ export function ListingPage() {
         <p className="notice notice--warn">The seller has taken this item down. It can no longer be bought.</p>
       ) : isExpired(listing) ? (
         <p className="notice notice--warn">This item has expired and can no longer be bought.</p>
-      ) : (
+      ) : byPiece && !shut ? null : (
         <div className="buybox__acts">
           {/* More than one to be had: how many, before the checkout opens. */}
           {maxQuantity > 1 && !byPiece && (
@@ -344,10 +347,6 @@ export function ListingPage() {
               <Svg name="cart" size={18} />
             </button>
           )}
-          <button className={`btn btn--ghost buybox__save${liked ? ' is-on' : ''}${lock}`} aria-label={liked ? 'Saved' : 'Save'}
-            aria-pressed={liked} onClick={gate(() => void toggleLike(), 'Sign in to save items.')} disabled={busy}>
-            <Icon name="heart" size={18} />
-          </button>
         </div>
       )}
       {/* Nobody can buy right now, but the items in the photo can still be looked at. */}
@@ -414,15 +413,19 @@ export function ListingPage() {
       <div className="detail">
         <div>
           <Gallery photos={photos} title={listing.title}
+            overlay={data.isOwn ? null : (
+              <button type="button" className={`qheart${liked ? ' is-on' : ''}${lock}`} onClick={gate(() => {
+                setHeartPop({ id: Date.now(), gain: !liked });
+                void toggleLike();
+              }, 'Sign in to save items.')} aria-label={liked ? 'Remove from your saves' : 'Save'} aria-pressed={liked}>
+                <PixelHeart full={liked} />
+                {heartPop && <HeartPop key={heartPop.id} gain={heartPop.gain} />}
+              </button>
+            )}
             fallback={<Thumb seed={listing.id} label={listing.title} className="thumb gallery__fallback" />}>
+            {/* Condition and original-or-copy are in the facts right under the photo, so not on it too. */}
             <span className="gallery__badges">
               {rarity.tier && <RarityRibbon tier={rarity.tier} />}
-              <span className="badge badge--solid">{facts.condition}</span>
-              {facts.authenticity && (
-                <span className={`badge ${facts.authenticity.genuine ? 'badge--ok' : 'badge--warn'}`}>
-                  {facts.authenticity.label}
-                </span>
-              )}
               {isTakingBookings(listing.preOrder) && <span className="badge badge--accent">Pre-order</span>}
               {byPiece && <span className="badge badge--accent">{piecesCount(pieces)} · priced separately</span>}
               {listing.bundle && listing.bundleCount && <span className="badge badge--accent">Lot of {listing.bundleCount.declared}</span>}
@@ -435,7 +438,7 @@ export function ListingPage() {
             <Modal title={data.isOwn ? 'Your listings in this photo' : 'Pick from the photo'} layout="panel" onClose={() => setBoardOpen(false)}>
               <PieceBoard src={photos[0]} pieces={pieces} title={listing.title} bare
                 disabled={data.isOwn || !buyable || busy || Boolean(shut)} describe={describePiece}
-                shippingMinor={listing.shippingMinor}
+                shippingMinor={listing.shippingMinor} offers={listing.offers}
                 onBuy={(ids) => gate(() => void buyPieces(ids, 'checkout'), 'Sign in to buy these.')()}
                 onCart={(ids) => gate(() => void buyPieces(ids, 'cart'), 'Sign in to add these to your cart.')()} />
             </Modal>

@@ -6111,6 +6111,29 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
 .qloot--plain .qgrade { border-color: #56637A; }
 .qloot--plain .qgrade::before { background: #56637A; }
 .qgrade small { display: block; font-size: calc(6.5px * var(--text-scale)); color: var(--text-faint); letter-spacing: 0.12em; text-transform: uppercase; }
+.qheart {
+  position: absolute; top: 8px; right: 8px; z-index: 2;
+  width: 34px; height: 34px; border-radius: var(--r-sm); display: grid; place-items: center; cursor: pointer;
+  background: rgba(8, 11, 18, 0.7); border: 1px solid rgba(255, 255, 255, 0.14); color: #fff;
+  transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
+}
+.qpop { position: absolute; inset: 0; pointer-events: none; }
+.qpop__heart {
+  position: absolute; left: 50%; top: 50%; margin: -4px 0 0 -4.5px; color: #FF4D8D;
+  filter: drop-shadow(0 0 3px rgba(255, 77, 141, 0.9));
+  animation: qpop-fly 700ms cubic-bezier(0.2, 0.8, 0.3, 1) var(--d, 0ms) both;
+}
+.qpop__heart:nth-child(odd) { color: #FDA4CF; }
+.qpop__ring {
+  position: absolute; inset: 2px; border: 2px solid #FF4D8D; border-radius: 4px;
+  animation: qpop-ring 420ms steps(4, end) both;
+}
+.qpop--loss .qpop__heart { color: #6B7C96; filter: none; animation: qpop-drop 650ms ease-in both; }
+@media (prefers-reduced-motion: reduce) {
+  .qpop { display: none; }
+}
+.qheart:active { transform: scale(0.85); }
+.qheart { transition: transform 160ms var(--ease-out), background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease); }
 .qheart:hover { color: #FDA4CF; }
 .qheart.is-on { color: #FF4D8D; border-color: rgba(255, 77, 141, 0.6); background: rgba(40, 8, 24, 0.8); }
 .qheart.is-on svg { animation: q-pop 320ms var(--ease); filter: drop-shadow(0 0 5px rgba(255, 77, 141, 0.8)); }
@@ -6772,8 +6795,6 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
   flex: 1; border: 0; color: var(--ink-black); font-weight: var(--w-bold); background: var(--acid);
   box-shadow: 0 8px 22px var(--acid-glow); transition: transform var(--spring-bouncy-dur) var(--spring-bouncy), box-shadow var(--dur-2);
 }
-.buybox__save.is-on { color: var(--coral); border-color: var(--coral-line); }
-.buybox__save.is-on svg { animation: like-pop var(--dur-2) var(--ease); fill: currentColor; }
 @keyframes lp-dots { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
 .fillring svg { position: absolute; inset: 0; transform: rotate(-90deg); }
 .fillring b { font-family: var(--mono); font-size: var(--t-xs); }
@@ -6805,7 +6826,11 @@ html:has(.shell--room), html:has(.shell--room) body { overscroll-behavior-y: non
 
 /* ── Gallery ─────────────────────────────────────────────────────────── */
 
-.gallery { display: grid; gap: 10px; animation: lp-rise 700ms var(--lp-ease) both; }
+.gallery { position: relative; display: grid; gap: 10px; animation: lp-rise 700ms var(--lp-ease) both; }
+/* The save heart, over the photo's top-right corner. */
+.gallery__over { position: absolute; z-index: 3; top: 12px; right: 12px; }
+.gallery__over .qheart { position: relative; top: auto; right: auto; width: 40px; height: 40px; backdrop-filter: blur(8px); }
+.gallery__over .qheart svg { width: 22px; height: 20px; }
 .gallery__stage {
   position: relative; display: block; width: 100%; aspect-ratio: 4 / 3; padding: 0; overflow: hidden; cursor: zoom-in;
   border-radius: var(--r-lg); border: 2px solid transparent;
@@ -11415,6 +11440,7 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 
 .pcs-board__sum { display: grid; gap: 1px; min-width: 0; }
 .pcs-board__sum small { color: var(--text-dim); font-size: var(--t-xs); }
+.pcs-board__sum small.pcs-board__free { color: var(--ok); font-weight: var(--w-semi); }
 .pcs-board__go { display: flex; gap: 8px; flex: none; }
 .pcs-board__cart { flex: 0 0 44px; padding: 0; justify-content: center; }
 

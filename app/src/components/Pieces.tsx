@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { ListingPiece } from '@shared/pieces';
+import type { ListingOffer } from '@shared/offers';
 import { isPieceSold, piecesLeft } from '@shared/pieces';
 import type { PhotoBox } from '../api';
 import { formatMoney } from '../format';
@@ -136,7 +137,7 @@ function PieceName({ title, facts }: { title: string; facts?: string }) {
   );
 }
 
-export function PieceBoard({ src, pieces, title, onBuy, onCart, shippingMinor, disabled, describe, bare = false }: {
+export function PieceBoard({ src, pieces, title, onBuy, onCart, shippingMinor, offers = [], disabled, describe, bare = false }: {
   src: string;
   pieces: ListingPiece[];
   title: string;
@@ -145,6 +146,8 @@ export function PieceBoard({ src, pieces, title, onBuy, onCart, shippingMinor, d
   onCart?: (picked: string[]) => void;
   /** Said beside the total, never added to it. */
   shippingMinor?: number | null;
+  /** The item's offers: free shipping on 2 or more counts the items picked here, lot or no lot. */
+  offers?: readonly ListingOffer[];
   disabled?: boolean;
   /** Each item's own condition or original-or-copy, when the listing's is "Mixed". */
   describe?: (piece: ListingPiece) => string;
@@ -161,6 +164,9 @@ export function PieceBoard({ src, pieces, title, onBuy, onCart, shippingMinor, d
     });
   };
   const total = pieces.filter((piece) => picked.has(piece.id)).reduce((sum, piece) => sum + piece.priceMinor, 0);
+  // Picked together they ship together, so "free shipping on 2 or more" is met here and now.
+  const shipFree = offers.find((offer) => offer.kind === 'free_shipping' && picked.size >= (offer.minItems ?? 2));
+  const nextFree = shipFree ? null : offers.find((offer) => offer.kind === 'free_shipping' && (offer.minItems ?? 2) > picked.size);
   return (
     <section className={`pcs-board${bare ? ' pcs-board--bare' : ''}`} aria-label="Items in this photo">
       {!bare && (
@@ -196,7 +202,10 @@ export function PieceBoard({ src, pieces, title, onBuy, onCart, shippingMinor, d
         <div className="pcs-board__bar">
           <span className="pcs-board__sum">
             <span><b>{picked.size}</b> picked · <b>{formatMoney(total)}</b></span>
-            {shippingMinor ? <small>+ {formatMoney(shippingMinor)} shipping</small> : null}
+            {shippingMinor && shipFree ? <small className="pcs-board__free">🎁 Free shipping · offer</small>
+              : shippingMinor ? (
+                <small>+ {formatMoney(shippingMinor)} shipping{nextFree ? ` · pick ${(nextFree.minItems ?? 2) - picked.size} more for free shipping` : ''}</small>
+              ) : null}
           </span>
           <span className="pcs-board__go">
             {onCart && (

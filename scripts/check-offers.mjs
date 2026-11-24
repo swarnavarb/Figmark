@@ -57,6 +57,14 @@ check('an order not yet in any lot does not count toward a lot offer, and gets i
   assert.equal(filed.get('a').shippingMinor, 0);
 });
 
+check('several items picked from one photo count together, with no lot at all', () => {
+  // One order of 3 pieces is one line of quantity 1 holding 3 items: they ship together.
+  const picked = price([line({ id: 'a', lotId: null, items: 3, offers: [freeShip] })]);
+  assert.equal(picked.get('a').shippingMinor, 0);
+  const one = price([line({ id: 'a', lotId: null, items: 1, offers: [freeShip] })]);
+  assert.equal(one.get('a').shippingMinor, 5_000, 'one item alone still pays shipping');
+});
+
 check('a shop-wide offer counts items across different lots', () => {
   const shopShip = { ...freeShip, scope: 'shop' };
   const out = price([
