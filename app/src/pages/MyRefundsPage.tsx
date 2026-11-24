@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { REFUND_ORIGIN_LABELS } from '@shared/payments';
+import { OfferRefundChoice } from '../components/OfferRefundChoice';
 import { AFFILIATE_STATUS_LABELS } from '@shared/affiliate';
 import { ApiRequestError, api, type AffiliateEarning, type MyRefund } from '../api';
 import { GIFT_METHOD_LABELS, type StoreGift } from '@shared/billing';
@@ -191,7 +192,7 @@ export function MyRefundsPage() {
   const currency = refunds[0]?.currency ?? 'INR';
   const owed = refunds.reduce((sum, refund) => sum + refund.leftMinor, 0);
   const back = refunds.reduce((sum, refund) => sum + refund.refundedMinor, 0);
-  const waiting = refunds.filter((refund) => refund.status === 'refund_pending');
+  const waiting = refunds.filter((refund) => refund.status === 'refund_pending' || refund.status === 'choosing');
 
   return (
     <main className="page stack page--top">
@@ -226,12 +227,21 @@ export function MyRefundsPage() {
               </span>
               <span className="xcredit__tags">
                 <span className="badge badge--accent">{REFUND_ORIGIN_LABELS[refund.origin]}</span>
-                <span className={`badge ${pending ? 'badge--warn' : refund.leftMinor === 0 ? 'badge--ok' : 'badge--purple'}`}>
-                  {pending ? 'Confirm it arrived' : refund.leftMinor === 0 ? 'Settled' : `${formatMoney(refund.leftMinor, refund.currency)} owed`}
+                <span className={`badge ${pending || refund.status === 'choosing' ? 'badge--warn' : refund.leftMinor === 0 ? 'badge--ok' : 'badge--purple'}`}>
+                  {pending ? 'Confirm it arrived' : refund.status === 'choosing' ? 'Your choice'
+                    : refund.leftMinor === 0 ? (refund.chosen === 'store_credit' ? 'Store credit' : 'Settled') : `${formatMoney(refund.leftMinor, refund.currency)} owed`}
                 </span>
               </span>
             </div>
             {refund.reason && <p className="faint xcredit__note">“{refund.reason}”</p>}
+            {refund.status === 'choosing' && (
+              <OfferRefundChoice orderId={refund.orderId} creditId={refund.creditId} amountMinor={refund.amountMinor}
+                offerMinor={refund.storeCreditOfferMinor} currency={refund.currency} side="buyer" shopName={refund.sellerName}
+                onDone={load} />
+            )}
+            {refund.chosen === 'refund' && refund.status === 'open' && (
+              <p className="faint xcredit__note">You chose a refund. {refund.sellerName} sends it, then you confirm it arrived.</p>
+            )}
             {refund.status === 'held' && (
               <p className="faint xcredit__note">The seller is keeping this as credit towards your next order with them.</p>
             )}
@@ -263,9 +273,9 @@ export function MyRefundsPage() {
               <ul className="rfhist">
                 {refund.log.map((entry) => (
                   <li key={entry.id} className={`rfhist__row rfhist__row--${entry.status}`}>
-                    <span className="rfhist__icon" aria-hidden="true">↩️</span>
+                    <span className="rfhist__icon" aria-hidden="true">{entry.storeCreditMinor ? '🎁' : '↩️'}</span>
                     <span className="rfhist__body">
-                      <b>Refund sent</b>
+                      <b>{entry.storeCreditMinor ? `Taken as ${formatMoney(entry.storeCreditMinor, refund.currency)} store credit` : 'Refund sent'}</b>
                       <small>
                         {formatDateOrdinal(entry.sentAt)}{entry.reference ? ` · ref ${entry.reference}` : ''}
                         {entry.screenshotUrl && (

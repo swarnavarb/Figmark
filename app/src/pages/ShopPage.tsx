@@ -1,5 +1,6 @@
 import { GiveMoneyPanel } from '../components/GiveMoney';
 import { CancelFlagBanner, FeeLockBanner, ProGate, ProOwnerProvider, useProLocked } from '../components/Billing';
+import { OfferRefundChoice } from '../components/OfferRefundChoice';
 import { confirmAsk, confirmSentence } from '../components/Ask';
 import { Suspense, createContext, lazy, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -3747,7 +3748,7 @@ function Refunds({ store }: { store: StoreAccess }) {
   // still to make, so it is counted on its own.
   const deciding = data.credits.filter((credit) => credit.status === 'open');
   const kept = data.credits.filter((credit) => credit.status === 'held');
-  const waiting = data.credits.filter((credit) => credit.status === 'refund_pending');
+  const waiting = data.credits.filter((credit) => credit.status === 'refund_pending' || credit.status === 'choosing');
   // Per currency: a shop selling in two never sees them added together.
   const owed = formatTotals(data.credits.filter((credit) => credit.status !== 'held')
     .map((credit) => ({ amountMinor: credit.leftMinor, currency: credit.currency })));
@@ -3804,7 +3805,7 @@ function Refunds({ store }: { store: StoreAccess }) {
         <ul className="rfhist">
           {data.refundHistory.map((entry) => (
             <li key={entry.id} className={`rfhist__row rfhist__row--${entry.kind === 'moved' ? 'moved' : entry.status}`}>
-              <span className="rfhist__icon" aria-hidden="true">{entry.kind === 'moved' ? '➡️' : '↩️'}</span>
+              <span className="rfhist__icon" aria-hidden="true">{entry.kind === 'moved' ? '➡️' : entry.storeCreditMinor ? '🎁' : '↩️'}</span>
               <span className="rfhist__body">
                 <b>{entry.buyer.name}</b>
                 <small>
@@ -3822,7 +3823,7 @@ function Refunds({ store }: { store: StoreAccess }) {
                 <b>{formatMoney(entry.amountMinor, entry.currency)}</b>
                 <span className={`badge ${entry.kind === 'moved' ? 'badge--aqua'
                   : entry.status === 'received' ? 'badge--ok' : entry.status === 'awaiting' ? 'badge--warn' : 'badge--danger'}`}>
-                  {entry.kind === 'moved' ? 'Moved' : entry.status === 'received' ? 'Received'
+                  {entry.kind === 'moved' ? 'Moved' : entry.storeCreditMinor ? `${formatMoney(entry.storeCreditMinor, entry.currency)} store credit` : entry.status === 'received' ? 'Received'
                     : entry.status === 'awaiting' ? 'Awaiting buyer' : 'Not received'}
                 </span>
               </span>
@@ -3893,8 +3894,9 @@ function RefundCard({ credit, onChanged }: { credit: ShopCredit; onChanged: () =
         </span>
         <span className="xcredit__tags">
           <span className="badge badge--accent">{REFUND_ORIGIN_LABELS[credit.origin]}</span>
-          <span className={`badge ${pending ? 'badge--warn' : credit.status === 'held' ? 'badge--purple' : 'badge--pink'}`}>
-            {pending ? 'Awaiting buyer' : credit.status === 'held' ? 'Kept for future' : 'To decide'}
+          <span className={`badge ${pending || credit.status === 'choosing' ? 'badge--warn' : credit.status === 'held' ? 'badge--purple' : 'badge--pink'}`}>
+            {pending ? 'Awaiting buyer' : credit.status === 'choosing' ? 'Buyer choosing' : credit.status === 'held' ? 'Kept for future'
+              : credit.chosen === 'refund' ? 'Refund chosen' : 'To decide'}
           </span>
         </span>
       </div>
@@ -3934,15 +3936,25 @@ function RefundCard({ credit, onChanged }: { credit: ShopCredit; onChanged: () =
         </p>
       )}
 
-      {!pending && !mode && (
+      {/* An offer's money back: the buyer chooses refund or store credit; the shop may offer more credit. */}
+      {credit.status === 'choosing' && (
+        <OfferRefundChoice orderId={credit.orderId} creditId={credit.creditId} amountMinor={credit.amountMinor}
+          offerMinor={credit.storeCreditOfferMinor} currency={credit.currency} side="seller" onDone={onChanged}
+          chatHref={credit.buyer.handle ? `/messages/${encodeURIComponent(credit.buyer.handle)}` : null} />
+      )}
+      {credit.chosen === 'refund' && !pending && (
+        <p className="faint xcredit__note">↩️ {credit.buyer.name} chose a refund over store credit. Send it, with the reference.</p>
+      )}
+
+      {!pending && !mode && credit.status !== 'choosing' && (
         <div className="xcredit__acts">
           <button type="button" className="btn btn--sm btn--ok" onClick={() => open('refund')}>↩️ Refund</button>
-          <button type="button" className="btn btn--sm btn--ghost" disabled={credit.targets.length === 0}
+          {credit.chosen !== 'refund' && <button type="button" className="btn btn--sm btn--ghost" disabled={credit.targets.length === 0}
             title={credit.targets.length === 0 ? 'This buyer has no other order that still owes anything' : undefined}
             onClick={() => open('apply')}>
             ➡️ Use for an order
-          </button>
-          {credit.status === 'open' && (
+          </button>}
+          {credit.status === 'open' && credit.chosen !== 'refund' && (
             <button type="button" className="btn btn--sm btn--quiet" disabled={busy !== null}
               onClick={() => void run('hold', () => api.holdCredit(credit.orderId, credit.creditId))}>
               {busy === 'hold' ? 'Saving…' : '🕒 Keep for future orders'}
