@@ -21,15 +21,15 @@ import '../styles/Offers.css';
 
 /**
  * "Free shipping" or "Shipping extra": the small tag on a card. When an offer
- * makes paid shipping free, that is said instead: "Free ship on 2+".
- * Nothing when the shop said nothing.
+ * makes paid shipping free, that is said instead: "Free ship with offer",
+ * with what it takes ("Free ship on 2+") on hover. Nothing when the shop said nothing.
  */
 export function ShippingChip({ shippingMinor, offers }: { shippingMinor?: number | null; offers?: ListingOffer[] }) {
   if (shippingMinor === null || shippingMinor === undefined) return null;
   if (shippingMinor === 0) return <span className="offr-chip offr-chip--free">Free shipping</span>;
   const way = freeShipShort(offers);
   return way
-    ? <span className="offr-chip offr-chip--free" title="Shipping is extra on one item">{way}</span>
+    ? <span className="offr-chip offr-chip--free" title={`${way}. Shipping is extra on one item.`}>Free ship with offer</span>
     : <span className="offr-chip">Shipping extra</span>;
 }
 
