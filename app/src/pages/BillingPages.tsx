@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { FEE_KIND_LABELS, type FeeKind } from '@shared/billing';
+import { FEE_KIND_LABELS, type FeeKind, type ProFeatureId, type ProVoucherPreview } from '@shared/billing';
 import { ApiRequestError, api, type FeesView, type ProView } from '../api';
 import { useSession } from '../session';
 import { formatMoney } from '../format';
@@ -24,7 +24,18 @@ const message = (err: unknown, fallback: string) => (err instanceof ApiRequestEr
 
 /* ── Pro ─────────────────────────────────────────────────────────────────── */
 
-interface Benefit { id: string; icon: string; punch: string; title: string; benefit: string; line?: string }
+interface Benefit { id: string; icon: string; title: string; say: string; more: string }
+
+/**
+ * Shorter names for the tools, for the Pro list. What each one does, in
+ * simple words, is in `PRO_FEATURES`, so the 🔒 boxes across the app say the same.
+ */
+const SHORT_NAMES: Partial<Record<ProFeatureId, string>> = {
+  coach: 'Shop coach (AI)',
+  costs: 'Cost sheets',
+  customers: 'Buyer messages',
+  powerSale: 'Limited drops',
+};
 
 /**
  * A hand-drawn underline under a word: one rough stroke, drawn in as the
@@ -61,6 +72,9 @@ export function ProPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [code, setCode] = useState('');
+  const [codeError, setCodeError] = useState<string | null>(null);
+  /** The coupon shown in the popup, read but not yet used. */
+  const [coupon, setCoupon] = useState<ProVoucherPreview | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const [openBenefit, setOpenBenefit] = useState<string | null>(null);
 
@@ -68,7 +82,7 @@ export function ProPage() {
     api.myPro().then(setView).catch((err) => setError(message(err, 'Could not load Pro.')));
   }, []);
 
-  const apply = useCallback(async (key: string, work: () => Promise<ProView>, success: string) => {
+  const apply = useCallback(async (key: string, work: () => Promise<ProView>, success: string): Promise<boolean> => {
     setBusy(key);
     setError(null);
     setDone(null);
@@ -77,32 +91,70 @@ export function ProPage() {
       forgetProStatus();
       await refresh();
       setDone(success);
+      return true;
     } catch (err) {
-      setError(message(err, 'That did not go through.'));
+      setError(message(err, 'That did not work. Please try again.'));
+      return false;
     } finally {
       setBusy(null);
     }
   }, [refresh]);
 
+  async function claim() {
+    const typed = code.trim();
+    if (!typed) return;
+    setBusy('claim');
+    setCodeError(null);
+    setDone(null);
+    try {
+      setCoupon((await api.checkProCode(typed)).voucher);
+    } catch (err) {
+      setCodeError(message(err, 'We could not check that code. Please try again.'));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function useCoupon() {
+    if (!coupon) return;
+    setBusy('code');
+    setCodeError(null);
+    setDone(null);
+    try {
+      setView(await api.redeemPro(coupon.code));
+      forgetProStatus();
+      await refresh();
+      setDone(`Coupon applied. ${coupon.days} days of Pro added.`);
+      setCoupon(null);
+      setCode('');
+    } catch (err) {
+      setCoupon(null);
+      setCodeError(message(err, 'That coupon did not work. Please try again.'));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   if (!view && error) return <PageError message={error} />;
   if (!view) return <PageLoading />;
 
-  const best = Math.max(...view.plans.map((plan) => plan.months));
+  const longest = Math.max(...view.plans.map((plan) => plan.months));
   const perMonth = (plan: ProView['plans'][number]) => Math.round(plan.totalMinor / plan.months);
-  const cheapest = Math.min(...view.plans.map(perMonth));
-  const dearest = Math.max(...view.plans.map(perMonth));
+  const cheapest = view.plans.length ? Math.min(...view.plans.map(perMonth)) : 0;
+  const dearest = view.plans.length ? Math.max(...view.plans.map(perMonth)) : 0;
+  const canTry = view.enabled && view.trialDays > 0 && !view.trialUsed && view.history.length === 0;
 
   const benefits: Benefit[] = [
-    {
-      id: 'bumps', icon: '🚀', punch: 'Jump to the top of Discover', title: 'Free bump points',
-      benefit: `Every plan comes with bump points. Spend one to lift an item to the top of Discover, where buyers look first. You have ${view.bumpPoints} now.`,
-    },
     ...view.features.filter((feature) => feature.pro).map((feature) => ({
-      id: feature.id, icon: feature.icon, punch: feature.punch, title: feature.title, benefit: feature.benefit, line: feature.line,
+      id: feature.id, icon: feature.icon, title: SHORT_NAMES[feature.id] ?? feature.title, say: feature.punch, more: feature.benefit,
     })),
     {
-      id: 'badge', icon: '🏁', punch: 'Look the part everywhere', title: 'The PRO badge',
-      benefit: 'A slanted gold PRO beside your shop\'s name on every item, in Social, in search and on your shop page. Buyers see a shop that takes selling seriously.',
+      id: 'bumps', icon: '🚀', title: 'Bump points', say: 'Put your items on top',
+      more: `Use a bump point to put an item at the top of Discover. Buyers see it first. Plans come with free bump points. You have ${view.bumpPoints} now.`,
+    },
+    {
+      id: 'badge', icon: '🏅', title: 'PRO badge', say: 'Show buyers you are serious',
+      more: 'A gold PRO sign shows next to your shop name. Buyers see it on your items, in search and on your shop page.',
     },
   ];
   const open = benefits.find((entry) => entry.id === openBenefit) ?? null;
@@ -114,18 +166,29 @@ export function ProPage() {
         <span className="gohero__lines" aria-hidden="true" />
         <div className="gohero__top">
           <ProBadge size="md" />
-          {view.active && <span className="gohero__live">● Live · {view.daysLeft} days left</span>}
+          {view.active && <span className="gohero__live">● On · {view.daysLeft} {view.daysLeft === 1 ? 'day' : 'days'} left</span>}
         </div>
         <h1 className="gohero__title">
-          {view.active ? <>You&apos;re <Hand tone="lime">Pro.</Hand></> : <>Go <Hand>Pro.</Hand><br />Sell faster.</>}
+          {view.active ? <>You have <Hand tone="lime">Pro</Hand></> : <>Sell more with <Hand>Pro</Hand></>}
         </h1>
         <p className="gohero__line">
           {view.active
-            ? <>Pro until <b>{date(view.until)}</b>. Every tool is <Hand tone="gold" thin>switched on</Hand>.</>
-            : <>Every Pro tool, <Hand tone="gold" thin>free bumps</Hand> and the badge. From <b>{formatMoney(cheapest)}</b> a month.</>}
+            ? <>All Pro tools are <Hand tone="gold" thin>on</Hand>. Your Pro ends on <b>{date(view.until)}</b>.</>
+            : <>Pro gives your shop extra tools to sell faster and <Hand tone="gold" thin>earn more</Hand>.
+              {view.enabled && view.plans.length > 0 && <> Plans start at <b>{formatMoney(cheapest)}</b> a month.</>}</>}
         </p>
-        {!view.active && view.enabled && <a className="gohero__cta" href="#plans">Pick a plan <span aria-hidden="true">→</span></a>}
-        {!view.enabled && <p className="notice notice--info">Pro tools are open to every shop right now - there is nothing to buy.</p>}
+        {!view.active && view.enabled && (
+          <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
+            {view.plans.length > 0 && <a className="gohero__cta" href="#plans">See plans <span aria-hidden="true">→</span></a>}
+            {canTry && (
+              <button type="button" className="btn btn--ghost" disabled={busy !== null}
+                onClick={() => void apply('trial', api.startProTrial, `Your ${view.trialDays} free days have started.`)}>
+                {busy === 'trial' ? 'Starting…' : `Try free for ${view.trialDays} days`}
+              </button>
+            )}
+          </div>
+        )}
+        {!view.enabled && <p className="notice notice--info">Right now, all Pro tools are free for every shop. You do not need to buy anything.</p>}
       </section>
 
       <div className="goticker" aria-hidden="true">
@@ -144,7 +207,7 @@ export function ProPage() {
                 <span className="goben__num" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
                 <span className="goben__icon" aria-hidden="true">{entry.icon}</span>
                 <span className="goben__text">
-                  <b className="goben__punch">{entry.punch}</b>
+                  <b className="goben__punch">{entry.say}</b>
                   <small>{entry.title}</small>
                 </span>
                 <span className="goben__go" aria-hidden="true">+</span>
@@ -158,46 +221,52 @@ export function ProPage() {
         <Modal title={open.title} onClose={() => setOpenBenefit(null)}>
           <div className="gopop">
             <span className="gopop__icon" aria-hidden="true">{open.icon}</span>
-            <p className="gopop__punch"><Hand>{open.punch}</Hand></p>
-            <p className="gopop__body">{open.benefit}</p>
-            {open.line && <p className="gopop__line">{open.line}</p>}
-            {view.enabled && !view.active && (
+            <p className="gopop__punch"><Hand>{open.say}</Hand></p>
+            <p className="gopop__body">{open.more}</p>
+            {view.enabled && !view.active && view.plans.length > 0 && (
               <a className="btn gopop__cta" href="#plans" onClick={() => setOpenBenefit(null)}>Get it with Pro</a>
             )}
           </div>
         </Modal>
       )}
 
-      {view.enabled && (
+      {view.enabled && view.plans.length > 0 && (
         <section className="stack" id="plans">
-          <h2 className="gohead"><Hand thin>{view.active ? 'Add more time' : 'Pick your plan'}</Hand></h2>
+          <h2 className="gohead"><Hand thin>{view.active ? 'Add more time' : 'Choose a plan'}</Hand></h2>
+          <p className="goticket__line">
+            {view.active ? 'New months are added after your current Pro ends.' : 'Pay once. No auto-renew. Pro simply stops at the end.'}
+          </p>
           <div className="goplans">
             {view.plans.map((plan) => {
               const saving = dearest > 0 && perMonth(plan) < dearest ? Math.round((1 - perMonth(plan) / dearest) * 100) : 0;
-              const top = plan.months === best && perMonth(plan) === cheapest;
+              const top = plan.months === longest && perMonth(plan) === cheapest && view.plans.length > 1;
               return (
                 <article key={plan.months} className={`goplan${top ? ' is-best' : ''}`}>
                   {top && <span className="goplan__flag">Best value</span>}
                   <span className="goplan__months" aria-hidden="true">{plan.months}</span>
                   <h3 className="goplan__label">{plan.months} months</h3>
                   <p className="goplan__price">{top ? <Ring>{formatMoney(plan.totalMinor)}</Ring> : formatMoney(plan.totalMinor)}</p>
-                  <p className="goplan__per">{formatMoney(perMonth(plan))}/month{saving > 0 && <> · <b>save {saving}%</b></>}</p>
+                  <p className="goplan__per">{formatMoney(perMonth(plan))} a month{saving > 0 && <> · <b>you save {saving}%</b></>}</p>
+                  <ul className="goplan__list">
+                    <li>All Pro tools</li>
+                    <li>PRO badge</li>
+                    {plan.bumpPoints > 0 && <li>{plan.bumpPoints} bump points free</li>}
+                  </ul>
                   {view.gst && plan.gstMinor > 0 && (
                     <p className="faint goplan__tax">
                       {view.gst.mode === 'inclusive' ? 'Includes' : 'Plus'} {view.gst.rateBp / 100}% GST ({formatMoney(plan.gstMinor)})
                     </p>
                   )}
-                  {plan.bumpPoints > 0 && <p className="goplan__bumps">🚀 {plan.bumpPoints} bump points</p>}
                   <button type="button" className="goplan__buy" disabled={busy !== null}
                     onClick={() => void (async () => {
                       const yes = await confirm({
-                        title: `Pro for ${plan.months} months`,
-                        body: `${formatMoney(plan.totalMinor)} through the payment gateway.${view.active ? ' Added onto the time you have left.' : ''}`,
+                        title: `Buy Pro for ${plan.months} months`,
+                        body: `You will pay ${formatMoney(plan.totalMinor)} through the payment gateway.${view.active ? ' The months are added to the Pro you have now.' : ''}`,
                         action: `Pay ${formatMoney(plan.totalMinor)}`,
                       });
-                      if (yes) await apply(`buy${plan.months}`, () => api.buyPro(plan.months), `Welcome to Pro - ${plan.months} months added.`);
+                      if (yes) await apply(`buy${plan.months}`, () => api.buyPro(plan.months), `Done! ${plan.months} months of Pro added.`);
                     })()}>
-                    {busy === `buy${plan.months}` ? 'Paying…' : view.active ? 'Add these months' : 'Go Pro'} <span aria-hidden="true">→</span>
+                    {busy === `buy${plan.months}` ? 'Paying…' : `Buy ${plan.months} months`} <span aria-hidden="true">→</span>
                   </button>
                 </article>
               );
@@ -208,33 +277,61 @@ export function ProPage() {
 
       {view.enabled && (
         <section className="goticket stack">
-          <h2 className="gohead"><Hand thin>Have a code?</Hand></h2>
+          <h2 className="gohead"><Hand thin>Have a coupon?</Hand></h2>
+          <p className="goticket__line">Type your code and press Claim. We will show you what it gives before you use it.</p>
           <form className="provoucher" onSubmit={(event) => {
             event.preventDefault();
-            if (!code.trim()) return;
-            void apply('code', () => api.redeemPro(code), 'Code applied - Pro is on.').then(() => setCode(''));
+            void claim();
           }}>
-            <input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())}
-              placeholder="PRO-XXXXXXXX" aria-label="Voucher code" autoCapitalize="characters" spellCheck={false} />
-            <button className="btn btn--quiet" disabled={busy !== null || !code.trim()}>{busy === 'code' ? 'Checking…' : 'Unlock Pro'}</button>
+            <input value={code} onChange={(e) => { setCode(e.target.value.toUpperCase()); setCodeError(null); }}
+              placeholder="Enter coupon code" aria-label="Coupon code" aria-invalid={codeError ? true : undefined}
+              autoCapitalize="characters" autoComplete="off" spellCheck={false} maxLength={32} />
+            <button className="btn" disabled={busy !== null || !code.trim()}>{busy === 'claim' ? 'Checking…' : 'Claim'}</button>
           </form>
-          {view.trialDays > 0 && !view.trialUsed && view.history.length === 0 && (
-            <button type="button" className="btn btn--ghost" style={{ justifySelf: 'start' }} disabled={busy !== null}
-              onClick={() => void apply('trial', api.startProTrial, `Your ${view.trialDays} free days have started.`)}>
-              Try Pro free for {view.trialDays} days
-            </button>
-          )}
+          {codeError && <p className="procoupon__error" role="alert">{codeError}</p>}
+        </section>
+      )}
+
+      {coupon && (
+        <Modal title="Your coupon" onClose={() => busy !== 'code' && setCoupon(null)}>
+          <div className="procode">
+            <span className="procode__chip">🎟️ {coupon.code}</span>
+            <p className="procode__title">{coupon.title}</p>
+            {coupon.details && <p className="procode__details">{coupon.details}</p>}
+            <dl className="procode__facts">
+              <div><dt>You get</dt><dd>{coupon.days} {coupon.days === 1 ? 'day' : 'days'} of Pro</dd></div>
+              {coupon.expiresAt && <div><dt>Use it by</dt><dd>{date(coupon.expiresAt)}</dd></div>}
+            </dl>
+            {view.active && <p className="faint procode__note">These days are added to the Pro you have now.</p>}
+            <div className="procode__actions">
+              <button type="button" className="btn gopop__cta" disabled={busy !== null} onClick={() => void useCoupon()}>
+                {busy === 'code' ? 'Applying…' : 'Apply coupon'}
+              </button>
+              <button type="button" className="btn btn--quiet" disabled={busy === 'code'} onClick={() => setCoupon(null)}>Not now</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {view.enabled && (
+        <section className="stack">
+          <h2 className="gohead"><Hand thin>Good to know</Hand></h2>
+          <dl className="profaq">
+            <div><dt>How do I pay?</dt><dd>You pay once, through the payment gateway. We never take money again on our own.</dd></div>
+            <div><dt>What happens when Pro ends?</dt><dd>Your shop and items stay. Only the Pro tools stop, until you get Pro again.</dd></div>
+            <div><dt>I already have Pro. Can I add more?</dt><dd>Yes. New months or coupon days are added after your current Pro ends.</dd></div>
+          </dl>
         </section>
       )}
 
       {view.history.length > 0 && (
         <section className="card card--pad stack">
-          <h2>Your Pro</h2>
+          <h2>Your Pro history</h2>
           <ul className="billrows">
             {view.history.map((grant) => (
               <li key={grant.id} className="billrow">
                 <span>
-                  <b>{grant.source === 'purchase' ? `${grant.months} months` : grant.source === 'voucher' ? `Code ${grant.code}` : grant.source === 'trial' ? 'Free trial' : 'From Figmark'}</b>
+                  <b>{grant.source === 'purchase' ? `Bought ${grant.months} months` : grant.source === 'voucher' ? `Coupon ${grant.code}` : grant.source === 'trial' ? 'Free trial' : 'Gift from Figmark'}</b>
                   <small>{date(grant.at)} · {grant.days} days{grant.bumpPoints ? ` · ${grant.bumpPoints} bump points` : ''}{grant.gatewayRef ? ` · ${grant.gatewayRef}` : ''}</small>
                 </span>
                 {grant.amountMinor ? <b>{formatMoney(grant.amountMinor)}</b> : <span className="badge">Free</span>}
@@ -245,7 +342,7 @@ export function ProPage() {
       )}
 
       <p className="faint">
-        Platform fees for your sales are on <Link to="/fees">Platform fees</Link>.
+        See the fees on your sales on <Link to="/fees">Platform fees</Link>.
         {view.gst?.gstin && <> Figmark GSTIN {view.gst.gstin}.</>}
       </p>
     </div>

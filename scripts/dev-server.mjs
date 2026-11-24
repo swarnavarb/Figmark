@@ -104,6 +104,7 @@ const {
 } = await import(new URL('power-sale-routes.js', apiRoot));
 const { fillingLotsRoute, dropsRoute, dropRoute, remindRoute } = await import(new URL('showcase-routes.js', apiRoot));
 const { insightsRoute, interestRoute, marketRoute } = await import(new URL('insight-routes.js', apiRoot));
+const { coachRoute, coachEventsRoute, coachAnswerRoute, opsCoachRoute } = await import(new URL('coach-routes.js', apiRoot));
 const {
   searchShopsRoute, shopsByTagRoute, similarShopsRoute, shopsForYouRoute, shopTagsRoute, tagInsightsRoute,
 } = await import(new URL('shop-tag-routes.js', apiRoot));
@@ -164,9 +165,9 @@ const {
 const { learnRoute, opsLearnRoute, opsLearnSaveRoute, opsLearnResetRoute } = await import(new URL('learn-routes.js', apiRoot));
 const { settingsRoute, opsSettingsRoute, opsSettingsSaveRoute } = await import(new URL('settings-routes.js', apiRoot));
 const {
-  pricingRoute, myFeesRoute, payFeesRoute, myProRoute, proStatusRoute, buyProRoute, redeemVoucherRoute, startTrialRoute,
+  pricingRoute, myFeesRoute, payFeesRoute, myProRoute, proStatusRoute, buyProRoute, checkVoucherRoute, redeemVoucherRoute, startTrialRoute,
   listGivenRoute, giveRoute, receivedGiftsRoute, answerGiftRoute, myStoreCreditRoute,
-  opsPricingRoute, opsSavePricingRoute, opsVouchersRoute, opsMakeVouchersRoute, opsToggleVoucherRoute, opsGrantProRoute,
+  opsPricingRoute, opsSavePricingRoute, opsVouchersRoute, opsMakeVouchersRoute, opsToggleVoucherRoute, opsEditVoucherRoute, opsGrantProRoute,
   opsFeesRoute, opsRefreshFeesRoute, opsWaiveFeesRoute,
 } = await import(new URL('billing-routes.js', apiRoot));
 const { myCancelsRoute, cancelAppealRoute, opsCancelsRoute, opsCancelDecideRoute } = await import(new URL('cancel-routes.js', apiRoot));
@@ -445,6 +446,7 @@ const routes = [
   ['GET', '/api/me/pro', myProRoute],
   ['GET', '/api/pro/status', proStatusRoute],
   ['POST', '/api/me/pro/buy', buyProRoute],
+  ['POST', '/api/me/pro/redeem/check', checkVoucherRoute],
   ['POST', '/api/me/pro/redeem', redeemVoucherRoute],
   ['POST', '/api/me/pro/trial', startTrialRoute],
   ['GET', '/api/me/gifts', listGivenRoute],
@@ -457,6 +459,7 @@ const routes = [
   ['GET', '/api/ops/pro/vouchers', opsVouchersRoute],
   ['POST', '/api/ops/pro/vouchers/make', opsMakeVouchersRoute],
   ['POST', '/api/ops/pro/vouchers/:code/toggle', opsToggleVoucherRoute],
+  ['POST', '/api/ops/pro/vouchers/:code/edit', opsEditVoucherRoute],
   ['POST', '/api/ops/pro/grant', opsGrantProRoute],
   ['GET', '/api/ops/fees', opsFeesRoute],
   ['POST', '/api/ops/fees/:id/refresh', opsRefreshFeesRoute],
@@ -492,6 +495,10 @@ const routes = [
   ['POST', '/api/wants/:id/close', wantCloseRoute],
   ['POST', '/api/wants/:id/me', wantAlsoMeRoute],
   ['GET', '/api/me/insights', insightsRoute],
+  ['GET', '/api/me/coach', coachRoute],
+  ['POST', '/api/me/coach/events', coachEventsRoute],
+  ['POST', '/api/me/coach/answer', coachAnswerRoute],
+  ['GET', '/api/ops/coach', opsCoachRoute],
   ['GET', '/api/me/interest', interestRoute],
   ['GET', '/api/me/market', marketRoute],
   ['GET', '/api/shops/search', searchShopsRoute],

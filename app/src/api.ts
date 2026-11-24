@@ -1,9 +1,11 @@
+import type { CoachPlan, CoachSignals } from '@shared/coach';
+import type { OwnResults } from '@shared/coach-log';
 import type { PhotoAnalysis } from '@shared/photo-scan';
 import type { PayoutSummary } from '@shared/payouts';
 import type { DnaLinkKind, DnaSummary, DnaView } from '@shared/dna';
 import type { DayRange, DaySource, ShopDays } from '@shared/step-days';
 import type { LotCostKey, LotSplit } from '@shared/lot-costs';
-import type { CancelFlag, CancelSettings, CancelStats, FeeSettlement, FeeStatement, GiftMethod, GiverKind, PlatformFees, Pricing, ProFeatureId, ProGrant, ProPlan, StoreGift } from '@shared/billing';
+import type { CancelFlag, CancelSettings, CancelStats, FeeSettlement, FeeStatement, GiftMethod, GiverKind, PlatformFees, Pricing, ProFeatureId, ProGrant, ProPlan, ProVoucherPreview, StoreGift } from '@shared/billing';
 import type { CardProgress, IssuedReward, LoyaltyApplied, LoyaltyCard, LoyaltyReward, LoyaltySettings } from '@shared/loyalty';
 import type { StoreInsights } from '@shared/service-insights';
 import type { AppliedOffer, ListingOffer } from '@shared/offers';
@@ -2986,6 +2988,7 @@ export const api = {
   myPro: () => request<ProView>('/me/pro'),
   proStatus: (ownerId: string) => request<ProStatus>(`/pro/status?owner=${encodeURIComponent(ownerId)}`),
   buyPro: (months: number) => post<ProView>('/me/pro/buy', { months }),
+  checkProCode: (code: string) => post<{ voucher: ProVoucherPreview }>('/me/pro/redeem/check', { code }),
   redeemPro: (code: string) => post<ProView>('/me/pro/redeem', { code }),
   startProTrial: () => post<ProView>('/me/pro/trial', {}),
   storeGifts: (kind: GiverKind, ownerId?: string) =>
@@ -3524,6 +3527,15 @@ export const api = {
   },
   /** The operators' short forms for route buttons. */
   routeWords: () => request<RouteWords>('/route-words'),
+  /** The shop coach: what to do next and when, with the counts it read. */
+  coach: (storeId?: string) =>
+    request<{ signals: CoachSignals; plan: CoachPlan; results: OwnResults | null; learned: { guides: Record<string, number> } }>(`/me/coach${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),
+  /** A rating of one of the coach's answers, or a question Figgy had no answer for: how its answers improve. */
+  coachAnswer: (storeId: string, body: { source: string; helpful: boolean } | { missed: string }) =>
+    post<{ ok: true; recorded: number }>(`/me/coach/answer?store=${encodeURIComponent(storeId)}`, body),
+  /** Which coach tips were on screen, or pressed: how the coach learns which ones help. */
+  coachEvents: (storeId: string, body: { seen?: string[]; pressed?: string }) =>
+    post<{ ok: true; recorded: number }>(`/me/coach/events?store=${encodeURIComponent(storeId)}`, body),
   /** The Sell tab's cards and what is waiting on the shop, in one read. */
   sellDashboard: (storeId?: string) =>
     request<SellDashboard>(`/me/sell/dashboard${storeId ? `?store=${encodeURIComponent(storeId)}` : ''}`),

@@ -30,7 +30,8 @@ const LIMITS: Record<Action, { max: number; ms: number }[]> = {
   // Paying fees or buying Pro: a double tap is the only reason to come back so soon.
   billing: [{ max: 6, ms: MINUTE }],
   // Pro codes: few enough tries that guessing one is hopeless.
-  voucher: [{ max: 8, ms: 10 * MINUTE }, { max: 30, ms: DAY }],
+  // Checking a code and then applying it are two tries each.
+  voucher: [{ max: 12, ms: 10 * MINUTE }, { max: 40, ms: DAY }],
   // A store paying or crediting people.
   gift: [{ max: 20, ms: 10 * MINUTE }, { max: 200, ms: DAY }],
   // A batch of what was on screen, sent every few seconds while somebody scrolls.

@@ -270,8 +270,10 @@ export function useDialog(ref: { current: HTMLElement | null }, onClose: () => v
   }, [ref]);
 }
 
-export function Modal({ title, onClose, children, layout = 'box' }: {
+export function Modal({ title, onClose, children, layout = 'box', badge }: {
   title: string;
+  /** Shown beside the title, like a Pro badge. */
+  badge?: ReactNode;
   onClose: () => void;
   children: ReactNode;
   /** `box`, the default: a card. `panel`: a header bar over a scrolling body, which becomes a sheet on a phone. */
@@ -294,7 +296,7 @@ export function Modal({ title, onClose, children, layout = 'box' }: {
       {layout === 'panel' ? (
         <div className="modal__panel" ref={box} tabIndex={-1}>
           <div className="modal__head">
-            <h2>{title}</h2>
+            <h2 className={badge ? 'modal__badged' : undefined}>{title}{badge}</h2>
             <button type="button" className="btn btn--quiet btn--sm" onClick={onClose} aria-label="Close">
               <Icon name="close" size={14} />
             </button>

@@ -32,6 +32,7 @@ import { preLotRouteOf, type PostTemplate } from '@shared/templates';
 import type { CardButton } from '@shared/buttons';
 import { ReceivedDialog } from '../components/ReceivedDialog';
 import { SALES_NEWS_EVENT } from '../components/Notifications';
+import { ShopCoach } from '../components/ShopCoach';
 import { SerialButtons } from '../components/SerialButtons';
 import type { Shipment } from '../components/ShipDialog';
 import { Ladder } from '../components/Ladder';
@@ -464,6 +465,9 @@ function ShopConsole({ store, onChanged }: { store: StoreAccess; onChanged: () =
       </header>
 
       <NeedsYou store={store} todo={data?.todo ?? null} section={active} onGo={setSection} />
+
+      {/* What to do next and when, with a button into the tool for it. */}
+      {(canList || isAdmin) && <ShopCoach store={store} />}
 
       <nav className="selltabs" role="tablist" aria-label="Shop">
         {groups.map((group) => (

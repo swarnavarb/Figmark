@@ -1,0 +1,604 @@
+/*
+ * The shop coach: a card on the console and the panel behind it.
+ *
+ * One elevation per surface - a hairline border, no shadow - so the card sits
+ * with the console's other blocks. Lists are one bordered group divided by
+ * hairlines rather than a stack of separate cards. Each kind of tip has a
+ * drawn icon in its own tint; colour carries meaning, never decoration.
+ */
+
+/* ── The card ─────────────────────────────────────────────────────────── */
+
+.shopcoach {
+  position: relative;
+  display: grid;
+  gap: var(--s4);
+  margin: 0 0 var(--s4);
+  padding: var(--s4);
+  /* A hairline edge drawn as a gradient - violet into a touch of gold - so the
+     card reads as the shop's premium tool without a heavier frame. */
+  border: 1px solid transparent;
+  border-radius: var(--r-xl);
+  background:
+    radial-gradient(130% 120% at 0% 0%, rgba(124, 58, 237, 0.22), transparent 58%) padding-box,
+    radial-gradient(90% 80% at 100% 0%, rgba(251, 191, 36, 0.07), transparent 60%) padding-box,
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    linear-gradient(140deg, rgba(167, 139, 250, 0.75), rgba(251, 191, 36, 0.45) 48%, rgba(124, 58, 237, 0.25)) border-box;
+  box-shadow: 0 18px 40px -24px rgba(124, 58, 237, 0.55);
+  animation: shopcoach-in 360ms var(--ease-out) both;
+}
+@keyframes shopcoach-in { from { opacity: 0; transform: translateY(8px); } }
+
+.shopcoach__head { display: flex; align-items: flex-start; gap: var(--s3); }
+.shopcoach__mark {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--r-md);
+  background: linear-gradient(145deg, var(--violet-lit), #6D28D9);
+  color: var(--violet-ink);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 6px 14px -6px rgba(124, 58, 237, 0.8);
+}
+.shopcoach__headtext { display: grid; gap: 2px; flex: 1; min-width: 0; padding-top: 1px; }
+.shopcoach__title {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0;
+  font-family: var(--display);
+  font-size: var(--t-lg);
+  font-weight: var(--w-bold);
+  letter-spacing: -0.02em;
+}
+.shopcoach__headtext p { margin: 0; color: var(--text-dim); font-size: var(--t-sm); line-height: 1.45; }
+.shopcoach__fold { flex: none; margin: -4px -4px 0 0; }
+
+/* The one thing to do next: the card's main line, set off by a hairline. */
+.shopcoach__next {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  gap: var(--s3);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--border);
+}
+.shopcoach__tiptext { display: grid; gap: 3px; min-width: 0; }
+.shopcoach__tiptext b { font-size: var(--t-base); font-weight: var(--w-semi); line-height: 1.35; }
+.shopcoach__tiptext p { margin: 0; color: var(--text-dim); font-size: var(--t-sm); line-height: 1.5; }
+.shopcoach__go { flex: none; align-self: center; white-space: nowrap; }
+/* A quiet action in a row still reads as a button, not a stray line of text. */
+.shopcoach__go.btn--quiet { border: 1px solid var(--border-strong); background: var(--surface-2); }
+.shopcoach__go.btn--quiet:hover { border-color: var(--violet); }
+
+.shopcoach__acts { display: flex; flex-wrap: nowrap; gap: var(--s2); min-width: 0; }
+.shopcoach__act {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 38px;
+  padding: 6px var(--s3) 6px 12px;
+  white-space: nowrap;
+  animation: shopcoach-rise 320ms var(--ease-out) both;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: var(--t-sm);
+  cursor: pointer;
+  transition: color 140ms var(--ease-out), border-color 140ms var(--ease-out), transform 140ms var(--ease-out);
+}
+.shopcoach__act:hover { color: var(--text); border-color: var(--violet); transform: translateY(-1px); }
+.shopcoach__act:active { transform: scale(0.97); }
+.shopcoach__act > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.shopcoach__act > svg { flex: none; }
+.shopcoach__act:nth-child(2) { animation-delay: 50ms; }
+.shopcoach__act:nth-child(3) { animation-delay: 100ms; }
+@keyframes shopcoach-rise { from { opacity: 0; transform: translateY(6px); } }
+.shopcoach__act svg { color: var(--violet-text); }
+
+/* Folded to one line. */
+.shopcoach--folded {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  width: 100%;
+  padding: var(--s2) var(--s3);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: var(--t-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.shopcoach--folded .shopcoach__mark { width: 24px; height: 24px; border-radius: var(--r-sm); }
+.shopcoach--folded > span:nth-child(2) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shopcoach--folded:hover { color: var(--text); border-color: var(--violet); }
+
+/* A shop without Pro: what it does, and the way in. */
+.shopcoach--locked {
+  background:
+    radial-gradient(130% 120% at 0% 0%, var(--q-gold-soft), transparent 58%) padding-box,
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    linear-gradient(140deg, rgba(251, 191, 36, 0.8), rgba(249, 115, 22, 0.45) 50%, rgba(251, 191, 36, 0.2)) border-box;
+  box-shadow: 0 18px 40px -24px rgba(249, 115, 22, 0.5);
+}
+.shopcoach--locked .shopcoach__mark { background: var(--grad-gold); color: var(--gold-ink); }
+.shopcoach__perks { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; color: var(--text-dim); font-size: var(--t-sm); }
+.shopcoach__perks li { display: flex; align-items: center; gap: var(--s2); }
+.shopcoach__perks svg { flex: none; color: var(--gold); }
+.shopcoach__unlock { justify-self: start; background: var(--grad-gold); color: var(--gold-ink); border-color: transparent; }
+.shopcoach__unlock:hover { filter: brightness(1.06); }
+
+/* Each kind of tip: a drawn icon in its tint. */
+.shopcoach__areamark {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-md);
+}
+.shopcoach__areamark--urgent { background: var(--coral-soft); color: var(--coral); }
+.shopcoach__areamark--listing { background: var(--blue-soft); color: var(--blue-text); }
+.shopcoach__areamark--marketing { background: var(--violet-soft); color: var(--violet-text); }
+.shopcoach__areamark--sales { background: var(--ok-soft); color: var(--ok); }
+.shopcoach__areamark--shop { background: var(--q-gold-soft); color: var(--gold); }
+
+/* ── The panel ────────────────────────────────────────────────────────── */
+
+.shopcoach__panel { display: grid; gap: var(--s4); }
+.shopcoach__seg button { flex: 1; }
+
+.shopcoach__health {
+  --tone: var(--gold);
+  --tone-soft: var(--q-gold-soft);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: var(--s4);
+  padding: var(--s4);
+  border: 1px solid color-mix(in srgb, var(--tone) 35%, transparent);
+  border-radius: var(--r-lg);
+  background:
+    radial-gradient(120% 140% at 0% 50%, var(--tone-soft), transparent 65%),
+    var(--surface-2);
+}
+.shopcoach__health--good { --tone: var(--ok); --tone-soft: var(--ok-soft); }
+.shopcoach__health--low { --tone: var(--coral); --tone-soft: var(--coral-soft); }
+.shopcoach__health .shopcoach__score { gap: 6px; }
+.shopcoach__ring {
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--tone-soft), transparent 70%);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--tone) 55%, transparent);
+}
+.shopcoach__tone {
+  justify-self: start;
+  padding: 2px var(--s2);
+  border-radius: var(--r-pill);
+  background: var(--tone-soft);
+  color: var(--tone);
+  font-size: var(--t-2xs);
+  font-weight: var(--w-semi);
+}
+.shopcoach__health--good .shopcoach__tone { color: var(--ok); }
+.shopcoach__scale {
+  position: relative;
+  height: 8px;
+  margin: 2px 0;
+  border-radius: var(--r-pill);
+  background: linear-gradient(90deg, var(--coral) 0%, var(--gold) 45%, var(--lime) 72%, var(--ok) 100%);
+}
+.shopcoach__scale i {
+  position: absolute;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text);
+  box-shadow: 0 0 0 3px var(--tone), 0 2px 6px rgba(0, 0, 0, 0.5);
+  transform: translate(-50%, -50%);
+}
+.shopcoach__score { display: grid; justify-items: center; line-height: 1; }
+.shopcoach__num {
+  font-family: var(--display);
+  font-size: var(--t-2xl);
+  font-weight: var(--w-bold);
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+.shopcoach__num--good { color: var(--ok); }
+.shopcoach__num--fair { color: var(--gold); }
+.shopcoach__num--low { color: var(--coral); }
+.shopcoach__score span { margin-top: 4px; color: var(--text-faint); font-size: var(--t-2xs); }
+.shopcoach__healthtext { display: grid; gap: var(--s2); min-width: 0; }
+.shopcoach__healthtext p { margin: 0; color: var(--text-dim); font-size: var(--t-sm); line-height: 1.45; }
+
+/* Tips and the week: one group, divided by hairlines. */
+.shopcoach__tips, .shopcoach__week, .shopcoach__outcomes {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+.shopcoach__tip, .shopcoach__week li {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  gap: var(--s3);
+  padding: var(--s3);
+  background: var(--surface);
+}
+.shopcoach__tip + .shopcoach__tip, .shopcoach__week li + li, .shopcoach__outcomes li + li { border-top: 1px solid var(--border); }
+
+.shopcoach__week li.is-today { background: color-mix(in srgb, var(--violet-soft) 70%, var(--surface)); }
+.shopcoach__day { display: grid; justify-items: center; gap: 2px; width: 52px; text-align: center; }
+.shopcoach__day b { font-size: var(--t-sm); }
+.shopcoach__day span { color: var(--text-faint); font-size: var(--t-2xs); }
+.shopcoach__week li.is-today .shopcoach__day b {
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  background: var(--violet);
+  color: var(--violet-ink);
+}
+
+.shopcoach__when {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--s3);
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--q-gold-line);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--q-gold-soft) 60%, var(--surface));
+}
+.shopcoach__whenmark {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-md);
+  background: var(--q-gold-soft);
+  color: var(--gold);
+}
+.shopcoach__when b { font-size: var(--t-base); }
+.shopcoach__when p { margin: 4px 0 0; color: var(--text-dim); font-size: var(--t-sm); line-height: 1.5; }
+
+.shopcoach__hours { display: grid; gap: 6px; }
+.shopcoach__bars { display: grid; grid-template-columns: repeat(24, 1fr); align-items: end; gap: 3px; height: 56px; }
+.shopcoach__bars > span { display: flex; align-items: flex-end; height: 100%; }
+.shopcoach__bars i {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 3px 3px 1px 1px;
+  background: var(--border-strong);
+  transform-origin: bottom;
+}
+.shopcoach__bars .is-peak i { background: var(--gold); }
+.shopcoach__hourlabels { display: grid; grid-template-columns: repeat(4, 1fr); color: var(--text-faint); font-size: var(--t-2xs); }
+
+.shopcoach__empty, .shopcoach__muted { margin: 0; color: var(--text-dim); font-size: var(--t-sm); line-height: 1.5; }
+
+/* The shop's own results. */
+.shopcoach__results { display: grid; gap: var(--s2); }
+.shopcoach__results h3 { display: flex; align-items: baseline; gap: var(--s2); margin: var(--s2) 0 0; font-size: var(--t-md); }
+.shopcoach__results h3 span { color: var(--text-faint); font-size: var(--t-xs); font-weight: var(--w-normal); }
+.shopcoach__outcomes li { display: flex; align-items: flex-start; gap: var(--s3); padding: var(--s3); background: var(--surface); }
+.shopcoach__badge {
+  flex: none;
+  min-width: 62px;
+  padding: 3px var(--s2);
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  color: var(--text-faint);
+  font-size: var(--t-2xs);
+  text-align: center;
+}
+.shopcoach__badge.is-acted { background: var(--ok-soft); color: var(--ok); }
+
+/* ── The chat ─────────────────────────────────────────────────────────── */
+
+/* A column of its own height: the conversation scrolls, the box stays put. */
+.shopcoach__chat {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  height: min(62vh, 560px);
+  min-height: 320px;
+}
+
+.shopcoach__log {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  min-height: 0;
+  padding: var(--s1) 2px var(--s3);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+.shopcoach__log::-webkit-scrollbar { width: 6px; }
+.shopcoach__log::-webkit-scrollbar-thumb { border-radius: var(--r-pill); background: var(--border-strong); }
+
+.shopcoach__hello { display: flex; gap: var(--s3); align-items: flex-start; }
+.shopcoach__hello p { margin: 0; color: var(--text-dim); font-size: var(--t-sm); line-height: 1.55; }
+.shopcoach__hello b { color: var(--text); }
+
+.shopcoach__msg {
+  display: grid;
+  gap: var(--s2);
+  max-width: 88%;
+  padding: var(--s3);
+  border-radius: var(--r-lg);
+  font-size: var(--t-sm);
+  line-height: 1.55;
+}
+.shopcoach__msg p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.shopcoach__msg--user {
+  align-self: flex-end;
+  padding: var(--s2) var(--s3);
+  border-bottom-right-radius: 6px;
+  background: var(--violet);
+  color: var(--violet-ink);
+}
+.shopcoach__msg--assistant {
+  align-self: flex-start;
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text);
+}
+.shopcoach__msgacts { display: flex; flex-wrap: wrap; gap: var(--s1); margin: 0 calc(var(--s2) * -1); }
+.shopcoach__by {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  padding-top: var(--s2);
+  border-top: 1px solid var(--border);
+  color: var(--text-faint);
+  font-size: var(--t-2xs);
+}
+.shopcoach__votes { display: inline-flex; gap: 2px; margin: -4px -6px -4px 0; }
+.shopcoach__votes button {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: color var(--dur-1) var(--ease-out), background-color var(--dur-1) var(--ease-out);
+}
+.shopcoach__votes button:hover { background: var(--surface); color: var(--text); }
+.shopcoach__thanks { color: var(--text-dim); }
+.shopcoach__retry { justify-self: start; }
+
+.shopcoach__typing { display: flex; gap: 5px; padding: var(--s3) var(--s4); }
+.shopcoach__typing i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  animation: shopcoach-dot 1.1s var(--ease) infinite;
+}
+.shopcoach__typing i:nth-child(2) { animation-delay: 0.15s; }
+.shopcoach__typing i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes shopcoach-dot { 0%, 60%, 100% { opacity: 0.3; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-2px); } }
+
+.shopcoach__compose { display: grid; gap: var(--s2); padding-top: var(--s3); border-top: 1px solid var(--border); }
+.shopcoach__chips { display: flex; gap: var(--s2); overflow-x: auto; scrollbar-width: none; margin: 0 calc(var(--s1) * -1); padding: 0 var(--s1); }
+.shopcoach__chips::-webkit-scrollbar { display: none; }
+.shopcoach__chips .chip { flex: none; }
+
+.shopcoach__form {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: 4px 4px 4px var(--s4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  transition: border-color var(--dur-1) var(--ease-out);
+}
+.shopcoach__form:focus-within { border-color: var(--violet); }
+.shopcoach__form input {
+  flex: 1;
+  min-width: 0;
+  padding: var(--s2) 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: max(16px, var(--t-sm));
+  caret-color: var(--violet-text);
+}
+.shopcoach__form input::placeholder { color: var(--text-faint); }
+.shopcoach__form input:focus { outline: none; }
+.shopcoach__send { flex: none; width: 40px; height: 40px; padding: 0; border-radius: var(--r-pill); }
+.shopcoach__send[aria-disabled="true"] { opacity: 0.45; }
+.shopcoach__stop { display: block; width: 11px; height: 11px; border-radius: 2px; background: currentColor; }
+
+/* Who answers: a picker under the box, as in Claude. */
+.shopcoach__picker { position: relative; display: flex; }
+.shopcoach__pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px var(--s2);
+  border: 0;
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: var(--t-xs);
+  cursor: pointer;
+}
+.shopcoach__pick:hover, .shopcoach__pick[aria-expanded="true"] { background: var(--surface-2); color: var(--text); }
+.shopcoach__menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 2;
+  display: grid;
+  gap: 2px;
+  width: min(280px, 100%);
+  padding: var(--s1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  transform-origin: bottom left;
+  animation: shopcoach-menu var(--dur-1) var(--ease-out);
+}
+@keyframes shopcoach-menu { from { opacity: 0; transform: translateY(4px) scale(0.98); } }
+.shopcoach__option {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s2) var(--s3);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.shopcoach__option b { font-size: var(--t-sm); }
+.shopcoach__optiontext > span { color: var(--text-faint); font-size: var(--t-xs); }
+.shopcoach__option > svg { flex: none; color: var(--violet-text); }
+.shopcoach__option:hover, .shopcoach__option.is-on { background: var(--surface-2); }
+
+/* Keyboard focus on every control drawn here. */
+.shopcoach__act:focus-visible, .shopcoach__votes button:focus-visible, .shopcoach__pick:focus-visible,
+.shopcoach__option:focus-visible, .shopcoach--folded:focus-visible, .shopcoach__dyknav button:focus-visible, .shopcoach__dyklink:focus-visible {
+  outline: 2px solid var(--violet-text);
+  outline-offset: 2px;
+}
+
+/* Did you know? One fact at a time, with arrows. */
+.shopcoach__dyk {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  gap: var(--s3);
+  padding: var(--s3) var(--s3) var(--s3) var(--s3);
+  border: 1px solid var(--q-gold-line);
+  border-radius: var(--r-lg);
+  background:
+    radial-gradient(120% 140% at 0% 0%, var(--q-gold-soft), transparent 60%),
+    var(--bg);
+}
+/* The time left on this tip, along the bottom edge. */
+.shopcoach__dykclock {
+  position: absolute;
+  left: var(--s4);
+  right: var(--s4);
+  bottom: 6px;
+  height: 2px;
+  border-radius: var(--r-pill);
+  background: var(--gold);
+  opacity: 0.55;
+  transform-origin: left;
+  animation-name: shopcoach-clock;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+}
+@keyframes shopcoach-clock { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.shopcoach__dykmark {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-sm);
+  background: var(--grad-gold);
+  color: var(--gold-ink);
+}
+.shopcoach__dyktext { display: grid; gap: 4px; min-width: 0; }
+.shopcoach__dyktext--next { animation: shopcoach-next 260ms var(--ease-out) both; }
+.shopcoach__dyktext--prev { animation: shopcoach-prev 260ms var(--ease-out) both; }
+@keyframes shopcoach-next { from { opacity: 0; transform: translateX(14px); } }
+@keyframes shopcoach-prev { from { opacity: 0; transform: translateX(-14px); } }
+.shopcoach__dyktext b { color: var(--gold); font-size: var(--t-xs); font-weight: var(--w-semi); letter-spacing: 0.01em; }
+.shopcoach__dyktext p { margin: 0; color: var(--text); font-size: var(--t-sm); line-height: 1.5; }
+.shopcoach__dyklink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--violet-text);
+  font: inherit;
+  font-size: var(--t-xs);
+  font-weight: var(--w-semi);
+  cursor: pointer;
+}
+.shopcoach__dyklink:hover { text-decoration: underline; text-underline-offset: 3px; }
+.shopcoach__dyknav { display: inline-flex; align-items: center; gap: 2px; color: var(--text-faint); font-size: var(--t-2xs); font-variant-numeric: tabular-nums; }
+.shopcoach__dyknav button {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out);
+}
+.shopcoach__dyknav button:hover { color: var(--text); border-color: var(--border-strong); }
+.shopcoach__dyknav span { min-width: 34px; text-align: center; }
+
+/* The two assistants: a small tile each, so the choice reads at a glance. */
+.shopcoach__who {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  border-radius: var(--r-sm);
+}
+.shopcoach__pick .shopcoach__who { width: 18px; height: 18px; border-radius: 6px; }
+.shopcoach__option .shopcoach__who { width: 30px; height: 30px; }
+.shopcoach__who--figgy { background: var(--violet); color: var(--violet-ink); }
+.shopcoach__who--puter { background: var(--surface-2); color: var(--text-dim); border: 1px solid var(--border-strong); }
+.shopcoach__optiontext { display: grid; gap: 1px; flex: 1; min-width: 0; }
+
+/* ── Phones ───────────────────────────────────────────────────────────── */
+
+@media (max-width: 520px) {
+  .shopcoach__next, .shopcoach__tip, .shopcoach__week li { grid-template-columns: auto 1fr; row-gap: var(--s2); }
+  .shopcoach__next > .btn, .shopcoach__tip > .btn, .shopcoach__week li > .btn { grid-column: 2; justify-self: start; align-self: start; }
+  .shopcoach__chat { height: min(66vh, 560px); }
+  .shopcoach__dyk { grid-template-columns: auto 1fr; }
+  .shopcoach__acts { gap: 6px; }
+  .shopcoach__act { padding: 6px 10px; font-size: var(--t-xs); gap: 5px; }
+  .shopcoach__ring { width: 64px; height: 64px; }
+  .shopcoach__dyknav { grid-column: 2; justify-self: start; }
+}
+
+@media (max-width: 360px) {
+  .shopcoach__act > svg { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shopcoach__dykclock { display: none; }
+  .shopcoach, .shopcoach__dyktext--next, .shopcoach__dyktext--prev, .shopcoach__typing i, .shopcoach__menu, .shopcoach__act, .shopcoach__votes button, .shopcoach__dyknav button { transition: none; animation: none; }
+}

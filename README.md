@@ -121,6 +121,43 @@ is worked out once per photo per catalogue copy, however many people see it.
 The search sheet filters on the device when more letters can only narrow what
 it already has, and asks for people and shops only when there can be some.
 
+Shop coach: a card at the top of every shop console names the one thing to do
+next, with a button straight into the tool for it - the sell form, the share
+sheet, the channel, Offers, Shipments, Storefront. Behind it, the full list of
+tips (orders waiting, items viewed but not bought, items nobody has opened,
+items ending or running out, thin listings, a sales slump, a quiet week of
+marketing), the best time to post worked out from the hours the shop's own
+buyers order in (the usual Indian evening until there are enough orders), a
+week's marketing plan built around the busiest day, and a chat. The tips, the
+timing, the plan and the chat's how-to answers are rules in `shared/coach.ts`,
+served by `GET /api/me/coach`, and cost nothing to run. Switching on "AI chat"
+in the panel answers in the seller's own words through Puter.js, on the
+seller's own free Puter account (as "Scan with AI" does): no key here and no
+bill for the site, and only the shop's counts are sent - never a buyer's name,
+message or address.
+
+The coach also keeps score (`shared/coach-log.ts`). Each tip a shop sees is
+given a week: whether somebody pressed it, whether it stopped showing, and the
+shop's orders - and, for an item, its views and sales - in the week before and
+the week after, read from rows already stored with their times. The shop sees
+its own results under the tips. Staff see totals per kind of tip in the
+console (Shop coach results): sums only, no shop or item in them, and a kind of
+tip stays hidden until five different shops are in it. The coach - built-in or
+AI - declines questions about other sellers or buyers and about how Figmark
+works inside.
+
+And it improves on its own (`shared/coach-learn.ts`). Tip order moves with
+those totals: a kind of tip that is followed by more orders, or by the problem
+getting sorted, climbs; one that is not, sinks - only once five shops stand
+behind it, by at most 15 places of priority, growing with the evidence, and
+never above money waiting on the shop. A tip one shop keeps skipping drops
+down for that shop until it is acted on again. The chat's built-in assistant,
+Figgy, takes a 👍/👎 on every answer; guides sellers find helpful win close
+calls, and the words of questions Figgy could not answer are counted (never
+the question) for staff to see what to write next. Marketing advice leads with
+outside channels - WhatsApp, Instagram, collector groups - then Figmark's own
+tools. Under the chat box, a picker chooses between Figgy and Puter AI.
+
 ## Status
 
 Not yet verified against live Azure: the session that produced this scaffold had
