@@ -19,7 +19,7 @@ import { Select } from './Select';
 /** More options than this and a row of tags stops being a row. */
 const MENU_ABOVE = 9;
 
-export function CategoryFields({ category, value, onChange, showMissing, allowMixed }: {
+export function CategoryFields({ category, value, onChange, showMissing, allowMixed, hide = [] }: {
   category: string;
   value: Attributes;
   onChange: (next: Attributes) => void;
@@ -27,8 +27,10 @@ export function CategoryFields({ category, value, onChange, showMissing, allowMi
   showMissing?: boolean;
   /** Several items in one photo: condition and original-or-copy may be "Mixed", each item then saying its own. */
   allowMixed?: boolean;
+  /** Questions asked elsewhere on the form: left out here. */
+  hide?: readonly string[];
 }) {
-  const fields = visibleFields(category, value);
+  const fields = visibleFields(category, value).filter((field) => !hide.includes(field.key));
 
   /** Set one answer, then drop whatever it made irrelevant. */
   function set(key: string, answer: string) {

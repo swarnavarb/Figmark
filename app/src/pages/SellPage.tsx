@@ -11,7 +11,7 @@ import { SOURCING_LABELS, type Sourcing } from '@shared/enums';
 import { currentStepOf, lotOffset, renderStepText, routeOf } from '@shared/routes';
 import {
   CATEGORIES, MAX_PRICE_MINOR, MIN_PRICE_MINOR, MIXED, canonicalCategory, conditionTagFor, conditionValueForTag, factsOf,
-  missingFields, mixedFields, optionsOf, pruneAttributes, specFor, type Attributes,
+  MIXABLE_FIELDS, missingFields, mixedFields, optionsOf, visibleFields, pruneAttributes, specFor, type Attributes,
 } from '@shared/catalog';
 import type { SavedCalc } from '@shared/profit';
 import type { RouteStep } from '@shared/routes';
@@ -19,7 +19,7 @@ import type { Lot, PreOrderFullRule, PreOrderShortRule } from '@shared/models';
 import { fillFrom, type PostTemplate } from '@shared/templates';
 import { PhotoManager } from '../components/PhotoManager';
 import {
-  PhotoGroupBox, emptyGroup, groupBody, groupPriceMinor, groupProblems, mixedProblems, type MixedFact, type PhotoGroup,
+  PhotoGroupBox, emptyGroup, groupBody, groupPriceMinor, groupProblems, mixedProblems, type BulkFact, type MixedFact, type PhotoGroup,
 } from '../components/PieceEditor';
 import { CategoryFields } from '../components/CategoryFields';
 import { ApiRequestError, api, type LotSummary, type PhotoDraft } from '../api';
@@ -618,6 +618,21 @@ function SellForm({ serverDraft, draftMissing }: {
         key: field.key as MixedFact['key'], label: field.label, options: optionsOf(field, attributes),
       }))
     : [];
+  // Asked once for all the items, in the photo's editor rather than further down.
+  const bulk: BulkFact[] = several
+    ? visibleFields(category, attributes)
+        .filter((field) => (MIXABLE_FIELDS as readonly string[]).includes(field.key))
+        .map((field) => ({
+          key: field.key as BulkFact['key'], label: field.label, required: Boolean(field.required),
+          value: attributes[field.key] ?? '', options: optionsOf(field, attributes),
+          missing: triedPublish && Boolean(field.required) && !attributes[field.key],
+        }))
+    : [];
+  const setBulk = (key: BulkFact['key'], answer: string) => setAttributes((current) => {
+    const next = { ...current };
+    if (answer) next[key] = answer; else delete next[key];
+    return pruneAttributes(category, next);
+  });
   const groupNeeded = several ? [...groupProblems(group), ...mixedProblems(group.pieces, mixed)] : [];
   // A lot listing needs a lot; there is nothing to publish into otherwise.
   // A lot is bookkeeping the shop does when the lot is packed, which is
@@ -979,7 +994,7 @@ function SellForm({ serverDraft, draftMissing }: {
               <PhotoGroupBox photoUrl={(photos.find((photo) => photo.isPrimary) ?? photos[0])?.url ?? null}
                 group={group} onChange={setGroup} title={title}
                 onStock={(count) => setTerms((current) => ({ ...current, quantityMode: 'fixed', quantity: String(count) }))}
-                onContinue={() => setStarted(true)} mixed={mixed} />
+                onContinue={() => setStarted(true)} mixed={mixed} bulk={bulk} onBulk={setBulk} />
             )}
           </LBox>
 
@@ -1038,7 +1053,7 @@ function SellForm({ serverDraft, draftMissing }: {
             {/* The questions this category asks. A shirt has a size and a figure
                 has a box grade; one shared form asked everybody the wrong things. */}
             <CategoryFields category={category} value={attributes} onChange={setAttributes}
-              showMissing={triedPublish} allowMixed={several} />
+              showMissing={triedPublish} hide={several ? MIXABLE_FIELDS : []} />
             <label className="field">
               <span>Description</span>
               <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3}

@@ -11499,6 +11499,10 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
 .pcs-erow__title { width: 100%; min-width: 0; height: 40px; }
 .pcs-erow__share { color: var(--text-dim); font-size: var(--t-sm); font-weight: 600; white-space: nowrap; }
 .pcs-erow__sold { color: var(--danger); font-size: var(--t-sm); font-weight: 700; }
+/* Condition and original-or-copy for every item at once, under the price tools. */
+.pcs-bulk { display: grid; gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); }
+.pcs-bulk__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.pcs-bulk__head .pcs-bulk__all { flex: 0 1 140px; min-height: 32px; padding: 4px 10px; border-radius: 8px; font-size: var(--t-xs); font-weight: 600; }
 /* What a "Mixed" listing asks of each item: a quiet second line under its name and price. */
 .pcs-erow__facts { grid-column: 2 / -1; display: flex; gap: 6px; min-width: 0; }
 .pcs-erow__facts .pcs-fact {

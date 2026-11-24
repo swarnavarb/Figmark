@@ -12,6 +12,7 @@ import { PieceThumb } from './Pieces';
 import { AiScan } from './AiScan';
 import { PhotoMarker } from './PhotoMarker';
 import { Select } from './Select';
+import { MIXED } from '@shared/catalog';
 
 /*
  * The sell form's answer to a photo of several things.
@@ -56,6 +57,21 @@ export interface MixedFact {
   key: 'condition' | 'authenticity';
   label: string;
   options: readonly { value: string; label: string }[];
+}
+
+/**
+ * Condition or original-or-copy, asked once for every item in the photo: any
+ * answer covers them all, and "Mixed" lets each item say its own.
+ */
+export interface BulkFact {
+  key: 'condition' | 'authenticity';
+  label: string;
+  required: boolean;
+  /** The listing's answer, "Mixed" included; empty when not answered. */
+  value: string;
+  options: readonly { value: string; label: string }[];
+  /** After a first try at publishing, still unanswered. */
+  missing?: boolean;
 }
 
 /** The mixed questions some rows still have to answer, in words; empty when none. */
@@ -199,7 +215,7 @@ function switchMode(group: PhotoGroup, mode: 'pieces' | 'lot'): PhotoGroup {
  * Reads the lead photo when it changes, asks how its things are sold, and
  * lists them either way.
  */
-export function PhotoGroupBox({ photoUrl, group, onChange, title = '', onStock, onContinue, mixed = [] }: {
+export function PhotoGroupBox({ photoUrl, group, onChange, title = '', onStock, onContinue, mixed = [], bulk, onBulk }: {
   photoUrl: string | null;
   group: PhotoGroup;
   onChange: Dispatch<SetStateAction<PhotoGroup>>;
@@ -211,6 +227,9 @@ export function PhotoGroupBox({ photoUrl, group, onChange, title = '', onStock, 
   onContinue?: () => void;
   /** Questions the listing answered "Mixed": each row answers its own. */
   mixed?: readonly MixedFact[];
+  /** Condition and original-or-copy for every item at once. */
+  bulk?: readonly BulkFact[];
+  onBulk?: (key: BulkFact['key'], value: string) => void;
 }) {
   const terms = useFeeTerms();
 
@@ -406,7 +425,7 @@ export function PhotoGroupBox({ photoUrl, group, onChange, title = '', onStock, 
       {status}
       {scanButton}
       <PieceList photoUrl={photoUrl} mode={setMode ? 'set' : 'each'} pieces={group.pieces}
-        setPriceMinor={priceMinor} mixed={mixed}
+        setPriceMinor={priceMinor} mixed={mixed} bulk={bulk} onBulk={onBulk}
         onPieces={(update) => onChange((now) => ({ ...now, pieces: update(now.pieces), confirmed: false }))} />
 
       <div className="pcs-confirm">
@@ -462,7 +481,7 @@ function FeeSummary({ terms, setMode, pieces, count, setPriceMinor, setFee }: {
  * The photo to mark things on, and a row for each: what the sell form shows
  * for both ways of selling, and what a published listing's edit shows.
  */
-export function PieceList({ photoUrl, mode, pieces, onPieces, setPriceMinor = 0, mixed = [] }: {
+export function PieceList({ photoUrl, mode, pieces, onPieces, setPriceMinor = 0, mixed = [], bulk = [], onBulk }: {
   photoUrl: string;
   mode: 'each' | 'set';
   pieces: DraftPiece[];
@@ -470,6 +489,9 @@ export function PieceList({ photoUrl, mode, pieces, onPieces, setPriceMinor = 0,
   setPriceMinor?: number;
   /** Questions the listing answered "Mixed": a small menu for each on every row. */
   mixed?: readonly MixedFact[];
+  /** Condition and original-or-copy for every item at once, under the tools. */
+  bulk?: readonly BulkFact[];
+  onBulk?: (key: BulkFact['key'], value: string) => void;
 }) {
   /** Drawing a new box: for a new row, or for the row being marked (`placing`). */
   const [adding, setAdding] = useState(false);
@@ -658,6 +680,53 @@ export function PieceList({ photoUrl, mode, pieces, onPieces, setPriceMinor = 0,
         </div>
       )}
       {pasteNote && <p className="pcs-note pcs-note--ok" role="status">{pasteNote}</p>}
+
+      {bulk.length > 0 && onBulk && (
+        <div className="pcs-bulk">
+          {bulk.map((fact) => {
+            const isMixed = fact.value === MIXED;
+            const name = fact.label.replace(/\?$/, '');
+            return (
+              <div key={fact.key} className={`attr pcs-bulk__row${fact.missing ? ' is-missing' : ''}`} role="group" aria-label={fact.label}>
+                <div className="pcs-bulk__head">
+                  <span className="attr__label">
+                    {name}{fact.required && <span className="attr__req" aria-hidden="true"> *</span>}
+                  </span>
+                  {isMixed && (
+                    <Select className="pcs-bulk__all" value="" aria-label={`${name} for every item`}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        if (!value) return;
+                        haptic('tap');
+                        onPieces((now) => now.map((piece) => (piece.sold ? piece : { ...piece, [fact.key]: value })));
+                      }}>
+                      <option value="">Set all…</option>
+                      {fact.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </Select>
+                  )}
+                </div>
+                {fact.options.length === 0 ? (
+                  <span className="field__hint">Pick what kind it is first.</span>
+                ) : (
+                  <div className="tags">
+                    {[...fact.options, { value: MIXED, label: MIXED }].map((option) => (
+                      <button key={option.value} type="button" className={`tag${fact.value === option.value ? ' is-on' : ''}`}
+                        aria-pressed={fact.value === option.value}
+                        onClick={() => { haptic('tap'); onBulk(fact.key, fact.value === option.value ? '' : option.value); }}>
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <span className="field__hint">
+                  {isMixed ? 'Choose for each item below, or set them all at once.' : fact.value ? 'Applies to every item.' : 'One answer for every item, or Mixed.'}
+                </span>
+                {fact.missing && <span className="attr__ask">Choose one to publish.</span>}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       <ol className={`pcs-erows${each ? '' : ' pcs-erows--set'}`}>
         {pieces.map((piece, index) => (
