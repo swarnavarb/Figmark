@@ -388,16 +388,54 @@ function CoachCard({ store }: { store: StoreAccess }) {
  * a different one each day, so the card has something new without anyone
  * pressing anything.
  */
+/** How long each "Did you know?" tip stays before the next one. */
+const DYK_MS = 8_000;
+
 function DidYouKnowStrip({ pro, run }: { pro: boolean; run: (tool: CoachTool) => void }) {
   const total = DID_YOU_KNOW.length;
   const [at, setAt] = useState(() => Math.floor(Date.now() / 86_400_000) % total);
   const [dir, setDir] = useState<'next' | 'prev' | null>(null);
+  // Who asked for the change: a tap is read out to screen readers, a timed change is not.
+  const [byHand, setByHand] = useState(false);
+  // Stopped by the pause button, held while a finger or pointer rests on it, and
+  // idle while it cannot be seen - off-screen, or the tab in the background.
+  const [paused, setPaused] = useState(false);
+  const [held, setHeld] = useState(false);
+  const [seen, setSeen] = useState(true);
+  const box = useRef<HTMLElement>(null);
   const tip = DID_YOU_KNOW[at]!;
-  const step = (by: number) => { setDir(by > 0 ? 'next' : 'prev'); setAt((now) => (now + by + total) % total); };
+  const step = (by: number, hand = true) => {
+    setByHand(hand);
+    setDir(by > 0 ? 'next' : 'prev');
+    setAt((now) => (now + by + total) % total);
+  };
+
+  useEffect(() => {
+    const el = box.current;
+    let onScreen = true;
+    const update = () => setSeen(onScreen && document.visibilityState === 'visible');
+    const watch = typeof IntersectionObserver === 'function'
+      ? new IntersectionObserver(([entry]) => { onScreen = Boolean(entry?.isIntersecting); update(); })
+      : null;
+    if (el && watch) watch.observe(el);
+    document.addEventListener('visibilitychange', update);
+    return () => { watch?.disconnect(); document.removeEventListener('visibilitychange', update); };
+  }, []);
+
+  const running = !paused && !held && seen;
+  useEffect(() => {
+    if (!running) return;
+    // A fresh count for each tip: a tap on an arrow restarts the wait.
+    const timer = window.setTimeout(() => step(1, false), DYK_MS);
+    return () => window.clearTimeout(timer);
+  }, [running, at]);
+
   return (
-    <section className="shopcoach__dyk" aria-label="Did you know?" aria-roledescription="carousel">
+    <section ref={box} className="shopcoach__dyk" aria-label="Did you know?" aria-roledescription="carousel"
+      onPointerEnter={() => setHeld(true)} onPointerLeave={() => setHeld(false)}
+      onFocus={() => setHeld(true)} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setHeld(false); }}>
       <span className="shopcoach__dykmark" aria-hidden="true"><Icon name="spark" size={15} /></span>
-      <div key={at} className={`shopcoach__dyktext${dir ? ` shopcoach__dyktext--${dir}` : ''}`} aria-live="polite">
+      <div key={at} className={`shopcoach__dyktext${dir ? ` shopcoach__dyktext--${dir}` : ''}`} aria-live={byHand ? 'polite' : 'off'}>
         <b>Did you know?</b>
         <p>{tip.text}</p>
         {tip.tool && (
@@ -411,7 +449,16 @@ function DidYouKnowStrip({ pro, run }: { pro: boolean; run: (tool: CoachTool) =>
         <button type="button" aria-label="Previous tip" onClick={() => step(-1)}><Icon name="left" size={14} /></button>
         <span aria-label={`Tip ${at + 1} of ${total}`}>{at + 1}/{total}</span>
         <button type="button" aria-label="Next tip" onClick={() => step(1)}><Icon name="right" size={14} /></button>
+        <button type="button" aria-label={paused ? 'Play tips' : 'Pause tips'} title={paused ? 'Play' : 'Pause'}
+          aria-pressed={paused} onClick={() => setPaused(!paused)}>
+          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" fill="currentColor">
+            {paused ? <path d="M3 1.6v8.8L10.2 6Z" /> : <><rect x="2.4" y="1.8" width="2.4" height="8.4" rx="0.8" /><rect x="7.2" y="1.8" width="2.4" height="8.4" rx="0.8" /></>}
+          </svg>
+        </button>
       </div>
+      {/* Time until the next tip, as a thin line along the bottom. */}
+      <span key={`clock-${at}`} className="shopcoach__dykclock" aria-hidden="true"
+        style={{ animationDuration: `${DYK_MS}ms`, animationPlayState: running ? 'running' : 'paused' }} />
     </section>
   );
 }
