@@ -116,9 +116,9 @@ export interface ProPlan {
 /** Every tool Pro unlocks, as the subscribe page lists it and a locked box names it. */
 export const PRO_FEATURES = [
   {
-    id: 'insights', icon: '✨', title: 'Insights', punch: 'See what sells best',
-    line: 'See which items sell most, and what to buy next.',
-    benefit: 'See which items sell the most. See which buyers stopped coming back. Know what to buy next time.',
+    id: 'insights', icon: '✨', title: 'Insights', punch: 'See what sells, and why',
+    line: 'Easy reports on your shop: profit, trends, buyers and what to buy next.',
+    benefit: 'All your shop numbers in one place, in easy reports. See your real profit, what is trending, who saved your items and who stopped at Buy. Find your best time to post and what to buy in your next lot. Stop guessing.',
   },
   {
     id: 'coach', icon: '🧭', title: 'Shop coach & Figgy', punch: 'Get tips to grow your shop',

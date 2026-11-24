@@ -1,6 +1,7 @@
 /* Pro and platform fees (pages/BillingPages.tsx): one chunk, its own sheet. */
 
-.billpage { max-width: 760px; margin: 0 auto; padding: var(--s3) var(--s3) 110px; }
+/* No tall bottom padding: the site footer follows the page and clears the tab bar. */
+.billpage { max-width: 760px; margin: 0 auto; padding: var(--s3) var(--s3) var(--s4); }
 .billpage h2 { margin: 0; font-size: var(--t-lg, 18px); }
 
 /* ── Pro: fast, gold on dark, upright type ──────────────────────────────── */
@@ -113,6 +114,13 @@
   color: var(--gold-ink); background: linear-gradient(100deg, var(--gold-text), var(--gold) 50%, var(--pink));
 }
 
+/* What a tool holds, as small chips in its popup. */
+.gopop__points { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.gopop__points li {
+  padding: 4px 10px; border-radius: var(--r-pill); font-size: var(--t-sm); font-weight: 600;
+  background: var(--surface-2); border: 1px solid var(--border);
+}
+
 /* Plans, numbered like race bibs. */
 .goplans { display: grid; gap: var(--s3); grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
 .goplan {
@@ -135,9 +143,10 @@
   color: var(--gold-ink); background: linear-gradient(100deg, var(--gold-text), var(--gold) 60%, var(--pink));
 }
 .goplan__label { margin: 0; font-size: var(--t-md); color: var(--text-dim); font-weight: 700; }
-.goplan__price { margin: 6px 0 0; font: 900 calc(30px * var(--text-scale))/1.1 var(--display); position: relative; }
-.goplan__per { margin: 0; color: var(--text-dim); font-size: var(--t-sm); }
-.goplan__per b { color: var(--ok); }
+.goplan__price { margin: 6px 0 0; display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; position: relative; }
+.goplan__amount { font: 900 calc(36px * var(--text-scale))/1.1 var(--display); letter-spacing: -0.02em; }
+.goplan__unit { font-size: var(--t-md); font-weight: 600; color: var(--text-dim); }
+.goplan__per { margin: 0; color: var(--ok); font-size: var(--t-sm); font-weight: 700; }
 .goplan__tax { margin: 0; font-size: var(--t-xs); }
 .goplan__list { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; font-size: var(--t-sm); position: relative; }
 .goplan__list li::before { content: '✓'; margin-right: 8px; color: var(--ok); font-weight: 800; }
