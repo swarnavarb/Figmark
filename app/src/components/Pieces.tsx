@@ -136,7 +136,7 @@ function PieceName({ title, facts }: { title: string; facts?: string }) {
   );
 }
 
-export function PieceBoard({ src, pieces, title, onBuy, onCart, shippingMinor, disabled, describe }: {
+export function PieceBoard({ src, pieces, title, onBuy, onCart, shippingMinor, disabled, describe, bare = false }: {
   src: string;
   pieces: ListingPiece[];
   title: string;
@@ -148,6 +148,8 @@ export function PieceBoard({ src, pieces, title, onBuy, onCart, shippingMinor, d
   disabled?: boolean;
   /** Each item's own condition or original-or-copy, when the listing's is "Mixed". */
   describe?: (piece: ListingPiece) => string;
+  /** Inside a popup that already has the heading and its own frame. */
+  bare?: boolean;
 }) {
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
   const toggle = (id: string) => {
@@ -160,12 +162,17 @@ export function PieceBoard({ src, pieces, title, onBuy, onCart, shippingMinor, d
   };
   const total = pieces.filter((piece) => picked.has(piece.id)).reduce((sum, piece) => sum + piece.priceMinor, 0);
   return (
-    <section className="pcs-board" aria-label="Items in this photo">
-      <header className="pcs-board__head">
-        <h2>Pick from the photo</h2>
-        <span className="pcs-board__count">{piecesCount(pieces)}</span>
-      </header>
-      <p className="pcs-board__hint">Each item has its own price. Tap the ones you want, then check out once.</p>
+    <section className={`pcs-board${bare ? ' pcs-board--bare' : ''}`} aria-label="Items in this photo">
+      {!bare && (
+        <header className="pcs-board__head">
+          <h2>Pick from the photo</h2>
+          <span className="pcs-board__count">{piecesCount(pieces)}</span>
+        </header>
+      )}
+      <p className="pcs-board__hint">
+        {bare && <b className="pcs-board__count">{piecesCount(pieces)} · </b>}
+        {disabled ? 'Each item has its own price.' : 'Each item has its own price. Tap the ones you want, then check out once.'}
+      </p>
       <PiecePhoto src={src} pieces={pieces} picked={picked} onPick={disabled ? undefined : toggle} alt={title} />
       <ol className="pcs-list">
         {pieces.map((piece, index) => {

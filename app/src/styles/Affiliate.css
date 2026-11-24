@@ -1,6 +1,6 @@
 /* Moved from styles.css: rules only this chunk's code can match. */
 .affcard__text { display: grid; gap: 2px; min-width: 0; }
-.simcard__body { display: grid; gap: 2px; padding: 9px 11px 11px; min-width: 0; }
+.simcard__body { display: grid; gap: 3px; padding: 9px 3px 2px; min-width: 0; }
 .affowed .notice { flex-basis: 100%; margin: 0; }
 .earnpill {
   position: relative; isolation: isolate; flex: 0 1 auto; min-width: 0; display: inline-flex; align-items: center;
@@ -43,19 +43,39 @@
 .similar__icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; color: #fff; background: var(--grad-hero); box-shadow: 0 6px 16px rgba(236, 72, 153, 0.3); }
 .similar__titles { display: grid; }
 .similar__track {
-  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(168px, 200px); gap: var(--s3);
-  overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; padding: var(--s1) 2px 14px; scrollbar-width: thin;
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(156px, 178px); gap: 18px;
+  overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scroll-padding-inline: var(--page-pad); padding-block: 8px 18px; scrollbar-width: none;
 }
-.simcard:hover { transform: translateY(-3px); box-shadow: inset 0 0 0 1px var(--accent-line, rgba(124, 58, 237, 0.4)), 0 10px 24px rgba(0, 0, 0, 0.35); }
-.simcard.is-affiliate { box-shadow: inset 0 0 0 1px var(--lime-line), 0 6px 18px rgba(163, 230, 53, 0.12); }
-.simcard__photo { aspect-ratio: 1 / 1; overflow: hidden; }
+.similar__track::-webkit-scrollbar { display: none; }
+/* A print on paper, pinned to the night sky by a star, each at its own slant;
+   it straightens and lifts when pointed at. */
+.simcard__frame {
+  position: relative; display: grid; padding: 8px 8px 10px; border-radius: 6px;
+  background: linear-gradient(180deg, #FFFDF7, #F4EFE3); color: #1F1B2E;
+  box-shadow: 0 16px 30px rgba(3, 4, 20, 0.55), 0 1px 0 rgba(255, 255, 255, 0.7) inset;
+  transform: rotate(var(--tilt, 0deg));
+  transition: transform var(--dur-2) cubic-bezier(0.32, 0.72, 0, 1), box-shadow var(--dur-2);
+}
+.simcard__frame::before {
+  content: ''; position: absolute; z-index: 1; top: -9px; left: 50%; width: 18px; height: 18px; margin-left: -9px;
+  background: linear-gradient(135deg, var(--gold-pale), var(--gold));
+  clip-path: polygon(50% 0, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+  animation: simcard-pin 2.8s ease-in-out calc(var(--i, 0) * -0.5s) infinite;
+}
+@keyframes simcard-pin { 0%, 100% { transform: scale(1) rotate(0deg); } 50% { transform: scale(1.18) rotate(18deg); } }
+.simcard:hover .simcard__frame, .simcard:focus-visible .simcard__frame {
+  transform: rotate(0deg) translateY(-5px) scale(1.03); box-shadow: 0 22px 40px rgba(3, 4, 20, 0.6), 0 0 0 2px rgba(253, 230, 138, 0.7);
+}
+.simcard.is-affiliate .simcard__frame { box-shadow: 0 16px 30px rgba(3, 4, 20, 0.55), 0 0 0 2px var(--lime); }
+.simcard__photo { aspect-ratio: 1 / 1; overflow: hidden; border-radius: 3px; }
 .simcard:hover .simcard__photo .thumb__img { transform: scale(1.05); }
-.simcard__title { font-size: var(--t-sm); font-weight: var(--w-semi); line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.simcard__price { font-family: var(--display); font-size: var(--t-md); }
-.simcard--ghost { height: 260px; background: linear-gradient(90deg, var(--surface-2), rgba(255, 255, 255, 0.05), var(--surface-2)); background-size: 200% 100%; animation: sim-shimmer 1.2s linear infinite; }
+.simcard__title { font-size: var(--t-sm); font-weight: var(--w-semi); line-height: 1.25; color: #1F1B2E; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.simcard__foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.simcard__price { font-family: var(--display); font-size: var(--t-md); color: #5B21B6; }
+.simcard--ghost { height: 250px; margin-top: 10px; border-radius: 6px; background: linear-gradient(90deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.06)); background-size: 200% 100%; animation: sim-shimmer 1.2s linear infinite; }
 @media (prefers-reduced-motion: reduce) {
-  .simcard, .simcard--ghost { animation: none; }
-  .simcard, .simcard:hover, .simcard__photo .thumb__img { transition: none; transform: none; }
+  .simcard--ghost, .simcard__frame::before { animation: none; }
+  .simcard__frame, .simcard__photo .thumb__img { transition: none; }
 }
 .affowed { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s2); margin-top: var(--s2); padding: var(--s2) 10px; border-radius: var(--r-md); font-size: var(--t-sm); background: rgba(163, 230, 53, 0.08); box-shadow: inset 0 0 0 1px var(--lime-line); }
 .affcard__problem { font-size: var(--t-xs); color: var(--coral); }
