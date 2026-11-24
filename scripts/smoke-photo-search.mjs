@@ -9,6 +9,7 @@
 import assert from 'node:assert/strict';
 import { fixtures, useFixtures } from './fixtures.mjs';
 import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
 
 delete process.env.ANTHROPIC_API_KEY;
 process.env.FIGMARK_RATE_LIMITS = 'off';
@@ -73,6 +74,23 @@ await check('a different photo is not', async () => {
   const alike = likeness(a, b);
   assert.equal(alike.samePhoto, false);
   assert.ok(alike.score < 0.78, `score ${alike.score}`);
+});
+
+await check('a real boxed figure, reposted at under half size, is still the same photo', async () => {
+  // A window box that fills the frame: read small, its backdrop came out
+  // differently and its silhouette with it, and the copy stopped being the photo.
+  const { decodeJpeg, shrinkRaw } = await import(new URL('storage/compress.js', dist));
+  const bytes = new Uint8Array(readFileSync(new URL('../test-fixtures/scan/t800a.jpg', import.meta.url)));
+  const original = decodeJpeg(bytes);
+  for (const [scale, quality] of [[0.27, 45], [0.45, 45], [0.45, 70], [0.6, 45]]) {
+    const small = shrinkRaw(original, scale);
+    const copy = new Uint8Array(encode({ data: Buffer.from(small.data), width: small.width, height: small.height }, quality).data);
+    const alike = likeness(fingerprint(bytes, 'image/jpeg'), fingerprint(copy, 'image/jpeg'));
+    assert.equal(alike.samePhoto, true, `at ${scale}, quality ${quality}: ${JSON.stringify(alike)}`);
+  }
+  // ...and the other T-800 release, another photo of a look-alike, is not.
+  const other = fingerprint(new Uint8Array(readFileSync(new URL('../test-fixtures/scan/t800b.jpg', import.meta.url))), 'image/jpeg');
+  assert.equal(likeness(fingerprint(bytes, 'image/jpeg'), other).samePhoto, false);
 });
 
 await check('only JPEG is fingerprinted, and junk is not', async () => {
@@ -625,6 +643,59 @@ await check('a photo search names each item, and the shopper can search with one
   // The listings learned their items' fingerprints, so nobody works them out again.
   const bundle = await repository.getListing('lst_item_bundle');
   assert.equal(bundle.photos[0].regions.length, 2, 'the bundle photo carries a fingerprint for each thing in it');
+});
+
+await check('every piece of a big lot is findable on its own, not only the first twelve things in its photo', async () => {
+  const repository = await getRepository();
+  const store = await getPhotoStore();
+  const [template] = await repository.listListings({});
+  const now = new Date().toISOString();
+  // A shelf of sixteen different things, four by four. The cross, the one a
+  // shopper will look for, is the smallest: found things are kept largest
+  // first, twelve at most, so on the photo alone it is never fingerprinted.
+  const cross = (cx, cy, r, ground = cream) => (x, y) => {
+    const across = Math.abs(y - cy) < r * 0.3 && Math.abs(x - cx) < r;
+    const down = Math.abs(x - cx) < r * 0.3 && Math.abs(y - cy) < r;
+    if (across && x < cx) return [220, 40, 160];
+    return across || down ? [250, 210, 30] : ground;
+  };
+  const colours = [[30, 60, 200], [40, 160, 70], [120, 40, 160], [20, 150, 160], [230, 140, 30], [90, 90, 90], [160, 110, 60], [10, 30, 90],
+    [200, 200, 40], [60, 120, 30], [180, 60, 140], [40, 40, 40], [100, 170, 220], [140, 30, 30], [70, 50, 120]];
+  const cells = [];
+  for (let row = 0; row < 4; row += 1) for (let col = 0; col < 4; col += 1) cells.push([(col + 0.5) / 4, (row + 0.5) / 4]);
+  const target = 15;
+  const shelfPaint = (x, y) => {
+    for (const [at, [cx, cy]] of cells.entries()) {
+      if (at === target) {
+        const painted = cross(cx, cy, 0.07)(x, y);
+        if (painted !== cream) return painted;
+      } else if ((at % 2 ? roundel(cx, cy, 0.09) : block(cx, cy, 0.08))(x, y)) return colours[at];
+    }
+    return cream;
+  };
+  const lotPhoto = await store.upload(camera(1000, 1000, shelfPaint, { seed: 21 }), 'image/jpeg');
+  const pieces = cells.map(([cx, cy], at) => ({
+    id: `pc_${at}`, title: `Thing ${at + 1}`, priceMinor: 10000, units: 1, boxes: [[cx - 0.12, cy - 0.12, 0.24, 0.24]],
+  }));
+  await repository.createListing({
+    ...template, id: 'lst_big_lot', title: 'Shelf of sixteen', tags: [], category: 'Figures', createdAt: now, updatedAt: now,
+    privateFor: null, expiresAt: null, unlisted: false, status: 'active', quantityMode: 'fixed', quantityAvailable: 16, pieces,
+    photos: [{ blobName: lotPhoto.blobName, url: lotPhoto.url, imageHash: null, isPrimary: true }],
+  });
+
+  // The shopper's own photo of the cross, on their own desk.
+  const mine = camera(500, 400, (x, y) => cross(0.5, 0.5, 0.3, [200, 215, 235])(x, y * 0.8), { seed: 22 });
+  const found = await photoSearchRoute(req({ body: { dataUrl: dataUrl(mine) } }), ctx);
+  assert.equal(found.status, 200, JSON.stringify(found.jsonBody));
+  assert.equal(found.jsonBody.listings[0]?.id, 'lst_big_lot', `the lot the cross is in comes first: ${found.jsonBody.listings.map((l) => l.id)}`);
+  // Each item's fingerprint is for matching here, not sent to readers.
+  for (const listing of found.jsonBody.listings) for (const photo of listing.photos) assert.equal(photo.regions, undefined);
+
+  // And the lot learned a fingerprint for every piece, where each piece is.
+  const stored = await repository.getListing('lst_big_lot');
+  const regions = stored.photos[0].regions;
+  assert.ok(regions.length >= 16, `a fingerprint for every piece: ${regions.length}`);
+  for (const piece of pieces) assert.ok(regions.some((region) => region.box.join() === piece.boxes[0].join()), `${piece.id} has its own`);
 });
 
 await check('the things the phone found are searched with, each on its own; boxes that are not boxes are passed over', async () => {

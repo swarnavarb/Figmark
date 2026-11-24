@@ -58,11 +58,13 @@ import { ALLOWED_TYPES, MAX_PHOTO_BYTES } from './template-routes.js';
 import { thumbNameOf } from '../storage/types.js';
 import { sniffImageType } from '../storage/sanitize.js';
 import {
-  MAX_REGIONS, cropPixels, detectItems, overlapOfBoxes, isolatedFingerprints, itemColour, printsOfPixels, readBox, regionFingerprint, storedPrints, tiltedFingerprints,
+  MAX_REGIONS, coversNamed, cropPixels, detectItems, overlapOfBoxes, isolatedFingerprints, itemColour, printsOfPixels, readBox, regionFingerprint, storedPrints,
+  storedPrintsAt, tiltedFingerprints,
 } from '../image-hash.js';
 import { decodeJpeg, encodeJpeg, type Raw } from '../storage/compress.js';
 import {
-  PHOTO_RESULTS, looksBesideMatches, onlyAlike, pictureLooksEach, rankMatches, relatedItems, suggestionsFor, type LearnedHash,
+  PHOTO_RESULTS, leadPhotoName, looksBesideMatches, namedBoxes, onlyAlike, pictureLooksEach, rankMatches, relatedItems, suggestionsFor,
+  type LearnedHash,
 } from '../photo-search.js';
 import { alreadyRead, everListed, findSales, onSale, type PhotoSales } from '../photo-sales.js';
 import { announceFirstDibs, firstDibsView, restockView, startFirstDibs, tellPriceDropped, tellRestocked } from './stock-alert-routes.js';
@@ -279,6 +281,8 @@ function publicListing(listing: Listing): Listing {
   if (rest.pieces?.length) (rest as Listing).pieces = publicPieces(rest.pieces);
   // What the fee was counted from is the shop's and Figmark's business.
   delete (rest as Listing).foundBoxes;
+  // Each item's fingerprint is for matching here; a lot can carry dozens, and no reader uses them.
+  (rest as Listing).photos = rest.photos.map(({ regions: _regions, ...photo }) => photo);
   const highest = Math.max(0, ...(priceHistory ?? []).map((entry) => entry.priceMinor));
   return highest > listing.priceMinor
     ? { ...rest, priceHistory: [{ priceMinor: highest, at: listing.createdAt }] }
@@ -1221,6 +1225,8 @@ async function createListing(request: HttpRequest, _context: InvocationContext) 
     updatedAt: now,
   };
 
+  // Each thing the photo holds, findable on its own from the start.
+  listing.photos = (await photosWithNamedItems(listing)) ?? listing.photos;
   const created = await repository.createListing(listing);
   await claimPhotos(created.photos.map((photo) => photo.blobName || photo.url), `listing:${created.id}`);
   if (dibs) await announceFirstDibs(repository, created, dibs.optionId).catch(() => undefined);
@@ -1989,6 +1995,24 @@ async function manageable(request: HttpRequest): Promise<
 }
 
 /**
+ * The listing's photos with its lead photo fingerprinted at every place the
+ * listing names a thing - each piece, each item of a set, each thing the
+ * seller's phone found - so a shopper's photo of any one of them finds this
+ * listing, and each piece's Product DNA has the fingerprint of its own place.
+ * Null when nothing needs doing: no places named, or the stored items already
+ * cover them. Never the reason a save fails.
+ */
+async function photosWithNamedItems(listing: Listing): Promise<Listing['photos'] | null> {
+  const named = namedBoxes(listing);
+  const lead = leadPhotoName(listing);
+  const photo = listing.photos.find((entry) => entry.blobName === lead);
+  if (named.length === 0 || !lead || !photo || coversNamed(photo.regions ?? [], named)) return null;
+  const prints = await storedPrintsAt(lead, named).catch(() => null);
+  if (!prints) return null;
+  return listing.photos.map((entry) => (entry.blobName === lead ? { ...entry, imageHash: prints.hash, regions: prints.regions } : entry));
+}
+
+/**
  * The photos a listing may carry: at most six, exactly one primary, and every
  * one of them this shop's.
  *
@@ -2232,9 +2256,19 @@ async function editListing(request: HttpRequest, _context: InvocationContext) {
     return next;
   };
 
-  const updated = await repository.changeListing(listing.id, listing.sellerId, change);
+  let updated = await repository.changeListing(listing.id, listing.sellerId, change);
   if (refusal) return refusal;
   if (!updated) return error(404, 'not_found', 'No such listing.');
+  // Pieces moved, or a new lead photo: its items are fingerprinted where the listing now says they are.
+  const reprinted = await photosWithNamedItems(updated);
+  if (reprinted) {
+    const lead = leadPhotoName(updated);
+    const fresh = reprinted.find((photo) => photo.blobName === lead);
+    updated = (await repository.changeListing(listing.id, listing.sellerId, (current) => ({
+      ...current,
+      photos: current.photos.map((photo) => (fresh && photo.blobName === fresh.blobName ? fresh : photo)),
+    })).catch(() => null)) ?? updated;
+  }
   await tellRestocked(repository, listing, updated);
   await tellPriceDropped(repository, listing, updated);
   if (!updated.privateFor) await everyListing(repository).then((all) => alertForListing(repository, updated, all)).catch(() => 0);

@@ -1,7 +1,7 @@
-import type { Listing, PhotoRegion } from '../../shared/models.js';
+import type { Listing, PhotoRegion, RegionBox } from '../../shared/models.js';
 import { wordKeys } from '../../shared/shop-tags.js';
 import {
-  isCurrent, isFingerprinted, likenessOf, readFingerprint, storedPrints, type Fingerprint, type Prints,
+  coversNamed, isCurrent, isFingerprinted, likenessOf, readFingerprint, storedPrints, storedPrintsAt, type Fingerprint, type Prints,
 } from './image-hash.js';
 import { ownPhotoName } from './storage/index.js';
 import type { PhotoDescription } from './vision.js';
@@ -124,6 +124,25 @@ interface ListingPrints {
 }
 
 /**
+ * Every place a listing says a thing sits in its lead photo: its pieces, the
+ * items of its set, then what the seller's phone found. Each is an item of
+ * the lead photo with a fingerprint of its own, so a shopper's photo of any
+ * one finds the listing it is in.
+ */
+export function namedBoxes(listing: Listing): RegionBox[] {
+  return [
+    ...(listing.pieces ?? []).flatMap((piece) => piece.boxes ?? []),
+    ...(listing.setItems ?? []).flatMap((item) => item.boxes ?? []),
+    ...(listing.foundBoxes ?? []),
+  ];
+}
+
+/** The listing's lead photo, the one its pieces' places are in. */
+export function leadPhotoName(listing: Listing): string | null {
+  return (listing.photos.find((photo) => photo.isPrimary) ?? listing.photos[0])?.blobName ?? null;
+}
+
+/**
  * Each listing's fingerprints, once worked out, by the listing itself. The
  * catalogue is a snapshot kept for a minute, its listings the same objects
  * from one search to the next, so a search finds them ready rather than
@@ -158,27 +177,32 @@ async function catalogPrints(pool: Listing[], learned: LearnedHash[]): Promise<L
     entry.hashes.push(...hashes);
     entries.set(listing.id, entry);
   };
-  const settle = (listing: Listing, name: string, theirs: string | null, worked: Prints | null) => {
-    if (worked && worked.hash !== theirs) learned.push({ listing, blobName: name, hash: worked.hash, regions: worked.regions });
+  const settle = (listing: Listing, name: string, theirs: string | null, worked: Prints | null, reboxed = false) => {
+    if (worked && (worked.hash !== theirs || reboxed)) learned.push({ listing, blobName: name, hash: worked.hash, regions: worked.regions });
     if (worked) add(listing, [worked.hash, ...worked.regions.map((region) => region.imageHash)]);
     else if (theirs) add(listing, [theirs]);
   };
-  const toRead: { listing: Listing; name: string; theirs: string | null }[] = [];
+  const toRead: { listing: Listing; name: string; theirs: string | null; named: RegionBox[] }[] = [];
   for (const listing of pool) {
     const ready = gathered.get(listing);
     if (ready) { entries.set(listing.id, ready); continue; }
     settled.add(listing);
+    const lead = leadPhotoName(listing);
     for (const name of await storedPhotos(listing)) {
       const photo = listing.photos.find((entry) => entry.blobName === name);
       const theirs = photo?.imageHash ?? null;
-      if (theirs && isCurrent(theirs) && photo?.regions) add(listing, [theirs, ...photo.regions.map((region) => region.imageHash)]);
-      else if (isFingerprinted(name)) settle(listing, name, theirs, await storedPrints(name));
-      else if (toRead.length < FRESH_PER_SEARCH) { toRead.push({ listing, name, theirs }); settled.delete(listing); }
-      else { if (theirs) add(listing, [theirs]); settled.delete(listing); }
+      // The lead photo of a lot carries an item for every place the listing names;
+      // one stored before it did - twelve found things at most - is worked out again.
+      const named = name === lead ? namedBoxes(listing) : [];
+      const covered = named.length === 0 || coversNamed(photo?.regions ?? [], named);
+      if (theirs && isCurrent(theirs) && photo?.regions && covered) add(listing, [theirs, ...photo.regions.map((region) => region.imageHash)]);
+      else if (named.length === 0 && isFingerprinted(name)) settle(listing, name, theirs, await storedPrints(name));
+      else if (toRead.length < FRESH_PER_SEARCH) { toRead.push({ listing, name, theirs, named }); settled.delete(listing); }
+      else { if (theirs) add(listing, [theirs, ...(photo?.regions ?? []).map((region) => region.imageHash)]); settled.delete(listing); }
     }
   }
-  await inBatches(toRead, async ({ listing, name, theirs }) =>
-    settle(listing, name, theirs, await storedPrints(name).catch(() => null)));
+  await inBatches(toRead, async ({ listing, name, theirs, named }) =>
+    settle(listing, name, theirs, await storedPrintsAt(name, named).catch(() => null), named.length > 0));
   for (const listing of settled) {
     let entry = entries.get(listing.id);
     if (!entry) { entry = { listing, hashes: [], wholes: new Set<string>() }; }
