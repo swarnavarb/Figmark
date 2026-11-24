@@ -141,9 +141,9 @@ export const PRO_FEATURES = [
     benefit: 'See who saved or asked for an item. When it arrives, send a message to just those people.',
   },
   {
-    id: 'powerSale', icon: '⚡', title: 'Power sales & exclusive drops', punch: 'Run a quick sale',
-    line: 'A short sale with a timer, just for your followers.',
-    benefit: 'Start a sale with a timer. All your followers hear about it at once, so items sell fast.',
+    id: 'powerSale', icon: '⚡', title: 'Power sales & exclusive drops', punch: 'Run a power sale',
+    line: 'A power sale or live drop with a timer, just for your followers.',
+    benefit: 'Schedule a power sale or a live drop with a timer. All your followers hear about it at once, so items sell fast. Offer special discounts for a limited time, exclusive to your channel, and then the items are listed automatically.',
   },
   {
     id: 'loyalty', icon: '🎟️', title: 'Loyalty cards', punch: 'Bring buyers back',

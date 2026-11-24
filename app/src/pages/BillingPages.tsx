@@ -34,7 +34,7 @@ const SHORT_NAMES: Partial<Record<ProFeatureId, string>> = {
   coach: 'Shop coach (AI)',
   costs: 'Cost sheets',
   customers: 'Buyer messages',
-  powerSale: 'Timed sales',
+  powerSale: 'Limited drops',
 };
 
 /**
