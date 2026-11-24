@@ -95,7 +95,7 @@ const otherSeller = all.find((listing) => listing.sellerId !== me.id)?.sellerId;
 assert.ok(template && otherSeller, 'the fixtures have an active listing and another shop');
 
 let made = 0;
-async function list(sellerId, title, attributes, priceMinor) {
+async function list(sellerId, title, attributes, priceMinor, extra = {}) {
   made += 1;
   const now = new Date(Date.now() - made * 3600_000).toISOString();
   return repository.createListing({
@@ -117,8 +117,11 @@ async function list(sellerId, title, attributes, priceMinor) {
     soldCount: 0,
     likeCount: 2,
     viewCount: 40,
+    pieces: null,
+    setItems: null,
     createdAt: now,
     updatedAt: now,
+    ...extra,
   });
 }
 
@@ -428,6 +431,82 @@ await check('somebody who posted before hunts were counted is counted before a h
   assert.equal(await repository.getWant('wnt_dna_1', otherSeller), null);
   const facts = await factsFor(repository, await repository.getUserById(otherSeller));
   assert.equal(facts.wants.total, theirs.length, 'the deleted one still counts');
+});
+
+console.log('several things in one photo');
+
+const piece = (id, title, priceMinor, extra = {}) => ({ id, title, priceMinor, boxes: [[0.1, 0.1, 0.3, 0.3]], ...extra });
+let lot;
+let jordanDna;
+let zebraDna;
+await check('a lot sold piece by piece is on one product per thing, each under its own name', async () => {
+  lot = await list(otherSeller, 'Shelf clear-out: two pairs', { authenticity: 'Original' }, 700000, {
+    pieces: [piece('pc_a', 'Asics Gel Kayano 14 Cream Pure Silver', 1400000), piece('pc_b', 'Yeezy Boost 350 Zebra', 700000)],
+  });
+  const answer = await routes.dnaOfListingRoute(req({ params: { id: lot.id } }), ctx);
+  assert.equal(answer.status, 200, JSON.stringify(answer.jsonBody));
+  const items = answer.jsonBody.items;
+  assert.deepEqual(items.map((item) => item.piece), ['pc_a', 'pc_b']);
+  assert.deepEqual(items.map((item) => item.dna.name), ['Asics Gel Kayano 14 Cream Pure Silver', 'Yeezy Boost 350 Zebra']);
+  assert.notEqual(items[0].dna.id, items[1].dna.id);
+  assert.equal(items[0].dna.lowMinor, 1400000, 'each at its own price');
+  assert.equal(items[1].dna.lowMinor, 700000);
+  [jordanDna, zebraDna] = items.map((item) => item.dna.id);
+});
+
+await check('the same thing listed alone, or in another shop\'s lot, joins that thing\'s product', async () => {
+  const alone = await list(me.id, 'Asics Gel Kayano 14 Cream Pure Silver UK 9', { authenticity: 'Original' }, 1300000);
+  assert.equal((await of(alone)).id, jordanDna);
+  const other = await list(me.id, 'Two pairs, one price', { authenticity: 'Original' }, 1500000, {
+    setItems: [piece('st_a', 'Yeezy Boost 350 V2 Zebra', 800000), piece('st_b', 'Nike Dunk Low Grey Fog', 700000)],
+  });
+  const answer = (await routes.dnaOfListingRoute(req({ params: { id: other.id } }), ctx)).jsonBody;
+  assert.equal(answer.items[0].dna.id, zebraDna);
+  assert.equal(answer.items[1].dna.name, 'Nike Dunk Low Grey Fog');
+  forgetCatalogue();
+  const view = (await routes.dnaViewRoute(req({ params: { id: jordanDna } }), ctx)).jsonBody;
+  assert.equal(view.price.onSale, 2);
+  assert.deepEqual(view.sellingNow.map((card) => card.priceMinor), [1300000, 1400000]);
+  const fromLot = view.sellingNow.find((card) => card.piece);
+  assert.equal(fromLot.title, 'Asics Gel Kayano 14 Cream Pure Silver');
+  assert.equal(fromLot.piece.listingTitle, 'Shelf clear-out: two pairs');
+  const zebra = (await routes.dnaViewRoute(req({ params: { id: zebraDna } }), ctx)).jsonBody;
+  assert.ok(zebra.sellingNow.some((card) => card.piece?.set), 'a thing in a set says so');
+});
+
+await check('a piece sold is off its product, and the others stay on sale', async () => {
+  const current = await repository.getListing(lot.id);
+  await repository.updateListing({ ...current, pieces: current.pieces.map((entry) => (entry.id === 'pc_b'
+    ? { ...entry, soldAt: new Date().toISOString() } : entry)) });
+  forgetCatalogue();
+  const jordan = (await routes.dnaViewRoute(req({ params: { id: jordanDna } }), ctx)).jsonBody;
+  assert.equal(jordan.price.onSale, 2);
+  const zebra = (await routes.dnaViewRoute(req({ params: { id: zebraDna } }), ctx)).jsonBody;
+  assert.ok(!zebra.sellingNow.some((card) => card.id === lot.id), 'the sold piece is not on sale');
+});
+
+await check('a seller moves one thing of their lot, and only that thing', async () => {
+  const unsaid = await routes.dnaFixRoute(req({ headers: me.headers, body: {
+    kind: 'listing', id: lot.id, partition: lot.sellerId, action: 'new',
+  } }), ctx);
+  assert.equal(unsaid.status, 403, 'not their lot');
+  const mixed = await list(me.id, 'Pair of grails', { authenticity: 'Original' }, 900000, {
+    pieces: [piece('mx_a', 'Asics Gel Kayano 14 Cream Pure Silver', 1250000), piece('mx_b', 'Nike Dunk Low Panda', 900000)],
+  });
+  const before = (await routes.dnaOfListingRoute(req({ params: { id: mixed.id } }), ctx)).jsonBody;
+  assert.equal(before.items[0].dna.id, jordanDna);
+  const which = await routes.dnaFixRoute(req({ headers: me.headers, body: {
+    kind: 'listing', id: mixed.id, partition: mixed.sellerId, action: 'new',
+  } }), ctx);
+  assert.equal(which.status, 400, 'a lot needs to say which thing');
+  const own = await routes.dnaFixRoute(req({ headers: me.headers, body: {
+    kind: 'listing', id: mixed.id, partition: mixed.sellerId, action: 'new', piece: 'mx_a',
+  } }), ctx);
+  assert.equal(own.status, 200, JSON.stringify(own.jsonBody));
+  forgetDnaIndex();
+  const after = (await routes.dnaOfListingRoute(req({ params: { id: mixed.id } }), ctx)).jsonBody;
+  assert.equal(after.items[0].dna.id, own.jsonBody.dna);
+  assert.equal(after.items[1].dna.id, before.items[1].dna.id, 'the other thing stays where it was');
 });
 
 console.log(`\n${passed} DNA checks passed`);

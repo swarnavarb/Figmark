@@ -4,9 +4,8 @@ import {
 } from '../../shared/dna.js';
 import { timedUntil } from '../../shared/timed.js';
 import { getRepository } from './data/index.js';
-import { dnasLinked, getDna } from './dna.js';
+import { dnasLinked, getDna, itemOnSale, linkedItems } from './dna.js';
 import { notify } from './functions/notify.js';
-import { everListed, onSale } from './photo-sales.js';
 
 /**
  * Following a Product DNA: for a while the person picks, up to three months,
@@ -31,14 +30,12 @@ export interface DnaMarket {
 
 /** What is on sale for a DNA right now, from the catalogue. */
 export function marketOf(dna: ProductDna, byId: Map<string, Listing>): DnaMarket {
-  const selling = dna.links
-    .filter((entry) => entry.kind === 'listing')
-    .map((entry) => byId.get(entry.id))
-    .filter((listing): listing is Listing => Boolean(listing && everListed(listing) && onSale(listing)));
+  // Each thing at its own price: a piece of a lot is bought on its own.
+  const selling = linkedItems(dna, byId).filter(itemOnSale);
   return {
-    lowMinor: selling.length ? Math.min(...selling.map((listing) => listing.priceMinor)) : null,
-    currency: selling[0]?.currency ?? 'INR',
-    onSale: selling.map((listing) => listing.id).sort(),
+    lowMinor: selling.length ? Math.min(...selling.map((item) => item.priceMinor)) : null,
+    currency: selling[0]?.listing.currency ?? 'INR',
+    onSale: [...new Set(selling.map((item) => (item.piece ? `${item.listing.id}#${item.piece}` : item.listing.id)))].sort(),
   };
 }
 

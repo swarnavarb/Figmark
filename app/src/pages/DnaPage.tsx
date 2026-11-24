@@ -424,7 +424,7 @@ function PriceStrand({ view }: { view: DnaView }) {
         aria-label={`From ${formatMoney(price.lowMinor, price.currency)} to ${formatMoney(price.highMinor, price.currency)}, typically ${formatMoney(price.typicalMinor, price.currency)}`}>
         <div className="dnap__rangetrack">
           {sellingNow.map((listing, n) => (
-            <span key={listing.id} className="dnap__rangedot" data-deal={listing.deal ?? 'fair'}
+            <span key={`${listing.id}${listing.piece?.id ?? ''}`} className="dnap__rangedot" data-deal={listing.deal ?? 'fair'}
               style={{ left: price.highMinor === price.lowMinor ? '50%' : at(listing.priceMinor), ['--i' as string]: n } as CSSProperties} />
           ))}
           <span className="dnap__rangetypical" style={{ left: price.highMinor === price.lowMinor ? '50%' : at(price.typicalMinor) }}>
@@ -520,11 +520,16 @@ function ShopsStrand({ view }: { view: DnaView }) {
       {sellingNow.length > 0 ? (
         <ol className="dnap__offers">
           {sellingNow.map((listing, at) => (
-            <li key={listing.id} style={{ ['--i' as string]: at } as CSSProperties}>
+            <li key={`${listing.id}${listing.piece?.id ?? ''}`} style={{ ['--i' as string]: at } as CSSProperties}>
               <Link to={`/listing/${encodeURIComponent(listing.id)}`} className="dnap__offer">
                 <span className="dnap__offerpic">{listing.photoUrl ? <img src={listing.photoUrl} alt="" loading="lazy" decoding="async" /> : <Icon name="box" size={20} />}</span>
                 <span className="dnap__offertext">
                   <b>{listing.shop?.name ?? 'A shop'}</b>
+                  {listing.piece && (
+                    <small>
+                      {listing.piece.set ? 'Sold as part of a set' : 'One of several in'} “{listing.piece.listingTitle}”
+                    </small>
+                  )}
                   <small>{listing.condition}{listing.shippingMinor !== null ? ` · ${listing.shippingMinor === 0 ? 'free shipping' : `+${formatMoney(listing.shippingMinor, listing.currency)} shipping`}` : ''}</small>
                 </span>
                 <span className="dnap__offerprice">
@@ -859,7 +864,7 @@ function FixPanel({ view, onChanged }: { view: DnaView; onChanged: () => Promise
     <section className="dnap__fix" data-reveal>
       <h2 className="dnap__fixtitle"><Icon name="settings" size={15} /> Is this right?</h2>
       {view.yourLinks.map((own) => (
-        <div key={`${own.kind}${own.id}`} className="dnap__fixrow">
+        <div key={`${own.kind}${own.id}${own.piece ?? ''}`} className="dnap__fixrow">
           <span><b>{words[own.kind]}</b> “{own.title}” is on this product.</span>
           <button type="button" className="btn btn--quiet btn--sm" onClick={() => setMoving(own)}>
             {own.kind === 'listing' ? 'Wrong product?' : 'Change'}
@@ -874,7 +879,7 @@ function FixPanel({ view, onChanged }: { view: DnaView; onChanged: () => Promise
       )}
       {moving && (
         <DnaPicker title={moving.kind === 'listing' ? 'Which product is your listing?' : 'Which product is it?'}
-          seed={moving.title} current={[here]} listingId={moving.kind === 'listing' ? moving.id : undefined}
+          seed={moving.title} current={[here]} listingId={moving.kind === 'listing' ? moving.id : undefined} piece={moving.piece}
           onClose={() => setMoving(null)}
           onRemove={moving.kind === 'listing' ? undefined : async (from) => {
             await api.fixDna({ kind: moving.kind, id: moving.id, partition: moving.partition, action: 'remove', from: from.id });
@@ -883,14 +888,14 @@ function FixPanel({ view, onChanged }: { view: DnaView; onChanged: () => Promise
           }}
           onPick={async (to) => {
             if (to.id === view.dna.id) return;
-            await api.fixDna({ kind: moving.kind, id: moving.id, partition: moving.partition, action: 'move', to: to.id });
+            await api.fixDna({ kind: moving.kind, id: moving.id, partition: moving.partition, action: 'move', to: to.id, piece: moving.piece });
             setMoving(null);
             await onChanged();
           }}
           extra={moving.kind === 'listing' ? (
             <button type="button" className="dnap__newdna" onClick={async () => {
               try {
-                const made = await api.fixDna({ kind: 'listing', id: moving.id, partition: moving.partition, action: 'new' });
+                const made = await api.fixDna({ kind: 'listing', id: moving.id, partition: moving.partition, action: 'new', piece: moving.piece });
                 setMoving(null);
                 toast('Your listing has its own Product DNA now');
                 if (made.dna) navigate(dnaHref(made.dna));

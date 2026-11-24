@@ -108,28 +108,39 @@ export function DnaCard({ summary, lead = 'Product DNA' }: { summary: DnaSummary
   );
 }
 
-/** The DNA under a listing. Nothing at all for a listing that has none (a private deal). */
+/**
+ * The DNA under a listing: one card, or one per named thing when its photo
+ * holds several - a lot sold piece by piece, a set - each that thing's own
+ * product page. Nothing at all for a listing that has none (a private deal).
+ */
 export function ListingDna({ listingId, onFound }: {
   listingId: string;
-  /** Told which DNA the listing is part of, so the page can point at it elsewhere. */
+  /** Told which DNA the listing is part of (the first, for a lot), so the page can point at it elsewhere. */
   onFound?: (dna: DnaSummary | null) => void;
 }) {
-  const [summary, setSummary] = useState<DnaSummary | null>(null);
+  const [items, setItems] = useState<{ piece: string | null; title: string; dna: DnaSummary }[]>([]);
   const tell = useRef(onFound);
   tell.current = onFound;
   useEffect(() => {
     let live = true;
-    setSummary(null);
+    setItems([]);
     tell.current?.(null);
     void api.dnaOfListing(listingId).then((found) => {
       if (!live) return;
-      setSummary(found.dna);
+      setItems(found.items ?? (found.dna ? [{ piece: null, title: found.dna.name, dna: found.dna }] : []));
       tell.current?.(found.dna);
     }).catch(() => undefined);
     return () => { live = false; };
   }, [listingId]);
-  if (!summary) return null;
-  return <div className="dnak__slot"><DnaCard summary={summary} /></div>;
+  if (items.length === 0) return null;
+  // Two things in one photo can be one product: one card each product.
+  const shown = items.filter((item, at) => items.findIndex((other) => other.dna.id === item.dna.id) === at);
+  const many = items.some((item) => item.piece !== null);
+  return (
+    <div className="dnak__slot" aria-label={many ? 'Products in this photo' : undefined}>
+      {shown.map((item) => <DnaCard key={item.dna.id} summary={item.dna} lead={many ? 'In this photo' : undefined} />)}
+    </div>
+  );
 }
 
 /** The DNA a hunt is for, when one stands out. Its hunter can point it at another. */
@@ -212,13 +223,15 @@ export function PostDna({ channelId, postId, about }: { channelId: string; postI
  * seller moving their listing. What it is on now is listed first, with a way
  * off where that is allowed.
  */
-export function DnaPicker({ title, seed, current, many = false, listingId, onPick, onRemove, onClose, extra }: {
+export function DnaPicker({ title, seed, current, many = false, listingId, piece, onPick, onRemove, onClose, extra }: {
   title: string;
   seed: string;
   current: DnaSummary[];
   many?: boolean;
   /** Moving a listing: only products on the line its seller gave it. */
   listingId?: string;
+  /** Moving one thing in a listing of several: the line that thing is on. */
+  piece?: string | null;
   onPick: (dna: DnaSummary) => Promise<void>;
   onRemove?: (dna: DnaSummary) => Promise<void>;
   onClose: () => void;
@@ -233,10 +246,10 @@ export function DnaPicker({ title, seed, current, many = false, listingId, onPic
     const words = query.trim();
     if (!words) { setFound([]); return undefined; }
     const timer = window.setTimeout(() => {
-      void api.dnaSearch(words, listingId).then((answer) => setFound(answer.products)).catch(() => setFound([]));
+      void api.dnaSearch(words, listingId, piece).then((answer) => setFound(answer.products)).catch(() => setFound([]));
     }, 220);
     return () => window.clearTimeout(timer);
-  }, [query, listingId]);
+  }, [query, listingId, piece]);
 
   const run = async (id: string, work: () => Promise<void>, said: string) => {
     setBusy(id);
@@ -441,17 +454,34 @@ export function DnaProductsView({ category }: { category?: string | null }) {
  * "Review this item" beside an order: the shop is reviewed where it always
  * was; the product itself is reviewed on its DNA.
  */
-export function ReviewItemLink({ listingId }: { listingId: string }) {
-  const [id, setId] = useState<string | null>(null);
+export function ReviewItemLink({ listingId, pieces }: {
+  listingId: string;
+  /** The things bought out of a lot: each is reviewed on its own product. */
+  pieces?: string[] | null;
+}) {
+  const [found, setFound] = useState<{ id: string; title: string }[]>([]);
+  const key = (pieces ?? []).join(',');
   useEffect(() => {
-    void api.dnaOfListing(listingId).then((found) => setId(found.dna?.id ?? null)).catch(() => undefined);
-  }, [listingId]);
-  if (!id) return null;
+    void api.dnaOfListing(listingId).then((answer) => {
+      const bought = new Set(key ? key.split(',') : []);
+      const things = (answer.items ?? []).filter((item) => bought.size === 0 || (item.piece !== null && bought.has(item.piece)));
+      const unique = new Map<string, string>();
+      for (const item of things) if (!unique.has(item.dna.id)) unique.set(item.dna.id, item.title);
+      // A set bought whole, or nothing said: each thing in it, else the listing's one.
+      if (unique.size === 0 && answer.dna) unique.set(answer.dna.id, answer.dna.name);
+      setFound([...unique].map(([id, title]) => ({ id, title })));
+    }).catch(() => undefined);
+  }, [listingId, key]);
+  if (found.length === 0) return null;
   return (
-    <Link to={`${dnaHref(id)}?review=1`} className="dnak__reviewlink">
-      <DnaHelix rungs={5} still /> Review this item
-      <small>on its Product DNA, for everyone who has one</small>
-      <Icon name="right" size={14} />
-    </Link>
+    <>
+      {found.map((thing) => (
+        <Link key={thing.id} to={`${dnaHref(thing.id)}?review=1`} className="dnak__reviewlink">
+          <DnaHelix rungs={5} still /> {found.length > 1 ? `Review ${thing.title}` : 'Review this item'}
+          <small>on its Product DNA, for everyone who has one</small>
+          <Icon name="right" size={14} />
+        </Link>
+      ))}
+    </>
   );
 }

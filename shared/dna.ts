@@ -31,6 +31,13 @@ export interface DnaLink {
   /** Linked by the matcher, by its owner, or by staff. An owner's choice is never undone by the matcher. */
   by: 'auto' | 'owner' | 'staff';
   at: string;
+  /**
+   * For a listing whose photo holds several things - sold piece by piece, or
+   * as a set with each thing named - which of them this DNA is about. Each
+   * thing is its own product, on its own DNA, under the name its seller gave
+   * it; absent when the DNA is about the listing as a whole.
+   */
+  piece?: string | null;
 }
 
 /** What is stored, in `siteContent` under `dna:<id>`. */
@@ -61,6 +68,8 @@ export interface ProductDna {
 export const DNA_PREFIX = 'dna:';
 export const dnaDocId = (id: string) => `${DNA_PREFIX}${id}`;
 export const linkKey = (kind: DnaLinkKind, id: string) => `${kind}:${id}`;
+/** One thing in a listing of several, as `blocked` remembers it: `listing:<id>#<piece>`. */
+export const pieceKey = (id: string, piece: string) => `${linkKey('listing', id)}#${piece}`;
 
 /** The most products one post or photo is tagged with. */
 export const DNA_TAGS_PER_POST = 5;
@@ -205,7 +214,10 @@ export interface DnaShop {
 
 export interface DnaListingCard {
   id: string;
+  /** The thing's own name: a piece of a lot or set goes by the name its seller gave it. */
   title: string;
+  /** Set when it is one of several things in one listing: that piece, and the listing's own title. */
+  piece: { id: string; listingTitle: string; set: boolean } | null;
   priceMinor: number;
   currency: string;
   shippingMinor: number | null;
@@ -313,7 +325,7 @@ export interface DnaView {
   background: { text: string; source: string } | null;
   related: DnaSummary[];
   /** What this reader may fix: their own listings, posts and hunts on it; and whether they are staff. */
-  yourLinks: { kind: DnaLinkKind; id: string; partition: string; title: string }[];
+  yourLinks: { kind: DnaLinkKind; id: string; partition: string; title: string; piece?: string | null }[];
   staff: boolean;
   /** The reader's follow, while it runs. */
   follow: { until: string } | null;

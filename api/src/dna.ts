@@ -1,11 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import type { Listing, Post, SiteContent, Want } from '../../shared/models.js';
+import type { Listing, Post, RegionBox, SiteContent, Want } from '../../shared/models.js';
 import {
   DNA_PREFIX, DNA_TAGS_PER_POST, HUNT_COVERED, SAME_PRODUCT, SAME_WITH_PHOTO, covered, dnaDocId, heatOf, lineOf,
-  linkKey, nameFrom, productWords, sameCategory, wordLikeness,
+  linkKey, nameFrom, pieceKey, productWords, sameCategory, wordLikeness,
   type DnaLine, type DnaLink, type DnaLinkKind, type DnaSummary, type ProductDna,
 } from '../../shared/dna.js';
 import { getRepository } from './data/index.js';
+import { hasPieces, isPieceSold, MAX_PIECES } from '../../shared/pieces.js';
+import { overlapOfBoxes } from './image-hash.js';
 import { everListed, findSales, onSale, textSales } from './photo-sales.js';
 import { pictureMatches } from './photo-search.js';
 import { ownPhotoName } from './storage/index.js';
@@ -25,6 +27,10 @@ import { ownPhotoName } from './storage/index.js';
  * any listing that somehow is not is linked the first time anyone asks about
  * it or a sweep finds it; a post or a hunt is linked when it is first asked
  * about. Only listings start a DNA - a post or a hunt joins one that exists.
+ * A listing whose photo holds several named things - a lot sold piece by
+ * piece, a set with each thing listed - is on one DNA per thing, each under
+ * the name its seller gave it and matched on its own against every other
+ * listing, and every other listing's things.
  * An owner's own choice - a listing moved, a post tagged or untagged - is
  * kept, and the matcher never puts back what an owner took off.
  */
@@ -131,35 +137,48 @@ function newDna(name: string, category: string, line: DnaLine, words: string[], 
   };
 }
 
-const link = (kind: DnaLinkKind, id: string, partition: string, by: DnaLink['by']): DnaLink =>
-  ({ kind, id, partition, by, at: new Date().toISOString() });
+const link = (kind: DnaLinkKind, id: string, partition: string, by: DnaLink['by'], piece: string | null = null): DnaLink =>
+  ({ kind, id, partition, by, at: new Date().toISOString(), ...(piece ? { piece } : {}) });
+
+/** Whether a link is to this thing: the same kind and id, and the same piece of a listing of several. */
+const sameThing = (entry: DnaLink, kind: DnaLinkKind, id: string, piece: string | null) =>
+  entry.kind === kind && entry.id === id && (entry.piece ?? null) === piece;
+
+/** The keys `blocked` may hold for a thing: the whole of it, and the one piece. */
+const blockKeys = (kind: DnaLinkKind, id: string, piece: string | null) =>
+  (piece && kind === 'listing' ? [linkKey(kind, id), pieceKey(id, piece)] : [linkKey(kind, id)]);
 
 /** Add a link to a DNA, once. */
 export async function addLink(repository: Repo, dnaId: string, entry: DnaLink): Promise<ProductDna | null> {
   return saveDna(repository, dnaId, (current) => {
     if (!current) return null;
-    const key = linkKey(entry.kind, entry.id);
-    const blocked = entry.by === 'auto' ? current.blocked : current.blocked.filter((value) => value !== key);
-    if (entry.by === 'auto' && current.blocked.includes(key)) return null;
-    if (current.links.some((existing) => existing.kind === entry.kind && existing.id === entry.id)) {
+    const piece = entry.piece ?? null;
+    const keys = blockKeys(entry.kind, entry.id, piece);
+    const blocked = entry.by === 'auto' ? current.blocked : current.blocked.filter((value) => !keys.includes(value));
+    if (entry.by === 'auto' && keys.some((key) => current.blocked.includes(key))) return null;
+    if (current.links.some((existing) => sameThing(existing, entry.kind, entry.id, piece))) {
       return blocked.length === current.blocked.length ? null : { ...current, blocked };
     }
     return { ...current, blocked, links: [...current.links, entry] };
   });
 }
 
-/** Take a link off a DNA; `block` stops the matcher putting it back. */
+/**
+ * Take a link off a DNA; `block` stops the matcher putting it back. `piece`
+ * names one thing of a listing of several (null: the listing as a whole);
+ * left out, every link of the thing goes.
+ */
 export async function removeLink(
-  repository: Repo, dnaId: string, kind: DnaLinkKind, id: string, block: boolean,
+  repository: Repo, dnaId: string, kind: DnaLinkKind, id: string, block: boolean, piece?: string | null,
 ): Promise<ProductDna | null> {
   return saveDna(repository, dnaId, (current) => {
     if (!current) return null;
-    const key = linkKey(kind, id);
-    return {
-      ...current,
-      links: current.links.filter((entry) => !(entry.kind === kind && entry.id === id)),
-      blocked: block && !current.blocked.includes(key) ? [...current.blocked, key] : current.blocked,
-    };
+    const key = piece ? pieceKey(id, piece) : linkKey(kind, id);
+    const links = current.links.filter((entry) => (piece === undefined
+      ? !(entry.kind === kind && entry.id === id) : !sameThing(entry, kind, id, piece)));
+    const blocks = block && !current.blocked.includes(key);
+    if (links.length === current.links.length && !blocks) return null;
+    return { ...current, links, blocked: blocks ? [...current.blocked, key] : current.blocked };
   });
 }
 
@@ -169,40 +188,165 @@ export const photoOf = (listing: Pick<Listing, 'photos'>): string | null => {
 };
 
 /* -------------------------------------------------------------------------- */
-/* Listings                                                                   */
+/* Listings, and the things in them                                           */
 /* -------------------------------------------------------------------------- */
 
+/** One thing a listing sells that a DNA can be about: the listing itself, or one of the things in its photo. */
+export interface ListingItem {
+  /** The piece, for a listing of several things; null for the listing as a whole. */
+  piece: string | null;
+  /** Its own name: the listing's title, or the one the seller gave the piece. */
+  title: string;
+  /** Its own price: the piece's, or its share of a set's. */
+  priceMinor: number;
+  line: DnaLine;
+  /** Where it sits in the lead photo; empty for the listing as a whole. */
+  boxes: RegionBox[];
+  /** A piece bought on its own and gone. The things in a set sell with the set. */
+  sold: boolean;
+  /** One of the things in a set sold all together: buyers buy the set. */
+  set: boolean;
+}
+
+const wholeOf = (listing: Listing): ListingItem => ({
+  piece: null, title: listing.title, priceMinor: listing.priceMinor, line: lineOf(listing.category, listing.attributes),
+  boxes: [], sold: false, set: false,
+});
+
 /**
- * The DNA a listing belongs to, linking it now if it is not yet: to the DNA
- * of the same product, or to a new one it starts. Null for a listing the
- * public never sees - a draft, a private deal, an unlisted item.
+ * The things a listing sells, each a product of its own: every named thing in
+ * the photo of a lot sold piece by piece or of a set, or else the listing as
+ * a whole. A piece is on the line its seller gave it, when the listing says
+ * "some originals, some copies".
+ */
+export function itemsOf(listing: Listing): ListingItem[] {
+  const set = !hasPieces(listing);
+  const rows = (set ? listing.setItems : listing.pieces) ?? [];
+  if (rows.length < 2) return [wholeOf(listing)];
+  const items = rows
+    .filter((row) => row.id && productWords(row.title).length > 0)
+    .slice(0, MAX_PIECES)
+    .map((row): ListingItem => ({
+      piece: row.id,
+      title: row.title,
+      priceMinor: row.priceMinor,
+      line: lineOf(listing.category, row.authenticity ? { ...listing.attributes, authenticity: row.authenticity } : listing.attributes),
+      boxes: row.boxes ?? [],
+      sold: !set && isPieceSold(row),
+      set,
+    }));
+  return items.length > 0 ? items : [wholeOf(listing)];
+}
+
+/** One thing on a DNA, with the listing it is in. */
+export interface LinkedItem extends ListingItem {
+  listing: Listing;
+}
+
+/**
+ * The things a DNA's listing links stand for, as the catalogue has them now:
+ * each piece at its own price and name, each whole listing at its own. A link
+ * to a piece the seller has since taken off the listing is skipped.
+ */
+export function linkedItems(dna: ProductDna, byId: Map<string, Listing>): LinkedItem[] {
+  const items: LinkedItem[] = [];
+  for (const entry of dna.links) {
+    if (entry.kind !== 'listing') continue;
+    const listing = byId.get(entry.id);
+    if (!listing || !everListed(listing)) continue;
+    const piece = entry.piece ?? null;
+    const item = piece ? itemsOf(listing).find((each) => each.piece === piece) : wholeOf(listing);
+    if (item) items.push({ ...item, listing });
+  }
+  return items;
+}
+
+/** Whether a thing can be bought now: its listing is on sale, and a piece is not gone. */
+export const itemOnSale = (item: LinkedItem): boolean => onSale(item.listing) && !item.sold;
+
+/** Each listing once, from a DNA's things: what counts saves, views and sales of the listing. */
+export const listingsOf = (items: readonly LinkedItem[]): Listing[] =>
+  [...new Map(items.map((item) => [item.listing.id, item.listing])).values()];
+
+/** Whether a DNA has a link to this thing of this listing. */
+const holds = (dna: ProductDna, listingId: string, piece: string | null) =>
+  dna.links.some((entry) => sameThing(entry, 'listing', listingId, piece));
+
+/** The fingerprints of the part of the lead photo a piece sits in; every photo's, for the listing as a whole. */
+function hashesOf(listing: Listing, item: ListingItem): string[] {
+  if (!item.piece) return listing.photos.map((photo) => photo.imageHash).filter((hash): hash is string => Boolean(hash));
+  const lead = listing.photos.find((photo) => photo.isPrimary) ?? listing.photos[0];
+  return (lead?.regions ?? [])
+    .filter((region) => item.boxes.some((box) => overlapOfBoxes(box, region.box) >= 0.5))
+    .map((region) => region.imageHash);
+}
+
+/**
+ * The DNAs a listing is on, linking it now where it is not yet: one for each
+ * thing it sells (see `itemsOf`). Empty for a listing the public never sees -
+ * a draft, a private deal, an unlisted item.
+ *
+ * A link the listing no longer fits - the whole of a listing since split into
+ * pieces, a piece since taken off it - is taken off, so each DNA's prices
+ * stay those of things that are for sale.
+ */
+export async function dnasForListing(repository: Repo, listing: Listing, catalogue: Listing[]): Promise<ProductDna[]> {
+  if (!everListed(listing)) return [];
+  const items = itemsOf(listing);
+  const pieces = new Set(items.map((item) => item.piece));
+  for (const dna of await dnasLinked(repository, 'listing', listing.id)) {
+    for (const entry of dna.links) {
+      if (entry.kind !== 'listing' || entry.id !== listing.id || pieces.has(entry.piece ?? null)) continue;
+      await removeLink(repository, dna.id, 'listing', listing.id, false, entry.piece ?? null);
+    }
+  }
+  const found: ProductDna[] = [];
+  for (const item of items) {
+    const dna = await dnaForItem(repository, listing, item, catalogue, false).catch(() => null);
+    if (dna && !found.some((entry) => entry.id === dna.id)) found.push(dna);
+  }
+  return found;
+}
+
+/** The first DNA a listing is on, linking it if it is not yet. See `dnasForListing`. */
+export async function dnaForListing(repository: Repo, listing: Listing, catalogue: Listing[]): Promise<ProductDna | null> {
+  return (await dnasForListing(repository, listing, catalogue))[0] ?? null;
+}
+
+/**
+ * The DNA one thing a listing sells belongs to, linking it now if it is not
+ * yet: to the DNA of the same product, or to a new one it starts, under the
+ * thing's own name.
  *
  * Same product means the same category, the same line as the seller said it,
- * and then: titles that say the same thing; or the same photo, or a photo of
- * the same thing, with titles alike enough to back it up.
+ * and then: names that say the same thing; or the same photo, or a photo of
+ * the same thing, with names alike enough to back it up. A piece of a lot is
+ * matched by its own name and the part of the photo it sits in, so it joins a
+ * listing of that thing alone, or the same thing in another shop's lot.
+ * `fresh`: its seller said it is a product of its own.
  */
-export async function dnaForListing(
-  repository: Repo, listing: Listing, catalogue: Listing[], fresh = false,
+export async function dnaForItem(
+  repository: Repo, listing: Listing, item: ListingItem, catalogue: Listing[], fresh = false,
 ): Promise<ProductDna | null> {
   if (!everListed(listing)) return null;
-  const [existing] = await dnasLinked(repository, 'listing', listing.id);
+  const existing = (await dnasLinked(repository, 'listing', listing.id)).find((dna) => holds(dna, listing.id, item.piece));
   if (existing) return existing;
 
   const index = await dnaIndex(repository);
-  const words = productWords(listing.title);
-  const line = lineOf(listing.category, listing.attributes);
-  const key = linkKey('listing', listing.id);
-  // `fresh`: its seller said it is a product of its own.
-  const candidates = fresh ? [] : [...index.byId.values()].filter((dna) => !dna.mergedInto && dna.line === line
-    && sameCategory(dna.category, listing.category) && !dna.blocked.includes(key));
+  const words = productWords(item.title);
+  const keys = blockKeys('listing', listing.id, item.piece);
+  const candidates = fresh ? [] : [...index.byId.values()].filter((dna) => !dna.mergedInto && dna.line === item.line
+    && sameCategory(dna.category, listing.category) && !keys.some((key) => dna.blocked.includes(key)));
 
   // The photo, against the photos of listings already on a candidate.
   const pictured = new Map<string, number>();
-  const hashes = listing.photos.map((photo) => photo.imageHash).filter((hash): hash is string => Boolean(hash));
+  const hashes = hashesOf(listing, item);
   if (hashes.length > 0 && candidates.length > 0) {
-    const onCandidates = new Map<string, string>();
+    const onCandidates = new Map<string, string[]>();
     for (const dna of candidates) {
-      for (const entry of dna.links) if (entry.kind === 'listing') onCandidates.set(entry.id, dna.id);
+      for (const entry of dna.links) {
+        if (entry.kind === 'listing') onCandidates.set(entry.id, [...(onCandidates.get(entry.id) ?? []), dna.id]);
+      }
     }
     const pool = catalogue.filter((other) => other.id !== listing.id && onCandidates.has(other.id)
       && other.photos.some((photo) => photo.imageHash));
@@ -210,8 +354,10 @@ export async function dnaForListing(
       const matches = await pictureMatches(pool, hashes).catch(() => new Map());
       for (const [listingId, match] of matches) {
         const strength = match.same ? 2 : match.sameItem ? 1 : 0;
-        const dnaId = onCandidates.get(listingId)!;
-        if (strength > (pictured.get(dnaId) ?? 0)) pictured.set(dnaId, strength);
+        // A lot's photo is on each of its things' DNAs: the names say which.
+        for (const dnaId of onCandidates.get(listingId) ?? []) {
+          if (strength > (pictured.get(dnaId) ?? 0)) pictured.set(dnaId, strength);
+        }
       }
     }
   }
@@ -227,24 +373,37 @@ export async function dnaForListing(
       || (score === best.score && dna.links.length > best.dna.links.length))) best = { dna, score };
   }
 
-  const entry = link('listing', listing.id, listing.sellerId, fresh ? 'owner' : 'auto');
+  const entry = link('listing', listing.id, listing.sellerId, fresh ? 'owner' : 'auto', item.piece);
+  // A piece's picture is the whole lot: a listing of that thing alone gives its DNA a better one.
+  const cover = item.piece ? null : photoOf(listing);
   if (best) {
     const joined = await addLink(repository, best.dna.id, entry);
     // A cover for a DNA that never had one.
-    if (joined && !joined.cover && photoOf(listing)) {
-      return saveDna(repository, joined.id, (current) => (current ? { ...current, cover: photoOf(listing) } : null));
+    if (joined && !joined.cover && cover) {
+      return saveDna(repository, joined.id, (current) => (current ? { ...current, cover } : null));
     }
     return joined ?? best.dna;
   }
-  const started = newDna(nameFrom(listing.title), listing.category, line, words, photoOf(listing));
+  const started = newDna(nameFrom(item.title), listing.category, item.line, words, cover);
   // Other listings of the same product nobody has linked yet - listed before
   // DNAs existed - join it as it starts, so its first reader sees every shop.
   const siblings = fresh ? [] : catalogue.filter((other) => other.id !== listing.id && everListed(other)
     && !index.byLink.has(linkKey('listing', other.id)) && sameCategory(other.category, listing.category)
-    && lineOf(other.category, other.attributes) === line && wordLikeness(words, productWords(other.title)) >= SAME_PRODUCT)
+    && itemsOf(other)[0]!.piece === null
+    && lineOf(other.category, other.attributes) === item.line && wordLikeness(words, productWords(other.title)) >= SAME_PRODUCT)
     .slice(0, 60)
     .map((other) => link('listing', other.id, other.sellerId, 'auto'));
   return saveDna(repository, started.id, () => ({ ...started, links: [entry, ...siblings] }));
+}
+
+/** Whether every thing a listing sells is on a DNA. */
+function linkedWhole(index: DnaIndex, listing: Listing): boolean {
+  const dnas = (index.byLink.get(linkKey('listing', listing.id)) ?? []).map((id) => index.byId.get(id))
+    .filter((dna): dna is ProductDna => Boolean(dna));
+  if (dnas.length === 0) return false;
+  // Most listings are one thing on one DNA: no need to look further.
+  if (!hasPieces(listing) && (listing.setItems?.length ?? 0) < 2) return true;
+  return itemsOf(listing).every((item) => dnas.some((dna) => holds(dna, listing.id, item.piece)));
 }
 
 let sweeping: Promise<number> | null = null;
@@ -261,12 +420,12 @@ export function sweepListings(repository: Repo, catalogue: Listing[], limit = 40
   sweeping = (async () => {
     const index = await dnaIndex(repository);
     const waiting = catalogue
-      .filter((listing) => everListed(listing) && !index.byLink.has(linkKey('listing', listing.id)))
+      .filter((listing) => everListed(listing) && !linkedWhole(index, listing))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, limit);
     let linked = 0;
     for (const listing of waiting) {
-      if (await dnaForListing(repository, listing, catalogue).catch(() => null)) linked += 1;
+      if ((await dnasForListing(repository, listing, catalogue).catch(() => [])).length > 0) linked += 1;
     }
     // Then what people said: recent posts and open hunts, so a product's page
     // has its community without waiting for somebody to open each post.
@@ -311,9 +470,10 @@ export async function dnasForPost(repository: Repo, post: Post, catalogue: Listi
   looked.set(key, Date.now());
 
   const byId = new Map(catalogue.map((listing) => [listing.id, listing]));
-  const found: Listing[] = [];
+  // Each listing found, with the words that found it: for a lot, they say which of its things.
+  const found: { listing: Listing; hint: string | null }[] = [];
   const sold = post.listingId ? byId.get(post.listingId) : undefined;
-  if (sold) found.push(sold);
+  if (sold) found.push({ listing: sold, hint: null });
   // Words alone are held to more than a hint: the caption has to name what
   // identifies the item ("Dunk Low" is not "Dunk Low Setsubun"), and a
   // product only named is taken to be the original - a post about a copy is
@@ -330,18 +490,22 @@ export async function dnasForPost(repository: Repo, post: Post, catalogue: Listi
     const sales = await findSales(name, catalogue, post.body.slice(0, 500), post.authorId).catch(() => null);
     // A group with no label was found by the picture; a labelled one by the caption's words.
     for (const group of sales?.items ?? []) {
-      found.push(...group.listings.filter((listing) => group.label === null || named(listing)).slice(0, 3));
+      found.push(...group.listings.filter((listing) => group.label === null || named(listing)).slice(0, 3)
+        .map((listing) => ({ listing, hint: group.label })));
     }
   }
   // No photo this app stores (none at all, or only links elsewhere): the words are all there is.
-  if (read === 0) found.push(...textSales(catalogue, post.body).filter(named).slice(0, 6));
+  if (read === 0) found.push(...textSales(catalogue, post.body).filter(named).slice(0, 6).map((listing) => ({ listing, hint: null })));
 
   const dnas: ProductDna[] = [];
-  for (const listing of found) {
+  for (const { listing, hint } of found) {
     if (dnas.length >= DNA_TAGS_PER_POST) break;
-    const dna = await dnaForListing(repository, listing, catalogue).catch(() => null);
-    if (!dna || dnas.some((entry) => entry.id === dna.id) || dna.blocked.includes(linkKey('post', post.id))) continue;
-    dnas.push(dna);
+    const all = await dnasForListing(repository, listing, catalogue).catch(() => [] as ProductDna[]);
+    for (const dna of thingsNamed(all, hint ?? post.body.slice(0, 500))) {
+      if (dnas.length >= DNA_TAGS_PER_POST) break;
+      if (dnas.some((entry) => entry.id === dna.id) || dna.blocked.includes(linkKey('post', post.id))) continue;
+      dnas.push(dna);
+    }
   }
   const saved: ProductDna[] = [];
   for (const dna of dnas) {
@@ -349,6 +513,17 @@ export async function dnasForPost(repository: Repo, post: Post, catalogue: Listi
     saved.push(after ?? dna);
   }
   return saved;
+}
+
+/**
+ * Of a listing's DNAs - one per thing, for a lot - those the words name; all
+ * of them when the words name none, or the listing is one thing.
+ */
+function thingsNamed(dnas: ProductDna[], words: string): ProductDna[] {
+  if (dnas.length < 2) return dnas;
+  const said = productWords(words);
+  const named = dnas.filter((dna) => covered(dna.words, said) >= HUNT_COVERED);
+  return named.length > 0 ? named : dnas;
 }
 
 /**
@@ -381,7 +556,11 @@ export async function dnaForWant(repository: Repo, want: Want, catalogue: Listin
     const name = await ownPhotoName(want.photoUrls[0]!).catch(() => null);
     const sales = name ? await findSales(name, catalogue, want.title, null).catch(() => null) : null;
     const listing = sales?.items[0]?.listings[0];
-    if (listing) chosen = await dnaForListing(repository, listing, catalogue).catch(() => null);
+    if (listing) {
+      // A lot: the thing in it the hunt's words are most like.
+      const all = await dnasForListing(repository, listing, catalogue).catch(() => [] as ProductDna[]);
+      chosen = [...all].sort((a, b) => wordLikeness(asked, b.words) - wordLikeness(asked, a.words))[0] ?? null;
+    }
   }
   if (!chosen) return null;
   return (await addLink(repository, chosen.id, link('want', want.id, want.buyerId, 'auto'))) ?? chosen;
@@ -393,12 +572,11 @@ export async function dnaForWant(repository: Repo, want: Want, catalogue: Listin
 
 /** The small card for a DNA, from the catalogue alone: no database reads. */
 export function summaryOf(dna: ProductDna, byId: Map<string, Listing>): DnaSummary {
-  const listings = dna.links.filter((entry) => entry.kind === 'listing')
-    .map((entry) => byId.get(entry.id))
-    .filter((listing): listing is Listing => Boolean(listing && everListed(listing)));
-  const selling = listings.filter(onSale);
-  const prices = selling.map((listing) => listing.priceMinor);
-  const sellers = new Set(selling.map((listing) => listing.sellerId));
+  const items = linkedItems(dna, byId);
+  const listings = listingsOf(items);
+  const selling = items.filter(itemOnSale);
+  const prices = selling.map((item) => item.priceMinor);
+  const sellers = new Set(selling.map((item) => item.listing.sellerId));
   const { heat, label } = heatOf({
     hunting: dna.links.filter((entry) => entry.kind === 'want').length,
     saves: listings.reduce((sum, listing) => sum + (listing.likeCount ?? 0), 0),
@@ -407,7 +585,9 @@ export function summaryOf(dna: ProductDna, byId: Map<string, Listing>): DnaSumma
     pledged: listings.reduce((sum, listing) => sum + (listing.preOrder?.pledgedCount ?? 0), 0),
     waiting: listings.reduce((sum, listing) => sum + (listing.restockWatch?.length ?? 0), 0),
   });
-  const cover = dna.cover ?? (listings[0] ? photoOf(listings[0]) : null);
+  // A listing of this thing alone shows it better than a lot's photo of several.
+  const shownBy = items.find((item) => !item.piece) ?? items[0];
+  const cover = dna.cover ?? (shownBy ? photoOf(shownBy.listing) : null);
   return {
     id: dna.id,
     name: dna.name,
@@ -415,7 +595,7 @@ export function summaryOf(dna: ProductDna, byId: Map<string, Listing>): DnaSumma
     cover,
     lowMinor: prices.length ? Math.min(...prices) : null,
     highMinor: prices.length ? Math.max(...prices) : null,
-    currency: selling[0]?.currency ?? listings[0]?.currency ?? 'INR',
+    currency: selling[0]?.listing.currency ?? listings[0]?.currency ?? 'INR',
     sellers: sellers.size,
     heat,
     heatLabel: label,
