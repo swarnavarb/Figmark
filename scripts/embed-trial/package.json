@@ -1,0 +1,13 @@
+{
+  "name": "figmark-embed-trial",
+  "private": true,
+  "description": "Side-by-side trial: Figmark's photo fingerprints against open image-embedding models. Kept apart from api/ so its model runtime never ships with the Functions app.",
+  "type": "module",
+  "scripts": {
+    "trial": "node trial.mjs"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "4.3.2",
+    "sharp": "0.35.5"
+  }
+}
