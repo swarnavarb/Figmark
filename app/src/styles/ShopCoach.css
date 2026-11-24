@@ -393,7 +393,7 @@
   z-index: 2;
   display: grid;
   gap: 2px;
-  width: min(320px, 100%);
+  width: min(280px, 100%);
   padding: var(--s1);
   border: 1px solid var(--border-strong);
   border-radius: var(--r-md);
@@ -404,8 +404,9 @@
 }
 @keyframes shopcoach-menu { from { opacity: 0; transform: translateY(4px) scale(0.98); } }
 .shopcoach__option {
-  display: grid;
-  gap: 2px;
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
   padding: var(--s2) var(--s3);
   border: 0;
   border-radius: var(--r-sm);
@@ -415,17 +416,74 @@
   text-align: left;
   cursor: pointer;
 }
-.shopcoach__option b { display: flex; align-items: center; justify-content: space-between; font-size: var(--t-sm); }
-.shopcoach__option b svg { color: var(--violet-text); }
-.shopcoach__option span { color: var(--text-dim); font-size: var(--t-xs); line-height: 1.4; }
+.shopcoach__option b { font-size: var(--t-sm); }
+.shopcoach__optiontext > span { color: var(--text-faint); font-size: var(--t-xs); }
+.shopcoach__option > svg { flex: none; color: var(--violet-text); }
 .shopcoach__option:hover, .shopcoach__option.is-on { background: var(--surface-2); }
 
 /* Keyboard focus on every control drawn here. */
 .shopcoach__act:focus-visible, .shopcoach__votes button:focus-visible, .shopcoach__pick:focus-visible,
-.shopcoach__option:focus-visible, .shopcoach--folded:focus-visible {
+.shopcoach__option:focus-visible, .shopcoach--folded:focus-visible, .shopcoach__dyknav button:focus-visible, .shopcoach__dyklink:focus-visible {
   outline: 2px solid var(--violet-text);
   outline-offset: 2px;
 }
+
+/* Did you know? One fact at a time, with arrows. */
+.shopcoach__dyk {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: start;
+  gap: var(--s3);
+  padding: var(--s3);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--surface-2) 80%, transparent);
+}
+.shopcoach__dyktext { display: grid; gap: 6px; min-width: 0; }
+.shopcoach__dyktext p { margin: 0; color: var(--text-dim); font-size: var(--t-sm); line-height: 1.5; }
+.shopcoach__dyktext b { color: var(--gold); font-weight: var(--w-semi); }
+.shopcoach__dyklink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--violet-text);
+  font: inherit;
+  font-size: var(--t-xs);
+  font-weight: var(--w-semi);
+  cursor: pointer;
+}
+.shopcoach__dyklink:hover { text-decoration: underline; text-underline-offset: 3px; }
+.shopcoach__dyknav { display: inline-flex; align-items: center; gap: 2px; color: var(--text-faint); font-size: var(--t-2xs); font-variant-numeric: tabular-nums; }
+.shopcoach__dyknav button {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out);
+}
+.shopcoach__dyknav button:hover { color: var(--text); border-color: var(--border-strong); }
+.shopcoach__dyknav span { min-width: 34px; text-align: center; }
+
+/* The two assistants: a small tile each, so the choice reads at a glance. */
+.shopcoach__who {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  border-radius: var(--r-sm);
+}
+.shopcoach__pick .shopcoach__who { width: 18px; height: 18px; border-radius: 6px; }
+.shopcoach__option .shopcoach__who { width: 30px; height: 30px; }
+.shopcoach__who--figgy { background: var(--violet); color: var(--violet-ink); }
+.shopcoach__who--puter { background: var(--surface-2); color: var(--text-dim); border: 1px solid var(--border-strong); }
+.shopcoach__optiontext { display: grid; gap: 1px; flex: 1; min-width: 0; }
 
 /* ── Phones ───────────────────────────────────────────────────────────── */
 
@@ -436,5 +494,5 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .shopcoach__fill, .shopcoach__typing i, .shopcoach__menu, .shopcoach__act, .shopcoach__votes button { transition: none; animation: none; }
+  .shopcoach__fill, .shopcoach__typing i, .shopcoach__menu, .shopcoach__act, .shopcoach__votes button, .shopcoach__dyknav button { transition: none; animation: none; }
 }

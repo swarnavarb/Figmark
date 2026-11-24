@@ -121,8 +121,8 @@ export const PRO_FEATURES = [
     benefit: 'Know which items are heating up, which customers are drifting away and what your next lot should hold - so you buy what sells and stop guessing.',
   },
   {
-    id: 'coach', icon: '🧭', title: 'Shop coach & Figgy', punch: 'Know what to do next, every day',
-    line: 'Your next best step, the best time to post, a weekly marketing plan, and Figgy answering your selling questions.',
+    id: 'coach', icon: '🧭', title: 'Shop coach & Figgy', punch: 'AI-powered shop assistance',
+    line: 'Helps you market and grow your shop with simple plans and the actions to take: marketing ideas, a weekly plan, and Figgy to answer your questions.',
     benefit: 'The coach reads your listings, orders and timing, and tells you what to do today and when to post - outside Figmark first. Figgy answers fifty everyday selling questions, and it all gets sharper as sellers use it.',
   },
   {
