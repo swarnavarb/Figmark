@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { Modal } from './ui';
+import '../styles/EngageHelp.css';
 
 /**
  * What each Engage card is, in plain words: what it does, when to use it, an
@@ -142,7 +143,8 @@ export function EngageHelp({ id, title, emoji, onStart, onClose }: {
   id: string;
   title: string;
   emoji: string;
-  onStart: () => void;
+  /** Opens the form. Left out when the help is opened from inside the form. */
+  onStart?: () => void;
   onClose: () => void;
 }) {
   const help = ENGAGE_HELP[id];
@@ -184,8 +186,12 @@ export function EngageHelp({ id, title, emoji, onStart, onClose }: {
           </Part>
         )}
         <div className="ehelp__actions">
-          <button type="button" className="btn btn--quiet" onClick={onClose}>Close</button>
-          <button type="button" className="btn" onClick={onStart}>Start now</button>
+          {onStart ? (
+            <>
+              <button type="button" className="btn btn--quiet" onClick={onClose}>Close</button>
+              <button type="button" className="btn" onClick={onStart}>Start now</button>
+            </>
+          ) : <button type="button" className="btn" onClick={onClose}>Got it</button>}
         </div>
       </div>
     </Modal>
