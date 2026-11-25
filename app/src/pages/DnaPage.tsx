@@ -229,6 +229,7 @@ function Hero({ view, onChanged }: { view: DnaView; onChanged: () => Promise<voi
           {dna.name.split(' ').map((word, at) => (
             <span key={`${word}${at}`} className="dnap__word" style={{ ['--i' as string]: at } as CSSProperties}>{word} </span>
           ))}
+          {view.staff && <RenameDna view={view} onChanged={onChanged} />}
         </h1>
         <div className="dnap__vitals">
           <div className="dnap__vital">
@@ -263,6 +264,49 @@ function Hero({ view, onChanged }: { view: DnaView; onChanged: () => Promise<voi
  * Wanted board. Both run for as long as they pick, up to three months, and
  * are then deleted.
  */
+/** Staff: the name buyers know the product by, edited in place. */
+function RenameDna({ view, onChanged }: { view: DnaView; onChanged: () => Promise<void> }) {
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState(view.dna.name);
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    setBusy(true);
+    try {
+      await api.renameDna(view.dna.id, name);
+      setOpen(false);
+      toast('Renamed');
+      await onChanged();
+    } catch (err) {
+      toast(err instanceof ApiRequestError ? err.message : 'That did not go through.', 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <button type="button" className="dnap__rename" aria-label="Rename this product" title="Rename (staff)"
+        onClick={() => { setName(view.dna.name); setOpen(true); }}>
+        <Icon name="compose" size={15} />
+      </button>
+      {open && (
+        <Modal title="Rename this product" onClose={() => setOpen(false)}>
+          <form className="dnap__renameform" onSubmit={(event) => { event.preventDefault(); void save(); }}>
+            <input value={name} maxLength={90} autoFocus aria-label="Product name" onChange={(event) => setName(event.target.value)} />
+            <p className="dnap__renamenote">Every shop's listing on it shows this name. Its old name still finds it.</p>
+            <div className="dnap__renameactions">
+              <button type="button" className="btn btn--quiet" onClick={() => setOpen(false)}>Cancel</button>
+              <button type="submit" className="btn" disabled={busy || name.trim().length < 2 || name.trim() === view.dna.name}>
+                {busy ? 'Saving…' : 'Save name'}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+    </>
+  );
+}
+
 function HeroActions({ view, onChanged }: { view: DnaView; onChanged: () => Promise<void> }) {
   const { user, promptAuth } = useSession();
   const [sheet, setSheet] = useState<'follow' | 'want' | null>(null);
@@ -879,6 +923,10 @@ function FixPanel({ view, onChanged }: { view: DnaView; onChanged: () => Promise
           <div className="dnap__fixrow">
             <span><b>Staff</b> Two DNAs for one product? Fold this one into the right one.</span>
             <button type="button" className="btn btn--quiet btn--sm" onClick={() => setMerging(true)}>Merge into…</button>
+          </div>
+          <div className="dnap__fixrow">
+            <span><b>Staff</b> A clearer name for it?</span>
+            <RenameDna view={view} onChanged={onChanged} />
           </div>
           <div className="dnap__fixrow">
             <span><b>Staff</b> Something here is another product? Split it off.</span>

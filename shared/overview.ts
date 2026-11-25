@@ -38,6 +38,8 @@ export interface OverviewQueues {
   releasesPending: number | null;
   actionsPending: number | null;
   reportsOpen: number | null;
+  /** Listings people said are on the wrong Product DNA, not yet fixed. */
+  dnaReportsOpen: number | null;
 }
 
 export interface OverviewMoney {

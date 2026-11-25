@@ -1,4 +1,5 @@
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
+import { DNA_REPORT_PREFIX, type DnaReport } from '../../../shared/dna.js';
 import { currentRound, decisionOverdue, isClosed, releaseOverdue } from '../../../shared/disputes.js';
 import { SIGNUP_DAYS, activityOf, dailyCounts, type OpsOverview } from '../../../shared/overview.js';
 import { STORE_KINDS, statusOf, storeOf } from '../../../shared/service-stores.js';
@@ -38,7 +39,7 @@ async function overview(request: HttpRequest, context: InvocationContext) {
   const now = Date.now();
   const since = new Date(now - SIGNUP_DAYS * DAY_MS).toISOString();
 
-  const [total, signups, devices, owners, disputes, actions, reports, ledger, email, audit] = await Promise.all([
+  const [total, signups, devices, owners, disputes, actions, reports, ledger, email, audit, dnaReports] = await Promise.all([
     settle(context, 'people', async () => (await repository.pageUsers({ limit: 1 })).total),
     settle(context, 'signups', () => repository.listSignupTimes(since)),
     settle(context, 'devices', () => repository.listClientDevices()),
@@ -49,6 +50,8 @@ async function overview(request: HttpRequest, context: InvocationContext) {
     settle(context, 'ledger', () => loadLedger(repository)),
     settle(context, 'email', () => emailUsage(repository)),
     settle(context, 'audit', () => loadAudit(3)),
+    settle(context, 'dnaReports', async () => (await repository.listSiteContentRange(DNA_REPORT_PREFIX, 'dnarep;'))
+      .filter((row) => (row.data as DnaReport | null)?.status === 'open').length),
   ]);
 
   const openDisputes = disputes?.filter((dispute) => !isClosed(dispute)) ?? null;
@@ -81,6 +84,7 @@ async function overview(request: HttpRequest, context: InvocationContext) {
       releasesPending: releases && releases.length,
       actionsPending: actions && actions.filter((action) => action.status === 'pending').length,
       reportsOpen: reports && reports.filter((report) => report.status === 'open').length,
+      dnaReportsOpen: dnaReports,
     },
     money: ledger && {
       collectedMinor: sum(ledger, (entry) => entry.amountMinor),

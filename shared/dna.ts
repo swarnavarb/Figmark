@@ -513,6 +513,51 @@ export interface DnaManage {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Checking a listing is on the right product                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * What a seller is asked about their own listing, right after it goes live
+ * and whenever it is in doubt: which thing in the photo they are selling,
+ * when it shows several; and whether the product it landed on is it.
+ */
+export interface DnaCheck {
+  listingId: string;
+  /** The lead photo shows several things and nobody has said which: where each sits. */
+  photo: { url: string; boxes: RegionBox[] } | null;
+  /** The product it is on, when that may be wrong; `reports`: how many people said so. */
+  match: { dna: DnaSummary; why: 'reported' | 'name-differs'; reports: number } | null;
+}
+
+/** A listing somebody said is on the wrong product, for its shop and the operators to fix. */
+export interface DnaReport {
+  /** The listing id, with `#piece` for one thing of a lot. */
+  id: string;
+  listingId: string;
+  piece: string | null;
+  dnaId: string;
+  sellerId: string;
+  listingTitle: string;
+  dnaName: string;
+  photoUrl: string | null;
+  status: 'open' | 'fixed' | 'right';
+  /** How many said it is wrong, and right. */
+  no: number;
+  yes: number;
+  /** Who answered, so nobody counts twice. Never shown. */
+  voters: Record<string, 'yes' | 'no'>;
+  /** What the shop did: said it is right, or moved it. */
+  sellerSaid: 'right' | 'moved' | null;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt: string | null;
+  resolvedBy: string | null;
+}
+
+export const DNA_REPORT_PREFIX = 'dnarep:';
+export const dnaReportDocId = (listingId: string, piece: string | null) => `${DNA_REPORT_PREFIX}${listingId}${piece ? `#${piece}` : ''}`;
+
+/* -------------------------------------------------------------------------- */
 /* Following a DNA                                                            */
 /* -------------------------------------------------------------------------- */
 

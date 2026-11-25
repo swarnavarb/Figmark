@@ -11,6 +11,7 @@ import { AuditView } from './AuditView';
 import { LearnView } from './LearnView';
 import { CoachView } from './CoachView';
 import { ReportsView } from './ReportsView';
+import { DnaReportsView } from './DnaReportsView';
 import { SettingsView } from './SettingsView';
 import { PricingView } from './PricingView';
 import { CancelsAdminView, FeesAdminView, ProAdminView } from './ProAdminView';
@@ -197,6 +198,7 @@ function Console() {
           : tab === 'approvals' ? <ApprovalsView />
           : tab === 'payments' ? <PaymentsView />
           : tab === 'reports' ? <ReportsView />
+          : tab === 'dna' ? <DnaReportsView />
           : tab === 'devices' ? <DevicesView />
           : tab === 'coach' ? <CoachView />
           : tab === 'photos' ? <PhotosView />
@@ -217,7 +219,7 @@ function Console() {
 }
 
 const waitingTotal = (queues: OverviewQueues) =>
-  (queues.disputesOpen ?? 0) + (queues.actionsPending ?? 0) + (queues.reportsOpen ?? 0) + (queues.storesPending ?? 0);
+  (queues.disputesOpen ?? 0) + (queues.actionsPending ?? 0) + (queues.reportsOpen ?? 0) + (queues.dnaReportsOpen ?? 0) + (queues.storesPending ?? 0);
 
 /** How long the overview counts as fresh: opening another tab inside it does not ask again. */
 const OVERVIEW_FRESH_MS = 30_000;
