@@ -750,3 +750,16 @@
   .dnap__review.is-flash { animation: none; border-color: var(--aqua); }
   .dnap__shot:hover img { transform: none; }
 }
+
+/* Staff rename, beside the name */
+.dnap__rename {
+  display: inline-grid; place-items: center; width: 32px; height: 32px; margin-left: 4px; vertical-align: middle;
+  border-radius: 999px; border: 1px solid var(--aqua-line); background: var(--aqua-soft); color: var(--aqua); cursor: pointer;
+}
+.dnap__renameform { display: grid; gap: 10px; }
+.dnap__renameform input {
+  width: 100%; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--border);
+  background: var(--surface-2, #151C2B); color: var(--text); font: inherit; font-size: calc(16px * var(--text-scale));
+}
+.dnap__renamenote { margin: 0; color: var(--text-faint); font-size: calc(12px * var(--text-scale)); }
+.dnap__renameactions { display: flex; justify-content: flex-end; gap: 8px; }

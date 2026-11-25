@@ -9643,8 +9643,12 @@ html.is-installed, html.is-installed body { overscroll-behavior-y: none; }
   backdrop-filter: blur(6px);
   animation: smo-fade 220ms var(--ease-out) both;
 }
+/* A dialog opened from inside the moment - a product picker - comes up over it. */
+.smo:has(~ .modal) { z-index: var(--z-sheet); }
 .smo__card {
-  position: relative; overflow: hidden;
+  /* Scrolls inside the screen when a quick question makes it tall. */
+  position: relative; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain;
+  max-height: calc(100dvh - 40px);
   width: min(400px, 100%);
   display: grid; justify-items: center; gap: 6px;
   padding: 30px 22px 20px;

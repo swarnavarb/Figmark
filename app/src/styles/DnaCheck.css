@@ -1,0 +1,72 @@
+/* The seller's quick check, and everybody's "right product?" */
+
+.dnac {
+  display: grid; gap: 10px; padding: 14px; border-radius: 16px; text-align: left;
+  border: 1px solid var(--aqua-line); background: linear-gradient(160deg, rgba(6, 214, 231, 0.08), rgba(124, 58, 237, 0.08));
+}
+.dnac--compact { padding: 12px; margin: 4px 0 10px; }
+.dnac__eyebrow {
+  margin: 0; display: inline-flex; align-items: center; gap: 6px; color: var(--aqua);
+  font-size: calc(11px * var(--text-scale)); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+}
+.dnac__q { margin: 0; font-size: calc(17px * var(--text-scale)); line-height: 1.25; }
+.dnac__hint { margin: 0; color: var(--text-dim); font-size: calc(13px * var(--text-scale)); }
+.dnac__note { margin: 0; color: var(--text-faint); font-size: calc(12px * var(--text-scale)); }
+.dnac__link { border: 0; padding: 0; background: none; color: var(--aqua); font: inherit; font-weight: 600; cursor: pointer; text-decoration: underline; }
+
+.dnac__photo { display: flex; justify-content: center; border-radius: 12px; overflow: hidden; background: var(--surface-2, #151C2B); }
+/* The frame is exactly the picture's size, so each box sits on its thing. */
+.dnac__frame { position: relative; display: inline-block; max-width: 100%; line-height: 0; }
+.dnac__frame img { display: block; max-width: 100%; max-height: 46vh; width: auto; height: auto; }
+.dnac--compact .dnac__frame img { max-height: 30vh; }
+.dnac__box {
+  position: absolute; padding: 0; border: 2px solid var(--aqua); border-radius: 10px; cursor: pointer;
+  background: rgba(6, 214, 231, 0.08); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+  transition: background-color 160ms var(--ease-out), transform 160ms var(--ease-out);
+}
+.dnac__box:active { transform: scale(0.97); background: rgba(6, 214, 231, 0.3); }
+@media (hover: hover) { .dnac__box:hover { background: rgba(6, 214, 231, 0.22); } }
+.dnac__pin {
+  position: absolute; top: 6px; left: 6px; min-width: 26px; height: 26px; padding: 0 6px; border-radius: 999px;
+  display: grid; place-items: center; background: var(--aqua); color: var(--aqua-ink); font-weight: 800;
+  font-size: calc(13px * var(--text-scale));
+}
+.dnac__choices { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.dnac__product {
+  display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 12px; text-decoration: none; color: var(--text);
+  border: 1px solid var(--border); background: var(--surface);
+}
+.dnac__productpic {
+  width: 48px; height: 48px; flex: none; border-radius: 10px; overflow: hidden; display: grid; place-items: center;
+  background: var(--aqua-soft); color: var(--aqua);
+}
+.dnac__productpic img { width: 100%; height: 100%; object-fit: cover; }
+.dnac__producttext { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.dnac__producttext b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dnac__producttext small { color: var(--text-faint); font-size: calc(12px * var(--text-scale)); }
+.dnac__done { margin: 0; display: flex; align-items: center; gap: 6px; color: var(--ok); font-weight: 600; font-size: calc(14px * var(--text-scale)); }
+
+.dnac__newdna {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: 100%; padding: 10px;
+  border-radius: 12px; border: 1px dashed var(--aqua-line); background: transparent; color: var(--aqua); font: inherit; cursor: pointer;
+}
+.dnac__peek { display: grid; gap: 8px; }
+.dnac__peekrow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: calc(14px * var(--text-scale)); color: var(--text-dim); }
+.dnac__peekrow b { color: var(--text); }
+.dnac__peekrow small { color: var(--text-faint); }
+.dnac__peekrow.is-to { color: var(--aqua); }
+
+.dnac__vote {
+  display: flex; align-items: center; gap: 8px; margin: 6px 2px 0; color: var(--text-faint); font-size: calc(13px * var(--text-scale));
+}
+.dnac__vote.is-said { color: var(--text-dim); }
+.dnac__votebtn {
+  padding: 4px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface);
+  color: var(--text); font: inherit; font-size: calc(13px * var(--text-scale)); cursor: pointer;
+}
+.dnac__votebtn:disabled { opacity: 0.6; }
+
+@media (prefers-reduced-motion: reduce) {
+  .dnac__box { transition: none; }
+}

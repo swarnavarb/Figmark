@@ -707,4 +707,70 @@ await check('shops that deal in the line or the kind of thing are named as proba
   assert.ok(!view.couldGet.some((entry) => view.sellingNow.some((listing) => listing.shop?.id === entry.shop.id)), 'never a shop already selling it');
 });
 
+console.log('the seller is asked, viewers can say no, operators fix it');
+
+const checks = await import(new URL('dna-check-routes.js', fns));
+const voterSession = await login(req({ body: { identifier: fixtures.MANAGER_EMAIL, password: fixtures.DEMO_PASSWORD } }), ctx);
+assert.equal(voterSession.status, 200, JSON.stringify(voterSession.jsonBody));
+const voter = { id: voterSession.jsonBody.user.id, headers: { authorization: `Bearer ${voterSession.jsonBody.token}` } };
+let joker;
+
+await check('a photo of several things asks the seller which one they sell, and the answer sticks', async () => {
+  joker = await list(me.id, 'McFarlane DC Multiverse Joker', { authenticity: 'Original' }, 310000, {
+    category: 'Figures', photos: await stored('t800a'), foundBoxes: [[0.04, 0.1, 0.42, 0.8], [0.54, 0.1, 0.42, 0.8]],
+  });
+  forgetCatalogue();
+  const stranger = await checks.dnaCheckRoute(req({ headers: voter.headers, params: { id: joker.id } }), ctx);
+  assert.equal(stranger.status, 403, 'only the shop is asked');
+  const asked = await checks.dnaCheckRoute(req({ headers: me.headers, params: { id: joker.id } }), ctx);
+  assert.equal(asked.status, 200, JSON.stringify(asked.jsonBody));
+  assert.equal(asked.jsonBody.photo?.boxes.length, 2);
+  const answered = await checks.dnaFocusRoute(req({ headers: me.headers, params: { id: joker.id }, body: { box: asked.jsonBody.photo.boxes[0] } }), ctx);
+  assert.equal(answered.status, 200, JSON.stringify(answered.jsonBody));
+  assert.equal(answered.jsonBody.photo, null, 'not asked again');
+  assert.deepEqual((await repository.getListing(joker.id)).dnaFocus.box, asked.jsonBody.photo.boxes[0]);
+  const bad = await checks.dnaFocusRoute(req({ headers: me.headers, params: { id: joker.id }, body: { box: [2, 0, 1, 1] } }), ctx);
+  assert.equal(bad.status, 400);
+});
+
+await check('a viewer says "not the right product": the shop and the operators are told, once', async () => {
+  forgetCatalogue();
+  const own = await checks.dnaVoteRoute(req({ headers: me.headers, body: { listingId: joker.id, right: false } }), ctx);
+  assert.equal(own.status, 400, 'the shop fixes its own instead');
+  const yes = await checks.dnaVoteRoute(req({ headers: voter.headers, body: { listingId: joker.id, right: true } }), ctx);
+  assert.equal(yes.status, 200);
+  assert.equal((await repository.getSiteContent(`dnarep:${joker.id}`))?.data ?? null, null, 'a yes alone keeps nothing');
+  const before = (await repository.listNotifications(me.id, 100)).filter((row) => row.kind === 'dna_report').length;
+  const no = await checks.dnaVoteRoute(req({ headers: voter.headers, body: { listingId: joker.id, right: false } }), ctx);
+  assert.equal(no.status, 200, JSON.stringify(no.jsonBody));
+  await checks.dnaVoteRoute(req({ headers: voter.headers, body: { listingId: joker.id, right: false } }), ctx);
+  const told = (await repository.listNotifications(me.id, 100)).filter((row) => row.kind === 'dna_report');
+  assert.equal(told.length, before + 1, 'told once, as the shop (and as an operator, the same person here)');
+  assert.match(told[0].link, /\?dna=check$/);
+  const asked = await checks.dnaCheckRoute(req({ headers: me.headers, params: { id: joker.id } }), ctx);
+  assert.equal(asked.jsonBody.match?.why, 'reported');
+  assert.equal(asked.jsonBody.match.reports, 1, 'one person, counted once');
+  const queue = await checks.dnaReportsRoute(req({ headers: me.headers }), ctx);
+  if (queue.status === 403) { console.log('      (queue refused: operator has no authenticator)'); return; }
+  const row = queue.jsonBody.reports.find((entry) => entry.listingId === joker.id);
+  assert.equal(row.status, 'open');
+  assert.equal(row.no, 1);
+  assert.equal(row.voters, undefined, 'who said what never leaves the server');
+});
+
+await check('the shop moving it settles the report; operators can rename the product', async () => {
+  const moved = await routes.dnaFixRoute(req({ headers: me.headers, body: { kind: 'listing', id: joker.id, partition: me.id, action: 'new' } }), ctx);
+  assert.equal(moved.status, 200, JSON.stringify(moved.jsonBody));
+  assert.equal((await repository.getSiteContent(`dnarep:${joker.id}`)).data.status, 'fixed');
+  const renamed = await checks.dnaRenameRoute(req({ headers: me.headers, params: { id: moved.jsonBody.dna }, body: { name: 'DC Multiverse Joker (Batman: Three Jokers)' } }), ctx);
+  if (renamed.status === 403) { console.log('      (rename refused: operator has no authenticator)'); return; }
+  assert.equal(renamed.status, 200, JSON.stringify(renamed.jsonBody));
+  forgetDnaIndex();
+  const now = await getDna(repository, moved.jsonBody.dna);
+  assert.equal(now.name, 'DC Multiverse Joker (Batman: Three Jokers)');
+  assert.ok(now.words.includes('joker') && now.words.includes('three'), 'old and new words both find it');
+  const refused = await checks.dnaRenameRoute(req({ headers: voter.headers, params: { id: moved.jsonBody.dna }, body: { name: 'Nope' } }), ctx);
+  assert.ok(refused.status === 401 || refused.status === 403);
+});
+
 console.log(`\n${passed} DNA checks passed`);

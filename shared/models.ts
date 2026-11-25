@@ -1285,6 +1285,13 @@ export interface Listing extends BaseDocument {
    * cannot count lower than the photo shows.
    */
   foundBoxes?: RegionBox[] | null;
+  /**
+   * For one item whose lead photo shows several things: the one the seller
+   * said they are selling, where it sits in the photo; null when they said
+   * every thing in it is the same item (a figure and its box). Product DNA
+   * then matches on that part of the photo alone. Absent until asked.
+   */
+  dnaFocus?: { box: RegionBox | null; at: string } | null;
   photos: ListingPhoto[];
   /**
    * The ladder a buyer reads before this item is in a lot.
@@ -3287,6 +3294,8 @@ export type NotificationKind =
   | 'want_matched'
   /** A Product DNA you follow changed price, came back on sale, or gained a shop. */
   | 'dna_alert'
+  /** Somebody said a listing is on the wrong Product DNA: its shop and the operators are asked to fix it. */
+  | 'dna_report'
   | 'payment_claimed'
   | 'payment_received'
   | 'credit_refunded'
