@@ -2,7 +2,7 @@ import type { CoachPlan, CoachSignals } from '@shared/coach';
 import type { OwnResults } from '@shared/coach-log';
 import type { PhotoAnalysis } from '@shared/photo-scan';
 import type { PayoutSummary } from '@shared/payouts';
-import type { DnaLinkKind, DnaSummary, DnaView } from '@shared/dna';
+import type { DnaLinkKind, DnaManage, DnaSummary, DnaView } from '@shared/dna';
 import type { DayRange, DaySource, ShopDays } from '@shared/step-days';
 import type { LotCostKey, LotSplit } from '@shared/lot-costs';
 import type { CancelFlag, CancelSettings, CancelStats, FeeSettlement, FeeStatement, GiftMethod, GiverKind, PlatformFees, Pricing, ProFeatureId, ProGrant, ProPlan, ProVoucherPreview, StoreGift } from '@shared/billing';
@@ -3844,6 +3844,11 @@ export const api = {
   fixDna: (body: { kind: DnaLinkKind; id: string; partition: string; action: 'remove' | 'move' | 'tag' | 'new'; from?: string; to?: string; piece?: string | null }) =>
     post<{ dna: string | null }>('/dna/fix', body),
   mergeDna: (id: string, into: string) => post<{ dna: string }>(`/dna/view/${encodeURIComponent(id)}/merge`, { into }),
+  /** Staff: everything on a product and the products that may be it, for the fold and split previews. */
+  manageDna: (id: string) => request<DnaManage>(`/dna/view/${encodeURIComponent(id)}/manage`),
+  /** Staff: split some things off a product, onto another or a new one. */
+  splitDna: (id: string, body: { links: { kind: DnaLinkKind; id: string; piece: string | null }[]; into?: string | null; name?: string | null }) =>
+    post<{ dna: string }>(`/dna/view/${encodeURIComponent(id)}/split`, body),
   /** Follow a product for `days` (up to 90), or stop with null. */
   followDna: (id: string, days: number | null) =>
     post<{ follow: { until: string } | null }>(`/dna/view/${encodeURIComponent(id)}/follow`, { days }),

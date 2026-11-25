@@ -4,6 +4,7 @@ import type { DnaListingCard, DnaSummary, DnaView } from '@shared/dna';
 import { ApiRequestError, api } from '../api';
 import { BackLink } from '../components/ScrollManager';
 import { CropPic, DnaHelix, DnaPicker, DnaTile, HeatBand, Stars, dnaHref, sequenceOf } from '../components/DnaKit';
+import { MergeSheet, MovePreview, SplitSheet } from '../components/DnaUpkeep';
 import { useToast } from '../components/Feedback';
 import { Icon } from '../components/Icon';
 import { ReviewPhotoPicker, ReviewPhotoStrip } from '../components/ReviewPhotos';
@@ -852,6 +853,7 @@ function FixPanel({ view, onChanged }: { view: DnaView; onChanged: () => Promise
   const toast = useToast();
   const [moving, setMoving] = useState<DnaView['yourLinks'][number] | null>(null);
   const [merging, setMerging] = useState(false);
+  const [splitting, setSplitting] = useState(false);
   if (view.yourLinks.length === 0 && !view.staff) return null;
   const here: DnaSummary = {
     id: view.dna.id, name: view.dna.name, category: view.dna.category, cover: view.dna.cover, coverBox: view.dna.coverBox,
@@ -872,14 +874,23 @@ function FixPanel({ view, onChanged }: { view: DnaView; onChanged: () => Promise
         </div>
       ))}
       {view.staff && (
-        <div className="dnap__fixrow">
-          <span><b>Staff</b> Two DNAs for one product? Fold this one into the right one.</span>
-          <button type="button" className="btn btn--quiet btn--sm" onClick={() => setMerging(true)}>Merge into…</button>
-        </div>
+        <>
+          <div className="dnap__fixrow">
+            <span><b>Staff</b> Two DNAs for one product? Fold this one into the right one.</span>
+            <button type="button" className="btn btn--quiet btn--sm" onClick={() => setMerging(true)}>Merge into…</button>
+          </div>
+          <div className="dnap__fixrow">
+            <span><b>Staff</b> Something here is another product? Split it off.</span>
+            <button type="button" className="btn btn--quiet btn--sm" onClick={() => setSplitting(true)}>Split off…</button>
+          </div>
+        </>
       )}
       {moving && (
         <DnaPicker title={moving.kind === 'listing' ? 'Which product is your listing?' : 'Which product is it?'}
           seed={moving.title} current={[here]} listingId={moving.kind === 'listing' ? moving.id : undefined} piece={moving.piece}
+          exclude={[view.dna.id]}
+          preview={(to) => <MovePreview view={view} kind={moving.kind} title={moving.title} to={to} />}
+          confirmLabel="Move it"
           onClose={() => setMoving(null)}
           onRemove={moving.kind === 'listing' ? undefined : async (from) => {
             await api.fixDna({ kind: moving.kind, id: moving.id, partition: moving.partition, action: 'remove', from: from.id });
@@ -907,16 +918,8 @@ function FixPanel({ view, onChanged }: { view: DnaView; onChanged: () => Promise
             </button>
           ) : undefined} />
       )}
-      {merging && (
-        <DnaPicker title="Fold this into which product?" seed={view.dna.name} current={[]}
-          onClose={() => setMerging(false)}
-          onPick={async (into) => {
-            if (into.id === view.dna.id) return;
-            await api.mergeDna(view.dna.id, into.id);
-            setMerging(false);
-            navigate(dnaHref(into.id), { replace: true });
-          }} />
-      )}
+      {merging && <MergeSheet view={view} onClose={() => setMerging(false)} />}
+      {splitting && <SplitSheet view={view} onClose={() => setSplitting(false)} onDone={onChanged} />}
     </section>
   );
 }
