@@ -92,7 +92,7 @@ const {
   dnaReviewRoute, dnaFixRoute, dnaMergeRoute, dnaManageRoute, dnaSplitRoute, dnaFollowRoute, dnaWantRoute,
 } = await import(new URL('dna-routes.js', apiRoot));
 const {
-  dnaCheckRoute, dnaFocusRoute, dnaConfirmRoute, dnaVoteRoute, dnaReportsRoute, dnaReportResolveRoute, dnaRenameRoute,
+  dnaCheckRoute, dnaFocusRoute, dnaConfirmRoute, dnaVoteRoute, dnaReportsRoute, dnaReportResolveRoute, dnaRenameRoute, dnaAskRoute,
 } = await import(new URL('dna-check-routes.js', apiRoot));
 const { pushKeyRoute, pushSubscribeRoute, pushUnsubscribeRoute, pushTestRoute } =
   await import(new URL('push-routes.js', apiRoot));
@@ -489,6 +489,7 @@ const routes = [
   ['GET', '/api/dna/view/:id/manage', dnaManageRoute],
   ['POST', '/api/dna/view/:id/split', dnaSplitRoute],
   ['POST', '/api/dna/view/:id/rename', dnaRenameRoute],
+  ['GET', '/api/dna/view/:id/ask', dnaAskRoute],
   ['GET', '/api/dna/check/:id', dnaCheckRoute],
   ['POST', '/api/dna/check/:id/focus', dnaFocusRoute],
   ['POST', '/api/dna/check/:id/confirm', dnaConfirmRoute],

@@ -548,10 +548,36 @@ export interface DnaReport {
   voters: Record<string, 'yes' | 'no'>;
   /** What the shop did: said it is right, or moved it. */
   sellerSaid: 'right' | 'moved' | null;
+  /**
+   * The shop said "no, it is a different product" and moved it, but Figmark
+   * still thinks it is the one it was on: staff take a look.
+   */
+  doubt?: DnaDoubt | null;
   createdAt: string;
   updatedAt: string;
   resolvedAt: string | null;
   resolvedBy: string | null;
+}
+
+/** Why Figmark doubts a shop's "no": what still says it is the product it left. */
+export interface DnaDoubt {
+  why: 'same-photo' | 'same-thing-in-photo' | 'looks-same' | 'same-name';
+  /** Where the shop moved it: another product, or one of its own. */
+  movedTo: { id: string; name: string } | null;
+  at: string;
+}
+
+/** Answers of "yes, it is right" that settle a listing: nobody is asked about it again. */
+export const DNA_YES_SETTLES = 3;
+
+/** A listing on a product the page asks its reader about: does it match? */
+export interface DnaAsk {
+  listingId: string;
+  title: string;
+  photoUrl: string | null;
+  shop: string;
+  /** How many already said it matches. */
+  yes: number;
 }
 
 export const DNA_REPORT_PREFIX = 'dnarep:';

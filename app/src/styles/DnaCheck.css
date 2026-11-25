@@ -57,16 +57,81 @@
 .dnac__peekrow small { color: var(--text-faint); }
 .dnac__peekrow.is-to { color: var(--aqua); }
 
-.dnac__vote {
-  display: flex; align-items: center; gap: 8px; margin: 6px 2px 0; color: var(--text-faint); font-size: calc(13px * var(--text-scale));
+/* "Help the community": the product page asks whether one of its listings matches. */
+.dnaask {
+  position: fixed; left: 0; right: 0; bottom: calc(var(--tabbar-h) + 12px); z-index: var(--z-float);
+  display: flex; justify-content: center; padding: 0 16px; pointer-events: none;
+  animation: dnaask-in 520ms cubic-bezier(0.22, 1.2, 0.36, 1) both;
 }
-.dnac__vote.is-said { color: var(--text-dim); }
-.dnac__votebtn {
-  padding: 4px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface);
-  color: var(--text); font: inherit; font-size: calc(13px * var(--text-scale)); cursor: pointer;
+.dnaask.is-leaving { animation: dnaask-out 240ms ease-in both; }
+.dnaask__card {
+  position: relative; width: min(440px, 100%); pointer-events: auto; padding: 16px 16px 14px; border-radius: 22px;
+  background:
+    radial-gradient(120% 90% at 0% 0%, var(--aqua-soft), transparent 60%),
+    radial-gradient(110% 90% at 100% 100%, var(--violet-soft), transparent 60%),
+    var(--surface);
+  border: 1px solid var(--aqua-line);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+  display: grid; gap: 10px;
 }
-.dnac__votebtn:disabled { opacity: 0.6; }
+.dnaask__close {
+  position: absolute; top: 10px; right: 10px; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
+  border: 0; background: rgba(255, 255, 255, 0.06); color: var(--text-dim); cursor: pointer;
+}
+.dnaask__eyebrow {
+  margin: 0; display: inline-flex; align-items: center; gap: 6px; justify-self: start; padding: 4px 10px; border-radius: 999px;
+  background: var(--aqua-soft); color: var(--aqua); font-size: calc(12px * var(--text-scale)); font-weight: 700; letter-spacing: 0.02em;
+}
+.dnaask__pair { display: flex; align-items: center; justify-content: center; gap: 0; }
+.dnaask__pic {
+  width: 74px; height: 74px; border-radius: 18px; overflow: hidden; flex: none; display: grid; place-items: center;
+  background: var(--surface-2, rgba(255, 255, 255, 0.05)); border: 2px solid var(--border); color: var(--text-faint);
+  animation: dnaask-float 3.2s ease-in-out infinite;
+}
+.dnaask__pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.dnaask__pic.is-dna { border-color: var(--violet-line); animation-delay: -1.6s; }
+.dnaask__link { display: flex; align-items: center; width: 74px; }
+.dnaask__link i { flex: 1; height: 2px; background: repeating-linear-gradient(90deg, var(--aqua-line) 0 5px, transparent 5px 9px); }
+.dnaask__link b {
+  width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; flex: none;
+  background: linear-gradient(135deg, var(--aqua), var(--violet-lit)); color: #fff; font-size: calc(15px * var(--text-scale));
+  box-shadow: 0 0 0 4px var(--aqua-soft); animation: dnaask-pulse 1.8s ease-in-out infinite;
+}
+.dnaask__q { margin: 0; text-align: center; font-size: calc(17px * var(--text-scale)); line-height: 1.3; }
+.dnaask__q span { color: var(--aqua); }
+.dnaask__what {
+  margin: 0; text-align: center; color: var(--text-dim); font-size: calc(13px * var(--text-scale));
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dnaask__what b { color: var(--text); font-weight: 600; }
+.dnaask__choices { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.dnaask__btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 0 12px; border-radius: 14px;
+  border: 1px solid var(--border); background: rgba(255, 255, 255, 0.04); color: var(--text); font: inherit; font-weight: 600; cursor: pointer;
+  transition: transform 120ms ease;
+}
+.dnaask__btn:active { transform: scale(0.97); }
+.dnaask__btn.is-yes { background: var(--aqua); border-color: var(--aqua); color: var(--aqua-ink); }
+.dnaask__btn:disabled { opacity: 0.6; }
+.dnaask__foot { margin: 0; text-align: center; color: var(--text-faint); font-size: calc(12px * var(--text-scale)); }
+.dnaask__thanks { display: grid; justify-items: center; gap: 6px; text-align: center; padding: 6px 18px 4px; }
+.dnaask__thanks p { margin: 0; color: var(--text-dim); font-size: calc(13px * var(--text-scale)); }
+.dnaask__burst {
+  width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; color: #fff;
+  background: linear-gradient(135deg, var(--aqua), var(--violet-lit));
+  animation: dnaask-pop 460ms cubic-bezier(0.22, 1.4, 0.36, 1) both;
+  box-shadow: 0 0 0 0 var(--aqua-line);
+}
+.dnaask.is-said .dnaask__burst { animation: dnaask-pop 460ms cubic-bezier(0.22, 1.4, 0.36, 1) both, dnaask-ring 1.2s 300ms ease-out 2; }
+
+@keyframes dnaask-in { from { opacity: 0; transform: translateY(40px) scale(0.96); } to { opacity: 1; transform: none; } }
+@keyframes dnaask-out { to { opacity: 0; transform: translateY(30px); } }
+@keyframes dnaask-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+@keyframes dnaask-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.12); } }
+@keyframes dnaask-pop { from { transform: scale(0.3); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes dnaask-ring { from { box-shadow: 0 0 0 0 var(--aqua-line); } to { box-shadow: 0 0 0 18px transparent; } }
 
 @media (prefers-reduced-motion: reduce) {
   .dnac__box { transition: none; }
+  .dnaask, .dnaask.is-leaving, .dnaask__pic, .dnaask__link b, .dnaask__burst, .dnaask.is-said .dnaask__burst { animation: none; }
 }
