@@ -34,7 +34,7 @@ import {
 import { shippingOfferClash } from '@shared/offers';
 import { DEAL_DEFAULT_HOURS } from '@shared/deals';
 import {
-  LBox, OptionTiles, PreOrderBox, ToggleRow, isoInDays, type Shape,
+  LBox, OptionTiles, PreOrderBox, ToggleRow, isoInDays, showPreOrderSwitch, type Shape,
 } from '../components/ListingForm';
 import { RarityRibbon } from '../components/Quest';
 import { CostSheetField, type CostSheetDraft } from '../components/CostSheetField';
@@ -1135,7 +1135,8 @@ function SellForm({ serverDraft, draftMissing }: {
                   whenShort={whenShort} onWhenShort={setWhenShort} whenFull={whenFull} onWhenFull={setWhenFull} />
               )}
 
-              <TermsFields value={terms} onChange={setTerms} preOrder={preOrderMode && !deal} privateDeal={Boolean(deal)} priceMinor={priceMinor} withEta={false} withStock={false} />
+              <TermsFields value={terms} onChange={setTerms} preOrder={preOrderMode && !deal} privateDeal={Boolean(deal)} priceMinor={priceMinor} withEta={false} withStock={false}
+                onShowPreOrder={deal ? undefined : showPreOrderSwitch} />
 
               {/* Telling people is part of listing, not a second job to remember
                   afterwards. Both on unless the seller says otherwise. */}

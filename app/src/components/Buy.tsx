@@ -308,8 +308,10 @@ export function termsBody(draft: TermsDraft) {
  * date is its expiry, so both questions step aside rather than being asked
  * twice.
  */
-export function TermsFields({ value, onChange, preOrder = false, publicLater = false, privateDeal = false, priceMinor, forTemplate = false, withEta = true, withStock = true }: {
+export function TermsFields({ value, onChange, preOrder = false, onShowPreOrder, publicLater = false, privateDeal = false, priceMinor, forTemplate = false, withEta = true, withStock = true }: {
   value: TermsDraft;
+  /** Takes the seller to the pre-order switch, when the form has one. */
+  onShowPreOrder?: () => void;
   /** Ask how many there are here; off where the form asks it beside the price. */
   withStock?: boolean;
   /** Ask the delivery time here too; off where the form asks it on its own, outside a fold. */
@@ -381,7 +383,7 @@ export function TermsFields({ value, onChange, preOrder = false, publicLater = f
           </label>
         )}
         <OfferEditor offers={value.offers} onChange={(offers) => set({ offers })} priceMinor={priceMinor ?? 0}
-          shippingMinor={shippingMinorOf(value)} />
+          shippingMinor={shippingMinorOf(value)} preOrder={forTemplate ? undefined : preOrder} onShowPreOrder={onShowPreOrder} />
         {value.offers.length > 0 && (
           <span className="field__hint">
             Offers apply on their own at checkout.{' '}

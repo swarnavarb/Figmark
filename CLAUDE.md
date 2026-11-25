@@ -15,5 +15,5 @@ Rules:
 
 ## Deploying
 
-- Deploy to the `preview` branch by default: after pushing your working branch, merge it into `preview` (`git fetch origin preview && git checkout -B preview FETCH_HEAD && git merge --no-ff --no-edit <branch> -m "Merge <what changed> into preview"`), push `preview`, and switch back to your branch. The `deploy_preview` job publishes it to the preview environment.
-- Never push to `main` or `development` without explicit permission.
+- Deploy to both the `preview` and `development` branches by default: after pushing your working branch, merge it into each in turn (`git fetch origin <target> && git checkout -B <target> FETCH_HEAD && git merge --no-ff --no-edit <branch> -m "Merge <what changed> into <target>"`), push it, and switch back to your branch. The `deploy_preview` job publishes `preview` to the preview environment.
+- Never push to `main` without explicit permission.
