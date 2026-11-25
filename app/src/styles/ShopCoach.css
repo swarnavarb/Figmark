@@ -578,6 +578,7 @@
 .shopcoach__pick .shopcoach__who { width: 18px; height: 18px; border-radius: 6px; }
 .shopcoach__option .shopcoach__who { width: 30px; height: 30px; }
 .shopcoach__who--figgy { background: var(--violet); color: var(--violet-ink); }
+.shopcoach__who--auto { background: var(--surface-2); color: var(--violet); border: 1px solid var(--violet); }
 .shopcoach__who--puter { background: var(--surface-2); color: var(--text-dim); border: 1px solid var(--border-strong); }
 .shopcoach__optiontext { display: grid; gap: 1px; flex: 1; min-width: 0; }
 
