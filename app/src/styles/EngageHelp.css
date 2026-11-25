@@ -1,0 +1,15 @@
+/* The help sheet an Engage card's i opens, from the Engage screen or inside a post form. */
+
+.ehelp { display: grid; gap: var(--s3); font-size: var(--t-sm); line-height: 1.5; }
+.ehelp__part h3 { margin: 0 0 6px; font-size: var(--t-md); }
+.ehelp__part p { margin: 0 0 6px; }
+.ehelp__part ul { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; }
+.ehelp__example { padding: 10px 12px; border-radius: var(--r-md); background: var(--surface-2); border-left: 3px solid var(--violet-lit); font-style: italic; }
+.ehelp__table { display: grid; border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; margin: 6px 0 10px; }
+.ehelp__row { display: grid; grid-template-columns: minmax(84px, 0.9fr) 1fr 1fr; }
+.ehelp__row > span { padding: 8px 10px; border-top: 1px solid var(--border); min-width: 0; overflow-wrap: anywhere; }
+.ehelp__row > span + span { border-left: 1px solid var(--border); }
+.ehelp__row--head > span { border-top: 0; font-weight: var(--w-semi); background: var(--surface-2); }
+.ehelp__row > span[role='rowheader'] { color: var(--text-dim); font-size: var(--t-xs); }
+.ehelp__simple { padding: 10px 12px; border-radius: var(--r-md); background: var(--violet-soft); border: 1px solid var(--violet-line); }
+.ehelp__actions { display: flex; justify-content: flex-end; gap: var(--s2); padding-top: var(--s2); }
