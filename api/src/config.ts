@@ -57,6 +57,13 @@ export interface AppConfig {
    * GEMINI_API_KEY (scan and chat) and GROQ_API_KEY (chat). See free-ai.ts.
    */
   freeAi: FreeAiConfig;
+  /**
+   * Where free-AI requests are sent from, when this API's own region is one the
+   * services refuse (Hong Kong): the clock app's relay route (ai-relay.ts).
+   * AI_RELAY_URL (e.g. https://func-figmark-clocks-dev.azurewebsites.net/api/ai-relay)
+   * and AI_RELAY_SECRET, the same secret the clock app holds. Null: sent direct.
+   */
+  aiRelay: { url: string; secret: string } | null;
   /** Email, WhatsApp and Aadhaar verification. Each piece is null until configured. */
   verification: VerificationConfig;
   /**
@@ -430,6 +437,9 @@ export const config: AppConfig = {
   adminEmails: resolveAdmins(),
   vision: resolveVision(),
   freeAi: resolveFreeAi(),
+  aiRelay: env('AI_RELAY_URL') && env('AI_RELAY_SECRET')
+    ? { url: env('AI_RELAY_URL')!.replace(/\/+$/, ''), secret: env('AI_RELAY_SECRET')! }
+    : null,
   verification: resolveVerification(),
   passwordBreachCheck: env('PASSWORD_BREACH_CHECK') ? env('PASSWORD_BREACH_CHECK') === 'on' : runningInAzure(),
   staffMfa: env('STAFF_MFA') ? env('STAFF_MFA') === 'on' : runningInAzure(),

@@ -198,10 +198,14 @@ async function askOpenAi(provider: FreeAiProvider, ask: Ask): Promise<string> {
 /** One POST to a service. Anything short of a usable answer is `AiUnavailable`. */
 async function post(provider: FreeAiProvider, url: string, headers: Record<string, string>, body: unknown): Promise<unknown> {
   let response: Response;
+  // Through the clock app's relay when this region is refused (see config.aiRelay).
+  const relay = config.aiRelay;
+  const direct = new URL(url);
+  const target = relay ? `${relay.url}/${direct.host}${direct.pathname}${direct.search}` : url;
   try {
-    response = await fetch(url, {
+    response = await fetch(target, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', ...headers },
+      headers: { 'content-type': 'application/json', ...headers, ...(relay ? { 'x-relay-secret': relay.secret } : {}) },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(ANSWER_MS),
     });
@@ -212,12 +216,12 @@ async function post(provider: FreeAiProvider, url: string, headers: Record<strin
     rest(provider.id, await response.text().catch(() => ''));
     throw new AiUnavailable(`${provider.id} is over its free limit`);
   }
-  // It reached the service, so it counts against today's budget whatever came back.
-  await count(provider.id);
   if (!response.ok) {
     const detail = (await response.text().catch(() => '')).slice(0, 300);
-    throw new AiUnavailable(`${provider.id} answered ${response.status}: ${detail}`);
+    throw new AiUnavailable(`${provider.id} answered ${response.status}${relay ? ' (through the relay)' : ''}: ${detail}`);
   }
+  // Only answers count against today's budget: a refusal used none of the service's allowance.
+  await count(provider.id);
   return response.json().catch(() => {
     throw new AiUnavailable(`${provider.id} sent something that was not JSON`);
   });
