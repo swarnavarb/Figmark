@@ -69,6 +69,7 @@ const CATEGORY_OF: Record<NotificationKind, NotificationCategory> = {
   want_listed: 'drops',
   want_matched: 'drops',
   dna_alert: 'drops',
+  dna_report: 'drops',
   preorder_nearly: 'drops',
   preorder_filled: 'drops',
   preorder_due: 'drops',

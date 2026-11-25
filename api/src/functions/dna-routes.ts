@@ -24,6 +24,7 @@ import { error, handler, json } from './http.js';
 import { alertFollowers, followsOf, marketOf, setFollow } from '../dna-follow.js';
 import { timedDays } from '../../../shared/timed.js';
 import { createWant } from './want-routes.js';
+import { settleDnaReport } from './dna-check-routes.js';
 
 /**
  * Product DNA over HTTP.
@@ -751,11 +752,13 @@ async function fix(request: HttpRequest, _context: InvocationContext) {
   } else if (action === 'move') {
     for (const dna of current) if (dna.id !== target!.id) await removeLink(repository, dna.id, kind, id, true, only);
     await addLink(repository, target!.id, entry);
+    if (kind === 'listing') await settleDnaReport(repository, id, piece, 'moved', user.displayName);
   } else {
     if (!listing || !item) return error(400, 'invalid_action', 'Only a listing starts a product of its own.');
     for (const dna of current) await removeLink(repository, dna.id, kind, id, true, only);
     // Blocked everywhere it was, so the matcher starts it a DNA of its own.
     const made = await dnaForItem(repository, listing, item, catalogue, true);
+    await settleDnaReport(repository, id, piece, 'moved', user.displayName);
     if (made) await saveDna(repository, made.id, (dna) => (dna ? {
       ...dna,
       links: dna.links.map((link) => (link.kind === 'listing' && link.id === id && (link.piece ?? null) === piece
@@ -885,6 +888,7 @@ async function split(request: HttpRequest, _context: InvocationContext) {
   const name = typeof body.name === 'string' ? body.name.slice(0, 90) : null;
   const done = await splitDna(repository, from, refs, into, name, catalogue);
   if (typeof done === 'string') return error(400, 'invalid_split', done);
+  for (const ref of refs) if (ref.kind === 'listing') await settleDnaReport(repository, ref.id, ref.piece ?? null, 'staff', 'staff');
   return json(200, { dna: done.id });
 }
 

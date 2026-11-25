@@ -222,9 +222,10 @@ export interface ListingItem {
   set: boolean;
 }
 
+/** The listing as one thing: where the seller said it sits in the photo, when it shows several things. */
 const wholeOf = (listing: Listing): ListingItem => ({
   piece: null, title: listing.title, priceMinor: listing.priceMinor, line: lineOf(listing.category, listing.attributes),
-  boxes: [], sold: false, set: false,
+  boxes: listing.dnaFocus?.box ? [listing.dnaFocus.box] : [], sold: false, set: false,
 });
 
 /**
@@ -288,7 +289,7 @@ export const holds = (dna: ProductDna, listingId: string, piece: string | null) 
 
 /** The fingerprints of the part of the lead photo a piece sits in; every photo's, for the listing as a whole. */
 function hashesOf(listing: Listing, item: ListingItem): string[] {
-  if (!item.piece) return listing.photos.map((photo) => photo.imageHash).filter((hash): hash is string => Boolean(hash));
+  if (!item.piece && item.boxes.length === 0) return listing.photos.map((photo) => photo.imageHash).filter((hash): hash is string => Boolean(hash));
   const lead = listing.photos.find((photo) => photo.isPrimary) ?? listing.photos[0];
   return (lead?.regions ?? [])
     .filter((region) => item.boxes.some((box) => overlapOfBoxes(box, region.box) >= 0.5))
@@ -490,7 +491,7 @@ const pieceScans = new Map<string, Promise<string[]>>();
 async function scanOf(listing: Listing, item: ListingItem): Promise<string[]> {
   const known = hashesOf(listing, item);
   if (known.length > 0) return known;
-  if (!item.piece) return listingHashes(listing);
+  if (!item.piece && item.boxes.length === 0) return listingHashes(listing);
   const lead = listing.photos.find((photo) => photo.isPrimary) ?? listing.photos[0];
   if (!lead?.blobName || item.boxes.length === 0) return [];
   const key = `${lead.blobName}|${JSON.stringify(item.boxes)}`;
@@ -516,7 +517,7 @@ async function pictureOf(listing: Listing, item: ListingItem): Promise<Picture |
   if (!lead?.blobName) return null;
   const photo = await (await getPhotoStore()).read(lead.blobName);
   if (!photo) return null;
-  if (!item.piece || item.boxes.length === 0) return { bytes: photo.bytes, contentType: photo.contentType };
+  if (item.boxes.length === 0) return { bytes: photo.bytes, contentType: photo.contentType };
   if (photo.contentType !== 'image/jpeg') return null;
   return { bytes: encodeJpeg(cropPixels(decodeJpeg(photo.bytes), item.boxes[0]!), 85), contentType: 'image/jpeg' };
 }
@@ -787,6 +788,32 @@ export async function foldLonely(repository: Repo, catalogue: Listing[], limit =
     folded += 1;
   }
   return folded;
+}
+
+/**
+ * Match a listing's whole thing again, after its seller said which part of
+ * the photo it is: off the product the matcher put it on and onto the one it
+ * now matches - or, alone on its product, that product folded into its twin.
+ * An owner's or staff's own link is kept.
+ */
+export async function rematchListing(repository: Repo, listing: Listing, catalogue: Listing[]): Promise<ProductDna[]> {
+  const item = itemsOf(listing).find((each) => each.piece === null);
+  if (!item) return dnasForListing(repository, listing, catalogue);
+  for (const dna of await dnasLinked(repository, 'listing', listing.id)) {
+    const mine = dna.links.find((entry) => sameThing(entry, 'listing', listing.id, null));
+    if (!mine || mine.by !== 'auto') continue;
+    const others = dna.links.some((entry) => entry.kind === 'listing' && entry.id !== listing.id);
+    if (others) {
+      await removeLink(repository, dna.id, 'listing', listing.id, false, null);
+      continue;
+    }
+    const index = await dnaIndex(repository);
+    const twins = candidatesFor(index, listing, item, dna.id)
+      .filter((other) => other.links.some((entry) => entry.kind === 'listing' && entry.id !== listing.id));
+    const found = await bestMatch(listing, item, twins, catalogue).catch(() => null);
+    if (found) await foldDna(repository, dna, found.dna, 'auto');
+  }
+  return dnasForListing(repository, listing, catalogue);
 }
 
 /** For tests: look at every lonely DNA again. */

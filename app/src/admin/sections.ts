@@ -10,7 +10,7 @@ import type { OverviewQueues } from '@shared/overview';
 
 export type Tab =
   | 'overview' | 'users' | 'stores' | 'disputes' | 'approvals' | 'payments' | 'reports'
-  | 'devices' | 'photos' | 'routes' | 'challenge' | 'settings' | 'learn' | 'audit' | 'pricing' | 'pro' | 'fees' | 'cancels' | 'coach';
+  | 'devices' | 'photos' | 'routes' | 'challenge' | 'settings' | 'learn' | 'audit' | 'pricing' | 'pro' | 'fees' | 'cancels' | 'coach' | 'dna';
 
 export interface Section {
   tab: Tab;
@@ -35,6 +35,7 @@ export const GROUPS: { title: string | null; sections: Section[] }[] = [
       { tab: 'disputes', label: 'Disputes', icon: 'forum', queue: 'disputesOpen' },
       { tab: 'approvals', label: 'Approvals', icon: 'check', queue: 'actionsPending' },
       { tab: 'reports', label: 'Reports', icon: 'megaphone', queue: 'reportsOpen' },
+      { tab: 'dna', label: 'Product DNA', icon: 'dna', queue: 'dnaReportsOpen' },
     ],
   },
   {

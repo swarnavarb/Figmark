@@ -26,7 +26,9 @@ export interface MomentAction {
   onClick: () => void;
 }
 
-export function SuccessMoment({ tone = 'success', title, body, detail, primary, secondary, confetti = false, onClose }: {
+export function SuccessMoment({ tone = 'success', title, body, detail, primary, secondary, confetti = false, onClose, extra }: {
+  /** Something to answer before leaving, under the words: a quick question. */
+  extra?: ReactNode;
   tone?: MomentTone;
   title: string;
   body?: ReactNode;
@@ -59,6 +61,7 @@ export function SuccessMoment({ tone = 'success', title, body, detail, primary, 
         <h2 className="smo__title">{title}</h2>
         {detail && <p className="smo__detail">{detail}</p>}
         {body && <p className="smo__body">{body}</p>}
+        {extra}
         <div className="smo__actions">
           <button type="button" className="btn btn--lg btn--block"
             onClick={() => { (primary?.onClick ?? onClose)(); if (primary) onClose(); }}>
