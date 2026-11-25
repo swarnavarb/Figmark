@@ -28,6 +28,7 @@ Set these as Static Web App application settings
 | `GEMINI_API_KEY` | optional | Free key from Google AI Studio (no card). Behind Puter: "Scan with AI" and the coach chat. `GEMINI_MODEL` overrides `gemini-flash-lite-latest`; `GEMINI_DAILY_LIMIT` (450) is the site's own daily budget for it. |
 | `GROQ_API_KEY` | optional | Free key from console.groq.com (no card). Behind Puter: the coach chat. `GROQ_MODEL` overrides `openai/gpt-oss-120b`; `GROQ_DAILY_LIMIT` (900). |
 | `FREE_AI_<n>_URL`, `_KEY`, `_MODEL` | optional | Any more free OpenAI-compatible APIs, `n` = 1-20 (OpenRouter, Cerebras, Mistral, Cloudflare...). Optional `_NAME`, `_DAILY` (100), `_VISION` (`on` if it reads photos), `_CHAT` (on). Set `_DAILY` a little under the plan's free limit. |
+| `AI_RELAY_URL`, `AI_RELAY_SECRET` | optional | Send the free-AI calls through the clock app's relay, because Gemini and Groq refuse this API's region (Hong Kong). The clock app needs the same `AI_RELAY_SECRET`. See AZURE.md, "The AI relay". |
 
 After setting them, open `/api/health` signed in as an operator: every line
 should read connected, `sessionSecretSource` should be `configured`, and
