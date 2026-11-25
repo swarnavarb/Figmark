@@ -509,7 +509,7 @@ await check('sharing outside comes before the channel, in tips, the week and the
   const week = coach.weekPlan(healthy(), coach.bestTime({ hours: new Array(24).fill(0), days: new Array(7).fill(0), sample: 0 }));
   const outside = week.filter((day) => /WhatsApp|Instagram|group/i.test(day.detail)).length;
   assert.ok(outside >= 4, `outside jobs: ${outside}`);
-  assert.match(coach.coachBrief(healthy(), plan), /lead with marketing outside Figmark/);
+  assert.match(coach.coachBrief(healthy(), plan), /Outside Figmark, where new buyers are/);
 });
 
 await check('every answer says what kind it is, so it can be rated', () => {
@@ -634,6 +634,15 @@ await check('somebody who does not help run the shop is refused; signed out is r
   assert.equal(own.status, 404, 'no shop of their own to coach');
   const anon = await coachRoute(req(), ctx);
   assert.equal(anon.status, 401);
+});
+
+await check('the AI is told: followers and the channel are the buyer list, never private contacts', () => {
+  const brief = coach.coachBrief(healthy(), coach.coachPlan(healthy()));
+  assert.match(brief, /follow the shop and its channel on Figmark/);
+  assert.match(brief, /never to collect buyers' phone numbers, emails or WhatsApp contacts/);
+  assert.match(brief, /always cover both/);
+  const guide = coach.answerOffline('How do I get more buyers?', coach.coachPlan(healthy())).text;
+  assert.match(guide, /follow your shop and channel/);
 });
 
 await check('Auto: Figgy answers what its guides answer well, the AI takes the rest', () => {
