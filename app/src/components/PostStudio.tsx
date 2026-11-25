@@ -15,6 +15,7 @@ import { formatMoney } from '../format';
 import { shrink } from './PhotoManager';
 import { ErrorNotice, Modal, Thumb, leadPhoto } from './ui';
 import { Icon } from './Icon';
+import { InfoTip } from './InfoTip';
 import { PostPreview } from './PostPreview';
 import { useSession } from '../session';
 import { CREDIT_LIFE_DAYS } from '@shared/play';
@@ -1118,6 +1119,15 @@ export function PostStudio({
 
           {mode === 'spread' && (
             <>
+              <p className="pstudio__note">
+                <Icon name="megaphone" size={14} /> You pay store credit for each <b>new person who joins Figmark</b> through a sharer&apos;s link. They do not need to buy.
+                Use it to get new followers or fill a live drop.{' '}
+                <InfoTip label="How is this different from affiliate commission?">
+                  <p><b>Spread the word</b> pays for new people who join. No purchase is needed. It runs for a short time, and the reward is store credit for your shop.</p>
+                  <p><b>Affiliate commission</b> pays for a sale of one item, from any buyer. It is always on, and the reward is money in the sharer&apos;s wallet. You set it on the item.</p>
+                  <p>Want more people? Spread the word. Want more sales of an item? Affiliate.</p>
+                </InfoTip>
+              </p>
               <Choice label="What are people sharing" value={spreadOn} onChange={setSpreadOn}
                 options={[{ id: 'shop', label: '🏪 Your shop' }, { id: 'drop', label: '⚡ A live drop' }, { id: 'listing', label: '🏷️ An item' }]} />
               {spreadOn === 'drop' && (
