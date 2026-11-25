@@ -509,7 +509,7 @@ await check('sharing outside comes before the channel, in tips, the week and the
   const week = coach.weekPlan(healthy(), coach.bestTime({ hours: new Array(24).fill(0), days: new Array(7).fill(0), sample: 0 }));
   const outside = week.filter((day) => /WhatsApp|Instagram|group/i.test(day.detail)).length;
   assert.ok(outside >= 4, `outside jobs: ${outside}`);
-  assert.match(coach.coachBrief(healthy(), plan), /Outside Figmark, where new buyers are/);
+  assert.match(coach.coachBrief(healthy(), plan), /First outside Figmark, where new buyers are/);
 });
 
 await check('every answer says what kind it is, so it can be rated', () => {
@@ -640,9 +640,30 @@ await check('the AI is told: followers and the channel are the buyer list, never
   const brief = coach.coachBrief(healthy(), coach.coachPlan(healthy()));
   assert.match(brief, /follow the shop and its channel on Figmark/);
   assert.match(brief, /never to collect buyers' phone numbers, emails or WhatsApp contacts/);
-  assert.match(brief, /always cover both/);
+  assert.match(brief, /always in this order/);
   const guide = coach.answerOffline('How do I get more buyers?', coach.coachPlan(healthy())).text;
   assert.match(guide, /follow your shop and channel/);
+});
+
+await check('marketing goes outside first, then inside with Spread the word and Engage', () => {
+  const plan = coach.coachPlan(healthy());
+  const brief = coach.coachBrief(healthy(), plan);
+  assert.ok(brief.indexOf('First outside Figmark') < brief.indexOf('Spread the word'), 'outside, then Spread the word');
+  assert.match(brief, /Recommend Spread the word and at least one other Engage feature/);
+  const market = coach.answerOffline('How do I get more buyers?', plan).text;
+  assert.ok(market.indexOf('WhatsApp') < market.indexOf('Spread the word'), 'the guide: outside first');
+  assert.ok(market.indexOf('Spread the word') < market.indexOf('Affiliate commission'), 'then Engage before the rest');
+  const spread = coach.answerOffline('How is spread the word beneficial for me?', plan);
+  assert.equal(spread.source, 'spread');
+  assert.match(spread.text, /store credit/);
+});
+
+await check('each guide\'s steps are its own: the listing guide says how to list', () => {
+  const plan = coach.coachPlan(healthy());
+  assert.match(coach.answerOffline('How do I list an item?', plan).text, /Press "List an item"/);
+  // No two guides share the same steps: one pasted over another shows up here.
+  const steps = coach.GUIDES.filter((guide) => guide.steps).map((guide) => guide.steps);
+  assert.equal(new Set(steps).size, steps.length);
 });
 
 await check('Auto: Figgy answers what its guides answer well, the AI takes the rest', () => {
