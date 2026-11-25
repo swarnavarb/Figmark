@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { cameFromListing } from '../dnaCameFrom';
 import { Link } from 'react-router-dom';
 import { ApiRequestError, api, type PhotoSalesResponse } from '../api';
 import { useSession } from '../session';
@@ -287,7 +288,7 @@ export function PhotoSales({ url, about = '', by = '', poster = null, onLeave, t
     // One thing, already known: its own product page, nothing to spot.
     const direct = (
       <Link to={`/dna/${encodeURIComponent(single.id)}`} className={`pdna pdna--${tone}`}
-        onClick={(event) => { event.stopPropagation(); onLeave?.(); }}
+        onClick={(event) => { event.stopPropagation(); cameFromListing(listingId!); onLeave?.(); }}
         onTouchStart={(event) => event.stopPropagation()} onTouchEnd={(event) => event.stopPropagation()}>
         <span className="pdna__mark" aria-hidden="true">
           <span className="pdna__strand" /><span className="pdna__strand pdna__strand--b" />

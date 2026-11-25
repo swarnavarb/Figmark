@@ -792,6 +792,9 @@ await check('a product page asks its reader about one listing on it, until enoug
   const asked = await checks.dnaAskRoute(req({ headers: voter.headers, params: { id: product.id } }), ctx);
   assert.equal(asked.status, 200, JSON.stringify(asked.jsonBody));
   assert.ok([theirs.id, mine.id].includes(asked.jsonBody.ask?.listingId), JSON.stringify(asked.jsonBody));
+  const cameFrom = asked.jsonBody.ask.listingId === mine.id ? theirs.id : mine.id;
+  const fromAsk = await checks.dnaAskRoute(req({ headers: voter.headers, params: { id: product.id }, query: { from: cameFrom } }), ctx);
+  assert.equal(fromAsk.jsonBody.ask?.listingId, cameFrom, 'the item the reader came from first');
   const ownAsk = await checks.dnaAskRoute(req({ headers: me.headers, params: { id: product.id } }), ctx);
   assert.equal(ownAsk.jsonBody.ask?.listingId, theirs.id, 'never about your own listing');
   // Three people already said yes to both: nobody is asked about them again.
