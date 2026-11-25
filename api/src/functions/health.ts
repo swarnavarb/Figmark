@@ -91,7 +91,7 @@ async function freeAiHealth(): Promise<NonNullable<HealthResponse['freeAi']>> {
     scan: status.scan,
     chat: status.chat,
     detail: services.length > 0
-      ? `Puter first, then the free keys: ${services.map((s) => `${s.id} (${s.model}) ${s.used}/${s.daily} today${s.resting ? ', resting' : ''}`).join('; ')}.${status.scan ? '' : ' None reads photos: set GEMINI_API_KEY or a FREE_AI_<n>_VISION service.'}`
+      ? `Puter first, then the free keys: ${services.map((s) => `${s.id} (${s.model}) ${s.used}/${s.daily} today${s.resting ? ', resting' : ''}${s.lastFailure ? `, last refusal ${s.lastFailure.at}: ${s.lastFailure.message}` : ''}`).join('; ')}.${status.scan ? '' : ' None reads photos: set GEMINI_API_KEY or a FREE_AI_<n>_VISION service.'}`
       : 'Puter only: no free keys behind it. Set GEMINI_API_KEY, GROQ_API_KEY or FREE_AI_<n>_URL/_KEY/_MODEL.',
   };
 }

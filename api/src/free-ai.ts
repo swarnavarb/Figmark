@@ -28,6 +28,8 @@ type Task = 'scan' | 'chat';
 /** How long one answer may take before the next service is tried. */
 const ANSWER_MS = 30_000;
 const USAGE_ID = 'free-ai-usage';
+/** The last thing each service said when it would not answer, for the people running the site. */
+const FAILURES_ID = 'free-ai-failures';
 /** How long a read of today's counts is trusted before the store is asked again. */
 const USAGE_FRESH_MS = 15_000;
 
@@ -127,11 +129,11 @@ export async function plan(task: Task, now = Date.now()): Promise<FreeAiProvider
 }
 
 /** Each service's use today against its budget, for the people running the site. */
-export async function freeAiUsage(): Promise<{ id: string; model: string; used: number; daily: number; scan: boolean; chat: boolean; resting: boolean }[]> {
-  const { counts } = await usageToday();
+export async function freeAiUsage(): Promise<{ id: string; model: string; used: number; daily: number; scan: boolean; chat: boolean; resting: boolean; lastFailure: { at: string; message: string } | null }[]> {
+  const [{ counts }, failed] = await Promise.all([usageToday(), lastFailures()]);
   return config.freeAi.map((provider) => ({
     id: provider.id, model: provider.model, used: counts[provider.id] ?? 0, daily: provider.daily,
-    scan: provider.vision, chat: provider.chat, resting: resting(provider.id),
+    scan: provider.vision, chat: provider.chat, resting: resting(provider.id), lastFailure: failed[provider.id] ?? null,
   }));
 }
 
@@ -221,6 +223,33 @@ async function post(provider: FreeAiProvider, url: string, headers: Record<strin
   });
 }
 
+/**
+ * Keeps the service's last refusal where any instance's health report can
+ * show it: a wrong key, a retired model or a blocked region otherwise shows
+ * only as "used up". Never the key itself - only what the service said.
+ */
+async function noteFailure(id: string, message: string): Promise<void> {
+  try {
+    await (await getRepository()).mutateSiteContent(FAILURES_ID, (current) => {
+      const at = new Date().toISOString();
+      const data = { ...((current?.data as Record<string, { at: string; message: string }> | undefined) ?? {}) };
+      data[id] = { at, message: message.replace(/\s+/g, ' ').slice(0, 240) };
+      return { id: FAILURES_ID, data, updatedBy: null, createdAt: current?.createdAt ?? at, updatedAt: at, ttl: 7 * 86_400 };
+    });
+  } catch {
+    // Only a diagnostic.
+  }
+}
+
+/** Each service's last refusal, if any. */
+async function lastFailures(): Promise<Record<string, { at: string; message: string }>> {
+  try {
+    return ((await (await getRepository()).getSiteContent(FAILURES_ID))?.data as Record<string, { at: string; message: string }> | undefined) ?? {};
+  } catch {
+    return {};
+  }
+}
+
 /** The first service, in budget order, that gives a usable answer. */
 async function answer(task: Task, ask: Ask): Promise<AiReply> {
   const order = await plan(task);
@@ -233,6 +262,7 @@ async function answer(task: Task, ask: Ask): Promise<AiReply> {
     } catch (error) {
       if (!(error instanceof AiUnavailable)) throw error;
       failures.push(error.message);
+      await noteFailure(provider.id, error.message);
     }
   }
   throw new AiUnavailable(failures.length > 0 ? failures.join('; ') : `no free ${task} service has budget left today`);
