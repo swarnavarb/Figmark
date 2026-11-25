@@ -554,7 +554,8 @@ function ShopsStrand({ view }: { view: DnaView }) {
       )}
       {couldGet.length > 0 && (
         <div className="dnap__shopgroup">
-          <h3 className="dnap__subhead">Could get it</h3>
+          <h3 className="dnap__subhead">Probably could get it</h3>
+          <p className="dnap__subnote">Not selling it here, but they deal in this line or this kind of thing. Ask them.</p>
           <div className="dnap__shopchips">
             {couldGet.map(({ shop, because }) => <ShopChip key={shop.id} shop={shop} note={because} />)}
           </div>

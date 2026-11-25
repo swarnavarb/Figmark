@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { factsOf } from '../../../shared/category-specs.js';
 import {
-  DNA_TAGS_PER_POST, dnaDocId, heatOf, linkKey, productWords,
+  DNA_TAGS_PER_POST, dnaDocId, heatOf, isMakerWord, linkKey, productWords, sameCategory,
   type DnaHuntCard, type DnaLinkKind, type DnaListingCard, type DnaManage, type DnaThing, type DnaPhoto, type DnaPostCard, type DnaReviewCard,
   type DnaShop, type DnaSummary, type DnaTimelineEntry, type DnaView, type ProductDna,
 } from '../../../shared/dna.js';
@@ -204,25 +204,55 @@ async function buildView(repository: Repo, dna: ProductDna, viewerId: string | n
       return shop ? [{ shop, units }] : [];
     });
 
-  // Shops that list things sharing this product's telling words, but not this product.
-  const telling = dna.words.filter((word) => word.length > 2);
-  const near = new Map<string, { hits: number; words: Set<string> }>();
+  // ---- shops that could probably get it ------------------------------------
+  // Not selling it here, but dealing in what it is: the thing's own name
+  // ("Scarecrow") counts most, then its maker or range ("McFarlane", "DC
+  // Multiverse") - a shop that lists a line again and again can usually get
+  // the rest of it - then its category. Read off everything each shop has
+  // ever listed, titles and tags.
+  const telling = dna.words.filter((word) => word.length > 1);
+  const near = new Map<string, { score: number; words: Map<string, number>; inCategory: number }>();
+  const written = new Map<string, string>();
   for (const listing of catalogue) {
     if (sellerIds.has(listing.sellerId) || !everListed(listing)) continue;
-    const shared = productWords(listing.title).filter((word) => telling.includes(word));
-    if (shared.length < Math.min(2, telling.length)) continue;
-    const entry = near.get(listing.sellerId) ?? { hits: 0, words: new Set<string>() };
-    entry.hits += shared.length;
-    shared.forEach((word) => entry.words.add(word));
+    const has = new Set([...productWords(listing.title), ...listing.tags.flatMap((tag) => productWords(tag))]);
+    const shared = telling.filter((word) => has.has(word));
+    // How shops write each word ("McFarlane", "DC"), to say it back the same way.
+    for (const token of listing.title.split(/\s+/)) {
+      const bare = token.replace(/[^\p{L}\p{N}]+/gu, '');
+      const key = bare.toLowerCase();
+      if (shared.includes(key) && !written.has(key)) written.set(key, bare);
+    }
+    const inCategory = sameCategory(listing.category, dna.category);
+    if (shared.length === 0 && !inCategory) continue;
+    const entry = near.get(listing.sellerId) ?? { score: 0, words: new Map<string, number>(), inCategory: 0 };
+    for (const word of shared) entry.words.set(word, (entry.words.get(word) ?? 0) + 1);
+    if (inCategory) entry.inCategory += 1;
     near.set(listing.sellerId, entry);
   }
-  const nearIds = [...near.entries()].sort(([, a], [, b]) => b.hits - a.hits).slice(0, 6).map(([id]) => id);
+  for (const entry of near.values()) {
+    let score = 0;
+    for (const [word, times] of entry.words) score += (isMakerWord(word) ? 1.5 : 3) * Math.min(times, 4);
+    // The thing's own name in a listing of the same kind is the strongest hint; the category alone, the weakest.
+    entry.score = score + Math.min(entry.inCategory, 6) * 0.4;
+  }
+  const nearIds = [...near.entries()]
+    .filter(([, entry]) => entry.score >= 1)
+    .sort(([, a], [, b]) => b.score - a.score || b.inCategory - a.inCategory)
+    .slice(0, 8).map(([id]) => id);
   const nearUsers = nearIds.length ? await repository.listUsersByIds(nearIds) : [];
   const nearById = new Map(nearUsers.map((user) => [user.id, user]));
-  const spell = (word: string) => word.charAt(0).toUpperCase() + word.slice(1);
+  const spell = (word: string) => written.get(word)
+    ?? (word.length <= 2 ? word.toUpperCase() : word.charAt(0).toUpperCase() + word.slice(1));
   const couldGet = nearIds.flatMap((id) => {
     const shop = shopOf(nearById.get(id));
-    return shop ? [{ shop, because: `Lists ${[...near.get(id)!.words].slice(0, 3).map(spell).join(' ')}` }] : [];
+    const entry = near.get(id)!;
+    const words = [...entry.words.entries()].sort(([a, x], [b, y]) => Number(isMakerWord(a)) - Number(isMakerWord(b)) || y - x)
+      .slice(0, 3).map(([word]) => spell(word));
+    const because = words.length > 0
+      ? `Lists ${words.join(', ')}`
+      : `Sells ${dna.category} · ${entry.inCategory} listing${entry.inCategory === 1 ? '' : 's'}`;
+    return shop ? [{ shop, because }] : [];
   });
 
   // ---- reviews -----------------------------------------------------------

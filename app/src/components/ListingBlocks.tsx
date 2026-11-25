@@ -268,7 +268,9 @@ export function DetailBlocks({ listing }: { listing: Listing }) {
  * thumbnails under it, and a tap on the stage opens it full screen, growing
  * out of the frame it was in.
  */
-export function Gallery({ photos, title, fallback, children, overlay }: {
+export function Gallery({ photos, title, fallback, children, overlay, listingId }: {
+  /** The listing shown: its photos' Product DNA goes to its product when it sells one thing. */
+  listingId?: string;
   photos: string[];
   title: string;
   /** What stands in when there are no photos at all. */
@@ -314,7 +316,7 @@ export function Gallery({ photos, title, fallback, children, overlay }: {
       )}
 
       {open && (
-        <Lightbox photos={photos} start={at} origin={open} royal title={title}
+        <Lightbox photos={photos} start={at} origin={open} royal title={title} listingId={listingId}
           onClose={() => setOpen(null)} />
       )}
     </div>
