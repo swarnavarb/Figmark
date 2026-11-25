@@ -8,6 +8,7 @@ import { useToast } from './Feedback';
 import { Icon } from './Icon';
 import { useSession } from '../session';
 import { useReducedMotion } from '../motion';
+import { listingCameFrom } from '../dnaCameFrom';
 import '../styles/DnaCheck.css';
 
 /**
@@ -232,7 +233,7 @@ export function DnaAskPopup({ dnaId, dnaName, cover, coverBox }: {
       if (Date.now() - last < ASK_AGAIN_MS) return undefined;
     } catch { /* asked anyway */ }
     let live = true;
-    const found = api.dnaAsk(dnaId).then((answer) => answer.ask).catch(() => null);
+    const found = api.dnaAsk(dnaId, listingCameFrom()).then((answer) => answer.ask).catch(() => null);
     const timer = window.setTimeout(() => { void found.then((next) => { if (live && next) setAsk(next); }); }, ASK_AFTER_MS);
     return () => { live = false; window.clearTimeout(timer); };
   }, [dnaId, user]);
@@ -260,6 +261,7 @@ export function DnaAskPopup({ dnaId, dnaName, cover, coverBox }: {
     }
   };
   const others = ask.yes;
+  const yours = ask.listingId === listingCameFrom();
 
   return (
     <aside className={`dnaask${leaving ? ' is-leaving' : ''}${said ? ' is-said' : ''}`} role="dialog" aria-label="Help the community">
@@ -281,8 +283,11 @@ export function DnaAskPopup({ dnaId, dnaName, cover, coverBox }: {
               <span className="dnaask__link" aria-hidden="true"><i /><b>?</b><i /></span>
               <span className="dnaask__pic is-dna">{cover ? <CropPic src={cover} box={coverBox} /> : <Icon name="dna" size={18} />}</span>
             </div>
-            <h3 className="dnaask__q">Does this listing match <span>{dnaName}</span>?</h3>
+            <h3 className="dnaask__q">
+              {yours ? 'Does this product DNA match the item you came from?' : 'Does this product DNA match this item?'}
+            </h3>
             <p className="dnaask__what"><b>{ask.title}</b> · {ask.shop}</p>
+            <p className="dnaask__dna">This product DNA: <span>{dnaName}</span></p>
             <div className="dnaask__choices">
               <button type="button" className="dnaask__btn is-yes" disabled={busy} onClick={() => void answer(true)}>
                 <Icon name="check" size={15} /> Yes, it matches

@@ -3853,7 +3853,8 @@ export const api = {
   dnaConfirm: (listingId: string) => post<{ ok: true }>(`/dna/check/${encodeURIComponent(listingId)}/confirm`, {}),
   /** Anybody: is this listing on the right product? */
   dnaVote: (listingId: string, right: boolean) => post<{ ok: true; reported: boolean; yes: number | null }>('/dna/vote', { listingId, right }),
-  dnaAsk: (dnaId: string) => request<{ ask: DnaAsk | null }>(`/dna/view/${encodeURIComponent(dnaId)}/ask`),
+  dnaAsk: (dnaId: string, from: string | null = null) =>
+    request<{ ask: DnaAsk | null }>(`/dna/view/${encodeURIComponent(dnaId)}/ask${from ? `?from=${encodeURIComponent(from)}` : ''}`),
   /** Staff: the name buyers know the product by. */
   renameDna: (id: string, name: string) => post<{ name: string }>(`/dna/view/${encodeURIComponent(id)}/rename`, { name }),
   manageDna: (id: string) => request<DnaManage>(`/dna/view/${encodeURIComponent(id)}/manage`),

@@ -21,6 +21,7 @@ import { ProtectedNote, SellerTick } from '../components/Trust';
 import { ListingPosts } from '../components/ListingPosts';
 import { ListingDna } from '../components/DnaKit';
 import { DnaCheckFlow } from '../components/DnaCheck';
+import { cameFromListing } from '../dnaCameFrom';
 import { Glyph, RarityRibbon } from '../components/Quest';
 import { BumpHelp, InfoTip, useBump } from '../components/QuestKit';
 import { listingRarity } from '@shared/quest';
@@ -85,6 +86,8 @@ export function ListingPage() {
   const checkRef = useRef<HTMLDivElement>(null);
   // Opened from "is it on the right product?": the check is shown, scrolled to.
   const wantsCheck = params.get('dna') === 'check';
+  // Its product page asks about this item first: "the item you came from".
+  useEffect(() => { if (id) cameFromListing(id); }, [id]);
   useEffect(() => {
     if (!wantsCheck) return undefined;
     const timer = window.setTimeout(() => checkRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 900);
