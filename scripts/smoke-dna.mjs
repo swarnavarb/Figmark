@@ -694,4 +694,17 @@ await check('staff see what is on a product and its likely twins, and split one 
   assert.equal(empty.status, 400);
 });
 
+await check('shops that deal in the line or the kind of thing are named as probably able to get it', async () => {
+  const third = all.find((listing) => listing.sellerId !== me.id && listing.sellerId !== otherSeller)?.sellerId;
+  assert.ok(third, 'the fixtures have a third shop');
+  await list(third, 'McFarlane DC Multiverse Batman Hush', { authenticity: 'Original' }, 300000, { category: 'Figures' });
+  forgetCatalogue();
+  const product = await of(scarecrowA);
+  const view = (await routes.dnaViewRoute(req({ params: { id: product.id } }), ctx)).jsonBody;
+  const mine = view.couldGet.find((entry) => entry.shop.id === third);
+  assert.ok(mine, JSON.stringify(view.couldGet));
+  assert.match(mine.because, /McFarlane|DC|Multiverse|Scarecrow/);
+  assert.ok(!view.couldGet.some((entry) => view.sellingNow.some((listing) => listing.shop?.id === entry.shop.id)), 'never a shop already selling it');
+});
+
 console.log(`\n${passed} DNA checks passed`);

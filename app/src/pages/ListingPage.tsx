@@ -412,7 +412,7 @@ export function ListingPage() {
 
       <div className="detail">
         <div>
-          <Gallery photos={photos} title={listing.title}
+          <Gallery photos={photos} title={listing.title} listingId={listing.id}
             overlay={data.isOwn ? null : (
               <button type="button" className={`qheart${liked ? ' is-on' : ''}${lock}`} onClick={gate(() => {
                 setHeartPop({ id: Date.now(), gain: !liked });
