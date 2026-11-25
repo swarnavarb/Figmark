@@ -139,6 +139,16 @@
 .pstudio__herocopy { display: grid; gap: 2px; min-width: 0; }
 .pstudio__herocopy strong { font: var(--w-bold) var(--t-md)/1.2 var(--display); color: var(--text); }
 .pstudio__herocopy span { font-size: var(--t-sm); color: var(--text-dim); line-height: 1.35; }
+.pstudio__herocopy { flex: 1; }
+.pstudio__info {
+  position: relative; flex: none; align-self: flex-start; display: grid; place-items: center; width: 28px; height: 28px; padding: 0;
+  border-radius: 50%; border: 1px solid color-mix(in srgb, var(--hero) 55%, transparent); background: var(--surface);
+  color: var(--text); font: italic 700 14px/1 Georgia, 'Times New Roman', serif; cursor: pointer;
+  transition: background var(--dur-1) ease, border-color var(--dur-1) ease;
+}
+.pstudio__info::before { content: ''; position: absolute; inset: -8px; }
+.pstudio__info:hover { background: color-mix(in srgb, var(--hero) 25%, var(--surface)); }
+.pstudio__info:focus-visible { outline: 2px solid var(--violet-lit); outline-offset: 2px; }
 
 /* Edit and preview: a two-way switch whose highlight slides. */
 .pstudio__view {
