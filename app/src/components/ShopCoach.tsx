@@ -667,7 +667,7 @@ const STARTERS = ['What should I do today?', 'How do I get more buyers?', 'How d
 
 const ASSISTANTS: Record<Assistant, { name: string; blurb: string; icon: IconName }> = {
   figgy: { name: FIGGY, blurb: 'Instant · knows your shop', icon: 'spark' },
-  puter: { name: 'Puter AI', blurb: 'Free · needs a Puter sign-in', icon: 'message' },
+  puter: { name: 'AI chat', blurb: 'Free · smarter, slower answers', icon: 'message' },
 };
 
 function CoachChat({ store, signals, plan, guides, run }: {
@@ -726,14 +726,14 @@ function CoachChat({ store, signals, plan, guides, run }: {
     setBusy(true);
     try {
       const turns: ChatTurn[] = history.map((entry) => ({ role: entry.role, content: entry.text }));
-      const answer: CoachAnswer = await askCoachAi(coachBrief(signals, plan), turns);
+      const answer: CoachAnswer = await askCoachAi(store.ownerId, coachBrief(signals, plan), turns);
       if (mine !== turn.current) return;
       setSaid([...history, { role: 'assistant', ...answer, by: 'puter', source: 'puter', question: text }]);
     } catch (err) {
       if (mine !== turn.current) return;
       // Figgy answers instead, and says why.
       const fallback = answerOffline(text, plan, guides);
-      const reason = err instanceof Error ? err.message : 'Puter AI could not answer - Figgy has answered instead.';
+      const reason = err instanceof Error ? err.message : 'The AI chat could not answer - Figgy has answered instead.';
       setSaid([...history, { role: 'assistant', ...fallback, text: `${reason}\n\n${fallback.text}`, by: 'figgy', question: text }]);
     } finally {
       if (mine === turn.current) setBusy(false);
@@ -800,7 +800,7 @@ function CoachChat({ store, signals, plan, guides, run }: {
             </div>
           );
         })}
-        {busy && <div className="shopcoach__msg shopcoach__msg--assistant shopcoach__typing" aria-label="Puter AI is writing"><i /><i /><i /></div>}
+        {busy && <div className="shopcoach__msg shopcoach__msg--assistant shopcoach__typing" aria-label="AI chat is writing"><i /><i /><i /></div>}
       </div>
 
       <div className="shopcoach__compose">
