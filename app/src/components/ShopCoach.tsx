@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  AREA_NAMES, DID_YOU_KNOW, FIGGY, PRO_TOOLS, hourName, PRIVATE_ANSWER, TOOL_LABELS, answerOffline, coachBrief, isPrivateQuestion,
+  AREA_NAMES, DID_YOU_KNOW, FIGGY, PRO_TOOLS, hourName, PRIVATE_ANSWER, TOOL_LABELS, answerOffline, autoPick, coachBrief, isPrivateQuestion,
   type CoachAnswer, type CoachItem, type CoachPlan, type CoachSignals, type CoachTip, type CoachTool,
 } from '@shared/coach';
 import type { StoreAccess } from '@shared/stores';
@@ -30,6 +30,7 @@ type View = 'today' | 'week' | 'ask';
 
 const HIDE_KEY = 'figmark:coach-folded';
 const AI_KEY = 'figmark:coach-ai';
+const MODE_KEY = 'figmark:coach-mode';
 
 function readFlag(key: string, id: string): boolean {
   try {
@@ -650,6 +651,20 @@ function Thumb({ down = false }: { down?: boolean }) {
 }
 
 type Assistant = 'figgy' | 'puter';
+/** What the seller picked: Auto (the default) lets each question go to whichever answers it best. */
+type Mode = 'auto' | Assistant;
+
+/** The seller's pick for this shop. One who had turned the AI on before Auto existed keeps it. */
+function readMode(id: string): Mode {
+  try {
+    const stored = localStorage.getItem(`${MODE_KEY}:${id}`);
+    if (stored === 'auto' || stored === 'figgy' || stored === 'puter') return stored;
+  } catch { /* storage blocked */ }
+  return readFlag(AI_KEY, id) ? 'puter' : 'auto';
+}
+function writeMode(id: string, mode: Mode) {
+  try { localStorage.setItem(`${MODE_KEY}:${id}`, mode); } catch { /* A private window: it lasts for this page only. */ }
+}
 
 interface Said {
   role: 'user' | 'assistant';
@@ -665,7 +680,8 @@ interface Said {
 
 const STARTERS = ['What should I do today?', 'How do I get more buyers?', 'How do I sell on WhatsApp and Instagram?', 'What can you help with?'];
 
-const ASSISTANTS: Record<Assistant, { name: string; blurb: string; icon: IconName }> = {
+const ASSISTANTS: Record<Mode, { name: string; blurb: string; icon: IconName }> = {
+  auto: { name: 'Auto', blurb: 'Figgy when it knows, AI for the rest', icon: 'bolt' },
   figgy: { name: FIGGY, blurb: 'Instant · knows your shop', icon: 'spark' },
   puter: { name: 'AI chat', blurb: 'Free · smarter, slower answers', icon: 'message' },
 };
@@ -677,7 +693,7 @@ function CoachChat({ store, signals, plan, guides, run }: {
   const [said, setSaid] = useState<Said[]>([]);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
-  const [who, setWho] = useState<Assistant>(() => (readFlag(AI_KEY, store.ownerId) ? 'puter' : 'figgy'));
+  const [who, setWho] = useState<Mode>(() => readMode(store.ownerId));
   // The picker shows under the box once it is clicked, as in Claude.
   const [engaged, setEngaged] = useState(false);
   const [picking, setPicking] = useState(false);
@@ -686,7 +702,7 @@ function CoachChat({ store, signals, plan, guides, run }: {
   // Which question is current: a Stop, or a newer question, makes a late answer stale.
   const turn = useRef(0);
 
-  useEffect(() => { if (who === 'puter') warmCoachAi(); }, [who]);
+  useEffect(() => { if (who !== 'figgy') warmCoachAi(); }, [who]);
   // Scroll the conversation only. scrollIntoView also scrolled the page behind
   // the panel, which is why the page sat at the bottom after it closed.
   useEffect(() => {
@@ -703,14 +719,19 @@ function CoachChat({ store, signals, plan, guides, run }: {
     return () => { document.removeEventListener('pointerdown', away); document.removeEventListener('keydown', key); };
   }, [picking]);
 
-  const choose = (next: Assistant) => { setWho(next); writeFlag(AI_KEY, store.ownerId, next === 'puter'); setPicking(false); };
+  const choose = (next: Mode) => { setWho(next); writeMode(store.ownerId, next); setPicking(false); };
   const report = (body: { source: string; helpful: boolean } | { missed: string }) => {
     void api.coachAnswer(store.ownerId, body).catch(() => undefined);
   };
 
-  async function ask(question: string, using: Assistant = who) {
+  async function ask(question: string, mode: Mode = who) {
     const text = question.trim();
     if (!text || busy) return;
+    // Auto: Figgy for what its guides answer well, the AI for the rest (shared/coach.ts).
+    const lastBy = [...said].reverse().find((entry) => entry.role === 'assistant')?.by ?? null;
+    const using: Assistant = mode === 'auto'
+      ? (autoPick(text, guides, lastBy === 'puter' ? 'ai' : lastBy).use === 'ai' ? 'puter' : 'figgy')
+      : mode;
     const mine = ++turn.current;
     const history = [...said, { role: 'user' as const, text }];
     setSaid(history);
@@ -793,7 +814,7 @@ function CoachChat({ store, signals, plan, guides, run }: {
                 </div>
               )}
               {entry.vote === 'down' && entry.question && index === said.length - 1 && (
-                <button type="button" className="chip shopcoach__retry" onClick={() => { choose(other); void ask(entry.question!, other); }}>
+                <button type="button" className="chip shopcoach__retry" onClick={() => { if (who !== 'auto') choose(other); void ask(entry.question!, other); }}>
                   Ask {ASSISTANTS[other].name} instead
                 </button>
               )}
@@ -813,7 +834,7 @@ function CoachChat({ store, signals, plan, guides, run }: {
         <form className="shopcoach__form" onSubmit={submit}>
           <input value={draft} onChange={(event) => setDraft(event.target.value)} maxLength={500}
             onFocus={() => setEngaged(true)} onPointerDown={() => setEngaged(true)}
-            placeholder={`Ask ${ASSISTANTS[who].name} anything…`} aria-label={`Ask ${ASSISTANTS[who].name}`} />
+            placeholder={who === 'auto' ? 'Ask anything…' : `Ask ${ASSISTANTS[who].name} anything…`} aria-label={who === 'auto' ? 'Ask the coach' : `Ask ${ASSISTANTS[who].name}`} />
           {busy ? (
             <button type="submit" className="btn btn--sm btn--quiet shopcoach__send" aria-label="Stop">
               <span className="shopcoach__stop" aria-hidden="true" />
@@ -834,7 +855,7 @@ function CoachChat({ store, signals, plan, guides, run }: {
             </button>
             {picking && (
               <div className="shopcoach__menu" role="listbox" aria-label="Who answers">
-                {(['figgy', 'puter'] as const).map((id) => (
+                {(['auto', 'figgy', 'puter'] as const).map((id) => (
                   <button key={id} type="button" role="option" aria-selected={who === id}
                     className={`shopcoach__option${who === id ? ' is-on' : ''}`} onClick={() => choose(id)}>
                     <span className={`shopcoach__who shopcoach__who--${id}`} aria-hidden="true"><Icon name={ASSISTANTS[id].icon} size={14} /></span>
