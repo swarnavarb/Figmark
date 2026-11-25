@@ -4,7 +4,7 @@ import { getAuthService } from '../auth/index.js';
 import { config, runningInAzure } from '../config.js';
 import { getRepository } from '../data/index.js';
 import { getPhotoStore } from '../storage/index.js';
-import { freeAiStatus } from '../free-ai.js';
+import { freeAiStatus, freeAiUsage } from '../free-ai.js';
 import { visionAvailable } from '../vision.js';
 import { cached, handler, json } from './http.js';
 
@@ -66,7 +66,7 @@ async function health(request: HttpRequest, _context: InvocationContext) {
     photoSearch: visionAvailable()
       ? { vision: true, detail: `Photos are read by ${config.vision!.model} and matched by picture.` }
       : { vision: false, detail: 'Matching by picture only. Set ANTHROPIC_API_KEY to also find items from what is in the photo.' },
-    freeAi: freeAiHealth(),
+    freeAi: await freeAiHealth(),
   };
 
   // Everyone gets what the app's own banners and sign-up form are drawn from;
@@ -83,19 +83,16 @@ async function health(request: HttpRequest, _context: InvocationContext) {
   return cached(json(200, body), 'private, max-age=30');
 }
 
-/** Whether "Scan with AI" and the coach chat run on the site's free keys, or fall back to Puter. */
-function freeAiHealth(): NonNullable<HealthResponse['freeAi']> {
+/** Whether "Scan with AI" and the coach chat have the site's free keys behind Puter, and each one's use today. */
+async function freeAiHealth(): Promise<NonNullable<HealthResponse['freeAi']>> {
   const status = freeAiStatus();
-  const models = [
-    config.freeAi.gemini ? `Gemini (${config.freeAi.gemini.model})` : null,
-    config.freeAi.groq ? `Groq (${config.freeAi.groq.model})` : null,
-  ].filter(Boolean);
+  const services = await freeAiUsage().catch(() => []);
   return {
     scan: status.scan,
     chat: status.chat,
-    detail: models.length > 0
-      ? `Free AI on ${models.join(' and ')}; Puter only when the free day is used up.${status.scan ? '' : ' Set GEMINI_API_KEY for Scan with AI.'}`
-      : 'No free AI keys: Scan with AI and the coach chat ask people to sign in to Puter. Set GEMINI_API_KEY and GROQ_API_KEY.',
+    detail: services.length > 0
+      ? `Puter first, then the free keys: ${services.map((s) => `${s.id} (${s.model}) ${s.used}/${s.daily} today${s.resting ? ', resting' : ''}`).join('; ')}.${status.scan ? '' : ' None reads photos: set GEMINI_API_KEY or a FREE_AI_<n>_VISION service.'}`
+      : 'Puter only: no free keys behind it. Set GEMINI_API_KEY, GROQ_API_KEY or FREE_AI_<n>_URL/_KEY/_MODEL.',
   };
 }
 

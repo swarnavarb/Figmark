@@ -1,35 +1,44 @@
-import { config } from './config.js';
+import { config, type FreeAiProvider } from './config.js';
+import { getRepository } from './data/index.js';
 
 /**
- * Free AI, through the site's own free-tier keys: Google's Gemini API (reads
- * photos, and chats) and Groq (chats). Neither plan asks for a card, and
- * nobody using the site signs in to anything - which is what Puter, the
- * other free route, could not offer: its own sign-in window, popup blockers,
- * and a small allowance per guest account.
+ * Free AI on the site's own free-tier keys - the backstop behind Puter.
  *
- * The catch is that a free plan's daily allowance is shared by everyone on
- * the site. When a provider says it is used up, it is left alone until its
- * day turns over (midnight in California, where both count), and the app
- * falls back to Puter for that request. So each caller gets `AiUnavailable`
- * whenever nothing here can answer, and decides what to do instead.
+ * The app asks Puter first, on the person's own free Puter account, which
+ * costs the site nothing. Only when that cannot answer (the sign-in was
+ * closed, or their Puter allowance is spent) does it come here.
  *
- * Off unless GEMINI_API_KEY or GROQ_API_KEY is set, like every other seam.
+ * Here, every service the site holds a free key for (config.freeAi: Gemini,
+ * Groq, and any number of OpenAI-compatible extras) has a daily budget set
+ * a little under its free plan's limit. Each request goes to whichever able
+ * service has the most of today's budget left, so the load spreads and no
+ * plan is ever pushed over. Uses are counted in the store, shared by every
+ * instance, per Pacific day (when the free plans reset). A service that
+ * answers 429 anyway is rested - a minute, or till midnight when it says
+ * its day is spent. Adding a free API is only adding its settings.
  */
 
 export class AiUnavailable extends Error {}
 
 export interface ChatMessage { role: 'user' | 'assistant'; content: string }
-export interface AiReply { text: string; model: string }
+export interface AiReply { text: string; model: string; provider: string }
 
-type Provider = 'gemini' | 'groq';
+type Task = 'scan' | 'chat';
 
-/** How long one answer may take before the app is told to try elsewhere. */
-const ANSWER_MS = 40_000;
+/** How long one answer may take before the next service is tried. */
+const ANSWER_MS = 30_000;
+const USAGE_ID = 'free-ai-usage';
+/** How long a read of today's counts is trusted before the store is asked again. */
+const USAGE_FRESH_MS = 15_000;
 
-/** Providers whose free day is spent, and when they may be asked again. */
-const restingUntil = new Map<Provider, number>();
+/* ── Days, budgets and resting ──────────────────────────────────────────── */
 
-/** The next midnight in Los Angeles, when both free plans reset their daily counts. */
+/** Today's date in Los Angeles, as YYYY-MM-DD: the free plans' day. */
+export function pacificDay(now = Date.now()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(now));
+}
+
+/** The next midnight in Los Angeles, when the free plans reset their daily counts. */
 export function nextPacificMidnight(now = Date.now()): number {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/Los_Angeles', hour12: false, hour: 'numeric', minute: 'numeric', second: 'numeric',
@@ -39,88 +48,153 @@ export function nextPacificMidnight(now = Date.now()): number {
   return now - intoDay + 86_400_000;
 }
 
-function resting(provider: Provider, now = Date.now()): boolean {
-  const until = restingUntil.get(provider);
+/** Services that said no, and when they may be asked again. */
+const restingUntil = new Map<string, number>();
+
+function resting(id: string, now = Date.now()): boolean {
+  const until = restingUntil.get(id);
   if (until === undefined) return false;
   if (now < until) return true;
-  restingUntil.delete(provider);
+  restingUntil.delete(id);
   return false;
 }
 
-/**
- * A 429 is either "too many this minute" (wait a moment) or "nothing left
- * today" (wait for the reset). The quota error's own words say which.
- */
-function rest(provider: Provider, detail: string, now = Date.now()): void {
+/** A 429 is "too many this minute" or "nothing left today"; the error's own words say which. */
+function rest(id: string, detail: string, now = Date.now()): void {
   const daily = /per.?day|daily|PerDay|RPD|TPD/i.test(detail);
-  restingUntil.set(provider, daily ? nextPacificMidnight(now) : now + 60_000);
+  restingUntil.set(id, daily ? nextPacificMidnight(now) : now + 60_000);
 }
 
-export function freeAiStatus(): { scan: boolean; chat: boolean; providers: Provider[] } {
-  const providers: Provider[] = [];
-  if (config.freeAi.gemini) providers.push('gemini');
-  if (config.freeAi.groq) providers.push('groq');
-  return { scan: Boolean(config.freeAi.gemini), chat: providers.length > 0, providers };
+interface Usage { day: string; counts: Record<string, number> }
+let usage: { at: number; value: Usage } | null = null;
+
+/** Today's uses per service: from the store, so every instance counts the same. */
+async function usageToday(now = Date.now()): Promise<Usage> {
+  const day = pacificDay(now);
+  if (usage && usage.value.day === day && now - usage.at < USAGE_FRESH_MS) return usage.value;
+  let value: Usage = { day, counts: {} };
+  try {
+    const stored = (await (await getRepository()).getSiteContent(USAGE_ID))?.data as Usage | undefined;
+    if (stored?.day === day && stored.counts) value = { day, counts: { ...stored.counts } };
+  } catch {
+    // The store could not be read: carry on with what this instance has counted.
+    if (usage?.value.day === day) value = usage.value;
+  }
+  usage = { at: now, value };
+  return value;
 }
 
-/** Test seam: forget which providers are resting. */
+/** One more use of a service today, here at once and in the store. */
+async function count(id: string, now = Date.now()): Promise<void> {
+  const day = pacificDay(now);
+  // A copy: the cached counts may be the store's own object, which is changed only through the store.
+  const counts = { ...(usage?.value.day === day ? usage.value.counts : {}) };
+  counts[id] = (counts[id] ?? 0) + 1;
+  usage = { at: usage?.at ?? now, value: { day, counts } };
+  try {
+    const saved = await (await getRepository()).mutateSiteContent(USAGE_ID, (current) => {
+      const before = current?.data as Usage | undefined;
+      const counts = before?.day === day ? { ...before.counts } : {};
+      counts[id] = (counts[id] ?? 0) + 1;
+      const at = new Date(now).toISOString();
+      // Kept a couple of days for the people running the site, then removed.
+      return { id: USAGE_ID, data: { day, counts }, updatedBy: null, createdAt: current?.createdAt ?? at, updatedAt: at, ttl: 3 * 86_400 };
+    });
+    const stored = saved.data as Usage;
+    usage = { at: now, value: { day: stored.day, counts: { ...stored.counts } } };
+  } catch {
+    // Counted on this instance only; the budget still holds here.
+  }
+}
+
+/**
+ * The services able to do `task` that are not resting and have budget left
+ * today, the one with the most left (as a share of its budget) first - for
+ * a chat, photo readers count as having half what they have.
+ */
+export async function plan(task: Task, now = Date.now()): Promise<FreeAiProvider[]> {
+  const able = config.freeAi.filter((provider) => (task === 'scan' ? provider.vision : provider.chat) && !resting(provider.id, now));
+  if (able.length === 0) return [];
+  const { counts } = await usageToday(now);
+  // Photo readers are fewer, so a chat leans on the others and leaves them for scans.
+  const left = (provider: FreeAiProvider) => ((provider.daily - (counts[provider.id] ?? 0)) / provider.daily)
+    * (task === 'chat' && provider.vision ? 0.5 : 1);
+  return able
+    .filter((provider) => (counts[provider.id] ?? 0) < provider.daily)
+    .map((provider, order) => ({ provider, order, left: left(provider) }))
+    .sort((a, b) => b.left - a.left || a.order - b.order)
+    .map((entry) => entry.provider);
+}
+
+/** Each service's use today against its budget, for the people running the site. */
+export async function freeAiUsage(): Promise<{ id: string; model: string; used: number; daily: number; scan: boolean; chat: boolean; resting: boolean }[]> {
+  const { counts } = await usageToday();
+  return config.freeAi.map((provider) => ({
+    id: provider.id, model: provider.model, used: counts[provider.id] ?? 0, daily: provider.daily,
+    scan: provider.vision, chat: provider.chat, resting: resting(provider.id),
+  }));
+}
+
+export function freeAiStatus(): { scan: boolean; chat: boolean } {
+  return { scan: config.freeAi.some((provider) => provider.vision), chat: config.freeAi.some((provider) => provider.chat) };
+}
+
+/** Test seam: forget rests and cached counts. */
 export function resetFreeAi(): void {
   restingUntil.clear();
+  usage = null;
 }
 
-/* ── Gemini ─────────────────────────────────────────────────────────────── */
+/* ── Talking to a service ───────────────────────────────────────────────── */
 
-interface GeminiPart { text?: string; inline_data?: { mime_type: string; data: string } }
-
-async function gemini(body: {
+interface Ask {
   system?: string;
-  contents: { role: 'user' | 'model'; parts: GeminiPart[] }[];
+  turns: ChatMessage[];
+  image?: { mimeType: string; base64: string };
   temperature: number;
   maxTokens: number;
   json?: boolean;
-}): Promise<AiReply> {
-  const setup = config.freeAi.gemini;
-  if (!setup || resting('gemini')) throw new AiUnavailable('gemini');
-  const response = await call('gemini', `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(setup.model)}:generateContent`, {
-    'x-goog-api-key': setup.apiKey,
-  }, {
-    ...(body.system ? { systemInstruction: { parts: [{ text: body.system }] } } : {}),
-    contents: body.contents,
-    generationConfig: {
-      temperature: body.temperature,
-      maxOutputTokens: body.maxTokens,
-      ...(body.json ? { responseMimeType: 'application/json' } : {}),
-    },
-  });
+}
+
+async function askGemini(provider: FreeAiProvider, ask: Ask): Promise<string> {
+  const contents = ask.turns.map((turn, index) => ({
+    role: turn.role === 'assistant' ? 'model' : 'user',
+    parts: [
+      ...(ask.image && index === ask.turns.length - 1 ? [{ inline_data: { mime_type: ask.image.mimeType, data: ask.image.base64 } }] : []),
+      { text: turn.content },
+    ],
+  }));
+  const response = await post(provider, `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(provider.model)}:generateContent`,
+    { 'x-goog-api-key': provider.apiKey }, {
+      ...(ask.system ? { systemInstruction: { parts: [{ text: ask.system }] } } : {}),
+      contents,
+      generationConfig: { temperature: ask.temperature, maxOutputTokens: ask.maxTokens, ...(ask.json ? { responseMimeType: 'application/json' } : {}) },
+    });
   const parts = (response as { candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] } }[] })
     ?.candidates?.[0]?.content?.parts ?? [];
-  const text = parts.filter((part) => !part.thought).map((part) => part.text ?? '').join('').trim();
-  if (!text) throw new AiUnavailable('gemini gave an empty answer');
-  return { text, model: setup.model };
+  return parts.filter((part) => !part.thought).map((part) => part.text ?? '').join('').trim();
 }
 
-/* ── Groq ───────────────────────────────────────────────────────────────── */
-
-async function groq(messages: { role: string; content: string }[], temperature: number, maxTokens: number): Promise<AiReply> {
-  const setup = config.freeAi.groq;
-  if (!setup || resting('groq')) throw new AiUnavailable('groq');
-  const response = await call('groq', 'https://api.groq.com/openai/v1/chat/completions', {
-    authorization: `Bearer ${setup.apiKey}`,
-  }, {
-    model: setup.model,
-    messages,
-    temperature,
-    max_completion_tokens: maxTokens,
-    // Reasoning models think before they answer; a coach reply needs little of it.
-    ...(/gpt-oss/i.test(setup.model) ? { reasoning_effort: 'low' } : {}),
+async function askOpenAi(provider: FreeAiProvider, ask: Ask): Promise<string> {
+  const messages: unknown[] = ask.system ? [{ role: 'system', content: ask.system }] : [];
+  ask.turns.forEach((turn, index) => {
+    messages.push(ask.image && index === ask.turns.length - 1
+      ? { role: turn.role, content: [{ type: 'text', text: turn.content }, { type: 'image_url', image_url: { url: `data:${ask.image.mimeType};base64,${ask.image.base64}` } }] }
+      : turn);
   });
-  const text = String((response as { choices?: { message?: { content?: unknown } }[] })?.choices?.[0]?.message?.content ?? '').trim();
-  if (!text) throw new AiUnavailable('groq gave an empty answer');
-  return { text, model: setup.model };
+  const response = await post(provider, provider.url, { authorization: `Bearer ${provider.apiKey}` }, {
+    model: provider.model,
+    messages,
+    temperature: ask.temperature,
+    max_tokens: ask.maxTokens,
+    // Reasoning models think before they answer; these replies need little of it.
+    ...(/gpt-oss/i.test(provider.model) ? { reasoning_effort: 'low' } : {}),
+  });
+  return String((response as { choices?: { message?: { content?: unknown } }[] })?.choices?.[0]?.message?.content ?? '').trim();
 }
 
-/** One POST to a provider. Anything short of a usable answer is `AiUnavailable`. */
-async function call(provider: Provider, url: string, headers: Record<string, string>, body: unknown): Promise<unknown> {
+/** One POST to a service. Anything short of a usable answer is `AiUnavailable`. */
+async function post(provider: FreeAiProvider, url: string, headers: Record<string, string>, body: unknown): Promise<unknown> {
   let response: Response;
   try {
     response = await fetch(url, {
@@ -130,19 +204,38 @@ async function call(provider: Provider, url: string, headers: Record<string, str
       signal: AbortSignal.timeout(ANSWER_MS),
     });
   } catch (cause) {
-    throw new AiUnavailable(`${provider} could not be reached: ${(cause as Error)?.message ?? cause}`);
+    throw new AiUnavailable(`${provider.id} could not be reached: ${(cause as Error)?.message ?? cause}`);
   }
   if (response.status === 429) {
-    rest(provider, await response.text().catch(() => ''));
-    throw new AiUnavailable(`${provider} free allowance used up`);
+    rest(provider.id, await response.text().catch(() => ''));
+    throw new AiUnavailable(`${provider.id} is over its free limit`);
   }
+  // It reached the service, so it counts against today's budget whatever came back.
+  await count(provider.id);
   if (!response.ok) {
     const detail = (await response.text().catch(() => '')).slice(0, 300);
-    throw new AiUnavailable(`${provider} answered ${response.status}: ${detail}`);
+    throw new AiUnavailable(`${provider.id} answered ${response.status}: ${detail}`);
   }
   return response.json().catch(() => {
-    throw new AiUnavailable(`${provider} sent something that was not JSON`);
+    throw new AiUnavailable(`${provider.id} sent something that was not JSON`);
   });
+}
+
+/** The first service, in budget order, that gives a usable answer. */
+async function answer(task: Task, ask: Ask): Promise<AiReply> {
+  const order = await plan(task);
+  const failures: string[] = [];
+  for (const provider of order) {
+    try {
+      const text = provider.kind === 'gemini' ? await askGemini(provider, ask) : await askOpenAi(provider, ask);
+      if (text) return { text, model: provider.model, provider: provider.id };
+      failures.push(`${provider.id} gave an empty answer`);
+    } catch (error) {
+      if (!(error instanceof AiUnavailable)) throw error;
+      failures.push(error.message);
+    }
+  }
+  throw new AiUnavailable(failures.length > 0 ? failures.join('; ') : `no free ${task} service has budget left today`);
 }
 
 /* ── What the app asks for ──────────────────────────────────────────────── */
@@ -161,29 +254,14 @@ Rules:
 - Leave out the background, shelves, foam, tables, walls and price tags.`;
 
 /**
- * Every item in a photo, as Gemini's raw answer (a JSON array of labels and
- * box_2d boxes); the app reads it the same way it reads Puter's.
+ * Every item in a photo, as the model's raw answer (a JSON array of labels
+ * and box_2d boxes); the app reads it the same way it reads Puter's.
  */
 export function scanPhoto(image: { mimeType: string; base64: string }): Promise<AiReply> {
-  return gemini({
-    contents: [{ role: 'user', parts: [{ inline_data: { mime_type: image.mimeType, data: image.base64 } }, { text: SCAN_PROMPT }] }],
-    temperature: 0,
-    maxTokens: 6000,
-    json: true,
-  });
+  return answer('scan', { turns: [{ role: 'user', content: SCAN_PROMPT }], image, temperature: 0, maxTokens: 6000, json: true });
 }
 
-/** The coach's reply: Groq first, which allows more a day, then Gemini. */
-export async function coachChat(system: string, turns: readonly ChatMessage[]): Promise<AiReply> {
-  try {
-    return await groq([{ role: 'system', content: system }, ...turns], 0.4, 1500);
-  } catch (error) {
-    if (!(error instanceof AiUnavailable)) throw error;
-    return gemini({
-      system,
-      contents: turns.map((turn) => ({ role: turn.role === 'assistant' ? 'model' : 'user', parts: [{ text: turn.content }] })),
-      temperature: 0.4,
-      maxTokens: 800,
-    });
-  }
+/** The coach's reply to the last turn. */
+export function coachChat(system: string, turns: readonly ChatMessage[]): Promise<AiReply> {
+  return answer('chat', { system, turns: [...turns], temperature: 0.4, maxTokens: 1500 });
 }

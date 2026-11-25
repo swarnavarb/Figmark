@@ -1,14 +1,15 @@
 import { parseToolTags, type CoachAnswer } from '@shared/coach';
 import { ApiRequestError, api } from './api';
-import { loadPuter, warmPuter } from './puterVision';
+import { PuterFailed, notePuterTrouble, puterReady, puterSpent, puterWorthAsking, warmPuter } from './puterVision';
 
 /**
  * The coach's AI chat - free to Figmark and to the seller.
  *
- * First on the site's own free-tier keys (POST /api/me/coach/chat): no
- * sign-in at all, and the server builds the brief itself from the shop's
- * counts. When those keys are not set, or the shared free day is used up,
- * it falls back to Puter.js.
+ * First through Puter.js, on the seller's own free Puter account, which
+ * costs the site nothing. When they close Puter's sign-in or their Puter
+ * allowance is spent, the site's own free-tier keys answer instead (POST
+ * /api/me/coach/chat; the server builds the brief from the shop's counts),
+ * and Puter is left alone for a while so nobody is asked again and again.
  *
  * The same seam as "Scan with AI" (puterVision.ts): Puter's "user pays"
  * model means no key here and no bill for the site. The seller signs in to
@@ -65,39 +66,38 @@ function textOf(response: unknown): string {
  */
 export async function askCoachAi(storeId: string, brief: string, turns: readonly ChatTurn[]): Promise<CoachAnswer> {
   const recent = turns.slice(-HISTORY);
-  try {
-    const reply = await within(api.coachChat(storeId, recent), ANSWER_MS, 'timeout');
-    const answer = parseToolTags(reply.text);
-    if (answer.text) return answer;
-  } catch (err) {
-    // Refused for this seller (Pro only, or not their shop): Puter would be no different.
-    if (err instanceof ApiRequestError && (err.status === 401 || err.status === 403)) {
-      throw new Error(`${err.message} Figgy has answered instead.`);
+  if (puterWorthAsking()) {
+    try {
+      return await askPuter(brief, recent);
+    } catch (error) {
+      notePuterTrouble(error);
     }
-    // Otherwise the free keys are off or busy: Puter, on the seller's own account, is next.
   }
-  return askPuter(brief, recent);
+  let reply: { text: string };
+  try {
+    reply = await within(api.coachChat(storeId, recent), ANSWER_MS, 'timeout');
+  } catch (err) {
+    // Refused for this seller (Pro only, not their shop, too many today): say why.
+    if (err instanceof ApiRequestError && [401, 403, 429].includes(err.status)) throw new Error(`${err.message} Figgy has answered instead.`);
+    throw new Error('The AI chat is used up for today - Figgy has answered instead.');
+  }
+  const answer = parseToolTags(reply.text);
+  if (!answer.text) throw new Error('The AI chat gave an empty answer - Figgy has answered instead.');
+  return answer;
 }
 
 async function askPuter(brief: string, turns: readonly ChatTurn[]): Promise<CoachAnswer> {
-  const puter = (await within(loadPuter(), LOAD_MS, 'Puter AI did not load. Check your connection - Figgy has answered instead.')) as unknown as PuterText;
-  if (!puter.auth.isSignedIn()) {
-    try {
-      await within(puter.auth.signIn({ attempt_temp_user_creation: true }), SIGN_IN_MS, 'timeout');
-    } catch {
-      throw new Error('Puter sign-in was closed or did not finish. Sign in to use Puter AI - Figgy has answered instead.');
-    }
-  }
+  const puter = (await puterReady(LOAD_MS, SIGN_IN_MS)) as unknown as PuterText;
   let response: unknown;
   try {
     response = await within(puter.ai.chat(
       [{ role: 'system', content: brief }, ...turns],
       { temperature: 0.4, max_tokens: 600 },
     ), ANSWER_MS, 'timeout');
-  } catch {
-    throw new Error('Puter AI took too long or could not answer - Figgy has answered instead.');
+  } catch (error) {
+    throw new PuterFailed(puterSpent(error) ? 'spent' : 'broken', 'Puter could not answer.');
   }
   const answer = parseToolTags(textOf(response));
-  if (!answer.text) throw new Error('Puter AI gave an empty answer - Figgy has answered instead.');
+  if (!answer.text) throw new PuterFailed('broken', 'Puter gave an empty answer.');
   return answer;
 }

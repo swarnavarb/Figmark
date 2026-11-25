@@ -154,19 +154,77 @@ export interface VerificationConfig {
   aadhaarCertificate: string | null;
 }
 
-export interface FreeAiConfig {
-  gemini: { apiKey: string; model: string } | null;
-  groq: { apiKey: string; model: string } | null;
+/**
+ * One free-tier AI service the site holds a key for. `daily` is how many
+ * requests the site lets itself send it per day (Pacific time, when free
+ * plans reset) - set a little under the plan's own limit, so it is never hit.
+ */
+export interface FreeAiProvider {
+  id: string;
+  /** Gemini's own API, or any OpenAI-compatible chat completions API (Groq, OpenRouter, Cerebras, Mistral...). */
+  kind: 'gemini' | 'openai';
+  /** Gemini: unused. OpenAI-compatible: the full chat completions URL. */
+  url: string;
+  apiKey: string;
+  model: string;
+  /** Reads photos ("Scan with AI"). */
+  vision: boolean;
+  /** Answers the coach chat. */
+  chat: boolean;
+  daily: number;
 }
 
+export type FreeAiConfig = FreeAiProvider[];
+
+/** How many numbered FREE_AI_<n>_* services are looked for. */
+const MAX_EXTRA_PROVIDERS = 20;
+
+function flag(name: string, fallback: boolean): boolean {
+  const value = env(name)?.toLowerCase();
+  if (!value) return fallback;
+  return value === 'on' || value === 'true' || value === '1' || value === 'yes';
+}
+
+function chatUrl(base: string): string {
+  const trimmed = base.replace(/\/+$/, '');
+  return /\/chat\/completions$/.test(trimmed) ? trimmed : `${trimmed}/chat/completions`;
+}
+
+/**
+ * The free AI services, from GEMINI_API_KEY and GROQ_API_KEY and any number
+ * of numbered extras - FREE_AI_1_URL, _KEY, _MODEL, and optionally _NAME,
+ * _DAILY, _VISION, _CHAT - so another free API is a few settings, not code.
+ */
 function resolveFreeAi(): FreeAiConfig {
+  const providers: FreeAiProvider[] = [];
   const geminiKey = env('GEMINI_API_KEY');
+  if (geminiKey) {
+    providers.push({
+      id: 'gemini', kind: 'gemini', url: '', apiKey: geminiKey,
+      // Flash-Lite: the free plan's largest daily allowance, and it answers with boxes.
+      model: env('GEMINI_MODEL') ?? 'gemini-flash-lite-latest',
+      vision: true, chat: true, daily: limit('GEMINI_DAILY_LIMIT', 450),
+    });
+  }
   const groqKey = env('GROQ_API_KEY');
-  return {
-    // Flash-Lite: the free plan's largest daily allowance, and it answers with boxes.
-    gemini: geminiKey ? { apiKey: geminiKey, model: env('GEMINI_MODEL') ?? 'gemini-flash-lite-latest' } : null,
-    groq: groqKey ? { apiKey: groqKey, model: env('GROQ_MODEL') ?? 'openai/gpt-oss-120b' } : null,
-  };
+  if (groqKey) {
+    providers.push({
+      id: 'groq', kind: 'openai', url: 'https://api.groq.com/openai/v1/chat/completions', apiKey: groqKey,
+      model: env('GROQ_MODEL') ?? 'openai/gpt-oss-120b',
+      vision: false, chat: true, daily: limit('GROQ_DAILY_LIMIT', 900),
+    });
+  }
+  for (let n = 1; n <= MAX_EXTRA_PROVIDERS; n += 1) {
+    const url = env(`FREE_AI_${n}_URL`); const apiKey = env(`FREE_AI_${n}_KEY`); const model = env(`FREE_AI_${n}_MODEL`);
+    if (!url || !apiKey || !model) continue;
+    providers.push({
+      id: (env(`FREE_AI_${n}_NAME`) ?? `free-${n}`).toLowerCase().replace(/[^a-z0-9-]+/g, '-'),
+      kind: 'openai', url: chatUrl(url), apiKey, model,
+      vision: flag(`FREE_AI_${n}_VISION`, false), chat: flag(`FREE_AI_${n}_CHAT`, true),
+      daily: limit(`FREE_AI_${n}_DAILY`, 100),
+    });
+  }
+  return providers;
 }
 
 export interface VisionConfig {

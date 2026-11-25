@@ -25,8 +25,9 @@ Set these as Static Web App application settings
 | `WEB_PUSH_PUBLIC_KEY`, `WEB_PUSH_PRIVATE_KEY`, `WEB_PUSH_SUBJECT` | `npm run push:keys` | Lock-screen notifications. |
 | `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` | Cloudflare dashboard → Turnstile | CAPTCHA on sign-up. Off when unset. |
 | `ANTHROPIC_API_KEY` | optional | Photo search by what is in the picture. |
-| `GEMINI_API_KEY` | optional | Free key from Google AI Studio (no card). "Scan with AI", and the coach chat when Groq is off or busy. `GEMINI_MODEL` overrides `gemini-flash-lite-latest`. |
-| `GROQ_API_KEY` | optional | Free key from console.groq.com (no card). The coach AI chat. `GROQ_MODEL` overrides `openai/gpt-oss-120b`. |
+| `GEMINI_API_KEY` | optional | Free key from Google AI Studio (no card). Behind Puter: "Scan with AI" and the coach chat. `GEMINI_MODEL` overrides `gemini-flash-lite-latest`; `GEMINI_DAILY_LIMIT` (450) is the site's own daily budget for it. |
+| `GROQ_API_KEY` | optional | Free key from console.groq.com (no card). Behind Puter: the coach chat. `GROQ_MODEL` overrides `openai/gpt-oss-120b`; `GROQ_DAILY_LIMIT` (900). |
+| `FREE_AI_<n>_URL`, `_KEY`, `_MODEL` | optional | Any more free OpenAI-compatible APIs, `n` = 1-20 (OpenRouter, Cerebras, Mistral, Cloudflare...). Optional `_NAME`, `_DAILY` (100), `_VISION` (`on` if it reads photos), `_CHAT` (on). Set `_DAILY` a little under the plan's free limit. |
 
 After setting them, open `/api/health` signed in as an operator: every line
 should read connected, `sessionSecretSource` should be `configured`, and
