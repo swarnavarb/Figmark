@@ -109,7 +109,7 @@ async function buildView(repository: Repo, dna: ProductDna, viewerId: string | n
     const bought = order.pieces?.find((piece) => piece.id === item.piece);
     return bought ? [{ ...order, unitPriceMinor: bought.priceMinor, quantity: 1 }] : [];
   }));
-  const posts = postsRead.filter((post): post is Post => Boolean(post
+  const posts = postsRead.filter((post): post is Post => Boolean(post && !post.dnaReview
     && (!post.visibleAt || post.visibleAt <= now) && !moderated.isRemoved('post', post.id)));
   const wants = wantsRead.filter((want): want is Want => Boolean(want));
   const openWants = wants.filter((want) => want.status === 'open');
@@ -660,17 +660,69 @@ async function writeReview(request: HttpRequest, _context: InvocationContext) {
     rating,
     body: text.slice(0, 800),
     ...(photoUrls.length ? { photoUrls } : {}),
+    ...(existing?.postId ? { postId: existing.postId } : {}),
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };
-  await repository.saveStoreReview(review);
+  // Out loud: on the writer's wall, so the people who follow them see it in
+  // Social and it can surface in Discover. An edit changes that post rather
+  // than posting again. A post that fails to go up never loses the review.
   await claimPhotos(photoUrls, `store_review:${review.id}`);
+  const posted = await shareReview(repository, review, dna, author?.displayName ?? user.displayName).catch(() => null);
+  if (posted) review.postId = posted;
+  await repository.saveStoreReview(review);
 
   // The stars a card shows, kept on the DNA.
   const all = await reviewsOf(repository, dna);
   await saveDna(repository, dna.id, (current) => (current
     ? { ...current, score: { total: all.reduce((sum, entry) => sum + entry.rating, 0), count: all.length } } : null));
   return json(200, { ok: true });
+}
+
+/**
+ * Put a product review on its writer's wall, or bring the post already there
+ * up to date. Hands back the post's id.
+ */
+async function shareReview(repository: Repo, review: StoreReview, dna: ProductDna, authorName: string): Promise<string | null> {
+  const photos = review.photoUrls ?? [];
+  const tag = { dnaId: dna.id, reviewId: review.id, name: dna.name, rating: review.rating, cover: dna.cover ?? null };
+  // The words are the review; the card under them names the product and its stars.
+  const body = review.body;
+  if (review.postId) {
+    const changed = await repository.mutatePost(review.authorId, review.postId, (post) => ({
+      ...post, body, dnaReview: tag, photoUrl: photos[0] ?? null, photoUrls: photos, editedAt: review.updatedAt, updatedAt: review.updatedAt,
+    })).catch(() => null);
+    if (changed) return changed.id;
+  }
+  const post = await repository.createPost({
+    id: `pst_${randomUUID().slice(0, 12)}`,
+    channelId: review.authorId,
+    channel: 'seller',
+    kind: 'update',
+    authorId: review.authorId,
+    authorName,
+    body,
+    listingId: null,
+    photoUrl: photos[0] ?? null,
+    likeCount: 0,
+    replyCount: 0,
+    // A person speaking on their own wall: on their followers' feeds.
+    voice: 'store',
+    reach: 'feed',
+    announcement: true,
+    photoUrls: photos,
+    reactions: [],
+    comments: [],
+    shareCount: 0,
+    poll: null,
+    vibe: null,
+    dnaReview: tag,
+    createdAt: review.updatedAt,
+    updatedAt: review.updatedAt,
+  });
+  // The photos are the review's: the post only shows them, so deleting the
+  // post leaves them with the review (see storage/release.ts).
+  return post.id;
 }
 
 interface FixBody {

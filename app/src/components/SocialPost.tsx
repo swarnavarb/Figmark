@@ -513,6 +513,7 @@ function SocialPostCardView({
         : social.guess ? <span className="spost__kind spost__kind--poll">🎯 Guess the price</span>
           : social.poll && !post.debate && <span className="spost__kind spost__kind--poll"><Icon name="poll" size={11} /> {social.poll.stock ? 'Stock poll' : 'Poll'}</span>}
       {post.delivered && <span className="spost__kind spost__kind--sale"><Icon name="box" size={11} /> Arrived</span>}
+      {post.dnaReview && <span className="spost__kind spost__kind--review"><Icon name="star" size={11} /> Review</span>}
       {post.question && (post.question.acceptedId
         ? <span className="spost__kind spost__kind--answered">✅ Answered</span>
         : <span className="spost__kind spost__kind--question">❓ Question</span>)}
@@ -736,6 +737,7 @@ function SocialPostCardView({
         </button>
       )}
       <div className="spost__veiled" aria-hidden={post.blur && !revealed ? true : undefined}>
+      {post.dnaReview && <ReviewOf review={post.dnaReview} />}
       {editing ? null : post.vibe ? (
         <div className={`vibe vibe--${post.vibe}`}><p>{post.body}</p></div>
       ) : (
@@ -1821,3 +1823,24 @@ export { Confetti } from './Confetti';
  * of what made scrolling Discover heavy.
  */
 export const SocialPostCard = memo(SocialPostCardView);
+
+/**
+ * The product a review post is about: its picture, its name and the stars,
+ * opening its Product DNA, where the other reviews are.
+ */
+function ReviewOf({ review }: { review: NonNullable<PostCard['post']['dnaReview']> }) {
+  return (
+    <Link to={`/dna/${encodeURIComponent(review.dnaId)}#review-${encodeURIComponent(review.reviewId)}`} className="spost__review"
+      aria-label={`Review of ${review.name}: ${review.rating} out of 5 stars. Open its Product DNA`}>
+      <span className="spost__reviewpic">{review.cover ? <img src={review.cover} alt="" loading="lazy" decoding="async" /> : <Icon name="dna" size={18} />}</span>
+      <span className="spost__reviewtext">
+        <small>Reviewed</small>
+        <b>{review.name}</b>
+        <span className="spost__reviewstars" aria-hidden="true">
+          {[1, 2, 3, 4, 5].map((n) => <span key={n} className={n <= review.rating ? 'is-on' : ''}>★</span>)}
+        </span>
+      </span>
+      <Icon name="right" size={14} />
+    </Link>
+  );
+}
