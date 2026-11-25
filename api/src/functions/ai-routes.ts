@@ -5,13 +5,15 @@ import { clientIp, tooFast } from '../rate-limit.js';
 import { error, handler, json } from './http.js';
 
 /**
- * POST /api/ai/scan - "Scan with AI" on the site's free Gemini key, so the
- * person scanning signs in to nothing.
+ * POST /api/ai/scan - "Scan with AI" on the site's free keys: what the app
+ * asks once Puter cannot (its sign-in closed, or the person's Puter
+ * allowance spent). The service with the most of today's budget left reads
+ * it (free-ai.ts).
  *
  * Body: { image: "data:image/jpeg;base64,..." }, the photo already shrunk
  * by the app. Answers { text, model }: the model's raw list of labels and
  * boxes, which the app reads exactly as it reads Puter's. 503 `ai_unavailable`
- * when no key is set or the free day is spent: the app then asks Puter.
+ * when no service has budget left today.
  */
 
 /** A photo the app has shrunk to 1600px: well under this as base64. */
@@ -39,7 +41,7 @@ async function scan(request: HttpRequest, context: InvocationContext) {
   } catch (cause) {
     if (!(cause instanceof AiUnavailable)) throw cause;
     context.log(`ai scan unavailable: ${cause.message}`);
-    return error(503, 'ai_unavailable', 'The free AI is busy right now.');
+    return error(503, 'ai_unavailable', 'The free AI is used up for today.');
   }
 }
 

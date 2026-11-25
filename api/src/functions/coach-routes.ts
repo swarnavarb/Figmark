@@ -396,13 +396,12 @@ const CHAT_TURN_CHARS = 2000;
 
 /**
  * POST /api/me/coach/chat?store= - the coach's AI chat on the site's free
- * keys (free-ai.ts), so the seller signs in to nothing.
+ * keys (free-ai.ts): what the app asks once Puter cannot.
  *
  * Body: { turns: [{ role, content }] }, the last one the seller's question.
  * The brief is built here from the shop's own counts, never taken from the
- * app, so the key answers this shop's coach and nothing else. 503
- * `ai_unavailable` when no key is set or the free day is spent: the app then
- * asks Puter.
+ * app, so the keys answer this shop's coach and nothing else. 503
+ * `ai_unavailable` when no service has budget left today.
  */
 async function chat(request: HttpRequest, context: InvocationContext) {
   const auth = await getAuthService();
@@ -436,7 +435,7 @@ async function chat(request: HttpRequest, context: InvocationContext) {
   } catch (cause) {
     if (!(cause instanceof AiUnavailable)) throw cause;
     context.log(`ai coach unavailable: ${cause.message}`);
-    return error(503, 'ai_unavailable', 'The free AI is busy right now.');
+    return error(503, 'ai_unavailable', 'The free AI is used up for today.');
   }
 }
 

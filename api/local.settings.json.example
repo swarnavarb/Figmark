@@ -24,7 +24,7 @@
     "PUBLIC_ORIGIN": "<optional: comma-separated origins the site is served at, first one canonical - empty believes the request's host, which is only right on a laptop>",
 
     "ANTHROPIC_API_KEY": "<optional: lets photo search find an item from what is in the photo - empty matches by picture only>",
-    "GEMINI_API_KEY": "<optional: free Google AI Studio key - Scan with AI and the coach chat with no sign-in; empty falls back to Puter>",
-    "GROQ_API_KEY": "<optional: free Groq key - the coach AI chat with no sign-in; empty uses Gemini, then Puter>"
+    "GEMINI_API_KEY": "<optional: free Google AI Studio key - Scan with AI and the coach chat when Puter cannot answer>",
+    "GROQ_API_KEY": "<optional: free Groq key - the coach chat when Puter cannot answer>"
   }
 }

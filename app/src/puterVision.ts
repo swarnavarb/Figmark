@@ -1,4 +1,4 @@
-import { api, type PhotoBox } from './api';
+import { ApiRequestError, api, type PhotoBox } from './api';
 import { readableUrl } from './photoDetect';
 import type { FoundThing } from './photoThings';
 
@@ -54,6 +54,71 @@ export function loadPuter(): Promise<Puter> {
 /** Fetch Puter.js ahead of the tap, so the tap can open the sign-in window straight away. */
 export function warmPuter(): void {
   void loadPuter().catch(() => undefined);
+}
+
+/* ── When Puter cannot help ─────────────────────────────────────────────── */
+
+/** Why Puter could not answer: each is remembered for a while, so nobody is asked again and again. */
+export type PuterTrouble = 'declined' | 'spent' | 'broken';
+
+export class PuterFailed extends Error {
+  constructor(readonly trouble: PuterTrouble, message: string) { super(message); }
+}
+
+const SKIP_KEY = 'figmark.puterSkip';
+/**
+ * How long to go straight to the site's free keys instead: a closed sign-in
+ * for the rest of the day (they said no; asking each tap would nag), a spent
+ * Puter allowance for a day, anything else (offline, slow, broken) briefly.
+ */
+const SKIP_MS: Record<PuterTrouble, number> = { declined: 12 * 3_600_000, spent: 24 * 3_600_000, broken: 10 * 60_000 };
+let skipUntil = 0;
+
+/** Whether Puter is worth asking now, or the site's free keys should answer straight away. */
+export function puterWorthAsking(now = Date.now()): boolean {
+  if (now < skipUntil) return false;
+  try {
+    const stored = Number(window.localStorage.getItem(SKIP_KEY) ?? 0);
+    if (now < stored) { skipUntil = stored; return false; }
+  } catch { /* storage blocked: memory alone */ }
+  return true;
+}
+
+export function notePuterTrouble(error: unknown, now = Date.now()): void {
+  const trouble: PuterTrouble = error instanceof PuterFailed ? error.trouble : 'broken';
+  skipUntil = now + SKIP_MS[trouble];
+  // A short skip lives in memory only; a reload may try Puter again.
+  if (trouble === 'broken') return;
+  try { window.localStorage.setItem(SKIP_KEY, String(skipUntil)); } catch { /* storage blocked */ }
+}
+
+/** Out of credit, over a limit, or signed out on Puter's side: no other model there will help. */
+export function puterSpent(error: unknown): boolean {
+  const e = error as { code?: unknown; message?: unknown; error?: { code?: unknown; message?: unknown } } | null;
+  const words = [e?.error?.code, e?.code, e?.error?.message, e?.message].filter((part) => typeof part === 'string').join(' ');
+  return /credit|funds|insufficient|limit|quota|usage|exceed|payment/i.test(words);
+}
+
+/** Puter, loaded and signed in - or `PuterFailed`. Call straight from a tap: it may open Puter's sign-in window. */
+export async function puterReady(loadMs?: number, signInMs?: number): Promise<Puter> {
+  const within = <T>(promise: Promise<T>, ms: number | undefined) => (ms === undefined ? promise : Promise.race([
+    promise,
+    new Promise<never>((_, reject) => { window.setTimeout(() => reject(new Error('timeout')), ms); }),
+  ]));
+  let puter: Puter;
+  try {
+    puter = await within(loadPuter(), loadMs);
+  } catch {
+    throw new PuterFailed('broken', 'Puter did not load.');
+  }
+  if (!puter.auth.isSignedIn()) {
+    try {
+      await within(puter.auth.signIn({ attempt_temp_user_creation: true }), signInMs);
+    } catch {
+      throw new PuterFailed('declined', 'Puter sign-in was closed.');
+    }
+  }
+  return puter;
 }
 
 let chosenModel: Promise<string | undefined> | null = null;
@@ -153,33 +218,40 @@ export function parseItems(text: string): FoundThing[] {
 }
 
 /**
- * Every item in the photo, as read by a vision model: on the site's free
- * Gemini key when it can (POST /api/ai/scan), else through the person's own
- * Puter account. Call it straight from a tap: Puter's first use opens its
- * sign-in window. Rejects with a message to show when it cannot.
+ * Every item in the photo, as read by a vision model: first through the
+ * person's own free Puter account (it costs the site nothing), then - when
+ * they close Puter's sign-in or their Puter allowance is spent - on the
+ * site's free keys (POST /api/ai/scan). Call it straight from a tap: Puter's
+ * first use opens its sign-in window. Rejects with a message to show.
  */
 export async function scanWithAI(photoUrl: string): Promise<{ things: FoundThing[]; model: string | null }> {
-  // First the site's own free key: no sign-in. Off or busy, Puter is next.
-  const image = await photoToSend(photoUrl);
-  const free = await api.aiScan(image).catch(() => null);
-  if (free) {
-    const items = parseItems(free.text);
-    if (items.length === 0) throw new Error('The AI found nothing it could box in this photo.');
-    return { things: items, model: free.model };
-  }
-  return scanWithPuter(image);
-}
-
-async function scanWithPuter(image: string): Promise<{ things: FoundThing[]; model: string | null }> {
-  const puter = await loadPuter();
-  if (!puter.auth.isSignedIn()) {
+  // Asked for once, whichever answers: the photo is only read and shrunk the one time.
+  let shrunk: Promise<string> | null = null;
+  const image = () => (shrunk ??= photoToSend(photoUrl));
+  if (puterWorthAsking()) {
     try {
-      await puter.auth.signIn({ attempt_temp_user_creation: true });
-    } catch {
-      throw new Error('Puter sign-in was closed. Sign in to scan with AI.');
+      const found = await scanWithPuter(image);
+      if (found.things.length > 0) return found;
+    } catch (error) {
+      notePuterTrouble(error);
     }
   }
-  const model = await modelFor(puter);
+  let free: { text: string; model: string } | null = null;
+  try {
+    free = await api.aiScan(await image());
+  } catch (error) {
+    if (error instanceof ApiRequestError && error.status === 429) throw new Error(error.message);
+    throw new Error('The free AI scans are used up for today. Try again tomorrow.');
+  }
+  const items = parseItems(free.text);
+  if (items.length === 0) throw new Error('The AI found nothing it could box in this photo.');
+  return { things: items, model: free.model };
+}
+
+async function scanWithPuter(image: () => Promise<string>): Promise<{ things: FoundThing[]; model: string | null }> {
+  // Signed in first, while the tap still counts: the photo is shrunk after.
+  const puter = await puterReady();
+  const [photo, model] = await Promise.all([image(), modelFor(puter)]);
   // The best model Puter listed; failing that, a Gemini model asked for by name, then Puter's own default.
   const tries = [...new Set([model, ...FALLBACK_MODELS, undefined])];
   let response: PuterChatResponse | null = null;
@@ -187,21 +259,15 @@ async function scanWithPuter(image: string): Promise<{ things: FoundThing[]; mod
   let failure: unknown = null;
   for (const name of tries) {
     try {
-      response = await puter.ai.chat(PROMPT, image, { ...(name ? { model: name } : {}), normalize: true, temperature: 0, max_tokens: 6000 });
+      response = await puter.ai.chat(PROMPT, photo, { ...(name ? { model: name } : {}), normalize: true, temperature: 0, max_tokens: 6000 });
       used = name ?? null;
       break;
     } catch (error) {
       failure = error;
-      // Signed out on Puter's side, or out of credit: another model will not help.
-      const code = (error as { code?: string; error?: { code?: string } })?.error?.code ?? (error as { code?: string })?.code ?? '';
-      if (/auth|token|credit|funds|limit|quota/i.test(code)) break;
+      // Out of credit on Puter's side: another model there will not help.
+      if (puterSpent(error)) throw new PuterFailed('spent', 'Puter allowance used up.');
     }
   }
-  if (!response) {
-    const message = (failure as { message?: string; error?: { message?: string } })?.error?.message ?? (failure as { message?: string })?.message;
-    throw new Error(message ? `AI scan failed: ${message}` : 'AI scan failed. Try again in a moment.');
-  }
-  const items = parseItems(textOf(response));
-  if (items.length === 0) throw new Error('The AI found nothing it could box in this photo.');
-  return { things: items, model: used };
+  if (!response) throw new PuterFailed('broken', String((failure as { message?: string })?.message ?? 'Puter could not answer.'));
+  return { things: parseItems(textOf(response)), model: used };
 }
