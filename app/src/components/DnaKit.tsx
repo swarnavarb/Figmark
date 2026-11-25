@@ -134,7 +134,7 @@ export function Stars({ value, size = 12 }: { value: number; size?: number }) {
   );
 }
 
-function priceSpan(summary: DnaSummary): string | null {
+export function priceSpan(summary: DnaSummary): string | null {
   if (summary.lowMinor === null || summary.highMinor === null) return null;
   return summary.lowMinor === summary.highMinor
     ? formatMoney(summary.lowMinor, summary.currency)
@@ -330,7 +330,10 @@ export function PostDna({ channelId, postId, about }: { channelId: string; postI
  * seller moving their listing. What it is on now is listed first, with a way
  * off where that is allowed.
  */
-export function DnaPicker({ title, seed, current, many = false, listingId, piece, onPick, onRemove, onClose, extra }: {
+export function DnaPicker({
+  title, seed, current, many = false, listingId, piece, onPick, onRemove, onClose, extra,
+  exclude = [], suggested, suggestedLabel = 'Likely the same product', preview, confirmLabel = 'Confirm',
+}: {
   title: string;
   seed: string;
   current: DnaSummary[];
@@ -343,11 +346,20 @@ export function DnaPicker({ title, seed, current, many = false, listingId, piece
   onRemove?: (dna: DnaSummary) => Promise<void>;
   onClose: () => void;
   extra?: ReactNode;
+  /** Never offered: the product this is about, for one. */
+  exclude?: string[];
+  /** Offered before any search, each with a short reason. */
+  suggested?: { dna: DnaSummary; why: string }[] | null;
+  suggestedLabel?: string;
+  /** When set, picking shows this first: what will change, with Back and a confirm button. */
+  preview?: (dna: DnaSummary) => ReactNode;
+  confirmLabel?: string | ((dna: DnaSummary) => string);
 }) {
   const toast = useToast();
   const [query, setQuery] = useState(() => seed.replace(/#\S+/g, '').replace(/\s+/g, ' ').trim().split(' ').slice(0, 6).join(' '));
   const [found, setFound] = useState<DnaSummary[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [chosen, setChosen] = useState<DnaSummary | null>(null);
 
   useEffect(() => {
     const words = query.trim();
@@ -370,6 +382,45 @@ export function DnaPicker({ title, seed, current, many = false, listingId, piece
     }
   };
   const on = new Set(current.map((dna) => dna.id));
+  const hidden = new Set(exclude);
+  const tips = (suggested ?? []).filter((entry) => !hidden.has(entry.dna.id) && !on.has(entry.dna.id));
+  const tipIds = new Set(tips.map((entry) => entry.dna.id));
+  const shown = found?.filter((dna) => !hidden.has(dna.id) && !tipIds.has(dna.id));
+  const choose = (dna: DnaSummary) => {
+    if (preview) { setChosen(dna); return; }
+    void run(dna.id, () => onPick(dna), many ? 'Tagged' : 'Done');
+  };
+  const row = (dna: DnaSummary, why?: string) => (
+    <li key={dna.id}>
+      <button type="button" className="dnak__result" disabled={busy !== null || on.has(dna.id)} onClick={() => choose(dna)}>
+        {dna.cover ? <CropPic src={dna.cover} box={dna.coverBox} /> : <span className="dnak__resultblank"><Icon name="dna" size={16} /></span>}
+        <span className="dnak__resulttext">
+          <b>{dna.name}</b>
+          <small>{[priceSpan(dna), `${dna.sellers} shop${dna.sellers === 1 ? '' : 's'}`, dna.category].filter(Boolean).join(' · ')}</small>
+          {why && <span className="dnak__why">{why}</span>}
+        </span>
+        {on.has(dna.id) ? <Icon name="check" size={15} /> : preview ? <Icon name="right" size={15} /> : <Icon name="plus" size={15} />}
+      </button>
+    </li>
+  );
+
+  if (chosen && preview) {
+    const label = typeof confirmLabel === 'function' ? confirmLabel(chosen) : confirmLabel;
+    return (
+      <Modal title={title} onClose={onClose}>
+        <div className="dnak__picker">
+          {preview(chosen)}
+          <div className="dnak__confirm">
+            <button type="button" className="btn btn--quiet" disabled={busy !== null} onClick={() => setChosen(null)}>Back</button>
+            <button type="button" className="btn" disabled={busy !== null}
+              onClick={() => void run(chosen.id, () => onPick(chosen), 'Done')}>
+              {busy ? 'Working…' : label}
+            </button>
+          </div>
+        </div>
+      </Modal>
+    );
+  }
 
   return (
     <Modal title={title} onClose={onClose}>
@@ -387,26 +438,21 @@ export function DnaPicker({ title, seed, current, many = false, listingId, piece
             ))}
           </ul>
         )}
+        {suggested === null && <p className="dnak__hint">Looking for likely twins…</p>}
+        {tips.length > 0 && (
+          <div className="dnak__tips">
+            <p className="dnak__tipslabel">{suggestedLabel}</p>
+            <ul className="dnak__results">{tips.map((entry) => row(entry.dna, entry.why))}</ul>
+          </div>
+        )}
         <label className="dnak__search">
           <Icon name="search" size={15} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Name the product" aria-label="Product name" autoFocus />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Name the product" aria-label="Product name" autoFocus={!tips.length} />
         </label>
         <ul className="dnak__results">
-          {found === null && <li className="dnak__hint">Looking…</li>}
-          {found?.length === 0 && <li className="dnak__hint">Nothing by that name yet. Products start when somebody lists one.</li>}
-          {found?.map((dna) => (
-            <li key={dna.id}>
-              <button type="button" className="dnak__result" disabled={busy !== null || (on.has(dna.id) && !many) || on.has(dna.id)}
-                onClick={() => void run(dna.id, () => onPick(dna), many ? 'Tagged' : 'Done')}>
-                {dna.cover ? <CropPic src={dna.cover} box={dna.coverBox} /> : <span className="dnak__resultblank"><Icon name="dna" size={16} /></span>}
-                <span className="dnak__resulttext">
-                  <b>{dna.name}</b>
-                  <small>{[priceSpan(dna), `${dna.sellers} shop${dna.sellers === 1 ? '' : 's'}`, dna.category].filter(Boolean).join(' · ')}</small>
-                </span>
-                {on.has(dna.id) ? <Icon name="check" size={15} /> : <Icon name="plus" size={15} />}
-              </button>
-            </li>
-          ))}
+          {shown === undefined && <li className="dnak__hint">Looking…</li>}
+          {shown?.length === 0 && <li className="dnak__hint">{tips.length ? 'Nothing else by that name.' : 'Nothing by that name yet. Products start when somebody lists one.'}</li>}
+          {shown?.map((dna) => row(dna))}
         </ul>
         {extra}
       </div>
