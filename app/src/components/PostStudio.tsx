@@ -16,6 +16,7 @@ import { shrink } from './PhotoManager';
 import { ErrorNotice, Modal, Thumb, leadPhoto } from './ui';
 import { Icon } from './Icon';
 import { InfoTip } from './InfoTip';
+import { EngageHelp } from './EngageHelp';
 import { PostPreview } from './PostPreview';
 import { useSession } from '../session';
 import { CREDIT_LIFE_DAYS } from '@shared/play';
@@ -346,6 +347,8 @@ export function PostStudio({
   const [terms, setTerms] = useState(() => lastTerms(storeId));
   // How long credit won on this post lasts, in days; 0 for never. The shop's call.
   const [creditDays, setCreditDays] = useState(0);
+  // The help sheet the i in the header opens.
+  const [helpOpen, setHelpOpen] = useState(false);
 
   // Photo / flex
   const [at, setAt] = useState(0);
@@ -845,8 +848,18 @@ export function PostStudio({
             <strong>{figmark ? 'Weekly theme challenge' : meta.title}</strong>
             <span>{meta.line}</span>
           </span>
+          {asShop && !figmark && (
+            <button type="button" className="pstudio__info" aria-label={`What is ${meta.title} and when to use it`}
+              onClick={() => setHelpOpen(true)}>i</button>
+          )}
         </div>
         )}
+        {helpOpen && (() => {
+          // A stock poll and a debate with or without a prize each have their own help.
+          const key = mode === 'poll' && stock ? 'stock' : mode === 'debate' ? (prizeOn && asShop ? 'debate' : 'versus') : mode;
+          const title = key === 'stock' ? 'What to stock next' : key === 'debate' ? 'Debate with a prize' : key === 'versus' ? 'Debate' : meta.title;
+          return <EngageHelp id={key} title={title} emoji={meta.emoji} onClose={() => setHelpOpen(false)} />;
+        })()}
 
         <div className="pstudio__view" role="tablist" aria-label="Edit or preview">
           {(['edit', 'preview'] as const).map((entry) => (
