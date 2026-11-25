@@ -3,7 +3,7 @@ import type { Listing, Post, RegionBox, SiteContent, Want } from '../../shared/m
 import {
   DNA_PREFIX, DNA_TAGS_PER_POST, HUNT_COVERED, SAME_WITH_PHOTO, otherModel, sameProductWords, covered, dnaDocId, heatOf, lineOf,
   linkKey, nameFrom, normalWords, pieceKey, productWords, sameCategory, sameProductSoft, softLikeness, wordLikeness,
-  type DnaLine, type DnaLink, type DnaLinkKind, type DnaSummary, type ProductDna,
+  type DnaDoubt, type DnaLine, type DnaLink, type DnaLinkKind, type DnaSummary, type ProductDna,
 } from '../../shared/dna.js';
 import { getRepository } from './data/index.js';
 import { hasPieces, isPieceSold, MAX_PIECES } from '../../shared/pieces.js';
@@ -473,6 +473,28 @@ export async function bestMatch(
     return { dna: entry.dna, why: entry.why };
   }
   return null;
+}
+
+/**
+ * Whether a thing its shop says is not `dna` still looks like it: the same
+ * picture as a listing on it, the same thing in another picture, Claude
+ * seeing both and saying one product, or - nobody able to look - the very
+ * same name. Null when nothing says so: the shop's "no" stands unquestioned.
+ */
+export async function stillLooksLike(
+  listing: Listing, item: ListingItem, dna: ProductDna, catalogue: Listing[],
+): Promise<DnaDoubt['why'] | null> {
+  if (!dna.links.some((entry) => entry.kind === 'listing' && entry.id !== listing.id)) return null;
+  const look = (await scanAgainst(listing, item, [dna], catalogue).catch(() => null))?.get(dna.id);
+  if (look?.variant) return null;
+  if (look?.same) return 'same-photo';
+  if (look?.sameItem) return 'same-thing-in-photo';
+  const words = productWords(item.title);
+  if (!sameProductWords(words, dna.words) && !sameProductSoft(words, dna.words)) return null;
+  const eye = await sameByEye(listing, item, dna, catalogue).catch(() => null);
+  if (eye === true) return 'looks-same';
+  if (eye === false) return null;
+  return wordLikeness(productWords(item.title, true), productWords(dna.name, true)) >= 1 ? 'same-name' : null;
 }
 
 /** Names this alike are worth a look at the pictures; a picture of the same thing then needs no more. */

@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { DnaCheck as Check, DnaSummary } from '@shared/dna';
+import type { DnaAsk, DnaCheck as Check, DnaSummary } from '@shared/dna';
 import type { RegionBox } from '@shared/models';
 import { ApiRequestError, api } from '../api';
 import { CropPic, DnaPicker, dnaHref, priceSpan } from './DnaKit';
 import { useToast } from './Feedback';
 import { Icon } from './Icon';
+import { useSession } from '../session';
+import { useReducedMotion } from '../motion';
 import '../styles/DnaCheck.css';
 
 /**
@@ -92,7 +94,7 @@ export function DnaCheckFlow({ listingId, title, compact = false, onEdit, onSett
       {step === 'photo' && check.photo && (
         <>
           <h3 className="dnac__q">Which one are you selling?</h3>
-          <p className="dnac__hint">Your photo shows {check.photo.boxes.length} things. Tap yours, so buyers comparing shops find it.</p>
+          <p className="dnac__hint">Your photo shows {check.photo.boxes.length} things. Tap yours and help the community by keeping the product DNA accurate.</p>
           <div className="dnac__photo"><span className="dnac__frame">
             <img src={check.photo.url} alt={`Photo of ${title}`} />
             {check.photo.boxes.map((box, index) => (
@@ -167,7 +169,7 @@ function MatchQuestion({ dna, reports, reported, busy, onYes, onNo }: {
       <p className="dnac__hint">
         {reported
           ? `${reports === 1 ? 'A buyer' : `${reports} buyers`} said your listing may not be this. One tap settles it.`
-          : 'Figmark put your listing with other shops selling this. Is it the same thing?'}
+          : 'Does it match this listing?'}
       </p>
       <Link to={dnaHref(dna.id)} className="dnac__product">
         <span className="dnac__productpic">{dna.cover ? <CropPic src={dna.cover} box={dna.coverBox} /> : <Icon name="dna" size={18} />}</span>
@@ -197,44 +199,106 @@ function MovePeek({ from, to, title }: { from: DnaSummary; to: DnaSummary; title
   );
 }
 
+const ASK_AFTER_MS = 3_500;
+const ASK_AGAIN_MS = 3 * 24 * 3600_000;
+const askKey = (dnaId: string) => `figmark.dnaAsk.${dnaId}`;
+
 /**
- * For everybody else looking at a listing: is this the right product? A
- * "no" goes to the shop and to Figmark's operators, once a person.
+ * On a product's page, a few seconds in: does this one listing on it really
+ * match? A card rises from the bottom asking the reader to help the
+ * community. "No" tells the shop and Figmark's operators; enough "yes" and
+ * nobody is asked about that listing again. Signed-in readers only, never
+ * about their own listings, and "Not now" keeps it away for a few days.
  */
-export function DnaVote({ listingId, signedIn, onSignIn }: { listingId: string; signedIn: boolean; onSignIn: () => void }) {
-  const key = `figmark.dnaVote.${listingId}`;
-  const [said, setSaid] = useState<'yes' | 'no' | null>(() => {
-    try { return (localStorage.getItem(key) as 'yes' | 'no' | null) ?? null; } catch { return null; }
-  });
-  const [busy, setBusy] = useState(false);
+export function DnaAskPopup({ dnaId, dnaName, cover, coverBox }: {
+  dnaId: string; dnaName: string; cover: string | null; coverBox: RegionBox | null;
+}) {
+  const { user } = useSession();
   const toast = useToast();
+  const reduced = useReducedMotion();
+  const [ask, setAsk] = useState<DnaAsk | null>(null);
+  const [said, setSaid] = useState<'yes' | 'no' | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const closing = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    setAsk(null);
+    setSaid(null);
+    setLeaving(false);
+    if (!user) return undefined;
+    try {
+      const last = Number(localStorage.getItem(askKey(dnaId)) ?? 0);
+      if (Date.now() - last < ASK_AGAIN_MS) return undefined;
+    } catch { /* asked anyway */ }
+    let live = true;
+    const found = api.dnaAsk(dnaId).then((answer) => answer.ask).catch(() => null);
+    const timer = window.setTimeout(() => { void found.then((next) => { if (live && next) setAsk(next); }); }, ASK_AFTER_MS);
+    return () => { live = false; window.clearTimeout(timer); };
+  }, [dnaId, user]);
+  useEffect(() => () => window.clearTimeout(closing.current), []);
+
+  if (!ask) return null;
+
+  const remember = () => { try { localStorage.setItem(askKey(dnaId), String(Date.now())); } catch { /* this visit only */ } };
+  const close = () => {
+    remember();
+    setLeaving(true);
+    closing.current = window.setTimeout(() => setAsk(null), reduced ? 0 : 260);
+  };
   const answer = async (right: boolean) => {
-    if (!signedIn) { onSignIn(); return; }
     setBusy(true);
     try {
-      await api.dnaVote(listingId, right);
-      const value = right ? 'yes' : 'no';
-      setSaid(value);
-      try { localStorage.setItem(key, value); } catch { /* remembered for this page only */ }
+      await api.dnaVote(ask.listingId, right);
+      setSaid(right ? 'yes' : 'no');
+      remember();
+      closing.current = window.setTimeout(close, 3_200);
     } catch (err) {
       toast(err instanceof ApiRequestError ? err.message : 'That did not go through.', 'error');
     } finally {
       setBusy(false);
     }
   };
-  if (said) {
-    return (
-      <p className="dnac__vote is-said">
-        <Icon name="check" size={13} />
-        {said === 'yes' ? ' Thanks for checking.' : ' Thanks - the shop and Figmark have been asked to fix it.'}
-      </p>
-    );
-  }
+  const others = ask.yes;
+
   return (
-    <div className="dnac__vote">
-      <span>Right product?</span>
-      <button type="button" className="dnac__votebtn" disabled={busy} onClick={() => void answer(true)}>Yes</button>
-      <button type="button" className="dnac__votebtn" disabled={busy} onClick={() => void answer(false)}>No</button>
-    </div>
+    <aside className={`dnaask${leaving ? ' is-leaving' : ''}${said ? ' is-said' : ''}`} role="dialog" aria-label="Help the community">
+      <div className="dnaask__card">
+        <button type="button" className="dnaask__close" aria-label="Not now" onClick={close}><Icon name="close" size={14} /></button>
+        {said ? (
+          <div className="dnaask__thanks">
+            <span className="dnaask__burst" aria-hidden="true"><Icon name="check" size={22} /></span>
+            <b>{said === 'yes' ? 'Thanks - you just helped the community!' : 'Thanks for spotting it!'}</b>
+            <p>{said === 'yes'
+              ? `Every collector looking at ${dnaName} now sees a checked listing.`
+              : 'The shop and Figmark have been asked to check it and correct it if it does not match.'}</p>
+          </div>
+        ) : (
+          <>
+            <p className="dnaask__eyebrow"><Icon name="dna" size={13} /> Help the community</p>
+            <div className="dnaask__pair">
+              <span className="dnaask__pic">{ask.photoUrl ? <img src={ask.photoUrl} alt="" /> : <Icon name="image" size={18} />}</span>
+              <span className="dnaask__link" aria-hidden="true"><i /><b>?</b><i /></span>
+              <span className="dnaask__pic is-dna">{cover ? <CropPic src={cover} box={coverBox} /> : <Icon name="dna" size={18} />}</span>
+            </div>
+            <h3 className="dnaask__q">Does this listing match <span>{dnaName}</span>?</h3>
+            <p className="dnaask__what"><b>{ask.title}</b> · {ask.shop}</p>
+            <div className="dnaask__choices">
+              <button type="button" className="dnaask__btn is-yes" disabled={busy} onClick={() => void answer(true)}>
+                <Icon name="check" size={15} /> Yes, it matches
+              </button>
+              <button type="button" className="dnaask__btn" disabled={busy} onClick={() => void answer(false)}>
+                No, it doesn't
+              </button>
+            </div>
+            <p className="dnaask__foot">
+              {others > 0
+                ? `${others} collector${others === 1 ? ' has' : 's have'} checked it. One more tap keeps this product page accurate.`
+                : 'Be the first to check it - it keeps prices and shops accurate for everyone.'}
+            </p>
+          </>
+        )}
+      </div>
+    </aside>
   );
 }
