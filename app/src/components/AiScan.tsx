@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { FoundThing } from '../photoThings';
 import { haptic } from '../haptics';
+import { noteScan, scanAllowance } from '../scanLimit';
 
 /**
  * "Scan with AI": the closer reading of a photo the phone's own detector
@@ -24,8 +25,22 @@ export function AiScan({ photoUrl, onFound, hint }: {
     return () => window.clearTimeout(idle);
   }, []);
 
+  // A wait for the next scan clears itself when it is over.
+  const [, tick] = useState(0);
+  const allowance = scanAllowance(photoUrl);
+  const waitMs = !allowance.ok ? allowance.waitMs : undefined;
+  useEffect(() => {
+    if (!waitMs) return;
+    const timer = window.setTimeout(() => tick((n) => n + 1), Math.min(waitMs, 1000));
+    return () => window.clearTimeout(timer);
+  }, [waitMs]);
+  const spent = !allowance.ok && !waitMs;
+
   const scan = () => {
     if (now.busy) return;
+    // Not now: the hint beside the button already says why.
+    if (!scanAllowance(photoUrl).ok) return;
+    noteScan(photoUrl);
     haptic('tap');
     setState({ photoUrl, busy: true, note: null, done: null });
     void import('../puterVision')
@@ -39,14 +54,16 @@ export function AiScan({ photoUrl, onFound, hint }: {
 
   return (
     <div className="aiscan">
-      <button type="button" className="btn btn--quiet btn--sm aiscan__go" onClick={scan} disabled={now.busy} aria-busy={now.busy}>
+      <button type="button" className="btn btn--quiet btn--sm aiscan__go" onClick={scan} disabled={now.busy || spent} aria-busy={now.busy}>
         {now.busy ? <><span className="pcs-spin" aria-hidden="true" /> Scanning with AI…</> : <>✨ {now.done != null ? 'Scan again with AI' : 'Scan with AI'}</>}
       </button>
       <span className="aiscan__hint">
         {now.note
           ?? (now.done != null
-            ? `The AI${now.model ? ` (${now.model})` : ''} found ${now.done} ${now.done === 1 ? 'item' : 'items'}.`
-            : hint ?? 'Missed some?')}
+            ? `The AI${now.model ? ` (${now.model})` : ''} found ${now.done} ${now.done === 1 ? 'item' : 'items'}.${spent ? ` ${allowance.message}` : ''}`
+            : null)
+          ?? (!now.busy && !allowance.ok ? allowance.message : null)
+          ?? hint ?? 'Missed some?'}
       </span>
     </div>
   );

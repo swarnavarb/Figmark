@@ -1035,6 +1035,47 @@ export function answerOffline(question: string, plan: CoachPlan, weights: Record
   return { ...topicsAnswer(), source: 'menu' };
 }
 
+/* ── Auto: Figgy or the AI ──────────────────────────────────────────────── */
+
+/** Who Auto lets answer, and why - the why is for tests and for the chat's own note. */
+export interface AutoPick {
+  use: 'figgy' | 'ai';
+  reason: 'private' | 'topics' | 'guide' | 'today' | 'when' | 'follow_up' | 'write' | 'detailed' | 'unsure' | 'nothing';
+}
+
+/** Asking for something written or worked out: what a model does and a guide cannot. */
+const WRITE = /\b(write|draft|compose|rewrite|reword|caption|captions|hashtags?|slogan|tagline|bio for|description for|message (for|to)|reply (for|to)|translate|in hindi|in tamil|in bengali|in telugu|in marathi|compare|versus|vs\.?|pros and cons|calculate|work out)\b/;
+/** A short follow-up that only makes sense after the answer before it. */
+const FOLLOW_UP = /^(and|but|also|so|then|what about|how about|why|really|ok(ay)?|that|this|it|those|them|more|explain|example|another|again)\b/;
+/** Guides sellers have rated this low are left to the AI. */
+const WEAK_GUIDE = 0.9;
+/** Longer than this, a question usually carries detail a guide does not speak to. */
+const DETAILED_WORDS = 22;
+
+/**
+ * Auto mode: Figgy answers what its guides answer well - instantly, free and
+ * about this shop - and the AI takes the rest: questions no guide fits or only
+ * loosely fits, asks for something written, long detailed questions, and
+ * follow-ups to an answer the AI gave. Private questions are always Figgy's,
+ * so they are declined and never sent anywhere.
+ */
+export function autoPick(question: string, weights: Record<string, number> = {}, previous: 'figgy' | 'ai' | null = null): AutoPick {
+  const text = norm(question).trim();
+  const words = text.split(/\s+/).filter(Boolean);
+  if (isPrivateQuestion(question)) return { use: 'figgy', reason: 'private' };
+  if (TOPICS.test(text)) return { use: 'figgy', reason: 'topics' };
+  if (previous === 'ai' && words.length <= 8 && FOLLOW_UP.test(text)) return { use: 'ai', reason: 'follow_up' };
+  if (WRITE.test(text)) return { use: 'ai', reason: 'write' };
+  if (words.length > DETAILED_WORDS || (question.match(/\?/g) ?? []).length > 1) return { use: 'ai', reason: 'detailed' };
+  if (/\bwhen\b/.test(text) && /\b(post|share|market|drop|list)/.test(text)) return { use: 'figgy', reason: 'when' };
+  const guides = matchGuides(question, weights);
+  const top = guides[0];
+  if (top) return (weights[top.id] ?? 1) >= WEAK_GUIDE ? { use: 'figgy', reason: top.id === 'when' ? 'when' : 'guide' } : { use: 'ai', reason: 'unsure' };
+  if (TODAY_WORDS.some((word) => text.includes(word))) return { use: 'figgy', reason: 'today' };
+  // Only a loose likeness to a guide, or nothing at all: the AI reads the question as asked.
+  return { use: 'ai', reason: closestGuide(understand(question)) ? 'unsure' : 'nothing' };
+}
+
 /** Guides that are not topics to offer: when to post has its own button, and Figgy's own card. */
 const UNLISTED = new Set(['when', 'about']);
 
