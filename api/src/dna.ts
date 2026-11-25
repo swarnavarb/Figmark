@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Listing, Post, RegionBox, SiteContent, Want } from '../../shared/models.js';
 import {
   DNA_PREFIX, DNA_TAGS_PER_POST, HUNT_COVERED, SAME_WITH_PHOTO, otherModel, sameProductWords, covered, dnaDocId, heatOf, lineOf,
-  linkKey, nameFrom, pieceKey, productWords, sameCategory, wordLikeness,
+  linkKey, nameFrom, normalWords, pieceKey, productWords, sameCategory, sameProductSoft, softLikeness, wordLikeness,
   type DnaLine, type DnaLink, type DnaLinkKind, type DnaSummary, type ProductDna,
 } from '../../shared/dna.js';
 import { getRepository } from './data/index.js';
@@ -82,8 +82,10 @@ function place(index: DnaIndex, dna: ProductDna): void {
  * ("Mark 85") stored words without them, and their names still have them.
  */
 function withNameWords(dna: ProductDna): ProductDna {
-  const extra = productWords(dna.name).filter((word) => !dna.words.includes(word));
-  return extra.length > 0 ? { ...dna, words: [...dna.words, ...extra] } : dna;
+  const words = normalWords(dna.words);
+  const extra = productWords(dna.name).filter((word) => !words.includes(word));
+  const changed = extra.length > 0 || words.length !== dna.words.length;
+  return changed ? { ...dna, words: [...words, ...extra] } : dna;
 }
 
 /** Every DNA, from this instance's copy when it is under a minute old. */
@@ -374,48 +376,7 @@ export async function dnaForItem(
 
   const index = await dnaIndex(repository);
   const words = productWords(item.title);
-  const keys = blockKeys('listing', listing.id, item.piece);
-  const candidates = fresh ? [] : [...index.byId.values()].filter((dna) => !dna.mergedInto && dna.line === item.line
-    && sameCategory(dna.category, listing.category) && !keys.some((key) => dna.blocked.includes(key))
-    // Another thing in the same photo is on it: the seller listed them apart, so this is another product.
-    && !(item.piece && dna.links.some((entry) => entry.kind === 'listing' && entry.id === listing.id && (entry.piece ?? null) !== item.piece)));
-
-  // The image scan: the thing's own picture against the pictures of the
-  // listings already on each DNA its name could be. The same picture, or the
-  // same thing in another picture, makes a weaker name enough; and a match on
-  // the name alone has to stand up to the pictures - another colourway of the
-  // same mould, or a thing that looks nothing like it, is another product.
-  const plausible = candidates.filter((dna) => !otherModel(words, dna.words) && wordLikeness(words, dna.words) >= PHOTO_WORDS);
-  const scanned = await scanAgainst(listing, item, plausible, catalogue).catch(() => new Map<string, PictureLook>());
-
-  const ranked = plausible.map((dna) => {
-    const like = wordLikeness(words, dna.words);
-    const look = scanned.get(dna.id);
-    const photo = look?.same ? 2 : look?.sameItem ? 1 : 0;
-    const score = photo === 2 ? 2 + like
-      : photo === 1 && like >= SAME_WITH_PHOTO ? 1 + like
-        : sameProductWords(words, dna.words) ? like : 0;
-    return { dna, score, like, photo, look };
-  }).filter((entry) => entry.score > 0)
-    .sort((a, b) => b.score - a.score || b.dna.links.length - a.dna.links.length);
-
-  // A match on the name alone, the pictures not settling it, is looked at:
-  // the same mould in other colours is another product, and so is whatever
-  // Claude, seeing both pictures, says is another version.
-  let best: { dna: ProductDna; score: number } | null = null;
-  let looked = 0;
-  for (const entry of ranked) {
-    if (entry.photo === 0 && entry.like < 1) {
-      if (entry.look?.variant) continue;
-      if (looked < EYE_CHECKS) {
-        looked += 1;
-        const same = await sameByEye(listing, item, entry.dna, catalogue).catch(() => null);
-        if (same === false) continue;
-      }
-    }
-    best = entry;
-    break;
-  }
+  const best = fresh ? null : await bestMatch(listing, item, candidatesFor(index, listing, item), catalogue);
 
   const entry = link('listing', listing.id, listing.sellerId, fresh ? 'owner' : 'auto', item.piece);
   // A piece's picture is the whole lot: a listing of that thing alone gives its DNA a better one.
@@ -438,6 +399,79 @@ export async function dnaForItem(
     .slice(0, 60)
     .map((other) => link('listing', other.id, other.sellerId, 'auto'));
   return saveDna(repository, started.id, () => ({ ...started, links: [entry, ...siblings] }));
+}
+
+/**
+ * The DNAs one thing could join: live, on its line, in its category, not one
+ * it was taken off, and not one another thing of the same photo is on.
+ */
+function candidatesFor(index: DnaIndex, listing: Listing, item: ListingItem, except: string | null = null): ProductDna[] {
+  const keys = blockKeys('listing', listing.id, item.piece);
+  return [...index.byId.values()].filter((dna) => dna.id !== except && !dna.mergedInto && dna.line === item.line
+    && sameCategory(dna.category, listing.category) && !keys.some((key) => dna.blocked.includes(key))
+    // Another thing in the same photo is on it: the seller listed them apart, so this is another product.
+    && !(item.piece && dna.links.some((entry) => entry.kind === 'listing' && entry.id === listing.id && (entry.piece ?? null) !== item.piece)));
+}
+
+/** How a match was made, for the reason staff see beside a suggested twin. */
+export type MatchWhy = 'same-photo' | 'same-thing-in-photo' | 'same-name' | 'same-name-other-maker';
+
+/**
+ * The DNA of the same product among `candidates`, or null.
+ *
+ * The image scan: the thing's own picture against the pictures of the
+ * listings already on each DNA its name could be. The same picture, or the
+ * same thing in another picture, makes a weaker name enough; and a match on
+ * the name alone has to stand up to the pictures - another colourway of the
+ * same mould, or a thing that looks nothing like it, is another product.
+ *
+ * Names that only agree once a maker one of them leaves out is set aside -
+ * "McF Scarecrow" against "DC Multiverse Scarecrow" - are taken only when a
+ * picture, or an eye on both pictures, says they are one thing.
+ */
+export async function bestMatch(
+  listing: Listing, item: ListingItem, candidates: ProductDna[], catalogue: Listing[],
+): Promise<{ dna: ProductDna; why: MatchWhy } | null> {
+  const words = productWords(item.title);
+  const plausible = candidates.filter((dna) => !otherModel(words, dna.words)
+    && Math.max(wordLikeness(words, dna.words), softLikeness(words, dna.words)) >= PHOTO_WORDS);
+  const scanned = await scanAgainst(listing, item, plausible, catalogue).catch(() => new Map<string, PictureLook>());
+
+  const ranked = plausible.map((dna) => {
+    const like = wordLikeness(words, dna.words);
+    const soft = Math.max(like, softLikeness(words, dna.words));
+    const look = scanned.get(dna.id);
+    const photo = look?.same ? 2 : look?.sameItem ? 1 : 0;
+    const byName = sameProductWords(words, dna.words);
+    const byKind = !byName && sameProductSoft(words, dna.words);
+    const score = photo === 2 ? 2 + soft
+      : photo === 1 && soft >= SAME_WITH_PHOTO ? 1 + soft
+        : byName ? like : byKind ? soft / 2 : 0;
+    // Word for word the same title, "figure" and all: nothing left for an eye to settle.
+    const exact = wordLikeness(productWords(item.title, true), productWords(dna.name, true)) >= 1;
+    const why: MatchWhy = photo === 2 ? 'same-photo' : photo === 1 ? 'same-thing-in-photo' : byName ? 'same-name' : 'same-name-other-maker';
+    return { dna, score, like, photo, look, byKind, why, exact };
+  }).filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score || b.dna.links.length - a.dna.links.length);
+
+  // A match on the name alone, the pictures not settling it, is looked at:
+  // the same mould in other colours is another product, and so is whatever
+  // Claude, seeing both pictures, says is another version.
+  let looked = 0;
+  for (const entry of ranked) {
+    if (entry.photo === 0 && (!entry.exact || entry.byKind)) {
+      if (entry.look?.variant) continue;
+      if (looked >= EYE_CHECKS) {
+        if (entry.byKind) continue;
+      } else {
+        looked += 1;
+        const same = await sameByEye(listing, item, entry.dna, catalogue).catch(() => null);
+        if (same === false || (entry.byKind && same !== true)) continue;
+      }
+    }
+    return { dna: entry.dna, why: entry.why };
+  }
+  return null;
 }
 
 /** Names this alike are worth a look at the pictures; a picture of the same thing then needs no more. */
@@ -603,9 +637,181 @@ export function sweepListings(repository: Repo, catalogue: Listing[], limit = 40
       if (index.byLink.has(linkKey('want', want.id)) || looked.has(`want/${want.id}`)) continue;
       if (await dnaForWant(repository, want, catalogue).catch(() => null)) linked += 1;
     }
+    // Last, the products the matcher started alone that another one turns out to be.
+    linked += await foldLonely(repository, catalogue).catch(() => 0);
     return linked;
   })().finally(() => { sweeping = null; });
   return sweeping;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Folding two into one, and splitting one in two                             */
+/* -------------------------------------------------------------------------- */
+
+/** Two links to one thing: kept apart by their piece. */
+const thingKey = (entry: DnaLink) => `${linkKey(entry.kind, entry.id)}#${entry.piece ?? ''}`;
+
+/**
+ * Fold `from` into `into`: every link moves, stars add up, `from` sends its
+ * readers on. `by` says who did it; staff and the matcher both fold.
+ */
+export async function foldDna(
+  repository: Repo, from: ProductDna, into: ProductDna, by: DnaLink['by'] = 'staff',
+): Promise<ProductDna | null> {
+  const saved = await saveDna(repository, into.id, (current) => {
+    if (!current) return null;
+    const have = new Set(current.links.map(thingKey));
+    // What staff move is theirs; what the matcher moves stays the matcher's, or whoever linked it.
+    const moved = from.links.filter((entry) => !have.has(thingKey(entry)))
+      .map((entry) => (by === 'staff' ? { ...entry, by: 'staff' as const } : entry));
+    const total = (current.score?.total ?? 0) + (from.score?.total ?? 0);
+    const count = (current.score?.count ?? 0) + (from.score?.count ?? 0);
+    const blocked = current.blocked.filter((key) => !from.links.some((entry) => key === linkKey(entry.kind, entry.id)));
+    return {
+      ...current, blocked, links: [...current.links, ...moved], cover: current.cover ?? from.cover,
+      ...(count > 0 ? { score: { total, count } } : {}),
+    };
+  });
+  await saveDna(repository, from.id, (current) => (current ? { ...current, mergedInto: into.id } : null));
+  return saved;
+}
+
+/** One link, as a caller names it: the thing, and for a listing of several, which of them. */
+export interface LinkRef {
+  kind: DnaLinkKind;
+  id: string;
+  piece?: string | null;
+}
+
+const refers = (ref: LinkRef) => (entry: DnaLink) =>
+  entry.kind === ref.kind && entry.id === ref.id && (entry.piece ?? null) === (ref.piece ?? null);
+
+/**
+ * Split some of a DNA's links off it: onto `into`, or onto a new DNA named
+ * `name` (it must take a listing with it: only listings start a product).
+ * What leaves is blocked on `from`, so the matcher never puts it back.
+ */
+export async function splitDna(
+  repository: Repo, from: ProductDna, refs: LinkRef[], into: ProductDna | null, name: string | null,
+  catalogue: Listing[],
+): Promise<ProductDna | string> {
+  const leaving = from.links.filter((entry) => refs.some((ref) => refers(ref)(entry)));
+  if (leaving.length === 0) return 'Pick what to split off.';
+  const byId = new Map(catalogue.map((listing) => [listing.id, listing]));
+  const listingsLeaving = leaving.filter((entry) => entry.kind === 'listing');
+  if (!into && listingsLeaving.length === 0) return 'A new product needs at least one listing.';
+  if (into && into.id === from.id) return 'That is the same product.';
+  const moved = leaving.map((entry) => ({ ...entry, by: 'staff' as const, at: new Date().toISOString() }));
+  // Staff said the two are different: the listings that stay are never matched onto where these went.
+  const stayKeys = from.links.filter((entry) => entry.kind === 'listing' && !refs.some((ref) => refers(ref)(entry)))
+    .map((entry) => (entry.piece ? pieceKey(entry.id, entry.piece) : linkKey('listing', entry.id)));
+
+  let target: ProductDna;
+  if (into) {
+    const saved = await saveDna(repository, into.id, (current) => {
+      if (!current) return null;
+      const have = new Set(current.links.map(thingKey));
+      const keys = moved.flatMap((entry) => blockKeys(entry.kind, entry.id, entry.piece ?? null));
+      return {
+        ...current,
+        blocked: [...new Set([...current.blocked.filter((key) => !keys.includes(key)), ...stayKeys])],
+        links: [...current.links, ...moved.filter((entry) => !have.has(thingKey(entry)))],
+      };
+    });
+    if (!saved) return 'No such product.';
+    target = saved;
+  } else {
+    const first = listingsLeaving[0]!;
+    const listing = byId.get(first.id);
+    const item = listing ? itemsOf(listing).find((each) => each.piece === (first.piece ?? null)) : undefined;
+    const title = (name ?? '').trim() || (item?.title ?? from.name);
+    const cover = listing && !first.piece ? photoOf(listing) : null;
+    const started = newDna(nameFrom(title), from.category, from.line, productWords(title), cover);
+    const saved = await saveDna(repository, started.id, () => ({ ...started, links: moved, blocked: stayKeys }));
+    if (!saved) return 'That did not go through.';
+    target = saved;
+  }
+  await saveDna(repository, from.id, (current) => {
+    if (!current) return null;
+    const links = current.links.filter((entry) => !refs.some((ref) => refers(ref)(entry)));
+    const keys = leaving.map((entry) => (entry.kind === 'listing' && entry.piece ? pieceKey(entry.id, entry.piece) : linkKey(entry.kind, entry.id)));
+    const blocked = [...new Set([...current.blocked, ...keys])];
+    // The cover was of a listing that left: the next reader gets one of what stays.
+    const coverLeft = current.cover && listingsLeaving.some((entry) => {
+      const listing = byId.get(entry.id);
+      return listing ? photoOf(listing) === current.cover : false;
+    });
+    return { ...current, links, blocked, cover: coverLeft ? null : current.cover };
+  });
+  return target;
+}
+
+/** When each lonely DNA was last looked at for a twin. */
+const lonelyLooked = new Map<string, number>();
+const LONELY_AGAIN_MS = 6 * 60 * 60_000;
+/** Lonely DNAs looked at per sweep: each may cost a look by eye. */
+const LONELY_PER_SWEEP = 6;
+
+/**
+ * Products the matcher started for one listing, that another product turns
+ * out to be: a DNA started before the other was listed, or before the
+ * matcher knew "McF" is McFarlane. Each is matched again as if it were new,
+ * against every other DNA, and folded in when the same rules a new listing
+ * meets say so. Only DNAs nobody has said anything about: one listing, linked
+ * by the matcher, no owner or staff choice on it.
+ */
+export async function foldLonely(repository: Repo, catalogue: Listing[], limit = LONELY_PER_SWEEP): Promise<number> {
+  const index = await dnaIndex(repository);
+  const byId = new Map(catalogue.map((listing) => [listing.id, listing]));
+  const now = Date.now();
+  const lonely = [...index.byId.values()].filter((dna) => {
+    if (dna.mergedInto || now - (lonelyLooked.get(dna.id) ?? 0) < LONELY_AGAIN_MS) return false;
+    const listings = dna.links.filter((entry) => entry.kind === 'listing');
+    return listings.length === 1 && dna.links.every((entry) => entry.by === 'auto');
+  }).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, limit);
+  let folded = 0;
+  for (const dna of lonely) {
+    lonelyLooked.set(dna.id, now);
+    if (lonelyLooked.size > 20_000) lonelyLooked.delete(lonelyLooked.keys().next().value!);
+    const only = dna.links.find((entry) => entry.kind === 'listing')!;
+    const listing = byId.get(only.id);
+    if (!listing || !everListed(listing)) continue;
+    const item = itemsOf(listing).find((each) => each.piece === (only.piece ?? null));
+    if (!item) continue;
+    // The others it could be: each with at least one listing of its own to compare against.
+    const others = candidatesFor(index, listing, item, dna.id)
+      .filter((other) => other.links.some((entry) => entry.kind === 'listing' && entry.id !== listing.id));
+    const found = await bestMatch(listing, item, others, catalogue).catch(() => null);
+    if (!found) continue;
+    await foldDna(repository, dna, found.dna, 'auto');
+    folded += 1;
+  }
+  return folded;
+}
+
+/** For tests: look at every lonely DNA again. */
+export function forgetLonely(): void {
+  lonelyLooked.clear();
+}
+
+/**
+ * Products that may be this one under another name, for staff to fold in:
+ * the same category and line, and names alike - or alike once a maker only
+ * one of them names is set aside. Names only; nothing is fetched or looked at.
+ */
+export async function twinsOf(repository: Repo, dna: ProductDna): Promise<{ dna: ProductDna; like: number; why: MatchWhy }[]> {
+  const index = await dnaIndex(repository);
+  return [...index.byId.values()]
+    .filter((other) => other.id !== dna.id && !other.mergedInto && other.line === dna.line
+      && sameCategory(other.category, dna.category) && !otherModel(dna.words, other.words))
+    .map((other) => {
+      const like = wordLikeness(dna.words, other.words);
+      const soft = softLikeness(dna.words, other.words);
+      return { dna: other, like: Math.max(like, soft), why: (like >= soft ? 'same-name' : 'same-name-other-maker') as MatchWhy };
+    })
+    .filter((entry) => entry.like >= 0.5)
+    .sort((a, b) => b.like - a.like || b.dna.links.length - a.dna.links.length)
+    .slice(0, 6);
 }
 
 /* -------------------------------------------------------------------------- */

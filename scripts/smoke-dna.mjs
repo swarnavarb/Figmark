@@ -606,4 +606,92 @@ await check('every thing in a lot is a product of its own, even named alike; one
   assert.deepEqual((await getDna(repository, ids[2])).links.filter((entry) => entry.id === shelf.id).map((entry) => entry.piece), ['df_c']);
 });
 
+console.log('the same figure under another maker word, and folding and splitting');
+
+const { foldLonely, forgetLonely } = await import(new URL('api/src/dna.js', dist));
+
+await check('"McF" is McFarlane, and "figure" says nothing about which figure', () => {
+  const mcf = dna.productWords('McF Scarecrow');
+  const dc = dna.productWords('DC Multiverse Scarecrow boxed figure');
+  assert.deepEqual(mcf, ['mcfarlane', 'scarecrow']);
+  assert.deepEqual(dc, ['dc', 'multiverse', 'scarecrow']);
+  assert.equal(dna.sameProductWords(mcf, dc), false, 'names alone are not enough');
+  assert.equal(dna.sameProductSoft(mcf, dc), true, 'but with the makers set aside they are one figure');
+  assert.equal(dna.sameProductSoft(mcf, dna.productWords('DC Multiverse Superman')), false);
+  assert.equal(dna.sameProductSoft(dna.productWords('McFarlane'), dna.productWords('DC Multiverse')), false, 'makers alone name nothing');
+  assert.deepEqual(dna.normalWords(['mcf', 'scarecrow', 'figure']), ['mcfarlane', 'scarecrow']);
+});
+
+let scarecrowA;
+let scarecrowB;
+await check('a soft name match joins only when the pictures agree', async () => {
+  const opts = { authenticity: 'Original' };
+  useEyeCheck(async () => false);
+  scarecrowA = await list(otherSeller, 'McF Scarecrow', opts, 288000, { category: 'Figures', photos: await stored('t800a') });
+  const aDna = await of(scarecrowA);
+  scarecrowB = await list(me.id, 'DC Multiverse Scarecrow boxed figure', opts, 320000, { category: 'Figures', photos: await stored('t800b') });
+  forgetCatalogue();
+  const bDna = await of(scarecrowB);
+  assert.notEqual(bDna.id, aDna.id, 'the eye said no: two products');
+  // Without a look at all - no vision, nothing to compare - a soft match is never taken.
+  useEyeCheck(async () => null);
+  const third = await list(me.id, 'Mezco Scarecrow', opts, 900000, { category: 'Figures', photos: await stored('cyclops-in-hand') });
+  forgetCatalogue();
+  const thirdDna = await of(third);
+  assert.ok(thirdDna.id !== aDna.id && thirdDna.id !== bDna.id);
+});
+
+await check('a product started alone is folded into its twin once the pictures agree', async () => {
+  useEyeCheck(async () => true);
+  forgetLonely();
+  forgetDnaIndex();
+  forgetCatalogue();
+  const before = await of(scarecrowB);
+  const { everyListing } = await import(new URL('catalog-routes.js', fns));
+  const folded = await foldLonely(repository, await everyListing(repository), 50);
+  assert.ok(folded >= 1, 'at least the Scarecrow pair');
+  forgetDnaIndex();
+  const a = await of(scarecrowA);
+  const b = await of(scarecrowB);
+  assert.equal(a.id, b.id, 'one product now');
+  const gone = before.id === a.id ? null : before.id;
+  if (gone) assert.equal((await getDna(repository, gone)).id, a.id, 'the old one sends readers on');
+  useEyeCheck(null);
+});
+
+await check('staff see what is on a product and its likely twins, and split one off with a preview of what stays', async () => {
+  const product = await of(scarecrowA);
+  const anon = await routes.dnaManageRoute(req({ params: { id: product.id } }), ctx);
+  assert.ok(anon.status === 401 || anon.status === 403);
+  const managed = await routes.dnaManageRoute(req({ headers: me.headers, params: { id: product.id } }), ctx);
+  if (managed.status === 403) {
+    console.log('      (refused: operator has no authenticator)');
+    return;
+  }
+  assert.equal(managed.status, 200, JSON.stringify(managed.jsonBody));
+  const listings = managed.jsonBody.things.filter((thing) => thing.kind === 'listing');
+  assert.ok(listings.length >= 2);
+  assert.ok(listings.every((thing) => thing.title && thing.who !== undefined));
+  const leaving = listings.find((thing) => thing.id === scarecrowB.id);
+  const split = await routes.dnaSplitRoute(req({ headers: me.headers, params: { id: product.id }, body: {
+    links: [{ kind: 'listing', id: leaving.id, piece: leaving.piece }], name: 'DC Multiverse Scarecrow',
+  } }), ctx);
+  assert.equal(split.status, 200, JSON.stringify(split.jsonBody));
+  forgetDnaIndex();
+  forgetCatalogue();
+  assert.equal((await of(scarecrowB)).id, split.jsonBody.dna);
+  assert.equal((await of(scarecrowB)).name, 'DC Multiverse Scarecrow');
+  assert.equal((await of(scarecrowA)).id, product.id, 'what stays, stays');
+  // And the matcher never folds it back.
+  useEyeCheck(async () => true);
+  forgetLonely();
+  const { everyListing } = await import(new URL('catalog-routes.js', fns));
+  await foldLonely(repository, await everyListing(repository), 50);
+  forgetDnaIndex();
+  assert.notEqual((await of(scarecrowB)).id, (await of(scarecrowA)).id, 'split stays split');
+  useEyeCheck(null);
+  const empty = await routes.dnaSplitRoute(req({ headers: me.headers, params: { id: product.id }, body: { links: [] } }), ctx);
+  assert.equal(empty.status, 400);
+});
+
 console.log(`\n${passed} DNA checks passed`);

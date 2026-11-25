@@ -790,3 +790,16 @@
 @media (prefers-reduced-motion: reduce) {
   .dnak__shelfrow > li { animation: none; }
 }
+
+/* ---- picker: likely twins and the confirm step ------------------------------ */
+
+.dnak__tips { display: grid; gap: 6px; }
+.dnak__tipslabel {
+  margin: 0; font-size: calc(12px * var(--text-scale)); font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--aqua);
+}
+.dnak__why {
+  justify-self: start; margin-top: 2px; padding: 1px 8px; border-radius: 999px; font-size: calc(11px * var(--text-scale));
+  background: var(--aqua-soft); color: var(--aqua); border: 1px solid var(--aqua-line);
+}
+.dnak__confirm { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
