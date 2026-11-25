@@ -306,6 +306,7 @@
 .dnap__strandnote { margin: 4px 0 0; color: var(--text-dim); font-size: calc(13px * var(--text-scale)); }
 .dnap__empty { margin: 4px 0; color: var(--text-faint); font-size: calc(14px * var(--text-scale)); }
 .dnap__subhead { margin: 0 0 8px; font-size: calc(12px * var(--text-scale)); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); }
+.dnap__subnote { margin: -4px 0 8px; font-size: calc(12px * var(--text-scale)); color: var(--text-faint); }
 
 /* ---- price ------------------------------------------------------------------- */
 

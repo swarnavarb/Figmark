@@ -777,7 +777,7 @@ function SocialPostCardView({
             {/* Whether what is in the photo can be bought here, without opening it. */}
             {/* Not on a guess: matching shops would give the answer away. */}
             {photos.length > 0 && !versus && !nested && !social.guess && (
-              <PhotoSales url={photos[0]} about={post.body} by={post.authorId} tone="inline"
+              <PhotoSales url={photos[0]} about={post.body} by={post.authorId} tone="inline" listingId={post.listingId ?? undefined}
                 poster={{ name: post.authorName, handle: author.handle, link: postHref(post) }} />
             )}
             {social.poll && <PollPlay card={card} photos={photos} disabled={nested || !user} vote={vote} />}
@@ -859,7 +859,7 @@ function SocialPostCardView({
       )}
 
       {lightbox !== null && (
-        <Lightbox photos={photos} start={lightbox} about={post.body} by={post.authorId}
+        <Lightbox photos={photos} start={lightbox} about={post.body} by={post.authorId} listingId={post.listingId ?? undefined}
           poster={{ name: post.authorName, handle: author.handle, link: postHref(post) }} onClose={() => setLightbox(null)} />
       )}
     </article>
@@ -1099,8 +1099,10 @@ function Carousel({ photos, alt, burst, onOpen, onDoubleTap }: {
 }
 
 /** A photo filling the screen, with the rest a swipe or an arrow key away. */
-export function Lightbox({ photos, start, onClose, title, caption, about, by, poster, origin, royal }: {
+export function Lightbox({ photos, start, onClose, title, caption, about, by, poster, origin, royal, listingId }: {
   photos: string[];
+  /** The listing these photos are of: one thing sold sends Product DNA straight to its product. */
+  listingId?: string;
   start: number;
   onClose: () => void;
   /** Where the tapped photo sat, so the viewer grows out of it and shrinks back into it. */
@@ -1199,7 +1201,7 @@ export function Lightbox({ photos, start, onClose, title, caption, about, by, po
       )}
       <img loading="lazy" decoding="async" ref={img} key={index} className="lightbox__img" src={photos[index]} alt={`Photo ${index + 1} of ${photos.length}`} />
       {/* Following a link out of it leaves the photo behind, without the shrink back into the page. */}
-      <PhotoSales url={photos[index]} about={about ?? title} by={by} poster={poster} onLeave={onClose} />
+      <PhotoSales url={photos[index]} about={about ?? title} by={by} poster={poster} onLeave={onClose} listingId={listingId} />
       {photos.length > 1 && (
         <>
           <span className="lightbox__count">{index + 1} / {photos.length}</span>
