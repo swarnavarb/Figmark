@@ -29,8 +29,6 @@ import '../styles/ShopCoach.css';
 type View = 'today' | 'week' | 'ask';
 
 const HIDE_KEY = 'figmark:coach-folded';
-const AI_KEY = 'figmark:coach-ai';
-const MODE_KEY = 'figmark:coach-mode';
 
 function readFlag(key: string, id: string): boolean {
   try {
@@ -651,20 +649,13 @@ function Thumb({ down = false }: { down?: boolean }) {
 }
 
 type Assistant = 'figgy' | 'puter';
-/** What the seller picked: Auto (the default) lets each question go to whichever answers it best. */
+/**
+ * What the seller picked. Auto lets each question go to whichever answers it
+ * best; picking Figgy or AI chat sends the next question there, and then the
+ * chat is back on Auto.
+ */
 type Mode = 'auto' | Assistant;
 
-/** The seller's pick for this shop. One who had turned the AI on before Auto existed keeps it. */
-function readMode(id: string): Mode {
-  try {
-    const stored = localStorage.getItem(`${MODE_KEY}:${id}`);
-    if (stored === 'auto' || stored === 'figgy' || stored === 'puter') return stored;
-  } catch { /* storage blocked */ }
-  return readFlag(AI_KEY, id) ? 'puter' : 'auto';
-}
-function writeMode(id: string, mode: Mode) {
-  try { localStorage.setItem(`${MODE_KEY}:${id}`, mode); } catch { /* A private window: it lasts for this page only. */ }
-}
 
 interface Said {
   role: 'user' | 'assistant';
@@ -693,7 +684,7 @@ function CoachChat({ store, signals, plan, guides, run }: {
   const [said, setSaid] = useState<Said[]>([]);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
-  const [who, setWho] = useState<Mode>(() => readMode(store.ownerId));
+  const [who, setWho] = useState<Mode>('auto');
   // The picker shows under the box once it is clicked, as in Claude.
   const [engaged, setEngaged] = useState(false);
   const [picking, setPicking] = useState(false);
@@ -719,7 +710,7 @@ function CoachChat({ store, signals, plan, guides, run }: {
     return () => { document.removeEventListener('pointerdown', away); document.removeEventListener('keydown', key); };
   }, [picking]);
 
-  const choose = (next: Mode) => { setWho(next); writeMode(store.ownerId, next); setPicking(false); };
+  const choose = (next: Mode) => { setWho(next); setPicking(false); };
   const report = (body: { source: string; helpful: boolean } | { missed: string }) => {
     void api.coachAnswer(store.ownerId, body).catch(() => undefined);
   };
@@ -732,6 +723,8 @@ function CoachChat({ store, signals, plan, guides, run }: {
     const using: Assistant = mode === 'auto'
       ? (autoPick(text, guides, lastBy === 'puter' ? 'ai' : lastBy).use === 'ai' ? 'puter' : 'figgy')
       : mode;
+    // A pick is for one question: after it, Auto decides again.
+    setWho('auto');
     const mine = ++turn.current;
     const history = [...said, { role: 'user' as const, text }];
     setSaid(history);
@@ -814,7 +807,7 @@ function CoachChat({ store, signals, plan, guides, run }: {
                 </div>
               )}
               {entry.vote === 'down' && entry.question && index === said.length - 1 && (
-                <button type="button" className="chip shopcoach__retry" onClick={() => { if (who !== 'auto') choose(other); void ask(entry.question!, other); }}>
+                <button type="button" className="chip shopcoach__retry" onClick={() => { void ask(entry.question!, other); }}>
                   Ask {ASSISTANTS[other].name} instead
                 </button>
               )}
