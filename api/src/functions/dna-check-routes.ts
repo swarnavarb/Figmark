@@ -309,7 +309,9 @@ async function ask(request: HttpRequest, _context: InvocationContext) {
     && !settledByYes(report, dna.id))
     .map((entry) => ({ ...entry, yes: entry.report && entry.report.dnaId === dna.id ? entry.report.yes : 0 }))
     .sort((a, b) => Number(b.link.by === 'auto') - Number(a.link.by === 'auto') || a.yes - b.yes);
-  const pick = open[0];
+  // The item the reader came from, when it is one to ask about.
+  const from = request.query.get('from');
+  const pick = open.find((entry) => entry.listing.id === from) ?? open[0];
   if (!pick) return json(200, { ask: null });
   const seller = await repository.getUserById(pick.listing.sellerId).catch(() => null);
   const answer: DnaAsk = {
