@@ -61,6 +61,7 @@ browsable with nothing provisioned:
 | Storage | Blob Storage, when `STORAGE_ACCOUNT` is set | In-memory (photos resolve to nothing) |
 | Auth | Static Web Apps identity, when `AUTH_MODE=swa` | Mock username/password provider |
 | Photo search | Claude reads the photo, when `ANTHROPIC_API_KEY` is set | Matches by picture, caption words and probable look-alikes |
+| Scan with AI, coach AI chat | Puter.js on the person's own Puter account first; then the site's free-tier keys (Gemini, Groq, `FREE_AI_<n>_*`), each kept under a daily budget | Puter only |
 
 `/api/health` reports which implementation actually loaded, and the status page
 renders it — so a deployment running on fallbacks is visibly degraded rather

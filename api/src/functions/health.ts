@@ -4,6 +4,7 @@ import { getAuthService } from '../auth/index.js';
 import { config, runningInAzure } from '../config.js';
 import { getRepository } from '../data/index.js';
 import { getPhotoStore } from '../storage/index.js';
+import { freeAiStatus, freeAiUsage } from '../free-ai.js';
 import { visionAvailable } from '../vision.js';
 import { cached, handler, json } from './http.js';
 
@@ -65,6 +66,7 @@ async function health(request: HttpRequest, _context: InvocationContext) {
     photoSearch: visionAvailable()
       ? { vision: true, detail: `Photos are read by ${config.vision!.model} and matched by picture.` }
       : { vision: false, detail: 'Matching by picture only. Set ANTHROPIC_API_KEY to also find items from what is in the photo.' },
+    freeAi: await freeAiHealth(),
   };
 
   // Everyone gets what the app's own banners and sign-up form are drawn from;
@@ -81,10 +83,24 @@ async function health(request: HttpRequest, _context: InvocationContext) {
   return cached(json(200, body), 'private, max-age=30');
 }
 
+/** Whether "Scan with AI" and the coach chat have the site's free keys behind Puter, and each one's use today. */
+async function freeAiHealth(): Promise<NonNullable<HealthResponse['freeAi']>> {
+  const status = freeAiStatus();
+  const services = await freeAiUsage().catch(() => []);
+  return {
+    scan: status.scan,
+    chat: status.chat,
+    detail: services.length > 0
+      ? `Puter first, then the free keys: ${services.map((s) => `${s.id} (${s.model}) ${s.used}/${s.daily} today${s.resting ? ', resting' : ''}${s.lastFailure ? `, last refusal ${s.lastFailure.at}: ${s.lastFailure.message}` : ''}`).join('; ')}.${status.scan ? '' : ' None reads photos: set GEMINI_API_KEY or a FREE_AI_<n>_VISION service.'}`
+      : 'Puter only: no free keys behind it. Set GEMINI_API_KEY, GROQ_API_KEY or FREE_AI_<n>_URL/_KEY/_MODEL.',
+  };
+}
+
 /** Trim a health report down to what a visitor's browser needs. */
 function publicView(body: HealthResponse): void {
   delete body.version;
   delete body.auth.mode;
+  if (body.freeAi) delete body.freeAi.detail;
   // A key that works is "configured" however it was made; the two that do not
   // still say so, since the app warns about them on every page.
   if (body.auth.sessionSecretSource === 'derived') body.auth.sessionSecretSource = 'configured';

@@ -284,8 +284,8 @@ fire there. Some of them also run when someone reads the related page: the bell
 sends held notices, the feed settles pre-orders and games, and the seller's
 console moves a sale. That only helps while someone is on the site. So the same API build is
 also deployed to a small standalone Function App that starts from
-`clock-host.js`. It runs the timers and **no HTTP routes**: `http-off.ts` turns
-route registration off. Its address is not behind Static Web Apps, so a route
+`clock-host.js`. It runs the timers and **no HTTP routes** but one: `http-off.ts` turns
+route registration off, and only the AI relay (`ai-relay.ts`, below) registers anyway. Its address is not behind Static Web Apps, so a route
 served there would skip the sign-in Static Web Apps puts in front of the API.
 It is not linked to the Static Web App, so the Free plan is enough.
 
@@ -331,6 +331,27 @@ does not need `ADMIN_EMAILS` or `AUTH_SESSION_SECRET`: both are for sign-in.
 `PUBLIC_ORIGIN` is not needed here: only the share-card routes read it, and the
 clock app serves no routes. A notice carries a path, which the phone opens
 against the site it subscribed from (`app/public/sw.js`).
+
+### The AI relay
+
+Google's Gemini API and Groq refuse the Static Web App's API, which runs in
+Hong Kong ("User location is not supported", 403). The clock apps run in
+Central India, which both serve, so they also carry one route,
+`POST /api/ai-relay/{host}/{*path}`, that passes a free-AI request on. It is
+not a general proxy: only the AI services listed in `ai-relay.ts` (plus
+`AI_RELAY_EXTRA_HOSTS`), only with the shared secret, and without
+`AI_RELAY_SECRET` set it answers 404. The services' keys stay on the site and
+travel with each request; the relay keeps nothing.
+
+```bash
+SECRET=$(openssl rand -hex 32)
+# On the clock app:
+az functionapp config appsettings set -g rg-figuremarket-dev -n func-figmark-clocks-dev \
+  --settings AI_RELAY_SECRET=$SECRET
+# On the matching Static Web App environment (portal: Environment variables):
+#   AI_RELAY_URL    = https://func-figmark-clocks-dev.azurewebsites.net/api/ai-relay
+#   AI_RELAY_SECRET = the same $SECRET
+```
 
 **Deploying** is the `Deploy clocks` jobs in the workflow. GitHub signs in to
 Azure over OIDC, so no password is stored:

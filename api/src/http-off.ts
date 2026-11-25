@@ -9,4 +9,11 @@
  */
 import { app } from '@azure/functions';
 
+/**
+ * The real registration, kept for the one route the clock app does serve on
+ * purpose: the AI relay (ai-relay.ts), which checks its own secret instead
+ * of relying on Static Web Apps' sign-in.
+ */
+export const registerHttpAnyway: typeof app.http = app.http.bind(app);
+
 app.http = () => undefined;
