@@ -145,29 +145,46 @@ export function PreOrderBox({
   onWhenFull: (next: PreOrderFullRule) => void;
 }) {
   return (
-    <LBox icon="📅" title="Pre-order" hint="Buyers book first; you order once enough are in."
-      right={<Switch checked={on} onChange={onToggle} label="Take pre-orders" />}>
-      {on && (
-        <>
-          <div className="field-row">
-            <label className="field">
-              <span>Bookings needed</span>
-              <input type="number" inputMode="decimal" min="2" max={MAX_THRESHOLD} value={units} onChange={(e) => onUnits(e.target.value)} />
-            </label>
-            <label className="field">
-              <span>Bookings close in (days)</span>
-              <input type="number" inputMode="decimal" min="1" max={MAX_CUTOFF_DAYS} value={closes} onChange={(e) => onCloses(e.target.value)} />
-            </label>
-          </div>
-          {/* Both answerable later from the item's page; asked here so nobody
-              finds out what happens at the cutoff by watching it happen. */}
-          <div className="field-row">
-            <PreOrderRules whenShort={whenShort} onWhenShort={onWhenShort} whenFull={whenFull} onWhenFull={onWhenFull} />
-          </div>
-        </>
-      )}
-    </LBox>
+    <div id="sell-preorder">
+      <LBox icon="📅" title="Pre-order" hint="Buyers book first; you order once enough are in."
+        right={<Switch checked={on} onChange={onToggle} label="Take pre-orders" />}>
+        {on && (
+          <>
+            <div className="field-row">
+              <label className="field">
+                <span>Bookings needed</span>
+                <input type="number" inputMode="decimal" min="2" max={MAX_THRESHOLD} value={units} onChange={(e) => onUnits(e.target.value)} />
+              </label>
+              <label className="field">
+                <span>Bookings close in (days)</span>
+                <input type="number" inputMode="decimal" min="1" max={MAX_CUTOFF_DAYS} value={closes} onChange={(e) => onCloses(e.target.value)} />
+              </label>
+            </div>
+            {/* Both answerable later from the item's page; asked here so nobody
+                finds out what happens at the cutoff by watching it happen. */}
+            <div className="field-row">
+              <PreOrderRules whenShort={whenShort} onWhenShort={onWhenShort} whenFull={whenFull} onWhenFull={onWhenFull} />
+            </div>
+          </>
+        )}
+      </LBox>
+    </div>
   );
+}
+
+/**
+ * Brings the pre-order switch into view and draws the eye to it - for a
+ * note elsewhere on the form that only applies to pre-orders.
+ */
+export function showPreOrderSwitch(): void {
+  const toggle = document.querySelector<HTMLElement>('#sell-preorder [role="switch"]');
+  if (!toggle) return;
+  toggle.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  toggle.focus({ preventScroll: true });
+  toggle.classList.remove('is-flash');
+  void toggle.offsetWidth;
+  toggle.classList.add('is-flash');
+  window.setTimeout(() => toggle.classList.remove('is-flash'), 1800);
 }
 
 /** The two choices a seller makes about a pre-order: when it is short, and once it is full. */

@@ -172,7 +172,8 @@ function OffersDialog({ listing, cards, onClose, onSaved }: {
   return (
     <Modal title={`Offers · ${listing.title}`} onClose={onClose} layout="panel">
       <div className="stack">
-        <OfferEditor offers={offers} onChange={setOffers} priceMinor={listing.priceMinor} shippingMinor={listing.shippingMinor} />
+        <OfferEditor offers={offers} onChange={setOffers} priceMinor={listing.priceMinor} shippingMinor={listing.shippingMinor}
+          preOrder={Boolean(listing.preOrder)} />
         {clashesFor(listing.id, offers, cards).length > 0 && (
           <div className="shopoffr__clashes">
             <b>⚠ Clashes with your loyalty rewards - the buyer picks one</b>

@@ -310,14 +310,32 @@ function WholesaleFields({ tiers, onChange }: { tiers: WholesaleTier[]; onChange
  * and see straight away if one cannot be priced. What is saved is exactly what
  * the buyer is shown.
  */
-export function OfferEditor({ offers, onChange, priceMinor, shippingMinor }: {
+export function OfferEditor({ offers, onChange, priceMinor, shippingMinor, preOrder, onShowPreOrder }: {
   offers: ListingOffer[]; onChange: (next: ListingOffer[]) => void; priceMinor: number;
   /** The item's own shipping: 0 is free already, so free shipping cannot also be an offer. */
   shippingMinor?: number | null;
+  /**
+   * Whether the item is a pre-order. A group-buy reward only works on one, so
+   * it is refused when this is false. Left out where it is not known yet (a template).
+   */
+  preOrder?: boolean;
+  /** Takes the seller to the pre-order switch, when it is on the same form. */
+  onShowPreOrder?: () => void;
 }) {
   const shipsFree = shippingMinor === 0;
+  const notPreOrder = preOrder === false;
   /** Said when a free-shipping offer was picked for an item that already ships free. */
   const [refused, setRefused] = useState(false);
+  /** Said when a group-buy reward was picked for an item that is not a pre-order. */
+  const [groupRefused, setGroupRefused] = useState(false);
+  const preOrderOnly = (
+    <p className="notice notice--warn" role="status">
+      Group-buy reward can only be applied when listing a{' '}
+      {onShowPreOrder
+        ? <a href="#sell-preorder" onClick={(e) => { e.preventDefault(); onShowPreOrder(); }}>pre-order</a>
+        : 'pre-order'}.
+    </p>
+  );
   const problem = (priceMinor > 0 ? cleanOffers(offers, priceMinor).error : cleanOffers(offers).error)
     ?? shippingOfferClash(offers, shippingMinor);
   // One of each kind, except the two that are about different numbers of items.
@@ -337,16 +355,21 @@ export function OfferEditor({ offers, onChange, priceMinor, shippingMinor }: {
           {shipsFree && givesFreeShipping(offer) && (
             <p className="notice notice--warn">{FREE_SHIPPING_TAKEN} Remove it, or choose &quot;Shipping extra&quot; above.</p>
           )}
+          {notPreOrder && offer.kind === 'group_fill' && preOrderOnly}
         </div>
       ))}
       {problem && problem !== FREE_SHIPPING_TAKEN && <p className="notice notice--error">{problem}</p>}
       {refused && shipsFree && <p className="notice notice--warn" role="status">{FREE_SHIPPING_TAKEN}</p>}
+      {groupRefused && notPreOrder && !offers.some((offer) => offer.kind === 'group_fill') && preOrderOnly}
       {offers.length < MAX_OFFERS_PER_ITEM && available.length > 0 && (
         <label className="field">
           <span>Add an offer</span>
           <select value="" onChange={(e) => {
             if (!e.target.value) return;
             const picked = defaultOffer(e.target.value as OfferKind, priceMinor);
+            // A group-buy reward is paid when a pre-order fills: nothing to fill otherwise.
+            if (picked.kind === 'group_fill' && notPreOrder) { setGroupRefused(true); return; }
+            setGroupRefused(false);
             // A group buy on an item that already ships free rewards money off instead.
             const offer: ListingOffer = shipsFree && picked.kind === 'group_fill'
               ? { ...picked, freeShipping: false, discount: { type: 'percent', value: 5 } } : picked;
