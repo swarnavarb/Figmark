@@ -127,6 +127,18 @@ export function DnaPage() {
   const root = useReveal(Boolean(view));
   const reviewAsked = params.get('review') === '1';
 
+  // Opened from a review post: to that review, flashed so the eye finds it.
+  useEffect(() => {
+    if (!view || !location.hash.startsWith('#review-')) return undefined;
+    const timer = window.setTimeout(() => {
+      const target = document.getElementById(decodeURIComponent(location.hash.slice(1)));
+      if (!target) return;
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.classList.add('is-flash');
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [view]);
+
   // Sent here to review it: straight to the form.
   useEffect(() => {
     if (!view || !reviewAsked) return;
@@ -156,7 +168,7 @@ export function DnaPage() {
           <ShopsStrand view={view} />
         </Strand>
 
-        <Strand id="demand" base="G" title="How wanted it is" note="From what people do here: hunts, saves, views, sales.">
+        <Strand id="demand" base="G" title="How wanted it is" note="A score out of 100 from what people do here: hunts, saves, views, sales.">
           <DemandStrand view={view} />
         </Strand>
 
@@ -196,8 +208,12 @@ export function DnaPage() {
       <DnaAskPopup dnaId={dna.id} dnaName={dna.name} cover={dna.cover} coverBox={dna.coverBox} />
 
       {view.related.length > 0 && (
-        <section className="dnap__related" data-reveal>
-          <h2 className="dnap__relatedtitle"><DnaHelix rungs={6} still /> More in {dna.category}</h2>
+        <section className="dnap__related" data-reveal aria-labelledby="dnap-related-title">
+          <FleaMarket />
+          <header className="dnap__relatedhead">
+            <h2 id="dnap-related-title" className="dnap__relatedtitle"><DnaHelix rungs={6} still /> More in {dna.category}</h2>
+            <p className="dnap__relatednote">Wander the stalls: more like it, from shops on Figmark.</p>
+          </header>
           <div className="dnap__relatedrow">
             {view.related.map((summary, at) => <DnaTile key={summary.id} summary={summary} index={at} />)}
           </div>
@@ -644,7 +660,7 @@ function DemandStrand({ view }: { view: DnaView }) {
           <path d="M10 64 A50 50 0 0 1 110 64" className="dnap__gaugetrack" pathLength={100} />
           <path d="M10 64 A50 50 0 0 1 110 64" className="dnap__gaugefill" pathLength={100} />
         </svg>
-        <span className="dnap__gaugevalue"><CountUp value={demand.heat} /></span>
+        <span className="dnap__gaugevalue"><CountUp value={demand.heat} /><small>/100</small></span>
         <span className="dnap__gaugelabel">{demand.label}</span>
       </div>
       <ul className="dnap__cells">
@@ -656,6 +672,18 @@ function DemandStrand({ view }: { view: DnaView }) {
           </li>
         ))}
       </ul>
+      <details className="dnap__how">
+        <summary>What is this number?</summary>
+        <p>
+          A demand score from 0 to 100. Each hunt counts 6 points, each sale 5, each pre-order 4, each person waiting
+          for a restock 3, each save 2 and every ten views 1. The total goes on a log scale, so one busy listing cannot
+          max it out: about 10 points makes 26, 100 makes 50, 1,000 makes 75.
+        </p>
+        <p className="dnap__howscale">
+          <span data-level="1">0-24 Quiet</span><span data-level="2">25-54 Warm</span>
+          <span data-level="3">55-79 Hot</span><span data-level="4">80+ On fire</span>
+        </p>
+      </details>
     </div>
   );
 }
@@ -830,12 +858,13 @@ function GalleryStrand({ view }: { view: DnaView }) {
   };
   return (
     <>
-      <div className="dnap__gallery">
+      <div className="dnap__gallery" data-count={Math.min(view.gallery.length, 5)}>
         {view.gallery.map((photo, at) => {
           const inner = (
             <>
               <img src={photo.url} alt="" loading="lazy" decoding="async" />
-              <span className="dnap__shottag" data-from={photo.from}>{FROM_WORDS[photo.from]}<Icon name="right" size={10} /></span>
+              <span className="dnap__shotshade" aria-hidden="true" />
+              <span className="dnap__shottag" data-from={photo.from}><span className="dnap__shotdot" />{FROM_WORDS[photo.from]}<Icon name="right" size={10} /></span>
             </>
           );
           const style = { ['--i' as string]: Math.min(at, 12) } as CSSProperties;
@@ -861,7 +890,8 @@ function FactsStrand({ view }: { view: DnaView }) {
     <div className="dnap__facts">
       <dl className="dnap__factlist">
         {view.facts.map((fact, at) => (
-          <div key={fact.label} style={{ ['--i' as string]: at } as CSSProperties}>
+          <div key={fact.label} className="dnap__fact" style={{ ['--i' as string]: at } as CSSProperties}>
+            <span className="dnap__factno" aria-hidden="true">{String(at + 1).padStart(2, '0')}</span>
             <dt>{fact.label}</dt>
             <dd>{fact.value}</dd>
           </div>
@@ -912,31 +942,43 @@ function FixPanel({ view, onChanged }: { view: DnaView; onChanged: () => Promise
   const words = { listing: 'Your listing', post: 'Your post', want: 'Your hunt' } as const;
   return (
     <section className="dnap__fix" data-reveal>
-      <h2 className="dnap__fixtitle"><Icon name="settings" size={15} /> Is this right?</h2>
-      {view.yourLinks.map((own) => (
-        <div key={`${own.kind}${own.id}${own.piece ?? ''}`} className="dnap__fixrow">
-          <span><b>{words[own.kind]}</b> “{own.title}” is on this product.</span>
-          <button type="button" className="btn btn--quiet btn--sm" onClick={() => setMoving(own)}>
-            {own.kind === 'listing' ? 'Wrong product?' : 'Change'}
-          </button>
-        </div>
-      ))}
-      {view.staff && (
-        <>
-          <div className="dnap__fixrow">
-            <span><b>Staff</b> Two DNAs for one product? Fold this one into the right one.</span>
-            <button type="button" className="btn btn--quiet btn--sm" onClick={() => setMerging(true)}>Merge into…</button>
-          </div>
-          <div className="dnap__fixrow">
-            <span><b>Staff</b> A clearer name for it?</span>
-            <RenameDna view={view} onChanged={onChanged} />
-          </div>
-          <div className="dnap__fixrow">
-            <span><b>Staff</b> Something here is another product? Split it off.</span>
-            <button type="button" className="btn btn--quiet btn--sm" onClick={() => setSplitting(true)}>Split off…</button>
-          </div>
-        </>
-      )}
+      <header className="dnap__fixhead">
+        <span className="dnap__fixicon" aria-hidden="true"><Icon name="settings" size={16} /></span>
+        <span>
+          <h2 className="dnap__fixtitle">Is this right?</h2>
+          <p className="dnap__fixnote">Something on the wrong product? Put it where it belongs.</p>
+        </span>
+      </header>
+      <ul className="dnap__fixrows">
+        {view.yourLinks.map((own) => (
+          <li key={`${own.kind}${own.id}${own.piece ?? ''}`} className="dnap__fixrow">
+            <span className="dnap__fixtag">{words[own.kind]}</span>
+            <span className="dnap__fixtext">“{own.title}” is on this product.</span>
+            <button type="button" className="dnap__fixbtn" onClick={() => setMoving(own)}>
+              {own.kind === 'listing' ? 'Wrong product?' : 'Change'}
+            </button>
+          </li>
+        ))}
+        {view.staff && (
+          <>
+            <li className="dnap__fixrow">
+              <span className="dnap__fixtag dnap__fixtag--staff">Staff</span>
+              <span className="dnap__fixtext">Two DNAs for one product? Fold this one into the right one.</span>
+              <button type="button" className="dnap__fixbtn" onClick={() => setMerging(true)}><Icon name="link" size={14} /> Merge into…</button>
+            </li>
+            <li className="dnap__fixrow">
+              <span className="dnap__fixtag dnap__fixtag--staff">Staff</span>
+              <span className="dnap__fixtext">A clearer name for it?</span>
+              <RenameDna view={view} onChanged={onChanged} />
+            </li>
+            <li className="dnap__fixrow">
+              <span className="dnap__fixtag dnap__fixtag--staff">Staff</span>
+              <span className="dnap__fixtext">Something here is another product? Split it off.</span>
+              <button type="button" className="dnap__fixbtn" onClick={() => setSplitting(true)}><Icon name="copy" size={14} /> Split off…</button>
+            </li>
+          </>
+        )}
+      </ul>
       {moving && (
         <DnaPicker title={moving.kind === 'listing' ? 'Which product is your listing?' : 'Which product is it?'}
           seed={moving.title} current={[here]} listingId={moving.kind === 'listing' ? moving.id : undefined} piece={moving.piece}
@@ -973,6 +1015,94 @@ function FixPanel({ view, onChanged }: { view: DnaView; onChanged: () => Promise
       {merging && <MergeSheet view={view} onClose={() => setMerging(false)} />}
       {splitting && <SplitSheet view={view} onClose={() => setSplitting(false)} onDone={onChanged} />}
     </section>
+  );
+}
+
+/* ---- more in the category: a flea market at dusk ------------------------- */
+
+/** One stall's awning colours, a stripe each. */
+const STALLS: { a: string; b: string; x: number; w: number }[] = [
+  { a: '#FF5A5F', b: '#FFE4E4', x: 0, w: 120 },
+  { a: '#06D6E7', b: '#E0FBFD', x: 140, w: 100 },
+  { a: '#A3E635', b: '#F4FFE0', x: 260, w: 130 },
+  { a: '#A78BFA', b: '#F1ECFF', x: 410, w: 110 },
+  { a: '#F59E0B', b: '#FFF4DC', x: 540, w: 120 },
+  { a: '#EC4899', b: '#FFE6F3', x: 680, w: 100 },
+];
+
+/**
+ * Behind "More in…": a night flea market that tells a short story on a loop.
+ * The lights come on bulb by bulb, the bunting sways, the row of stalls
+ * drifts past, price tags swing, and a shopper's cart rolls through and stops
+ * at a stall before moving on. Decoration only: hidden from screen readers,
+ * and still under reduced motion.
+ */
+function FleaMarket() {
+  const bulbs = Array.from({ length: 16 }, (_, at) => at);
+  const flags = Array.from({ length: 14 }, (_, at) => at);
+  const stalls = (shift: number) => STALLS.map((stall, at) => {
+    const stripes = Math.ceil(stall.w / 20);
+    return (
+      <g key={`${shift}-${at}`} transform={`translate(${stall.x + shift} 0)`}>
+        {/* posts and table */}
+        <rect x="6" y="62" width="4" height="58" fill="#1B2236" />
+        <rect x={stall.w - 10} y="62" width="4" height="58" fill="#1B2236" />
+        <rect x="0" y="96" width={stall.w} height="10" rx="2" fill="#2A2140" />
+        <rect x="4" y="106" width={stall.w - 8} height="14" fill="#1A1430" />
+        {/* wares on the table */}
+        <rect x="14" y="84" width="16" height="12" rx="2" fill={stall.a} opacity="0.85" />
+        <circle cx={stall.w / 2} cy="88" r="8" fill={stall.b} opacity="0.75" />
+        <rect x={stall.w - 34} y="78" width="12" height="18" rx="2" fill="#8B5CF6" opacity="0.8" />
+        {/* striped awning with a scalloped edge */}
+        {Array.from({ length: stripes }, (_, n) => (
+          <rect key={n} x={n * 20} y="44" width="20" height="18" fill={n % 2 ? stall.b : stall.a} />
+        ))}
+        {Array.from({ length: stripes }, (_, n) => (
+          <circle key={`s${n}`} cx={n * 20 + 10} cy="62" r="10" fill={n % 2 ? stall.b : stall.a} />
+        ))}
+        <rect x="-4" y="40" width={stall.w + 8} height="6" rx="3" fill="#0F1424" />
+        {/* a hanging price tag */}
+        <g className="dnap__fleatag" style={{ ['--i' as string]: at } as CSSProperties}>
+          <line x1={stall.w - 22} y1="72" x2={stall.w - 22} y2="80" stroke="#94A3B8" strokeWidth="1" />
+          <rect x={stall.w - 32} y="80" width="20" height="12" rx="2" fill="#FDE68A" />
+          <circle cx={stall.w - 28} cy="86" r="1.4" fill="#0B1020" />
+        </g>
+      </g>
+    );
+  });
+  return (
+    <div className="dnap__flea" aria-hidden="true">
+      <span className="dnap__fleasky" />
+      <svg className="dnap__fleabunting" viewBox="0 0 400 40" preserveAspectRatio="none">
+        <path d="M0 4 Q200 34 400 4" fill="none" stroke="#475569" strokeWidth="1" />
+        {flags.map((at) => {
+          const x = 14 + at * 27.5;
+          const y = 4 + Math.sin((x / 400) * Math.PI) * 15;
+          const colour = ['#FF5A5F', '#06D6E7', '#A3E635', '#A78BFA', '#F59E0B'][at % 5];
+          return <path key={at} className="dnap__fleaflag" d={`M${x - 7} ${y} L${x + 7} ${y} L${x} ${y + 13} Z`} fill={colour}
+            style={{ ['--i' as string]: at } as CSSProperties} />;
+        })}
+      </svg>
+      <svg className="dnap__fleabulbs" viewBox="0 0 400 30" preserveAspectRatio="none">
+        <path d="M0 2 Q200 26 400 2" fill="none" stroke="#334155" strokeWidth="1" />
+        {bulbs.map((at) => {
+          const x = 12 + at * 25;
+          const y = 2 + Math.sin((x / 400) * Math.PI) * 12 + 3;
+          return <circle key={at} className="dnap__fleabulb" cx={x} cy={y} r="2.6" style={{ ['--i' as string]: at } as CSSProperties} />;
+        })}
+      </svg>
+      <div className="dnap__fleastalls">
+        <svg viewBox="0 0 1600 124" preserveAspectRatio="xMinYMax meet">{stalls(0)}{stalls(800)}</svg>
+      </div>
+      <svg className="dnap__fleacart" viewBox="0 0 48 34">
+        <path d="M2 6h7l5 16h22l5-12H12" fill="none" stroke="#E2E8F0" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+        <rect x="16" y="4" width="9" height="8" rx="1.5" fill="#FF5A5F" />
+        <rect x="26" y="2" width="8" height="10" rx="1.5" fill="#06D6E7" />
+        <circle cx="17" cy="28" r="3" fill="#A3E635" />
+        <circle cx="33" cy="28" r="3" fill="#A3E635" />
+      </svg>
+      <span className="dnap__fleaground" />
+    </div>
   );
 }
 
