@@ -5,6 +5,7 @@ import { ApiRequestError, api } from '../api';
 import { BackLink } from '../components/ScrollManager';
 import { CropPic, DnaHelix, DnaPicker, DnaTile, HeatBand, Stars, dnaHref, sequenceOf } from '../components/DnaKit';
 import { MergeSheet, MovePreview, SplitSheet } from '../components/DnaUpkeep';
+import { DnaAskPopup } from '../components/DnaCheck';
 import { useToast } from '../components/Feedback';
 import { Icon } from '../components/Icon';
 import { ReviewPhotoPicker, ReviewPhotoStrip } from '../components/ReviewPhotos';
@@ -191,6 +192,8 @@ export function DnaPage() {
       </div>
 
       <FixPanel view={view} onChanged={load} />
+      {/* A few seconds in: does one of its listings really match? */}
+      <DnaAskPopup dnaId={dna.id} dnaName={dna.name} cover={dna.cover} coverBox={dna.coverBox} />
 
       {view.related.length > 0 && (
         <section className="dnap__related" data-reveal>

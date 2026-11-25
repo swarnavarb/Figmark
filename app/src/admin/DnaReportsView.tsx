@@ -5,6 +5,13 @@ import { SkelRows } from '../components/PageSkeletons';
 
 type Row = Awaited<ReturnType<typeof admin.dnaReports>>['reports'][number];
 
+const DOUBT_WHY: Record<NonNullable<Row['doubt']>['why'], string> = {
+  'same-photo': 'its photo is the same as listings still on it',
+  'same-thing-in-photo': 'the same thing shows in listings still on it',
+  'looks-same': 'the photos look like the same product',
+  'same-name': 'it has the very same name',
+};
+
 const SELLER_SAID: Record<NonNullable<Row['sellerSaid']>, string> = {
   right: 'The shop says it is right',
   moved: 'The shop moved it',
@@ -73,7 +80,7 @@ function ReportCard({ row, onDone }: { row: Row; onDone: () => Promise<void> }) 
   return (
     <div className="card card--pad stack">
       <div className="row row--between">
-        <b>🧬 Wrong product?</b>
+        <b>{row.doubt ? '🧬 Shop said “not this” - sure?' : '🧬 Wrong product?'}</b>
         <span className={`badge badge--${isOpen ? 'warn' : row.status === 'fixed' ? 'ok' : 'accent'}`}>
           {isOpen ? 'Open' : row.status === 'fixed' ? 'Fixed' : 'Was right'}
         </span>
@@ -85,6 +92,12 @@ function ReportCard({ row, onDone }: { row: Row; onDone: () => Promise<void> }) 
           <span><b>On product</b> “{row.dnaNow?.name ?? row.dnaName}”{moved ? ' (since merged)' : ''}</span>
         </div>
       </div>
+      {row.doubt && (
+        <p className="notice">
+          The shop moved it {row.doubt.movedTo ? <>to “{row.doubt.movedTo.name}”</> : 'to a product of its own'}, but Figmark doubts it: {DOUBT_WHY[row.doubt.why]}.
+          {' '}Keep the move with <b>Shop is right</b>, or put it back from the product page.
+        </p>
+      )}
       <span className="faint">
         {row.no} said no · {row.yes} said yes{row.sellerSaid ? ` · ${SELLER_SAID[row.sellerSaid]}` : ' · The shop has not answered'}
         {' · '}{timeAgo(row.updatedAt)}
@@ -96,11 +109,13 @@ function ReportCard({ row, onDone }: { row: Row; onDone: () => Promise<void> }) 
         {isOpen ? (
           <>
             <button type="button" className="btn btn--sm btn--ok" disabled={busy !== null} onClick={() => void settle('fixed')}>
-              {busy === 'fixed' ? 'Saving…' : 'Mark fixed'}
+              {busy === 'fixed' ? 'Saving…' : row.doubt ? 'Shop is right' : 'Mark fixed'}
             </button>
-            <button type="button" className="btn btn--sm btn--quiet" disabled={busy !== null} onClick={() => void settle('right')}>
-              {busy === 'right' ? 'Saving…' : 'It was right'}
-            </button>
+            {!row.doubt && (
+              <button type="button" className="btn btn--sm btn--quiet" disabled={busy !== null} onClick={() => void settle('right')}>
+                {busy === 'right' ? 'Saving…' : 'It was right'}
+              </button>
+            )}
           </>
         ) : (
           <button type="button" className="btn btn--sm btn--quiet" disabled={busy !== null} onClick={() => void settle('open')}>Open again</button>

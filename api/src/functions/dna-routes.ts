@@ -24,7 +24,7 @@ import { error, handler, json } from './http.js';
 import { alertFollowers, followsOf, marketOf, setFollow } from '../dna-follow.js';
 import { timedDays } from '../../../shared/timed.js';
 import { createWant } from './want-routes.js';
-import { settleDnaReport } from './dna-check-routes.js';
+import { settleDnaReport, weighShopsNo } from './dna-check-routes.js';
 
 /**
  * Product DNA over HTTP.
@@ -752,13 +752,18 @@ async function fix(request: HttpRequest, _context: InvocationContext) {
   } else if (action === 'move') {
     for (const dna of current) if (dna.id !== target!.id) await removeLink(repository, dna.id, kind, id, true, only);
     await addLink(repository, target!.id, entry);
-    if (kind === 'listing') await settleDnaReport(repository, id, piece, 'moved', user.displayName);
+    if (kind === 'listing') {
+      await settleDnaReport(repository, id, piece, 'moved', user.displayName);
+      const left = current.find((dna) => dna.id !== target!.id);
+      if (listing && item && left) await weighShopsNo(repository, listing, item, left, { id: target!.id, name: target!.name }, catalogue);
+    }
   } else {
     if (!listing || !item) return error(400, 'invalid_action', 'Only a listing starts a product of its own.');
     for (const dna of current) await removeLink(repository, dna.id, kind, id, true, only);
     // Blocked everywhere it was, so the matcher starts it a DNA of its own.
     const made = await dnaForItem(repository, listing, item, catalogue, true);
     await settleDnaReport(repository, id, piece, 'moved', user.displayName);
+    if (current[0]) await weighShopsNo(repository, listing, item, current[0], made ? { id: made.id, name: made.name } : null, catalogue);
     if (made) await saveDna(repository, made.id, (dna) => (dna ? {
       ...dna,
       links: dna.links.map((link) => (link.kind === 'listing' && link.id === id && (link.piece ?? null) === piece

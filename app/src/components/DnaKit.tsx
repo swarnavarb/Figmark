@@ -8,8 +8,6 @@ import { useToast } from './Feedback';
 import { Icon } from './Icon';
 import { Modal } from './ui';
 import { StoryTag, useStory } from './Story';
-import { DnaVote } from './DnaCheck';
-import { useSession } from '../session';
 import '../styles/DnaKit.css';
 
 /**
@@ -179,15 +177,12 @@ export function DnaCard({ summary, lead = 'Product DNA' }: { summary: DnaSummary
  * holds several - a lot sold piece by piece, a set - each that thing's own
  * product page. Nothing at all for a listing that has none (a private deal).
  */
-export function ListingDna({ listingId, onFound, vote = false }: {
+export function ListingDna({ listingId, onFound }: {
   listingId: string;
-  /** Ask the reader whether it is the right product (never the shop itself). */
-  vote?: boolean;
   /** Told which DNA the listing is part of (the first, for a lot), so the page can point at it elsewhere. */
   onFound?: (dna: DnaSummary | null) => void;
 }) {
   const [items, setItems] = useState<{ piece: string | null; title: string; dna: DnaSummary }[]>([]);
-  const { user, promptAuth } = useSession();
   const tell = useRef(onFound);
   tell.current = onFound;
   useEffect(() => {
@@ -207,8 +202,6 @@ export function ListingDna({ listingId, onFound, vote = false }: {
     return (
       <div className="dnak__slot">
         <DnaCard summary={items[0]!.dna} />
-        {vote && items[0]!.piece === null && <DnaVote listingId={listingId} signedIn={Boolean(user)}
-          onSignIn={() => promptAuth('Sign in to say whether this is the right product.')} />}
       </div>
     );
   }

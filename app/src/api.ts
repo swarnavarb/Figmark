@@ -2,7 +2,7 @@ import type { CoachPlan, CoachSignals } from '@shared/coach';
 import type { OwnResults } from '@shared/coach-log';
 import type { PhotoAnalysis } from '@shared/photo-scan';
 import type { PayoutSummary } from '@shared/payouts';
-import type { DnaCheck, DnaLinkKind, DnaManage, DnaSummary, DnaView } from '@shared/dna';
+import type { DnaAsk, DnaCheck, DnaLinkKind, DnaManage, DnaSummary, DnaView } from '@shared/dna';
 import type { DayRange, DaySource, ShopDays } from '@shared/step-days';
 import type { LotCostKey, LotSplit } from '@shared/lot-costs';
 import type { CancelFlag, CancelSettings, CancelStats, FeeSettlement, FeeStatement, GiftMethod, GiverKind, PlatformFees, Pricing, ProFeatureId, ProGrant, ProPlan, ProVoucherPreview, StoreGift } from '@shared/billing';
@@ -3852,7 +3852,8 @@ export const api = {
     post<DnaCheck>(`/dna/check/${encodeURIComponent(listingId)}/focus`, { box }),
   dnaConfirm: (listingId: string) => post<{ ok: true }>(`/dna/check/${encodeURIComponent(listingId)}/confirm`, {}),
   /** Anybody: is this listing on the right product? */
-  dnaVote: (listingId: string, right: boolean) => post<{ ok: true; reported: boolean }>('/dna/vote', { listingId, right }),
+  dnaVote: (listingId: string, right: boolean) => post<{ ok: true; reported: boolean; yes: number | null }>('/dna/vote', { listingId, right }),
+  dnaAsk: (dnaId: string) => request<{ ask: DnaAsk | null }>(`/dna/view/${encodeURIComponent(dnaId)}/ask`),
   /** Staff: the name buyers know the product by. */
   renameDna: (id: string, name: string) => post<{ name: string }>(`/dna/view/${encodeURIComponent(id)}/rename`, { name }),
   manageDna: (id: string) => request<DnaManage>(`/dna/view/${encodeURIComponent(id)}/manage`),

@@ -739,7 +739,9 @@ await check('a viewer says "not the right product": the shop and the operators a
   assert.equal(own.status, 400, 'the shop fixes its own instead');
   const yes = await checks.dnaVoteRoute(req({ headers: voter.headers, body: { listingId: joker.id, right: true } }), ctx);
   assert.equal(yes.status, 200);
-  assert.equal((await repository.getSiteContent(`dnarep:${joker.id}`))?.data ?? null, null, 'a yes alone keeps nothing');
+  const tally = (await repository.getSiteContent(`dnarep:${joker.id}`))?.data;
+  assert.equal(tally?.yes, 1, 'a yes is counted');
+  assert.equal(tally?.status, 'right', 'a yes alone is not a report');
   const before = (await repository.listNotifications(me.id, 100)).filter((row) => row.kind === 'dna_report').length;
   const no = await checks.dnaVoteRoute(req({ headers: voter.headers, body: { listingId: joker.id, right: false } }), ctx);
   assert.equal(no.status, 200, JSON.stringify(no.jsonBody));
@@ -747,6 +749,7 @@ await check('a viewer says "not the right product": the shop and the operators a
   const told = (await repository.listNotifications(me.id, 100)).filter((row) => row.kind === 'dna_report');
   assert.equal(told.length, before + 1, 'told once, as the shop (and as an operator, the same person here)');
   assert.match(told[0].link, /\?dna=check$/);
+  assert.match(told[0].title, /Buyers noticed/);
   const asked = await checks.dnaCheckRoute(req({ headers: me.headers, params: { id: joker.id } }), ctx);
   assert.equal(asked.jsonBody.match?.why, 'reported');
   assert.equal(asked.jsonBody.match.reports, 1, 'one person, counted once');
@@ -771,6 +774,61 @@ await check('the shop moving it settles the report; operators can rename the pro
   assert.ok(now.words.includes('joker') && now.words.includes('three'), 'old and new words both find it');
   const refused = await checks.dnaRenameRoute(req({ headers: voter.headers, params: { id: moved.jsonBody.dna }, body: { name: 'Nope' } }), ctx);
   assert.ok(refused.status === 401 || refused.status === 403);
+});
+
+let ironMine;
+await check('a product page asks its reader about one listing on it, until enough said yes', async () => {
+  const opts = { authenticity: 'Original' };
+  const theirs = await list(otherSeller, 'Hot Toys Ultron Sentry Prime', opts, 2500000, { category: 'Figures', photos: await stored('clark-kent') });
+  forgetCatalogue();
+  await of(theirs);
+  const mine = await list(me.id, 'Hot Toys Ultron Sentry Prime', opts, 2400000, { category: 'Figures', photos: await stored('clark-kent') });
+  ironMine = mine;
+  forgetCatalogue();
+  const product = await of(mine);
+  assert.equal((await of(theirs)).id, product.id, 'both shops on one product');
+  const anon = await checks.dnaAskRoute(req({ params: { id: product.id } }), ctx);
+  assert.equal(anon.jsonBody.ask, null, 'only signed-in readers are asked');
+  const asked = await checks.dnaAskRoute(req({ headers: voter.headers, params: { id: product.id } }), ctx);
+  assert.equal(asked.status, 200, JSON.stringify(asked.jsonBody));
+  assert.ok([theirs.id, mine.id].includes(asked.jsonBody.ask?.listingId), JSON.stringify(asked.jsonBody));
+  const ownAsk = await checks.dnaAskRoute(req({ headers: me.headers, params: { id: product.id } }), ctx);
+  assert.equal(ownAsk.jsonBody.ask?.listingId, theirs.id, 'never about your own listing');
+  // Three people already said yes to both: nobody is asked about them again.
+  for (const listing of [theirs, mine]) {
+    const now = new Date().toISOString();
+    await repository.mutateSiteContent(`dnarep:${listing.id}`, () => ({ id: `dnarep:${listing.id}`, updatedBy: null, createdAt: now, updatedAt: now, data: {
+      id: listing.id, listingId: listing.id, piece: null, dnaId: product.id, sellerId: listing.sellerId, listingTitle: listing.title,
+      dnaName: product.name, photoUrl: null, status: 'right', no: 0, yes: 3, voters: { a: 'yes', b: 'yes', c: 'yes' }, sellerSaid: null,
+      createdAt: now, updatedAt: now, resolvedAt: null, resolvedBy: null,
+    } }));
+  }
+  const settled = await checks.dnaAskRoute(req({ headers: voter.headers, params: { id: product.id } }), ctx);
+  assert.equal(settled.jsonBody.ask, null, 'three yeses settle it');
+  const queue = await checks.dnaReportsRoute(req({ headers: me.headers }), ctx);
+  if (queue.status === 200) assert.ok(!queue.jsonBody.reports.some((row) => row.listingId === mine.id), 'a tally of yeses is not in the queue');
+});
+
+await check('a shop saying "not this product" while the photos say it is: moved, and operators asked to look', async () => {
+  const mine = ironMine;
+  assert.ok(mine);
+  const from = await of(mine);
+  const before = (await repository.listNotifications(me.id, 100)).length;
+  const moved = await routes.dnaFixRoute(req({ headers: me.headers, body: { kind: 'listing', id: mine.id, partition: me.id, action: 'new' } }), ctx);
+  assert.equal(moved.status, 200, JSON.stringify(moved.jsonBody));
+  forgetDnaIndex();
+  assert.notEqual((await of(mine)).id, from.id, 'the shop\'s move stands');
+  const report = (await repository.getSiteContent(`dnarep:${mine.id}`)).data;
+  assert.equal(report.status, 'open');
+  assert.equal(report.dnaId, from.id);
+  assert.equal(report.doubt?.why, 'same-photo', JSON.stringify(report.doubt));
+  assert.ok((await repository.listNotifications(me.id, 100)).length > before, 'operators told');
+  // A move the pictures agree with raises nothing.
+  const lone = await list(me.id, 'Sideshow Darth Vader Premium Format', { authenticity: 'Original' }, 3000000, { category: 'Figures', photos: await stored('cyclops-in-hand') });
+  forgetCatalogue();
+  await of(lone);
+  await routes.dnaFixRoute(req({ headers: me.headers, body: { kind: 'listing', id: lone.id, partition: me.id, action: 'new' } }), ctx);
+  assert.equal((await repository.getSiteContent(`dnarep:${lone.id}`))?.data ?? null, null, 'nothing to doubt');
 });
 
 console.log(`\n${passed} DNA checks passed`);

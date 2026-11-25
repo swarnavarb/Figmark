@@ -530,8 +530,7 @@ export function ListingPage() {
             )}
             <DetailBlocks listing={listing} />
             {/* Its Product DNA: every shop with this product, its prices, demand and owners' reviews. */}
-            {!listing.privateFor && <ListingDna listingId={listing.id} onFound={(dna) => setDnaId(dna?.id ?? null)}
-              vote={!data.isOwn} />}
+            {!listing.privateFor && <ListingDna listingId={listing.id} onFound={(dna) => setDnaId(dna?.id ?? null)} />}
             {/* The shop's own check, once the "It's live!" moment is gone - or opened from a notification. */}
             {data.isOwn && !listing.privateFor && !live && (
               <div ref={checkRef}><DnaCheckFlow listingId={listing.id} title={listing.title}
