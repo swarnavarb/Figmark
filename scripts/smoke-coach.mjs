@@ -636,4 +636,24 @@ await check('somebody who does not help run the shop is refused; signed out is r
   assert.equal(anon.status, 401);
 });
 
+await check('Auto: Figgy answers what its guides answer well, the AI takes the rest', () => {
+  const pick = (question, weights, previous) => coach.autoPick(question, weights, previous ?? null).use;
+  // Figgy: a clear guide, today's plan, when to post, what it can help with, and anything private.
+  assert.equal(pick('How do I get more buyers?'), 'figgy');
+  assert.equal(pick('how do i run a preorder'), 'figgy');
+  assert.equal(pick('What should I do today?'), 'figgy');
+  assert.equal(pick('When should I post?'), 'figgy');
+  assert.equal(pick('What can you help with?'), 'figgy');
+  assert.equal(coach.autoPick('How much did other sellers sell?').reason, 'private');
+  // The AI: something to write, a long detailed problem, nothing a guide fits, a follow-up to its own answer.
+  assert.equal(pick('Write an Instagram caption for my Gundam RX-78 drop'), 'ai');
+  assert.equal(pick('My buyer from Pune paid twice by UPI and wants half back but my lot is already shipped and the courier lost one box, what do I do?'), 'ai');
+  assert.equal(pick('Is a Hot Toys Iron Man worth ₹30000?'), 'ai');
+  assert.equal(pick('why?', {}, 'ai'), 'ai');
+  assert.equal(pick('why?', {}, 'figgy'), 'ai', 'a bare "why?" fits no guide either');
+  // A guide sellers rated poorly is left to the AI.
+  const top = coach.matchGuides('How do I get more buyers?')[0].id;
+  assert.equal(pick('How do I get more buyers?', { [top]: 0.7 }), 'ai');
+});
+
 console.log(`\n${passed} coach checks passed`);

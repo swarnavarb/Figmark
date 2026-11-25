@@ -218,34 +218,38 @@ export function parseItems(text: string): FoundThing[] {
 }
 
 /**
- * Every item in the photo, as read by a vision model: first through the
- * person's own free Puter account (it costs the site nothing), then - when
- * they close Puter's sign-in or their Puter allowance is spent - on the
- * site's free keys (POST /api/ai/scan). Call it straight from a tap: Puter's
- * first use opens its sign-in window. Rejects with a message to show.
+ * Every item in the photo, as read by a vision model: first on Figmark's own
+ * free keys (POST /api/ai/scan - no sign-in), then, when those are used up
+ * for the day, through the person's own free Puter account. Call it straight
+ * from a tap: Puter's first use opens its sign-in window. Rejects with a
+ * message to show. How often it may be called is scanLimit.ts's to say.
  */
 export async function scanWithAI(photoUrl: string): Promise<{ things: FoundThing[]; model: string | null }> {
-  // Asked for once, whichever answers: the photo is only read and shrunk the one time.
-  let shrunk: Promise<string> | null = null;
-  const image = () => (shrunk ??= photoToSend(photoUrl));
-  if (puterWorthAsking()) {
-    try {
-      const found = await scanWithPuter(image);
-      if (found.things.length > 0) return found;
-    } catch (error) {
-      notePuterTrouble(error);
-    }
-  }
-  let free: { text: string; model: string } | null = null;
+  const image = await photoToSend(photoUrl);
   try {
-    free = await api.aiScan(await image());
+    const free = await api.aiScan(image);
+    const items = parseItems(free.text);
+    if (items.length === 0) throw new Error('The AI found nothing it could box in this photo.');
+    return { things: items, model: free.model };
   } catch (error) {
+    // This account's own limit on Figmark's scans: Puter is not a way round it.
     if (error instanceof ApiRequestError && error.status === 429) throw new Error(error.message);
-    throw new Error('The free AI scans are used up for today. Try again tomorrow.');
+    // Found nothing: a second reading by another service rarely finds more.
+    if (!(error instanceof ApiRequestError)) throw error;
+    // Figmark's free keys are used up today (or unreachable): Puter is next.
   }
-  const items = parseItems(free.text);
-  if (items.length === 0) throw new Error('The AI found nothing it could box in this photo.');
-  return { things: items, model: free.model };
+  // Asked for by a tap, so Puter is offered even if its sign-in was closed in the chat earlier.
+  try {
+    const found = await scanWithPuter(async () => image);
+    if (found.things.length === 0) throw new Error('The AI found nothing it could box in this photo.');
+    return found;
+  } catch (error) {
+    if (!(error instanceof PuterFailed)) throw error;
+    notePuterTrouble(error);
+    throw new Error(error.trouble === 'declined'
+      ? 'Figmark\'s free scans are used up today. Sign in to Puter (free) to keep scanning.'
+      : 'The free AI scans are used up for today. Try again tomorrow.');
+  }
 }
 
 async function scanWithPuter(image: () => Promise<string>): Promise<{ things: FoundThing[]; model: string | null }> {
