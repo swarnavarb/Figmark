@@ -2565,6 +2565,8 @@ export interface StoreReview extends BaseDocument {
   side?: 'store' | 'person';
   /** Photos with it, uploaded and compressed; at most `REVIEW_PHOTO_MAX`. */
   photoUrls?: string[];
+  /** A product review's post on its writer's wall, so an edit can follow it. */
+  postId?: string | null;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -2984,6 +2986,13 @@ export interface Post extends BaseDocument {
   audience?: string[];
   /** A buyer showing what arrived: the order it came from. */
   delivered?: { orderId: string; itemName: string } | null;
+  /**
+   * A product review, put on its writer's wall so the people who follow them
+   * see it in Social and Discover. The review itself lives on the product's
+   * DNA; this is the card that points at it, and it follows the review when
+   * it is edited.
+   */
+  dnaReview?: { dnaId: string; reviewId: string; name: string; rating: number; cover: string | null } | null;
   /** The hunt this post answers, when a shop posted its answer to the feed. */
   answersWant?: { id: string; buyerId: string; title: string } | null;
   /** Orders placed from this post's Buy button. */
