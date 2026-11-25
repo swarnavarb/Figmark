@@ -8,6 +8,7 @@ import { EmptyState, ErrorNotice } from './ui';
 import { Icon } from './Icon';
 import { isOpen, waitingOnShop } from '../engage';
 import type { StudioMode } from './PostStudio';
+import { EngageHelp } from './EngageHelp';
 import '../styles/EngagePanel.css';
 
 import { plural } from '../format';
@@ -24,7 +25,7 @@ const STARTS: { id: string; emoji: string; label: string; line: string; hue: str
   { id: 'question', emoji: '❓', label: 'Ask your buyers', line: 'One question, open answers.', hue: 'blue', mode: 'question' },
   { id: 'compare', emoji: '🎨', label: 'Before & after', line: 'A restore or a glow-up.', hue: 'pink', mode: 'compare' },
   { id: 'photo', emoji: '📸', label: 'Photo tag', line: 'New arrivals, every piece tagged.', hue: 'violet', mode: 'photo' },
-  { id: 'spread', emoji: '📣', label: 'Spread the word', line: 'Share your shop, win credit.', hue: 'gold', mode: 'spread' },
+  { id: 'spread', emoji: '📣', label: 'Spread the word', line: 'Pay credit for new people who join.', hue: 'gold', mode: 'spread' },
 ];
 
 /**
@@ -36,6 +37,7 @@ export function EngagePanel({ store }: { store: StoreAccess }) {
   const [cards, setCards] = useState<PostCard[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [making, setMaking] = useState<(typeof STARTS)[number] | null>(null);
+  const [helping, setHelping] = useState<(typeof STARTS)[number] | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -60,15 +62,19 @@ export function EngagePanel({ store }: { store: StoreAccess }) {
         <div>
           <h2>Get your buyers talking</h2>
           <p className="muted">Polls, debates and competitions go to every follower and lead Discover while they are open. Spread the word pays your buyers for bringing new ones from outside Figmark. Prizes are store credit, spent only at your shop.</p>
+          <p className="sengage__hint">Not sure which one to pick? Tap <span className="sengage__hinti" aria-hidden="true">i</span> on any card to see what it is and when to use it.</p>
         </div>
         <div className="sengage__starts">
           {STARTS.map((entry, index) => (
-            <button key={entry.id} type="button" className={`sengage__start sengage__start--${entry.hue}`}
-              style={{ animationDelay: `${index * 35}ms` }} onClick={() => setMaking(entry)}>
-              <span className="sengage__emoji" aria-hidden="true">{entry.emoji}</span>
-              <strong>{entry.label}</strong>
-              <span className="sengage__line">{entry.line}</span>
-            </button>
+            <div key={entry.id} className="sengage__tile" style={{ animationDelay: `${index * 35}ms` }}>
+              <button type="button" className={`sengage__start sengage__start--${entry.hue}`} onClick={() => setMaking(entry)}>
+                <span className="sengage__emoji" aria-hidden="true">{entry.emoji}</span>
+                <strong>{entry.label}</strong>
+                <span className="sengage__line">{entry.line}</span>
+              </button>
+              <button type="button" className="sengage__info" aria-label={`What is ${entry.label} and when to use it`}
+                onClick={() => setHelping(entry)}>i</button>
+            </div>
           ))}
         </div>
       </section>
@@ -157,6 +163,11 @@ export function EngagePanel({ store }: { store: StoreAccess }) {
 
       {cards && cards.length === 0 && (
         <EmptyState title="Nothing running yet">Start a poll or a competition above. Your followers hear about it straight away.</EmptyState>
+      )}
+
+      {helping && (
+        <EngageHelp id={helping.id} title={helping.label} emoji={helping.emoji} onClose={() => setHelping(null)}
+          onStart={() => { const entry = helping; setHelping(null); setMaking(entry); }} />
       )}
 
       {making && (
