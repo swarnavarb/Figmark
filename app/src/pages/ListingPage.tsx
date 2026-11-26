@@ -20,6 +20,8 @@ import { HeartPop, PixelHeart } from '../components/PixelHeart';
 import { ProtectedNote, SellerTick } from '../components/Trust';
 import { ListingPosts } from '../components/ListingPosts';
 import { ListingDna } from '../components/DnaKit';
+import { DnaCheckFlow } from '../components/DnaCheck';
+import { cameFromListing } from '../dnaCameFrom';
 import { Glyph, RarityRibbon } from '../components/Quest';
 import { BumpHelp, InfoTip, useBump } from '../components/QuestKit';
 import { listingRarity } from '@shared/quest';
@@ -81,6 +83,16 @@ export function ListingPage() {
   /** On a listing sold piece by piece, "Pick & buy" (or the shop's "See the listings") opens the photo to pick from, as a popup. */
   const [boardOpen, setBoardOpen] = useState(false);
   const [editing, setEditing] = useState(false);
+  const checkRef = useRef<HTMLDivElement>(null);
+  // Opened from "is it on the right product?": the check is shown, scrolled to.
+  const wantsCheck = params.get('dna') === 'check';
+  // Its product page asks about this item first: "the item you came from".
+  useEffect(() => { if (id) cameFromListing(id); }, [id]);
+  useEffect(() => {
+    if (!wantsCheck) return undefined;
+    const timer = window.setTimeout(() => checkRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 900);
+    return () => window.clearTimeout(timer);
+  }, [wantsCheck, data !== null]); // eslint-disable-line react-hooks/exhaustive-deps -- once the page is drawn
   // Just published from the Sell screen: the moment it goes live gets marked.
   const location = useLocation();
   const [live, setLive] = useState<{ first: boolean } | null>(() =>
@@ -412,7 +424,7 @@ export function ListingPage() {
 
       <div className="detail">
         <div>
-          <Gallery photos={photos} title={listing.title}
+          <Gallery photos={photos} title={listing.title} listingId={listing.id}
             overlay={data.isOwn ? null : (
               <button type="button" className={`qheart${liked ? ' is-on' : ''}${lock}`} onClick={gate(() => {
                 setHeartPop({ id: Date.now(), gain: !liked });
@@ -509,6 +521,8 @@ export function ListingPage() {
                   : 'Buyers can find it now. Share it yourself - or Spread the word, and pay your buyers store credit for every new buyer they bring.'}
                 primary={listing.privateFor ? undefined : { label: 'Share it', onClick: () => shareSheet.open(shareSpec) }}
                 secondary={listing.privateFor ? undefined : { label: '📣 Spread the word', onClick: () => setSpreading(true) }}
+                extra={listing.privateFor ? undefined : <DnaCheckFlow listingId={listing.id} title={listing.title} compact
+                  onEdit={() => { setLive(null); setEditing(true); }} />}
                 onClose={() => setLive(null)} />
             )}
             {spreading && (
@@ -520,6 +534,11 @@ export function ListingPage() {
             <DetailBlocks listing={listing} />
             {/* Its Product DNA: every shop with this product, its prices, demand and owners' reviews. */}
             {!listing.privateFor && <ListingDna listingId={listing.id} onFound={(dna) => setDnaId(dna?.id ?? null)} />}
+            {/* The shop's own check, once the "It's live!" moment is gone - or opened from a notification. */}
+            {data.isOwn && !listing.privateFor && !live && (
+              <div ref={checkRef}><DnaCheckFlow listingId={listing.id} title={listing.title}
+                onEdit={() => setEditing(true)} /></div>
+            )}
             {/* A loose figure is where a restorer or a painter earns their keep: the studios that do it. */}
             {listing.condition === 'LOOSE' && !listing.privateFor && (
               <div style={{ marginTop: 14 }}>

@@ -606,4 +606,232 @@ await check('every thing in a lot is a product of its own, even named alike; one
   assert.deepEqual((await getDna(repository, ids[2])).links.filter((entry) => entry.id === shelf.id).map((entry) => entry.piece), ['df_c']);
 });
 
+console.log('the same figure under another maker word, and folding and splitting');
+
+const { foldLonely, forgetLonely } = await import(new URL('api/src/dna.js', dist));
+
+await check('"McF" is McFarlane, and "figure" says nothing about which figure', () => {
+  const mcf = dna.productWords('McF Scarecrow');
+  const dc = dna.productWords('DC Multiverse Scarecrow boxed figure');
+  assert.deepEqual(mcf, ['mcfarlane', 'scarecrow']);
+  assert.deepEqual(dc, ['dc', 'multiverse', 'scarecrow']);
+  assert.equal(dna.sameProductWords(mcf, dc), false, 'names alone are not enough');
+  assert.equal(dna.sameProductSoft(mcf, dc), true, 'but with the makers set aside they are one figure');
+  assert.equal(dna.sameProductSoft(mcf, dna.productWords('DC Multiverse Superman')), false);
+  assert.equal(dna.sameProductSoft(dna.productWords('McFarlane'), dna.productWords('DC Multiverse')), false, 'makers alone name nothing');
+  assert.deepEqual(dna.normalWords(['mcf', 'scarecrow', 'figure']), ['mcfarlane', 'scarecrow']);
+});
+
+let scarecrowA;
+let scarecrowB;
+await check('a soft name match joins only when the pictures agree', async () => {
+  const opts = { authenticity: 'Original' };
+  useEyeCheck(async () => false);
+  scarecrowA = await list(otherSeller, 'McF Scarecrow', opts, 288000, { category: 'Figures', photos: await stored('t800a') });
+  const aDna = await of(scarecrowA);
+  scarecrowB = await list(me.id, 'DC Multiverse Scarecrow boxed figure', opts, 320000, { category: 'Figures', photos: await stored('t800b') });
+  forgetCatalogue();
+  const bDna = await of(scarecrowB);
+  assert.notEqual(bDna.id, aDna.id, 'the eye said no: two products');
+  // Without a look at all - no vision, nothing to compare - a soft match is never taken.
+  useEyeCheck(async () => null);
+  const third = await list(me.id, 'Mezco Scarecrow', opts, 900000, { category: 'Figures', photos: await stored('cyclops-in-hand') });
+  forgetCatalogue();
+  const thirdDna = await of(third);
+  assert.ok(thirdDna.id !== aDna.id && thirdDna.id !== bDna.id);
+});
+
+await check('a product started alone is folded into its twin once the pictures agree', async () => {
+  useEyeCheck(async () => true);
+  forgetLonely();
+  forgetDnaIndex();
+  forgetCatalogue();
+  const before = await of(scarecrowB);
+  const { everyListing } = await import(new URL('catalog-routes.js', fns));
+  const folded = await foldLonely(repository, await everyListing(repository), 50);
+  assert.ok(folded >= 1, 'at least the Scarecrow pair');
+  forgetDnaIndex();
+  const a = await of(scarecrowA);
+  const b = await of(scarecrowB);
+  assert.equal(a.id, b.id, 'one product now');
+  const gone = before.id === a.id ? null : before.id;
+  if (gone) assert.equal((await getDna(repository, gone)).id, a.id, 'the old one sends readers on');
+  useEyeCheck(null);
+});
+
+await check('staff see what is on a product and its likely twins, and split one off with a preview of what stays', async () => {
+  const product = await of(scarecrowA);
+  const anon = await routes.dnaManageRoute(req({ params: { id: product.id } }), ctx);
+  assert.ok(anon.status === 401 || anon.status === 403);
+  const managed = await routes.dnaManageRoute(req({ headers: me.headers, params: { id: product.id } }), ctx);
+  if (managed.status === 403) {
+    console.log('      (refused: operator has no authenticator)');
+    return;
+  }
+  assert.equal(managed.status, 200, JSON.stringify(managed.jsonBody));
+  const listings = managed.jsonBody.things.filter((thing) => thing.kind === 'listing');
+  assert.ok(listings.length >= 2);
+  assert.ok(listings.every((thing) => thing.title && thing.who !== undefined));
+  const leaving = listings.find((thing) => thing.id === scarecrowB.id);
+  const split = await routes.dnaSplitRoute(req({ headers: me.headers, params: { id: product.id }, body: {
+    links: [{ kind: 'listing', id: leaving.id, piece: leaving.piece }], name: 'DC Multiverse Scarecrow',
+  } }), ctx);
+  assert.equal(split.status, 200, JSON.stringify(split.jsonBody));
+  forgetDnaIndex();
+  forgetCatalogue();
+  assert.equal((await of(scarecrowB)).id, split.jsonBody.dna);
+  assert.equal((await of(scarecrowB)).name, 'DC Multiverse Scarecrow');
+  assert.equal((await of(scarecrowA)).id, product.id, 'what stays, stays');
+  // And the matcher never folds it back.
+  useEyeCheck(async () => true);
+  forgetLonely();
+  const { everyListing } = await import(new URL('catalog-routes.js', fns));
+  await foldLonely(repository, await everyListing(repository), 50);
+  forgetDnaIndex();
+  assert.notEqual((await of(scarecrowB)).id, (await of(scarecrowA)).id, 'split stays split');
+  useEyeCheck(null);
+  const empty = await routes.dnaSplitRoute(req({ headers: me.headers, params: { id: product.id }, body: { links: [] } }), ctx);
+  assert.equal(empty.status, 400);
+});
+
+await check('shops that deal in the line or the kind of thing are named as probably able to get it', async () => {
+  const third = all.find((listing) => listing.sellerId !== me.id && listing.sellerId !== otherSeller)?.sellerId;
+  assert.ok(third, 'the fixtures have a third shop');
+  await list(third, 'McFarlane DC Multiverse Batman Hush', { authenticity: 'Original' }, 300000, { category: 'Figures' });
+  forgetCatalogue();
+  const product = await of(scarecrowA);
+  const view = (await routes.dnaViewRoute(req({ params: { id: product.id } }), ctx)).jsonBody;
+  const mine = view.couldGet.find((entry) => entry.shop.id === third);
+  assert.ok(mine, JSON.stringify(view.couldGet));
+  assert.match(mine.because, /McFarlane|DC|Multiverse|Scarecrow/);
+  assert.ok(!view.couldGet.some((entry) => view.sellingNow.some((listing) => listing.shop?.id === entry.shop.id)), 'never a shop already selling it');
+});
+
+console.log('the seller is asked, viewers can say no, operators fix it');
+
+const checks = await import(new URL('dna-check-routes.js', fns));
+const voterSession = await login(req({ body: { identifier: fixtures.MANAGER_EMAIL, password: fixtures.DEMO_PASSWORD } }), ctx);
+assert.equal(voterSession.status, 200, JSON.stringify(voterSession.jsonBody));
+const voter = { id: voterSession.jsonBody.user.id, headers: { authorization: `Bearer ${voterSession.jsonBody.token}` } };
+let joker;
+
+await check('a photo of several things asks the seller which one they sell, and the answer sticks', async () => {
+  joker = await list(me.id, 'McFarlane DC Multiverse Joker', { authenticity: 'Original' }, 310000, {
+    category: 'Figures', photos: await stored('t800a'), foundBoxes: [[0.04, 0.1, 0.42, 0.8], [0.54, 0.1, 0.42, 0.8]],
+  });
+  forgetCatalogue();
+  const stranger = await checks.dnaCheckRoute(req({ headers: voter.headers, params: { id: joker.id } }), ctx);
+  assert.equal(stranger.status, 403, 'only the shop is asked');
+  const asked = await checks.dnaCheckRoute(req({ headers: me.headers, params: { id: joker.id } }), ctx);
+  assert.equal(asked.status, 200, JSON.stringify(asked.jsonBody));
+  assert.equal(asked.jsonBody.photo?.boxes.length, 2);
+  const answered = await checks.dnaFocusRoute(req({ headers: me.headers, params: { id: joker.id }, body: { box: asked.jsonBody.photo.boxes[0] } }), ctx);
+  assert.equal(answered.status, 200, JSON.stringify(answered.jsonBody));
+  assert.equal(answered.jsonBody.photo, null, 'not asked again');
+  assert.deepEqual((await repository.getListing(joker.id)).dnaFocus.box, asked.jsonBody.photo.boxes[0]);
+  const bad = await checks.dnaFocusRoute(req({ headers: me.headers, params: { id: joker.id }, body: { box: [2, 0, 1, 1] } }), ctx);
+  assert.equal(bad.status, 400);
+});
+
+await check('a viewer says "not the right product": the shop and the operators are told, once', async () => {
+  forgetCatalogue();
+  const own = await checks.dnaVoteRoute(req({ headers: me.headers, body: { listingId: joker.id, right: false } }), ctx);
+  assert.equal(own.status, 400, 'the shop fixes its own instead');
+  const yes = await checks.dnaVoteRoute(req({ headers: voter.headers, body: { listingId: joker.id, right: true } }), ctx);
+  assert.equal(yes.status, 200);
+  const tally = (await repository.getSiteContent(`dnarep:${joker.id}`))?.data;
+  assert.equal(tally?.yes, 1, 'a yes is counted');
+  assert.equal(tally?.status, 'right', 'a yes alone is not a report');
+  const before = (await repository.listNotifications(me.id, 100)).filter((row) => row.kind === 'dna_report').length;
+  const no = await checks.dnaVoteRoute(req({ headers: voter.headers, body: { listingId: joker.id, right: false } }), ctx);
+  assert.equal(no.status, 200, JSON.stringify(no.jsonBody));
+  await checks.dnaVoteRoute(req({ headers: voter.headers, body: { listingId: joker.id, right: false } }), ctx);
+  const told = (await repository.listNotifications(me.id, 100)).filter((row) => row.kind === 'dna_report');
+  assert.equal(told.length, before + 1, 'told once, as the shop (and as an operator, the same person here)');
+  assert.match(told[0].link, /\?dna=check$/);
+  assert.match(told[0].title, /Buyers noticed/);
+  const asked = await checks.dnaCheckRoute(req({ headers: me.headers, params: { id: joker.id } }), ctx);
+  assert.equal(asked.jsonBody.match?.why, 'reported');
+  assert.equal(asked.jsonBody.match.reports, 1, 'one person, counted once');
+  const queue = await checks.dnaReportsRoute(req({ headers: me.headers }), ctx);
+  if (queue.status === 403) { console.log('      (queue refused: operator has no authenticator)'); return; }
+  const row = queue.jsonBody.reports.find((entry) => entry.listingId === joker.id);
+  assert.equal(row.status, 'open');
+  assert.equal(row.no, 1);
+  assert.equal(row.voters, undefined, 'who said what never leaves the server');
+});
+
+await check('the shop moving it settles the report; operators can rename the product', async () => {
+  const moved = await routes.dnaFixRoute(req({ headers: me.headers, body: { kind: 'listing', id: joker.id, partition: me.id, action: 'new' } }), ctx);
+  assert.equal(moved.status, 200, JSON.stringify(moved.jsonBody));
+  assert.equal((await repository.getSiteContent(`dnarep:${joker.id}`)).data.status, 'fixed');
+  const renamed = await checks.dnaRenameRoute(req({ headers: me.headers, params: { id: moved.jsonBody.dna }, body: { name: 'DC Multiverse Joker (Batman: Three Jokers)' } }), ctx);
+  if (renamed.status === 403) { console.log('      (rename refused: operator has no authenticator)'); return; }
+  assert.equal(renamed.status, 200, JSON.stringify(renamed.jsonBody));
+  forgetDnaIndex();
+  const now = await getDna(repository, moved.jsonBody.dna);
+  assert.equal(now.name, 'DC Multiverse Joker (Batman: Three Jokers)');
+  assert.ok(now.words.includes('joker') && now.words.includes('three'), 'old and new words both find it');
+  const refused = await checks.dnaRenameRoute(req({ headers: voter.headers, params: { id: moved.jsonBody.dna }, body: { name: 'Nope' } }), ctx);
+  assert.ok(refused.status === 401 || refused.status === 403);
+});
+
+let ironMine;
+await check('a product page asks its reader about one listing on it, until enough said yes', async () => {
+  const opts = { authenticity: 'Original' };
+  const theirs = await list(otherSeller, 'Hot Toys Ultron Sentry Prime', opts, 2500000, { category: 'Figures', photos: await stored('clark-kent') });
+  forgetCatalogue();
+  await of(theirs);
+  const mine = await list(me.id, 'Hot Toys Ultron Sentry Prime', opts, 2400000, { category: 'Figures', photos: await stored('clark-kent') });
+  ironMine = mine;
+  forgetCatalogue();
+  const product = await of(mine);
+  assert.equal((await of(theirs)).id, product.id, 'both shops on one product');
+  const anon = await checks.dnaAskRoute(req({ params: { id: product.id } }), ctx);
+  assert.equal(anon.jsonBody.ask, null, 'only signed-in readers are asked');
+  const asked = await checks.dnaAskRoute(req({ headers: voter.headers, params: { id: product.id } }), ctx);
+  assert.equal(asked.status, 200, JSON.stringify(asked.jsonBody));
+  assert.ok([theirs.id, mine.id].includes(asked.jsonBody.ask?.listingId), JSON.stringify(asked.jsonBody));
+  const cameFrom = asked.jsonBody.ask.listingId === mine.id ? theirs.id : mine.id;
+  const fromAsk = await checks.dnaAskRoute(req({ headers: voter.headers, params: { id: product.id }, query: { from: cameFrom } }), ctx);
+  assert.equal(fromAsk.jsonBody.ask?.listingId, cameFrom, 'the item the reader came from first');
+  const ownAsk = await checks.dnaAskRoute(req({ headers: me.headers, params: { id: product.id } }), ctx);
+  assert.equal(ownAsk.jsonBody.ask?.listingId, theirs.id, 'never about your own listing');
+  // Three people already said yes to both: nobody is asked about them again.
+  for (const listing of [theirs, mine]) {
+    const now = new Date().toISOString();
+    await repository.mutateSiteContent(`dnarep:${listing.id}`, () => ({ id: `dnarep:${listing.id}`, updatedBy: null, createdAt: now, updatedAt: now, data: {
+      id: listing.id, listingId: listing.id, piece: null, dnaId: product.id, sellerId: listing.sellerId, listingTitle: listing.title,
+      dnaName: product.name, photoUrl: null, status: 'right', no: 0, yes: 3, voters: { a: 'yes', b: 'yes', c: 'yes' }, sellerSaid: null,
+      createdAt: now, updatedAt: now, resolvedAt: null, resolvedBy: null,
+    } }));
+  }
+  const settled = await checks.dnaAskRoute(req({ headers: voter.headers, params: { id: product.id } }), ctx);
+  assert.equal(settled.jsonBody.ask, null, 'three yeses settle it');
+  const queue = await checks.dnaReportsRoute(req({ headers: me.headers }), ctx);
+  if (queue.status === 200) assert.ok(!queue.jsonBody.reports.some((row) => row.listingId === mine.id), 'a tally of yeses is not in the queue');
+});
+
+await check('a shop saying "not this product" while the photos say it is: moved, and operators asked to look', async () => {
+  const mine = ironMine;
+  assert.ok(mine);
+  const from = await of(mine);
+  const before = (await repository.listNotifications(me.id, 100)).length;
+  const moved = await routes.dnaFixRoute(req({ headers: me.headers, body: { kind: 'listing', id: mine.id, partition: me.id, action: 'new' } }), ctx);
+  assert.equal(moved.status, 200, JSON.stringify(moved.jsonBody));
+  forgetDnaIndex();
+  assert.notEqual((await of(mine)).id, from.id, 'the shop\'s move stands');
+  const report = (await repository.getSiteContent(`dnarep:${mine.id}`)).data;
+  assert.equal(report.status, 'open');
+  assert.equal(report.dnaId, from.id);
+  assert.equal(report.doubt?.why, 'same-photo', JSON.stringify(report.doubt));
+  assert.ok((await repository.listNotifications(me.id, 100)).length > before, 'operators told');
+  // A move the pictures agree with raises nothing.
+  const lone = await list(me.id, 'Sideshow Darth Vader Premium Format', { authenticity: 'Original' }, 3000000, { category: 'Figures', photos: await stored('cyclops-in-hand') });
+  forgetCatalogue();
+  await of(lone);
+  await routes.dnaFixRoute(req({ headers: me.headers, body: { kind: 'listing', id: lone.id, partition: me.id, action: 'new' } }), ctx);
+  assert.equal((await repository.getSiteContent(`dnarep:${lone.id}`))?.data ?? null, null, 'nothing to doubt');
+});
+
 console.log(`\n${passed} DNA checks passed`);

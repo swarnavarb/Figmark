@@ -513,6 +513,7 @@ function SocialPostCardView({
         : social.guess ? <span className="spost__kind spost__kind--poll">🎯 Guess the price</span>
           : social.poll && !post.debate && <span className="spost__kind spost__kind--poll"><Icon name="poll" size={11} /> {social.poll.stock ? 'Stock poll' : 'Poll'}</span>}
       {post.delivered && <span className="spost__kind spost__kind--sale"><Icon name="box" size={11} /> Arrived</span>}
+      {post.dnaReview && <span className="spost__kind spost__kind--review"><Icon name="star" size={11} /> Review</span>}
       {post.question && (post.question.acceptedId
         ? <span className="spost__kind spost__kind--answered">✅ Answered</span>
         : <span className="spost__kind spost__kind--question">❓ Question</span>)}
@@ -736,6 +737,7 @@ function SocialPostCardView({
         </button>
       )}
       <div className="spost__veiled" aria-hidden={post.blur && !revealed ? true : undefined}>
+      {post.dnaReview && <ReviewOf review={post.dnaReview} />}
       {editing ? null : post.vibe ? (
         <div className={`vibe vibe--${post.vibe}`}><p>{post.body}</p></div>
       ) : (
@@ -777,7 +779,7 @@ function SocialPostCardView({
             {/* Whether what is in the photo can be bought here, without opening it. */}
             {/* Not on a guess: matching shops would give the answer away. */}
             {photos.length > 0 && !versus && !nested && !social.guess && (
-              <PhotoSales url={photos[0]} about={post.body} by={post.authorId} tone="inline"
+              <PhotoSales url={photos[0]} about={post.body} by={post.authorId} tone="inline" listingId={post.listingId ?? undefined}
                 poster={{ name: post.authorName, handle: author.handle, link: postHref(post) }} />
             )}
             {social.poll && <PollPlay card={card} photos={photos} disabled={nested || !user} vote={vote} />}
@@ -859,7 +861,7 @@ function SocialPostCardView({
       )}
 
       {lightbox !== null && (
-        <Lightbox photos={photos} start={lightbox} about={post.body} by={post.authorId}
+        <Lightbox photos={photos} start={lightbox} about={post.body} by={post.authorId} listingId={post.listingId ?? undefined}
           poster={{ name: post.authorName, handle: author.handle, link: postHref(post) }} onClose={() => setLightbox(null)} />
       )}
     </article>
@@ -1099,8 +1101,10 @@ function Carousel({ photos, alt, burst, onOpen, onDoubleTap }: {
 }
 
 /** A photo filling the screen, with the rest a swipe or an arrow key away. */
-export function Lightbox({ photos, start, onClose, title, caption, about, by, poster, origin, royal }: {
+export function Lightbox({ photos, start, onClose, title, caption, about, by, poster, origin, royal, listingId }: {
   photos: string[];
+  /** The listing these photos are of: one thing sold sends Product DNA straight to its product. */
+  listingId?: string;
   start: number;
   onClose: () => void;
   /** Where the tapped photo sat, so the viewer grows out of it and shrinks back into it. */
@@ -1199,7 +1203,7 @@ export function Lightbox({ photos, start, onClose, title, caption, about, by, po
       )}
       <img loading="lazy" decoding="async" ref={img} key={index} className="lightbox__img" src={photos[index]} alt={`Photo ${index + 1} of ${photos.length}`} />
       {/* Following a link out of it leaves the photo behind, without the shrink back into the page. */}
-      <PhotoSales url={photos[index]} about={about ?? title} by={by} poster={poster} onLeave={onClose} />
+      <PhotoSales url={photos[index]} about={about ?? title} by={by} poster={poster} onLeave={onClose} listingId={listingId} />
       {photos.length > 1 && (
         <>
           <span className="lightbox__count">{index + 1} / {photos.length}</span>
@@ -1819,3 +1823,24 @@ export { Confetti } from './Confetti';
  * of what made scrolling Discover heavy.
  */
 export const SocialPostCard = memo(SocialPostCardView);
+
+/**
+ * The product a review post is about: its picture, its name and the stars,
+ * opening its Product DNA, where the other reviews are.
+ */
+function ReviewOf({ review }: { review: NonNullable<PostCard['post']['dnaReview']> }) {
+  return (
+    <Link to={`/dna/${encodeURIComponent(review.dnaId)}#review-${encodeURIComponent(review.reviewId)}`} className="spost__review"
+      aria-label={`Review of ${review.name}: ${review.rating} out of 5 stars. Open its Product DNA`}>
+      <span className="spost__reviewpic">{review.cover ? <img src={review.cover} alt="" loading="lazy" decoding="async" /> : <Icon name="dna" size={18} />}</span>
+      <span className="spost__reviewtext">
+        <small>Reviewed</small>
+        <b>{review.name}</b>
+        <span className="spost__reviewstars" aria-hidden="true">
+          {[1, 2, 3, 4, 5].map((n) => <span key={n} className={n <= review.rating ? 'is-on' : ''}>★</span>)}
+        </span>
+      </span>
+      <Icon name="right" size={14} />
+    </Link>
+  );
+}

@@ -1,0 +1,75 @@
+/* Product upkeep: folding, splitting and moving, each with a preview first. */
+
+.dnau__preview { display: grid; gap: 12px; }
+.dnau__flow { display: grid; gap: 6px; }
+.dnau__two { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.dnau__arrow {
+  display: inline-flex; align-items: center; gap: 6px; justify-self: center;
+  font-size: calc(12px * var(--text-scale)); color: var(--text-faint); letter-spacing: 0.02em;
+}
+.dnau__label {
+  margin: 0; font-size: calc(12px * var(--text-scale)); font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--text-faint);
+}
+.dnau__lead { margin: 0; color: var(--text-dim); font-size: calc(14px * var(--text-scale)); }
+.dnau__lead b, .dnau__lead em { color: var(--text); }
+.dnau__note { margin: 0; color: var(--text-faint); font-size: calc(12px * var(--text-scale)); }
+.dnau__none { margin: 0; color: var(--text-faint); font-size: calc(13px * var(--text-scale)); }
+.dnau__warn {
+  margin: 0; display: flex; gap: 6px; align-items: flex-start; padding: 8px 10px; border-radius: 10px;
+  background: var(--warn-soft); color: var(--warn); font-size: calc(13px * var(--text-scale));
+}
+
+.dnau__plate {
+  display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 14px; min-width: 0;
+  border: 1px solid var(--border); background: var(--surface);
+}
+.dnau__plate--from { border-style: dashed; }
+.dnau__plate--to { border-color: var(--aqua-line); }
+.dnau__plate--after { border-color: var(--aqua-line); background: var(--aqua-soft); }
+.dnau__platetext { display: grid; gap: 2px; min-width: 0; }
+.dnau__platetext b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dnau__platetext small { color: var(--text-faint); font-size: calc(12px * var(--text-scale)); }
+
+.dnau__pic {
+  display: grid; place-items: center; flex: none; overflow: hidden; border-radius: 10px;
+  background: var(--aqua-soft); color: var(--aqua);
+}
+.dnau__pic--md { width: 48px; height: 48px; }
+.dnau__pic--sm { width: 36px; height: 36px; border-radius: 8px; }
+.dnau__pic img { width: 100%; height: 100%; object-fit: cover; }
+
+.dnau__movers, .dnau__after { display: grid; gap: 6px; }
+.dnau__thinglist, .dnau__checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.dnau__thinglist { max-height: 30vh; overflow-y: auto; }
+.dnau__checks { max-height: 40vh; overflow-y: auto; }
+.dnau__thinglist li { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.dnau__more { color: var(--text-faint); font-size: calc(12px * var(--text-scale)); padding-left: 44px; }
+.dnau__thingtext { display: grid; gap: 1px; min-width: 0; flex: 1; }
+.dnau__thingtext b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(14px * var(--text-scale)); }
+.dnau__thingtext small { color: var(--text-faint); font-size: calc(12px * var(--text-scale)); }
+
+.dnau__split { display: grid; gap: 14px; }
+.dnau__check {
+  display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 12px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface);
+  transition: border-color 160ms var(--ease-out), background-color 160ms var(--ease-out);
+}
+.dnau__check.is-on { border-color: var(--pink-line); background: var(--pink-soft); }
+.dnau__check input { flex: none; width: 18px; height: 18px; accent-color: var(--pink); }
+
+.dnau__dest { display: grid; gap: 8px; margin: 0; padding: 0; border: 0; }
+.dnau__radio { display: flex; align-items: center; gap: 8px; font-size: calc(14px * var(--text-scale)); color: var(--text-dim); }
+.dnau__radio b { color: var(--text); }
+.dnau__radio input { accent-color: var(--aqua); }
+.dnau__name {
+  width: 100%; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--border);
+  background: var(--surface-2, #151C2B); color: var(--text); font: inherit; font-size: calc(16px * var(--text-scale));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dnau__check { transition: none; }
+}
+
+.dnau__hint { margin: 0; color: var(--text-faint); font-size: calc(13px * var(--text-scale)); padding: 8px 2px; }
+.dnau__actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }

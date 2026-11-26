@@ -91,6 +91,10 @@ function Attention({ queues }: { queues: OpsOverview['queues'] }) {
       note: 'Reviews and comments', tone: queues.reportsOpen ? 'warn' : 'calm',
     },
     {
+      tab: 'dna', label: 'Product DNA', icon: 'dna', value: queues.dnaReportsOpen,
+      note: 'Listings on the wrong product', tone: queues.dnaReportsOpen ? 'warn' : 'calm',
+    },
+    {
       tab: 'stores', label: 'Store applications', icon: 'box', value: queues.storesPending,
       note: 'Forwarders and artists', tone: queues.storesPending ? 'warn' : 'calm',
     },

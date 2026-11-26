@@ -1285,6 +1285,13 @@ export interface Listing extends BaseDocument {
    * cannot count lower than the photo shows.
    */
   foundBoxes?: RegionBox[] | null;
+  /**
+   * For one item whose lead photo shows several things: the one the seller
+   * said they are selling, where it sits in the photo; null when they said
+   * every thing in it is the same item (a figure and its box). Product DNA
+   * then matches on that part of the photo alone. Absent until asked.
+   */
+  dnaFocus?: { box: RegionBox | null; at: string } | null;
   photos: ListingPhoto[];
   /**
    * The ladder a buyer reads before this item is in a lot.
@@ -2558,6 +2565,8 @@ export interface StoreReview extends BaseDocument {
   side?: 'store' | 'person';
   /** Photos with it, uploaded and compressed; at most `REVIEW_PHOTO_MAX`. */
   photoUrls?: string[];
+  /** A product review's post on its writer's wall, so an edit can follow it. */
+  postId?: string | null;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -2977,6 +2986,13 @@ export interface Post extends BaseDocument {
   audience?: string[];
   /** A buyer showing what arrived: the order it came from. */
   delivered?: { orderId: string; itemName: string } | null;
+  /**
+   * A product review, put on its writer's wall so the people who follow them
+   * see it in Social and Discover. The review itself lives on the product's
+   * DNA; this is the card that points at it, and it follows the review when
+   * it is edited.
+   */
+  dnaReview?: { dnaId: string; reviewId: string; name: string; rating: number; cover: string | null } | null;
   /** The hunt this post answers, when a shop posted its answer to the feed. */
   answersWant?: { id: string; buyerId: string; title: string } | null;
   /** Orders placed from this post's Buy button. */
@@ -3287,6 +3303,8 @@ export type NotificationKind =
   | 'want_matched'
   /** A Product DNA you follow changed price, came back on sale, or gained a shop. */
   | 'dna_alert'
+  /** Somebody said a listing is on the wrong Product DNA: its shop and the operators are asked to fix it. */
+  | 'dna_report'
   | 'payment_claimed'
   | 'payment_received'
   | 'credit_refunded'

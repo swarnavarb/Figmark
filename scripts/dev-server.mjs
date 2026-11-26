@@ -89,8 +89,11 @@ const {
 } = await import(new URL('want-routes.js', apiRoot));
 const {
   dnaViewRoute, dnaOfListingRoute, dnaOfPostRoute, dnaOfWantRoute, dnaTrendingRoute, dnaSearchRoute,
-  dnaReviewRoute, dnaFixRoute, dnaMergeRoute, dnaFollowRoute, dnaWantRoute,
+  dnaReviewRoute, dnaFixRoute, dnaMergeRoute, dnaManageRoute, dnaSplitRoute, dnaFollowRoute, dnaWantRoute,
 } = await import(new URL('dna-routes.js', apiRoot));
+const {
+  dnaCheckRoute, dnaFocusRoute, dnaConfirmRoute, dnaVoteRoute, dnaReportsRoute, dnaReportResolveRoute, dnaRenameRoute, dnaAskRoute,
+} = await import(new URL('dna-check-routes.js', apiRoot));
 const { pushKeyRoute, pushSubscribeRoute, pushUnsubscribeRoute, pushTestRoute } =
   await import(new URL('push-routes.js', apiRoot));
 const { deviceReportRoute, deviceFiguresRoute } = await import(new URL('device-routes.js', apiRoot));
@@ -483,6 +486,16 @@ const routes = [
   ['GET', '/api/dna/view/:id', dnaViewRoute],
   ['POST', '/api/dna/view/:id/reviews', dnaReviewRoute],
   ['POST', '/api/dna/view/:id/merge', dnaMergeRoute],
+  ['GET', '/api/dna/view/:id/manage', dnaManageRoute],
+  ['POST', '/api/dna/view/:id/split', dnaSplitRoute],
+  ['POST', '/api/dna/view/:id/rename', dnaRenameRoute],
+  ['GET', '/api/dna/view/:id/ask', dnaAskRoute],
+  ['GET', '/api/dna/check/:id', dnaCheckRoute],
+  ['POST', '/api/dna/check/:id/focus', dnaFocusRoute],
+  ['POST', '/api/dna/check/:id/confirm', dnaConfirmRoute],
+  ['POST', '/api/dna/vote', dnaVoteRoute],
+  ['GET', '/api/ops/dna-reports', dnaReportsRoute],
+  ['POST', '/api/ops/dna-reports/:id/resolve', dnaReportResolveRoute],
   ['POST', '/api/dna/view/:id/follow', dnaFollowRoute],
   ['POST', '/api/dna/view/:id/want', dnaWantRoute],
   ['GET', '/api/dna/of/listing/:id', dnaOfListingRoute],

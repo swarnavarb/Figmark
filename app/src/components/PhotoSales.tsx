@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
+import { cameFromListing } from '../dnaCameFrom';
 import { Link } from 'react-router-dom';
 import { ApiRequestError, api, type PhotoSalesResponse } from '../api';
 import { useSession } from '../session';
 import { formatMoney } from '../format';
+import type { DnaSummary } from '@shared/dna';
 import { Icon } from './Icon';
 import { Avatar, Thumb, leadPhoto } from './ui';
 
@@ -113,6 +115,34 @@ function salesFor(url: string, about: string, by: string): Promise<PhotoSalesRes
   return answer;
 }
 
+/**
+ * The product a listing sells, when it sells one thing: the photo needs no
+ * reading, the system already knows. Null for a lot or a set of named things
+ * (each is its own product, and the photo's page shows them all) and for a
+ * listing not on a product yet. Kept per listing for a few minutes.
+ */
+const listingDnas = new Map<string, Promise<DnaSummary | null>>();
+function singleDna(listingId: string): Promise<DnaSummary | null> {
+  let answer = listingDnas.get(listingId);
+  if (!answer) {
+    answer = api.dnaOfListing(listingId)
+      .then((found) => (found.items.length === 1 ? found.items[0]!.dna : null))
+      .catch(() => null);
+    listingDnas.set(listingId, answer);
+    window.setTimeout(() => listingDnas.delete(listingId), KEPT_MS);
+  }
+  return answer;
+}
+
+/** The line under a single product's button: its price across shops, and how many shops. */
+function productLine(dna: DnaSummary): string {
+  const price = dna.lowMinor === null || dna.highMinor === null ? null
+    : dna.lowMinor === dna.highMinor ? formatMoney(dna.lowMinor, dna.currency)
+      : `${formatMoney(dna.lowMinor, dna.currency)} – ${formatMoney(dna.highMinor, dna.currency)}`;
+  const line = [price, dna.sellers > 0 ? count(dna.sellers, 'shop') : null, dna.heatLabel !== 'Quiet' ? dna.heatLabel : null];
+  return line.some(Boolean) ? line.filter(Boolean).join(' · ') : 'Prices, shops and owners';
+}
+
 function count(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
 }
@@ -168,8 +198,14 @@ export function photoDnaHref(url: string, about = '', by = '', poster: PhotoPost
  * Product DNA page, where each thing in it is cut out and followed to its
  * product, and everything about where to get it is laid out.
  */
-export function PhotoSales({ url, about = '', by = '', poster = null, onLeave, tone = 'dark' }: {
+export function PhotoSales({ url, about = '', by = '', poster = null, onLeave, tone = 'dark', listingId }: {
   url: string | undefined;
+  /**
+   * The listing the photo is of. When it sells one thing, the button goes
+   * straight to that product's DNA page; a lot or a set of several things
+   * keeps the photo's own page, which shows each of them.
+   */
+  listingId?: string;
   /**
    * Who posted it. With nothing of theirs tagged on it, the page offers a
    * quick message to ask them - before it lists anybody else's.
@@ -205,15 +241,26 @@ export function PhotoSales({ url, about = '', by = '', poster = null, onLeave, t
     return () => watch.disconnect();
   }, [inView]);
 
+  // undefined: not known yet; null: not one thing (or no listing), so the photo is read.
+  const [product, setProduct] = useState<{ id: string; dna: DnaSummary | null } | undefined>(undefined);
   useEffect(() => {
-    if (!url || !inView) return;
+    if (!listingId || !inView) return;
+    let live = true;
+    void singleDna(listingId).then((dna) => { if (live) setProduct({ id: listingId, dna }); });
+    return () => { live = false; };
+  }, [listingId, inView]);
+  const single = listingId && product?.id === listingId ? product.dna : null;
+  const settled = !listingId || product?.id === listingId;
+
+  useEffect(() => {
+    if (!url || !inView || !settled || single) return;
     let live = true;
     void salesFor(url, about, by).then((sales) => { if (live) setFound({ url, sales }); });
     return () => { live = false; };
-  }, [url, about, by, inView]);
+  }, [url, about, by, inView, settled, single]);
 
   const sales = found && found.url === url ? found.sales : null;
-  const loading = Boolean(url) && found?.url !== url;
+  const loading = !settled || (!single && Boolean(url) && found?.url !== url);
   const { user } = useSession();
   const own = sales?.own ?? [];
   // Somebody else's photo with nothing of theirs on it: they can be asked.
@@ -237,6 +284,25 @@ export function PhotoSales({ url, about = '', by = '', poster = null, onLeave, t
     </Link>
   );
 
+  if (single) {
+    // One thing, already known: its own product page, nothing to spot.
+    const direct = (
+      <Link to={`/dna/${encodeURIComponent(single.id)}`} className={`pdna pdna--${tone}`}
+        onClick={(event) => { event.stopPropagation(); cameFromListing(listingId!); onLeave?.(); }}
+        onTouchStart={(event) => event.stopPropagation()} onTouchEnd={(event) => event.stopPropagation()}>
+        <span className="pdna__mark" aria-hidden="true">
+          <span className="pdna__strand" /><span className="pdna__strand pdna__strand--b" />
+          <Icon name="dna" size={16} />
+        </span>
+        <span className="pdna__text">
+          <b>Product DNA</b>
+          <small>{productLine(single)}</small>
+        </span>
+        <Icon name="right" size={15} />
+      </Link>
+    );
+    return inline ? <div ref={slot} className="psales-slot">{direct}</div> : direct;
+  }
   if (inline) {
     return <div ref={slot} className="psales-slot">{!loading && sales && (any || askable) && button}</div>;
   }

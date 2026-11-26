@@ -2,8 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { app, type HttpRequest, type InvocationContext } from '@azure/functions';
 import { factsOf } from '../../../shared/category-specs.js';
 import {
-  DNA_TAGS_PER_POST, dnaDocId, heatOf, linkKey, productWords,
-  type DnaHuntCard, type DnaLinkKind, type DnaListingCard, type DnaPhoto, type DnaPostCard, type DnaReviewCard,
+  DNA_TAGS_PER_POST, dnaDocId, heatOf, isMakerWord, linkKey, productWords, sameCategory,
+  type DnaHuntCard, type DnaLinkKind, type DnaListingCard, type DnaManage, type DnaThing, type DnaPhoto, type DnaPostCard, type DnaReviewCard,
   type DnaShop, type DnaSummary, type DnaTimelineEntry, type DnaView, type ProductDna,
 } from '../../../shared/dna.js';
 import { REVIEW_PHOTO_MAX, type Listing, type Order, type Post, type StoreReview, type User, type Want } from '../../../shared/models.js';
@@ -11,8 +11,9 @@ import { reviewRevealed } from '../../../shared/orders.js';
 import { getAuthService } from '../auth/index.js';
 import { getRepository } from '../data/index.js';
 import {
-  addLink, dnaForItem, dnaForWant, dnaIndex, dnasForListing, dnasForPost, dnasLinked, findBackground, getDna, isShown,
-  coverOf, itemOnSale, itemsOf, linkedItems, listingsOf, photoOf, removeLink, saveDna, summaryOf, sweepListings, type LinkedItem,
+  addLink, dnaForItem, dnaForWant, dnaIndex, dnasForListing, dnasForPost, dnasLinked, findBackground, foldDna, getDna, isShown,
+  coverOf, itemOnSale, itemsOf, linkedItems, listingsOf, photoOf, removeLink, saveDna, splitDna, summaryOf, sweepListings,
+  twinsOf, type LinkedItem, type LinkRef,
 } from '../dna.js';
 import { moderation } from '../moderation.js';
 import { everListed } from '../photo-sales.js';
@@ -23,6 +24,7 @@ import { error, handler, json } from './http.js';
 import { alertFollowers, followsOf, marketOf, setFollow } from '../dna-follow.js';
 import { timedDays } from '../../../shared/timed.js';
 import { createWant } from './want-routes.js';
+import { settleDnaReport, weighShopsNo } from './dna-check-routes.js';
 
 /**
  * Product DNA over HTTP.
@@ -107,7 +109,7 @@ async function buildView(repository: Repo, dna: ProductDna, viewerId: string | n
     const bought = order.pieces?.find((piece) => piece.id === item.piece);
     return bought ? [{ ...order, unitPriceMinor: bought.priceMinor, quantity: 1 }] : [];
   }));
-  const posts = postsRead.filter((post): post is Post => Boolean(post
+  const posts = postsRead.filter((post): post is Post => Boolean(post && !post.dnaReview
     && (!post.visibleAt || post.visibleAt <= now) && !moderated.isRemoved('post', post.id)));
   const wants = wantsRead.filter((want): want is Want => Boolean(want));
   const openWants = wants.filter((want) => want.status === 'open');
@@ -203,25 +205,55 @@ async function buildView(repository: Repo, dna: ProductDna, viewerId: string | n
       return shop ? [{ shop, units }] : [];
     });
 
-  // Shops that list things sharing this product's telling words, but not this product.
-  const telling = dna.words.filter((word) => word.length > 2);
-  const near = new Map<string, { hits: number; words: Set<string> }>();
+  // ---- shops that could probably get it ------------------------------------
+  // Not selling it here, but dealing in what it is: the thing's own name
+  // ("Scarecrow") counts most, then its maker or range ("McFarlane", "DC
+  // Multiverse") - a shop that lists a line again and again can usually get
+  // the rest of it - then its category. Read off everything each shop has
+  // ever listed, titles and tags.
+  const telling = dna.words.filter((word) => word.length > 1);
+  const near = new Map<string, { score: number; words: Map<string, number>; inCategory: number }>();
+  const written = new Map<string, string>();
   for (const listing of catalogue) {
     if (sellerIds.has(listing.sellerId) || !everListed(listing)) continue;
-    const shared = productWords(listing.title).filter((word) => telling.includes(word));
-    if (shared.length < Math.min(2, telling.length)) continue;
-    const entry = near.get(listing.sellerId) ?? { hits: 0, words: new Set<string>() };
-    entry.hits += shared.length;
-    shared.forEach((word) => entry.words.add(word));
+    const has = new Set([...productWords(listing.title), ...listing.tags.flatMap((tag) => productWords(tag))]);
+    const shared = telling.filter((word) => has.has(word));
+    // How shops write each word ("McFarlane", "DC"), to say it back the same way.
+    for (const token of listing.title.split(/\s+/)) {
+      const bare = token.replace(/[^\p{L}\p{N}]+/gu, '');
+      const key = bare.toLowerCase();
+      if (shared.includes(key) && !written.has(key)) written.set(key, bare);
+    }
+    const inCategory = sameCategory(listing.category, dna.category);
+    if (shared.length === 0 && !inCategory) continue;
+    const entry = near.get(listing.sellerId) ?? { score: 0, words: new Map<string, number>(), inCategory: 0 };
+    for (const word of shared) entry.words.set(word, (entry.words.get(word) ?? 0) + 1);
+    if (inCategory) entry.inCategory += 1;
     near.set(listing.sellerId, entry);
   }
-  const nearIds = [...near.entries()].sort(([, a], [, b]) => b.hits - a.hits).slice(0, 6).map(([id]) => id);
+  for (const entry of near.values()) {
+    let score = 0;
+    for (const [word, times] of entry.words) score += (isMakerWord(word) ? 1.5 : 3) * Math.min(times, 4);
+    // The thing's own name in a listing of the same kind is the strongest hint; the category alone, the weakest.
+    entry.score = score + Math.min(entry.inCategory, 6) * 0.4;
+  }
+  const nearIds = [...near.entries()]
+    .filter(([, entry]) => entry.score >= 1)
+    .sort(([, a], [, b]) => b.score - a.score || b.inCategory - a.inCategory)
+    .slice(0, 8).map(([id]) => id);
   const nearUsers = nearIds.length ? await repository.listUsersByIds(nearIds) : [];
   const nearById = new Map(nearUsers.map((user) => [user.id, user]));
-  const spell = (word: string) => word.charAt(0).toUpperCase() + word.slice(1);
+  const spell = (word: string) => written.get(word)
+    ?? (word.length <= 2 ? word.toUpperCase() : word.charAt(0).toUpperCase() + word.slice(1));
   const couldGet = nearIds.flatMap((id) => {
     const shop = shopOf(nearById.get(id));
-    return shop ? [{ shop, because: `Lists ${[...near.get(id)!.words].slice(0, 3).map(spell).join(' ')}` }] : [];
+    const entry = near.get(id)!;
+    const words = [...entry.words.entries()].sort(([a, x], [b, y]) => Number(isMakerWord(a)) - Number(isMakerWord(b)) || y - x)
+      .slice(0, 3).map(([word]) => spell(word));
+    const because = words.length > 0
+      ? `Lists ${words.join(', ')}`
+      : `Sells ${dna.category} · ${entry.inCategory} listing${entry.inCategory === 1 ? '' : 's'}`;
+    return shop ? [{ shop, because }] : [];
   });
 
   // ---- reviews -----------------------------------------------------------
@@ -628,17 +660,69 @@ async function writeReview(request: HttpRequest, _context: InvocationContext) {
     rating,
     body: text.slice(0, 800),
     ...(photoUrls.length ? { photoUrls } : {}),
+    ...(existing?.postId ? { postId: existing.postId } : {}),
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };
-  await repository.saveStoreReview(review);
+  // Out loud: on the writer's wall, so the people who follow them see it in
+  // Social and it can surface in Discover. An edit changes that post rather
+  // than posting again. A post that fails to go up never loses the review.
   await claimPhotos(photoUrls, `store_review:${review.id}`);
+  const posted = await shareReview(repository, review, dna, author?.displayName ?? user.displayName).catch(() => null);
+  if (posted) review.postId = posted;
+  await repository.saveStoreReview(review);
 
   // The stars a card shows, kept on the DNA.
   const all = await reviewsOf(repository, dna);
   await saveDna(repository, dna.id, (current) => (current
     ? { ...current, score: { total: all.reduce((sum, entry) => sum + entry.rating, 0), count: all.length } } : null));
   return json(200, { ok: true });
+}
+
+/**
+ * Put a product review on its writer's wall, or bring the post already there
+ * up to date. Hands back the post's id.
+ */
+async function shareReview(repository: Repo, review: StoreReview, dna: ProductDna, authorName: string): Promise<string | null> {
+  const photos = review.photoUrls ?? [];
+  const tag = { dnaId: dna.id, reviewId: review.id, name: dna.name, rating: review.rating, cover: dna.cover ?? null };
+  // The words are the review; the card under them names the product and its stars.
+  const body = review.body;
+  if (review.postId) {
+    const changed = await repository.mutatePost(review.authorId, review.postId, (post) => ({
+      ...post, body, dnaReview: tag, photoUrl: photos[0] ?? null, photoUrls: photos, editedAt: review.updatedAt, updatedAt: review.updatedAt,
+    })).catch(() => null);
+    if (changed) return changed.id;
+  }
+  const post = await repository.createPost({
+    id: `pst_${randomUUID().slice(0, 12)}`,
+    channelId: review.authorId,
+    channel: 'seller',
+    kind: 'update',
+    authorId: review.authorId,
+    authorName,
+    body,
+    listingId: null,
+    photoUrl: photos[0] ?? null,
+    likeCount: 0,
+    replyCount: 0,
+    // A person speaking on their own wall: on their followers' feeds.
+    voice: 'store',
+    reach: 'feed',
+    announcement: true,
+    photoUrls: photos,
+    reactions: [],
+    comments: [],
+    shareCount: 0,
+    poll: null,
+    vibe: null,
+    dnaReview: tag,
+    createdAt: review.updatedAt,
+    updatedAt: review.updatedAt,
+  });
+  // The photos are the review's: the post only shows them, so deleting the
+  // post leaves them with the review (see storage/release.ts).
+  return post.id;
 }
 
 interface FixBody {
@@ -720,11 +804,18 @@ async function fix(request: HttpRequest, _context: InvocationContext) {
   } else if (action === 'move') {
     for (const dna of current) if (dna.id !== target!.id) await removeLink(repository, dna.id, kind, id, true, only);
     await addLink(repository, target!.id, entry);
+    if (kind === 'listing') {
+      await settleDnaReport(repository, id, piece, 'moved', user.displayName);
+      const left = current.find((dna) => dna.id !== target!.id);
+      if (listing && item && left) await weighShopsNo(repository, listing, item, left, { id: target!.id, name: target!.name }, catalogue);
+    }
   } else {
     if (!listing || !item) return error(400, 'invalid_action', 'Only a listing starts a product of its own.');
     for (const dna of current) await removeLink(repository, dna.id, kind, id, true, only);
     // Blocked everywhere it was, so the matcher starts it a DNA of its own.
     const made = await dnaForItem(repository, listing, item, catalogue, true);
+    await settleDnaReport(repository, id, piece, 'moved', user.displayName);
+    if (current[0]) await weighShopsNo(repository, listing, item, current[0], made ? { id: made.id, name: made.name } : null, catalogue);
     if (made) await saveDna(repository, made.id, (dna) => (dna ? {
       ...dna,
       links: dna.links.map((link) => (link.kind === 'listing' && link.id === id && (link.piece ?? null) === piece
@@ -735,7 +826,10 @@ async function fix(request: HttpRequest, _context: InvocationContext) {
   return json(200, { dna: target?.id ?? null });
 }
 
-/** POST /api/dna/view/{id}/merge {into} - staff fold a duplicate into the product it is. */
+/**
+ * POST /api/dna/view/{id}/merge {into} - staff fold a duplicate into the
+ * product it is. Never across lines: an original and its copies stay apart.
+ */
 async function merge(request: HttpRequest, _context: InvocationContext) {
   const auth = await getAuthService();
   await auth.requireCapability(request, ['admin']);
@@ -750,18 +844,109 @@ async function merge(request: HttpRequest, _context: InvocationContext) {
   const into = body.into ? await getDna(repository, body.into) : null;
   if (!from || !into) return error(404, 'not_found', 'No such product.');
   if (from.id === into.id) return error(400, 'same', 'That is the same product.');
-  await saveDna(repository, into.id, (current) => {
-    if (!current) return null;
-    // Two things of one lot are two links: kept apart by their piece.
-    const keyOf = (link: ProductDna['links'][number]) => `${linkKey(link.kind, link.id)}#${link.piece ?? ''}`;
-    const have = new Set(current.links.map(keyOf));
-    const moved = from.links.filter((link) => !have.has(keyOf(link))).map((link) => ({ ...link, by: 'staff' as const }));
-    const total = (current.score?.total ?? 0) + (from.score?.total ?? 0);
-    const count = (current.score?.count ?? 0) + (from.score?.count ?? 0);
-    return { ...current, links: [...current.links, ...moved], cover: current.cover ?? from.cover, score: { total, count } };
-  });
-  await saveDna(repository, from.id, (current) => (current ? { ...current, mergedInto: into.id } : null));
+  if (from.line !== into.line) {
+    return error(400, 'other_line', 'One is listed as originals and the other as copies: they stay apart.');
+  }
+  await foldDna(repository, from, into, 'staff');
   return json(200, { dna: into.id });
+}
+
+/** What staff see of each thing on a DNA, to choose what to fold or split. */
+async function thingsOf(repository: Repo, dna: ProductDna, byId: Map<string, Listing>): Promise<DnaThing[]> {
+  const shops = new Map((await repository.listUsersByIds([...new Set(dna.links
+    .filter((entry) => entry.kind === 'listing').map((entry) => entry.partition))])).map((user) => [user.id, user]));
+  const things: DnaThing[] = [];
+  for (const entry of dna.links) {
+    const base = { kind: entry.kind, id: entry.id, partition: entry.partition, piece: entry.piece ?? null, by: entry.by };
+    if (entry.kind === 'listing') {
+      const listing = byId.get(entry.id);
+      const item = listing ? linkedItems({ ...dna, links: [entry] }, byId)[0] : undefined;
+      const shop = shopOf(shops.get(entry.partition));
+      things.push({
+        ...base,
+        title: item?.title ?? listing?.title ?? 'A listing no longer shown',
+        photoUrl: listing ? photoOf(listing) : null,
+        photoBox: item?.piece ? item.boxes[0] ?? null : null,
+        who: shop?.name ?? null,
+        priceMinor: item?.priceMinor ?? listing?.priceMinor ?? null,
+        currency: listing?.currency ?? 'INR',
+        onSale: item ? itemOnSale(item) : false,
+      });
+    } else if (entry.kind === 'post') {
+      const post = await repository.getPost(entry.partition, entry.id).catch(() => null);
+      if (!post) continue;
+      things.push({
+        ...base, title: post.body.slice(0, 80) || 'A post', photoUrl: post.photoUrl ?? post.photoUrls?.[0] ?? null,
+        photoBox: null, who: post.authorName ?? null, priceMinor: null, currency: 'INR', onSale: false,
+      });
+    } else {
+      const want = await repository.getWant(entry.id, entry.partition).catch(() => null);
+      if (!want) continue;
+      things.push({
+        ...base, title: want.title, photoUrl: want.photoUrls?.[0] ?? null, photoBox: null, who: null,
+        priceMinor: want.budgetMinor ?? null, currency: want.currency ?? 'INR', onSale: want.status === 'open',
+      });
+    }
+  }
+  return things;
+}
+
+/**
+ * GET /api/dna/view/{id}/manage - staff: everything on a DNA, and the products
+ * that may be it under another name. What the fold and split previews draw.
+ */
+async function manage(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  await auth.requireCapability(request, ['admin']);
+  const repository = await getRepository();
+  const dna = await getDna(repository, request.params.id ?? '');
+  if (!dna) return error(404, 'not_found', 'No such product.');
+  const catalogue = await everyListing(repository);
+  const byId = new Map(catalogue.map((listing) => [listing.id, listing]));
+  const [things, twins] = await Promise.all([thingsOf(repository, dna, byId), twinsOf(repository, dna)]);
+  const answer: DnaManage = {
+    dna: { ...summaryOf(dna, byId), line: dna.line, words: dna.words },
+    things,
+    twins: twins.filter((twin) => isShown(twin.dna, byId))
+      .map((twin) => ({ dna: summaryOf(twin.dna, byId), like: Math.round(twin.like * 100) / 100, why: twin.why })),
+    reviews: dna.score?.count ?? 0,
+  };
+  return json(200, answer);
+}
+
+/**
+ * POST /api/dna/view/{id}/split {links, into?, name?} - staff take some things
+ * off a DNA that are another product: onto `into`, or onto a new product.
+ * What leaves is never put back by the matcher.
+ */
+async function split(request: HttpRequest, _context: InvocationContext) {
+  const auth = await getAuthService();
+  await auth.requireCapability(request, ['admin']);
+  const repository = await getRepository();
+  let body: { links?: unknown; into?: string | null; name?: string | null };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return error(400, 'invalid_body', 'Request body must be JSON.');
+  }
+  const refs: LinkRef[] = Array.isArray(body.links) ? body.links.flatMap((raw): LinkRef[] => {
+    const ref = raw as Partial<LinkRef> | null;
+    if (!ref || !['listing', 'post', 'want'].includes(ref.kind as string) || typeof ref.id !== 'string') return [];
+    return [{ kind: ref.kind as DnaLinkKind, id: ref.id, piece: typeof ref.piece === 'string' && ref.piece ? ref.piece : null }];
+  }).slice(0, 200) : [];
+  const from = await getDna(repository, request.params.id ?? '');
+  if (!from) return error(404, 'not_found', 'No such product.');
+  const into = body.into ? await getDna(repository, body.into) : null;
+  if (body.into && !into) return error(404, 'not_found', 'No such product to move them to.');
+  if (into && into.line !== from.line) {
+    return error(400, 'other_line', 'One is listed as originals and the other as copies: they stay apart.');
+  }
+  const catalogue = await everyListing(repository);
+  const name = typeof body.name === 'string' ? body.name.slice(0, 90) : null;
+  const done = await splitDna(repository, from, refs, into, name, catalogue);
+  if (typeof done === 'string') return error(400, 'invalid_split', done);
+  for (const ref of refs) if (ref.kind === 'listing') await settleDnaReport(repository, ref.id, ref.piece ?? null, 'staff', 'staff');
+  return json(200, { dna: done.id });
 }
 
 export const dnaViewRoute = handler(view);
@@ -773,6 +958,8 @@ export const dnaSearchRoute = handler(search);
 export const dnaReviewRoute = handler(writeReview);
 export const dnaFixRoute = handler(fix);
 export const dnaMergeRoute = handler(merge);
+export const dnaManageRoute = handler(manage);
+export const dnaSplitRoute = handler(split);
 export const dnaFollowRoute = handler(follow);
 export const dnaWantRoute = handler(wantIt);
 
@@ -789,4 +976,6 @@ app.http('dna-fix', { ...anon, methods: ['POST'], route: 'dna/fix', handler: dna
 app.http('dna-follow', { ...anon, methods: ['POST'], route: 'dna/view/{id}/follow', handler: dnaFollowRoute });
 app.http('dna-want', { ...anon, methods: ['POST'], route: 'dna/view/{id}/want', handler: dnaWantRoute });
 app.http('dna-merge', { ...anon, methods: ['POST'], route: 'dna/view/{id}/merge', handler: dnaMergeRoute });
+app.http('dna-manage', { ...anon, methods: ['GET'], route: 'dna/view/{id}/manage', handler: dnaManageRoute });
+app.http('dna-split', { ...anon, methods: ['POST'], route: 'dna/view/{id}/split', handler: dnaSplitRoute });
 

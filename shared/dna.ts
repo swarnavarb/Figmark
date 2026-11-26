@@ -109,6 +109,36 @@ const SIZED = [
   /\b\d{1,2}\s*\/\s*\d{1,3}\b/g,
 ];
 
+/**
+ * Words that say what kind of thing it is, which every listing in its category
+ * could say: "Scarecrow" and "Scarecrow figure" are one product.
+ */
+const KIND_WORDS = new Set([
+  'figure', 'figurine', 'action', 'statue', 'collectible', 'collectable', 'toy', 'doll', 'model', 'kit',
+  'sneaker', 'shoe', 'trainer', 'packaging', 'packaged', 'carded', 'card',
+]);
+
+/** Short forms shops write for a maker: "McF" is McFarlane. Both sides are read the same way. */
+const ALIASES: Record<string, string> = {
+  mcf: 'mcfarlane', mcfarlanes: 'mcfarlane', mcfarlanetoys: 'mcfarlane', hottoys: 'hot', ht: 'hot',
+  sh: 'shfiguarts', shf: 'shfiguarts', figuarts: 'shfiguarts', mafex: 'mafex', nendo: 'nendoroid',
+  bandaispirits: 'bandai', popmart: 'pop', funkopop: 'funko', jordans: 'jordan', aj: 'jordan',
+};
+
+/**
+ * Makers, licences and product lines: who made it or which range it is in,
+ * not which thing it is. "McF Scarecrow" and "DC Multiverse Scarecrow" are
+ * one figure, named by two of the words on its box. A brand only one side
+ * names is never held against the match - but a match that leans on that is
+ * only taken when the pictures back it up (see `softWords`).
+ */
+const MAKER_WORDS = new Set([
+  'mcfarlane', 'dc', 'multiverse', 'marvel', 'legends', 'hasbro', 'mattel', 'neca', 'mezco', 'one12', 'bandai',
+  'tamashii', 'shfiguarts', 'mafex', 'medicom', 'funko', 'pop', 'mart', 'kotobukiya', 'goodsmile', 'nendoroid',
+  'figma', 'toys', 'sideshow', 'prime1', 'kaiyodo', 'revoltech', 'jada', 'hotwheels', 'lego', 'disney', 'pixar',
+  'dccomics', 'comics', 'nike', 'adidas', 'jordan', 'puma', 'reebok', 'asics', 'vans', 'converse', 'yeezy',
+]);
+
 /** Roman numerals a model is numbered with: Mark III, Final Fantasy VII. */
 const ROMAN = new Set(['ii', 'iii', 'iv', 'vi', 'vii', 'viii', 'ix', 'xi', 'xii', 'xiii', 'xiv', 'xv', 'xvi']);
 
@@ -119,11 +149,12 @@ export const isModelWord = (word: string) => /\d/.test(word) || ROMAN.has(word);
  * The words that identify a product in a title: no noise, no sizes, counts or
  * scales. Numbers that number a model are kept: Mark 85 is not Mark III.
  */
-export function productWords(title: string): string[] {
+export function productWords(title: string, keepKind = false): string[] {
   const seen = new Set<string>();
   const unsized = SIZED.reduce((text, pattern) => text.replace(pattern, ' '), title);
-  for (const word of wordKeys(unsized)) {
-    if ((word.length < 2 && !/^\d$/.test(word)) || NOISE.has(word)) continue;
+  for (const key of wordKeys(unsized)) {
+    const word = ALIASES[key] ?? key;
+    if ((word.length < 2 && !/^\d$/.test(word)) || NOISE.has(word) || (!keepKind && KIND_WORDS.has(word))) continue;
     if (/^(uk|us|eu|size|sz)\d{1,2}$/.test(word)) continue;
     if (/^\d+(cm|mm|ml)$/.test(word)) continue;
     seen.add(word);
@@ -170,6 +201,57 @@ export function sameProductWords(a: readonly string[], b: readonly string[]): bo
   if (like > SAME_PRODUCT + 1e-9) return true;
   const [short, long] = a.length <= b.length ? [a, new Set(b)] : [b, new Set(a)];
   return short.every((word) => long.has(word));
+}
+
+/**
+ * Stored words read the way `productWords` reads them today: short forms
+ * spelled out, kind words ("figure") dropped. DNAs started before then keep
+ * matching the listings that come after.
+ */
+export function normalWords(words: readonly string[]): string[] {
+  const seen = new Set<string>();
+  for (const key of words) {
+    const word = ALIASES[key] ?? key;
+    if (NOISE.has(word) || KIND_WORDS.has(word)) continue;
+    seen.add(word);
+  }
+  return [...seen];
+}
+
+/** Whether a word names a maker, a licence or a range rather than the thing itself. */
+export const isMakerWord = (word: string) => MAKER_WORDS.has(word);
+
+/**
+ * Two sets of words with the makers only one of them names taken out: what is
+ * left says which thing each is. "McFarlane Scarecrow" and "DC Multiverse
+ * Scarecrow" are both just "Scarecrow" - and so are Mezco's and NECA's, which
+ * is why a match on these alone always needs the pictures to agree.
+ */
+export function softWords(a: readonly string[], b: readonly string[]): [string[], string[]] {
+  const left = new Set(a);
+  const right = new Set(b);
+  return [
+    a.filter((word) => !isMakerWord(word) || right.has(word)),
+    b.filter((word) => !isMakerWord(word) || left.has(word)),
+  ];
+}
+
+/** How alike two titles are once makers only one names are set aside. */
+export function softLikeness(a: readonly string[], b: readonly string[]): number {
+  const [left, right] = softWords(a, b);
+  return wordLikeness(left, right);
+}
+
+/**
+ * Whether the thing the titles name is the same once makers only one of them
+ * names are set aside - and something besides makers is left to compare.
+ * Weaker than `sameProductWords`: the matcher takes it only with a picture,
+ * or an eye on both pictures, saying so too.
+ */
+export function sameProductSoft(a: readonly string[], b: readonly string[]): boolean {
+  const [left, right] = softWords(a, b);
+  if (left.length === 0 || right.length === 0) return false;
+  return sameProductWords(left, right);
 }
 
 /** Over this, with a photo of the same thing, they do. */
@@ -398,6 +480,108 @@ export interface DnaView {
   /** The reader's own open hunt for it, so the button says so instead of posting another. */
   hunting: { id: string; buyerId: string; expiresAt: string } | null;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Folding and splitting, for staff                                           */
+/* -------------------------------------------------------------------------- */
+
+/** One thing on a DNA, as staff see it before they fold or split. */
+export interface DnaThing {
+  kind: DnaLinkKind;
+  id: string;
+  partition: string;
+  piece: string | null;
+  title: string;
+  photoUrl: string | null;
+  photoBox: RegionBox | null;
+  /** The shop, the poster or the hunter. */
+  who: string | null;
+  priceMinor: number | null;
+  currency: string;
+  onSale: boolean;
+  by: DnaLink['by'];
+}
+
+/** Why a product is suggested as this one under another name. */
+export type DnaTwinWhy = 'same-photo' | 'same-thing-in-photo' | 'same-name' | 'same-name-other-maker';
+
+export interface DnaManage {
+  dna: DnaSummary & { line: DnaLine; words: string[] };
+  things: DnaThing[];
+  twins: { dna: DnaSummary; like: number; why: DnaTwinWhy }[];
+  reviews: number;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Checking a listing is on the right product                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * What a seller is asked about their own listing, right after it goes live
+ * and whenever it is in doubt: which thing in the photo they are selling,
+ * when it shows several; and whether the product it landed on is it.
+ */
+export interface DnaCheck {
+  listingId: string;
+  /** The lead photo shows several things and nobody has said which: where each sits. */
+  photo: { url: string; boxes: RegionBox[] } | null;
+  /** The product it is on, when that may be wrong; `reports`: how many people said so. */
+  match: { dna: DnaSummary; why: 'reported' | 'name-differs'; reports: number } | null;
+}
+
+/** A listing somebody said is on the wrong product, for its shop and the operators to fix. */
+export interface DnaReport {
+  /** The listing id, with `#piece` for one thing of a lot. */
+  id: string;
+  listingId: string;
+  piece: string | null;
+  dnaId: string;
+  sellerId: string;
+  listingTitle: string;
+  dnaName: string;
+  photoUrl: string | null;
+  status: 'open' | 'fixed' | 'right';
+  /** How many said it is wrong, and right. */
+  no: number;
+  yes: number;
+  /** Who answered, so nobody counts twice. Never shown. */
+  voters: Record<string, 'yes' | 'no'>;
+  /** What the shop did: said it is right, or moved it. */
+  sellerSaid: 'right' | 'moved' | null;
+  /**
+   * The shop said "no, it is a different product" and moved it, but Figmark
+   * still thinks it is the one it was on: staff take a look.
+   */
+  doubt?: DnaDoubt | null;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt: string | null;
+  resolvedBy: string | null;
+}
+
+/** Why Figmark doubts a shop's "no": what still says it is the product it left. */
+export interface DnaDoubt {
+  why: 'same-photo' | 'same-thing-in-photo' | 'looks-same' | 'same-name';
+  /** Where the shop moved it: another product, or one of its own. */
+  movedTo: { id: string; name: string } | null;
+  at: string;
+}
+
+/** Answers of "yes, it is right" that settle a listing: nobody is asked about it again. */
+export const DNA_YES_SETTLES = 3;
+
+/** A listing on a product the page asks its reader about: does it match? */
+export interface DnaAsk {
+  listingId: string;
+  title: string;
+  photoUrl: string | null;
+  shop: string;
+  /** How many already said it matches. */
+  yes: number;
+}
+
+export const DNA_REPORT_PREFIX = 'dnarep:';
+export const dnaReportDocId = (listingId: string, piece: string | null) => `${DNA_REPORT_PREFIX}${listingId}${piece ? `#${piece}` : ''}`;
 
 /* -------------------------------------------------------------------------- */
 /* Following a DNA                                                            */

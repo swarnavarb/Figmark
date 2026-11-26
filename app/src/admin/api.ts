@@ -5,6 +5,7 @@ import type { HealthResponse } from '@shared/contracts';
 import type { Dispute, DisputeDecision, DisputeSanction, ManagerRights, FeePayment, ReleaseDuty, ReviewRequest, SellerTrustSignals, TradeOverride, TradeRight, TrustSignals } from '@shared/models';
 import type { LearnDoc, LearnTab } from '@shared/learn';
 import type { ContentReport } from '@shared/moderation';
+import type { DnaReport } from '@shared/dna';
 import type { MarketSettings } from '@shared/settings';
 import type { SampleRoute } from '@shared/route-samples';
 import type { RouteWords } from '@shared/route-words';
@@ -302,6 +303,11 @@ export const admin = {
   reports: () => request<{ reports: (ContentReport & { authorName: string })[] }>('/ops/reports'),
   resolveReport: (id: string, body: { decision: string; note: string }) =>
     post<{ report: ContentReport }>(`/ops/reports/${encodeURIComponent(id)}/resolve`, body),
+
+  /** Listings people said are on the wrong Product DNA. */
+  dnaReports: () => request<{ reports: (Omit<DnaReport, 'voters'> & { dnaNow: { id: string; name: string } | null })[] }>('/ops/dna-reports'),
+  resolveDnaReport: (id: string, status: 'fixed' | 'right' | 'open') =>
+    post<{ ok: true }>(`/ops/dna-reports/${encodeURIComponent(id)}/resolve`, { status }),
 };
 
 export { ApiRequestError };
